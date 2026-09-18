@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import WorkOrderList from '../views/WorkOrderList.vue'
-import WorkOrderImport from '../views/WorkOrderImport.vue'
 import Login from '../views/Login.vue'
 
 const router = createRouter({
@@ -10,12 +9,6 @@ const router = createRouter({
       path: '/login',
       name: 'Login',
       component: Login,
-    },
-    {
-      path: '/work-order/import',
-      name: 'WorkOrderImport',
-      component: WorkOrderImport,
-      meta: { requiresAuth: true },
     },
     {
       path: '/',

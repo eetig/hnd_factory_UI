@@ -1,9 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
+import WorkOrderImport from './WorkOrderImport.vue'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 import {
@@ -22,7 +22,11 @@ dayjs.extend(updateLocale)
 dayjs.updateLocale('zh-cn', { weekStart: 1 })
 dayjs.locale('zh-cn')
 
-const router = useRouter()
+const tabs = [
+  { key: 'workOrder', label: '工单汇总' },
+  { key: 'import', label: '文件导入' },
+]
+const activeTab = ref('workOrder')
 
 const tableData = ref([])
 const tableDataAll = ref([])
@@ -168,8 +172,13 @@ function openFilePicker() {
   imageFileInput.value?.click()
 }
 
-function goImportPage() {
-  router.push('/work-order/import')
+function handleImportCancel() {
+  activeTab.value = 'workOrder'
+}
+
+function handleImportBack() {
+  activeTab.value = 'workOrder'
+  fetchWorkOrders()
 }
 
 function showPreviousImage() {
@@ -359,21 +368,8 @@ onMounted(fetchWorkOrders)
 <template>
   <el-config-provider :locale="zhCn">
     <main class="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
-    <div class="mx-auto flex max-w-7xl gap-6">
-      <aside class="w-32 shrink-0">
-        <div class="sticky top-8">
-          <el-button
-            type="primary"
-            class="w-full"
-            @click="goImportPage"
-          >
-            文件导入
-          </el-button>
-        </div>
-      </aside>
-
-      <div class="min-w-0 flex-1">
-      <header class="mb-8 flex flex-col gap-3 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div class="mx-auto max-w-7xl">
+      <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
           <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">工单汇总</h1>
@@ -384,28 +380,48 @@ onMounted(fetchWorkOrders)
         </div>
       </header>
 
-      <div class="mb-6 flex items-center gap-3">
-        <el-date-picker
-          v-model="startDate"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="起始日期"
-          :first-day-of-week="1"
-          @change="filterWorkOrders"
-        />
-        <span class="text-sm text-slate-500">至</span>
-        <el-date-picker
-          v-model="endDate"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="结束日期"
-          :first-day-of-week="1"
-          @change="filterWorkOrders"
-        />
-      </div>
+      <nav class="mb-6 flex gap-8 border-b border-slate-200" aria-label="页面切换">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          type="button"
+          class="relative pb-3 pt-1 text-sm font-medium transition focus:outline-none"
+          :class="activeTab === tab.key ? 'text-sky-600' : 'text-slate-500 hover:text-slate-700'"
+          @click="activeTab = tab.key"
+        >
+          {{ tab.label }}
+          <span
+            v-if="activeTab === tab.key"
+            class="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-sky-600"
+            aria-hidden="true"
+          ></span>
+        </button>
+      </nav>
 
-      <section class="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div v-if="loading" class="loading-mask" aria-label="正在加载工单">
+      <div v-show="activeTab === 'workOrder'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+            <el-date-picker
+              v-model="startDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="起始日期"
+              :first-day-of-week="1"
+              @change="filterWorkOrders"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <el-date-picker
+              v-model="endDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :first-day-of-week="1"
+              @change="filterWorkOrders"
+            />
+          </div>
+
+          <div class="relative">
+            <div v-if="loading" class="loading-mask" aria-label="正在加载工单">
           <div class="loader" role="status" aria-label="正在加载">
             <div class="loader-text">Loading...</div>
             <div class="loader-bar"></div>
@@ -553,7 +569,8 @@ onMounted(fetchWorkOrders)
             />
           </div>
         </div>
-      </section>
+          </div>
+        </section>
 
       <el-dialog
         v-model="imageDialogVisible"
@@ -635,6 +652,10 @@ onMounted(fetchWorkOrders)
         :selected="productFilter"
         @select="handleProductSelected"
       />
+      </div>
+
+      <div v-show="activeTab === 'import'">
+        <WorkOrderImport @cancel="handleImportCancel" @back="handleImportBack" />
       </div>
     </div>
     </main>
