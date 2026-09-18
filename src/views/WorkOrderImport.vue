@@ -29,15 +29,71 @@ const localErrors = ref([])
 const importFailRows = ref([])
 const importSummary = ref({ addCount: 0, updateCount: 0 })
 
-const columns = [
-  { key: 'index', label: '序号' },
-  { key: 'orderNo', label: '工单号' },
-  { key: 'materialCode', label: '物料编码' },
-  { key: 'materialDesc', label: '产成品' },
-  { key: 'orderQty', label: '订单数量' },
-  { key: 'planStartDate', label: '基本开始日期' },
-  { key: 'confirmedQty', label: '确认的产量' },
+// 各识别类型对应的表头定义（含列宽与换行样式）
+const WORK_ORDER_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'orderNo', label: '工单号', width: 'w-40' },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'materialDesc', label: '产成品', width: 'w-[180px]', wrap: true },
+  { key: 'orderQty', label: '订单数量', width: 'w-28' },
+  { key: 'planStartDate', label: '基本开始日期', width: 'w-36' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-32' },
 ]
+
+const GOODS_MOVE_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'orderNo', label: '工单号', width: 'w-40' },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'materialDesc', label: '物料描述', width: 'w-[180px]', wrap: true },
+  { key: 'storageLocation', label: '存储地点', width: 'w-32' },
+  { key: 'moveQty', label: '数量', width: 'w-28' },
+  { key: 'moveType', label: '移动类型', width: 'w-28' },
+  { key: 'postingDate', label: '过账日期', width: 'w-36' },
+]
+
+// 货物移动字段别名容错（后端字段名有出入时自动适配）
+const GOODS_MOVE_FIELD_MAP = {
+  orderNo: ['orderNo', 'workOrderNo', 'orderCode'],
+  materialCode: ['materialCode', 'materialNo'],
+  materialDesc: ['materialDesc', 'materialName'],
+  storageLocation: ['storageLocation', 'storagePlace', 'locationCode'],
+  moveQty: ['quantity', 'moveQty', 'moveQuantity', 'qty'],
+  moveType: ['movementType', 'moveType', 'moveTypeName', 'type'],
+  postingDate: ['postingDate', 'postDate', 'moveDate', 'moveTime'],
+}
+
+const isGoodsMove = computed(() => String(workOrderType.value).includes('货物移动'))
+
+const columns = computed(() => (isGoodsMove.value ? GOODS_MOVE_COLUMNS : WORK_ORDER_COLUMNS))
+
+function pickField(item, aliases) {
+  for (const alias of aliases) {
+    const value = item?.[alias]
+    if (value !== undefined && value !== null) {
+      return value
+    }
+  }
+  return ''
+}
+
+// 按当前识别类型的字段映射规整每行数据，保证与表头一一对应
+function normalizePreviewRow(item) {
+  if (!item) return null
+  if (!isGoodsMove.value) return item
+
+  return Object.fromEntries(
+    Object.entries(GOODS_MOVE_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
+  )
+}
+
+const displayTableData = computed(() => tableData.value.map(normalizePreviewRow))
+
+function getCellValue(row, columnKey, index) {
+  if (columnKey === 'index') {
+    return (pageNum.value - 1) * pageSize.value + index + 1
+  }
+  return row?.[columnKey]
+}
 
 const previewErrors = computed(() => [...errorRows.value, ...localErrors.value])
 const hasPreviewErrors = computed(() => previewErrors.value.length > 0)
@@ -299,13 +355,7 @@ function handleBackToList() {
       <div class="overflow-x-auto">
         <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
           <colgroup>
-            <col class="w-16" />
-            <col class="w-40" />
-            <col class="w-36" />
-            <col class="w-[180px]" />
-            <col class="w-28" />
-            <col class="w-36" />
-            <col class="w-32" />
+            <col v-for="column in columns" :key="column.key" :class="column.width" />
           </colgroup>
           <thead class="bg-slate-50">
             <tr>
@@ -315,16 +365,16 @@ function handleBackToList() {
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 bg-white">
-            <tr v-for="(item, index) in tableData" :key="`${item.orderNo}-${index}`" class="transition hover:bg-slate-50">
-              <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderNo }}</td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.materialCode }}</td>
-              <td class="max-w-[180px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
-                {{ item.materialDesc }}
+            <tr v-for="(item, index) in displayTableData" :key="`${item?.orderNo}-${index}`" class="transition hover:bg-slate-50">
+              <td
+                v-for="column in columns"
+                :key="column.key"
+                :class="column.wrap
+                  ? 'max-w-[180px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700'
+                  : `whitespace-nowrap px-6 py-4 text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`"
+              >
+                {{ getCellValue(item, column.key, index) }}
               </td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderQty }}</td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.planStartDate }}</td>
-              <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.confirmedQty }}</td>
             </tr>
           </tbody>
         </table>
