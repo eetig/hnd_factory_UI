@@ -24,8 +24,41 @@ dayjs.locale('zh-cn')
 
 const tabs = [
   { key: 'workOrder', label: '工单汇总' },
+  { key: 'material', label: '领料汇总' },
+  { key: 'inbound', label: '入库汇总' },
+  { key: 'report', label: '工单报工' },
+  { key: 'costing', label: '工单核算' },
+  { key: 'materialCosting', label: '原辅料核算' },
+  { key: 'weekly', label: '周统计' },
   { key: 'import', label: '文件导入' },
 ]
+
+// 工单报工表格列
+const reportColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'orderType', label: '工单类型', width: 'w-40' },
+  { key: 'materialDesc', label: '产成品', width: 'w-[200px]' },
+  { key: 'orderQty', label: '订单数量', width: 'w-28' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-32' },
+]
+
+// 工单类型：按单号前缀识别
+const REPORT_ORDER_TYPES = [
+  { prefix: '1000', label: '操作工单' },
+  { prefix: '2000', label: '包装工单' },
+  { prefix: '3000', label: '转桶工单' },
+  { prefix: '4000', label: '返工工单' },
+]
+
+function getReportOrderType(orderNo) {
+  const matched = REPORT_ORDER_TYPES.find((type) => String(orderNo ?? '').startsWith(type.prefix))
+  return matched?.label ?? ''
+}
+
+// 数量求和后去掉浮点误差（保留至多 3 位小数）
+function formatQty(value) {
+  return Number.isFinite(value) ? Number(value.toFixed(3)) : 0
+}
 const activeTab = ref('workOrder')
 
 const tableData = ref([])
@@ -57,6 +90,45 @@ const productOptions = computed(() => {
     .filter(Boolean)
 
   return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+})
+
+// 工单报工数据：取工单汇总页当前查出的数据，按 工单类型 + 产成品 分组，数量与产量按组求和
+const reportRows = computed(() => {
+  const rows = new Map()
+
+  for (const order of tableDataAll.value) {
+    const orderType = getReportOrderType(order?.orderNo)
+    if (!orderType) continue
+
+    const materialDesc = String(order.materialDesc ?? '').trim()
+    if (!materialDesc) continue
+
+    const key = `${orderType}|${materialDesc}`
+    let row = rows.get(key)
+
+    if (!row) {
+      row = { orderType, materialDesc, orderQty: 0, confirmedQty: 0 }
+      rows.set(key, row)
+    }
+
+    row.orderQty += Number(order.orderQty) || 0
+    row.confirmedQty += Number(order.confirmedQty) || 0
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      orderQty: formatQty(row.orderQty),
+      confirmedQty: formatQty(row.confirmedQty),
+    }))
+    .sort((left, right) => {
+      const byType = REPORT_ORDER_TYPES.findIndex((type) => type.label === left.orderType) -
+        REPORT_ORDER_TYPES.findIndex((type) => type.label === right.orderType)
+
+      if (byType !== 0) return byType
+
+      return left.materialDesc.localeCompare(right.materialDesc, 'zh-CN')
+    })
 })
 
 const columns = [
@@ -362,7 +434,430 @@ async function fetchWorkOrders() {
   }
 }
 
-onMounted(fetchWorkOrders)
+// ===== 领料汇总 =====
+const pickColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'pickDate', label: '领料时间', width: 'w-36' },
+  { key: 'pickQty', label: '领料数量', width: 'w-28' },
+  { key: 'unit', label: '单位', width: 'w-24' },
+  { key: 'imageUrl', label: '线下单据', width: 'w-24' },
+]
+
+// 领料汇总字段别名容错（后端字段名有出入时自动适配）
+const PICK_FIELD_MAP = {
+  materialName: ['materialName', 'materialDesc'],
+  materialCode: ['materialCode', 'materialNo'],
+  pickDate: ['pickDate', 'pickTime'],
+  pickQty: ['pickQty', 'pickQuantity', 'quantity'],
+  unit: ['unit'],
+  imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
+}
+
+const pickStartDate = ref(getFirstDayOfCurrentMonth())
+const pickEndDate = ref(getToday())
+const allPickRecords = ref([])
+const pickFiltered = ref([])
+const pickTableData = ref([])
+const pickPageNum = ref(1)
+const pickPageSize = ref(10)
+const pickTotal = ref(0)
+const pickLoading = ref(false)
+const pickError = ref('')
+const pickImageDialogVisible = ref(false)
+const currentPickImage = ref('')
+
+function openPickImageDialog(record) {
+  if (!record?.imageUrl) return
+  currentPickImage.value = record.imageUrl
+  pickImageDialogVisible.value = true
+}
+
+function pickField(item, aliases) {
+  for (const alias of aliases) {
+    const value = item?.[alias]
+    if (value !== undefined && value !== null) {
+      return value
+    }
+  }
+  return ''
+}
+
+function normalizePickRecord(item) {
+  if (!item) return null
+  return Object.fromEntries(
+    Object.entries(PICK_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
+  )
+}
+
+function getPickDate(record) {
+  return String(record?.pickDate ?? '').slice(0, 10)
+}
+
+// 领料时间由近到远排序
+function sortPickRecords(records) {
+  return [...records].sort((left, right) => {
+    const leftTime = new Date(getPickDate(left) || 0).getTime()
+    const rightTime = new Date(getPickDate(right) || 0).getTime()
+    return rightTime - leftTime
+  })
+}
+
+function getPickPageData(page = pickPageNum.value) {
+  pickPageNum.value = page
+  const startIndex = (pickPageNum.value - 1) * pickPageSize.value
+  const endIndex = startIndex + pickPageSize.value
+  pickTableData.value = pickFiltered.value.slice(startIndex, endIndex)
+}
+
+function filterPickRecords() {
+  pickFiltered.value = sortPickRecords(
+    allPickRecords.value.filter((record) => {
+      const pickDate = getPickDate(record)
+      if (!pickDate) return false
+      return pickDate >= pickStartDate.value && pickDate <= pickEndDate.value
+    }),
+  )
+
+  pickTotal.value = pickFiltered.value.length
+  pickPageNum.value = 1
+  getPickPageData()
+}
+
+async function fetchPickRecords() {
+  pickLoading.value = true
+  pickError.value = ''
+
+  try {
+    const res = await request.get('/api/pick/list')
+
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '领料汇总接口返回异常，请稍后重试。')
+    }
+
+    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
+    allPickRecords.value = dataList.map(normalizePickRecord).filter(Boolean)
+    filterPickRecords()
+  } catch (error) {
+    allPickRecords.value = []
+    pickFiltered.value = []
+    pickTableData.value = []
+    pickTotal.value = 0
+
+    if (error?.response?.status === 404) {
+      pickError.value = '领料汇总接口不存在，请确认后端服务已实现该接口。'
+    } else {
+      pickError.value =
+        error.response?.data?.msg || error.message || '领料汇总数据加载失败，请稍后重试。'
+    }
+  } finally {
+    pickLoading.value = false
+  }
+}
+
+// ===== 入库汇总 =====
+const inboundColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'inboundDate', label: '领料时间', width: 'w-36' },
+  { key: 'inboundQty', label: '领料数量', width: 'w-28' },
+  { key: 'unit', label: '单位', width: 'w-24' },
+  { key: 'imageUrl', label: '线下单据', width: 'w-24' },
+]
+
+// 入库汇总字段别名容错（后端字段名有出入时自动适配）
+const INBOUND_FIELD_MAP = {
+  materialName: ['materialName', 'materialDesc'],
+  materialCode: ['materialCode', 'materialNo'],
+  inboundDate: ['inboundDate', 'inboundTime'],
+  inboundQty: ['inboundQty', 'inboundQuantity', 'quantity'],
+  unit: ['unit'],
+  imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
+}
+
+const inboundStartDate = ref(getFirstDayOfCurrentMonth())
+const inboundEndDate = ref(getToday())
+const allInboundRecords = ref([])
+const inboundFiltered = ref([])
+const inboundTableData = ref([])
+const inboundPageNum = ref(1)
+const inboundPageSize = ref(10)
+const inboundTotal = ref(0)
+const inboundLoading = ref(false)
+const inboundError = ref('')
+const inboundImageDialogVisible = ref(false)
+const currentInboundImage = ref('')
+
+function openInboundImageDialog(record) {
+  if (!record?.imageUrl) return
+  currentInboundImage.value = record.imageUrl
+  inboundImageDialogVisible.value = true
+}
+
+function normalizeInboundRecord(item) {
+  if (!item) return null
+  return Object.fromEntries(
+    Object.entries(INBOUND_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
+  )
+}
+
+function getInboundDate(record) {
+  return String(record?.inboundDate ?? '').slice(0, 10)
+}
+
+// 入库时间由近到远排序
+function sortInboundRecords(records) {
+  return [...records].sort((left, right) => {
+    const leftTime = new Date(getInboundDate(left) || 0).getTime()
+    const rightTime = new Date(getInboundDate(right) || 0).getTime()
+    return rightTime - leftTime
+  })
+}
+
+function getInboundPageData(page = inboundPageNum.value) {
+  inboundPageNum.value = page
+  const startIndex = (inboundPageNum.value - 1) * inboundPageSize.value
+  const endIndex = startIndex + inboundPageSize.value
+  inboundTableData.value = inboundFiltered.value.slice(startIndex, endIndex)
+}
+
+function filterInboundRecords() {
+  inboundFiltered.value = sortInboundRecords(
+    allInboundRecords.value.filter((record) => {
+      const inboundDate = getInboundDate(record)
+      if (!inboundDate) return false
+      return inboundDate >= inboundStartDate.value && inboundDate <= inboundEndDate.value
+    }),
+  )
+
+  inboundTotal.value = inboundFiltered.value.length
+  inboundPageNum.value = 1
+  getInboundPageData()
+}
+
+async function fetchInboundRecords() {
+  inboundLoading.value = true
+  inboundError.value = ''
+
+  try {
+    const res = await request.get('/api/inbound/list')
+
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '入库汇总接口返回异常，请稍后重试。')
+    }
+
+    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
+    allInboundRecords.value = dataList.map(normalizeInboundRecord).filter(Boolean)
+    filterInboundRecords()
+  } catch (error) {
+    allInboundRecords.value = []
+    inboundFiltered.value = []
+    inboundTableData.value = []
+    inboundTotal.value = 0
+
+    if (error?.response?.status === 404) {
+      inboundError.value = '入库汇总接口不存在，请确认后端服务已实现该接口。'
+    } else {
+      inboundError.value =
+        error.response?.data?.msg || error.message || '入库汇总数据加载失败，请稍后重试。'
+    }
+  } finally {
+    inboundLoading.value = false
+  }
+}
+
+// ===== 工单核算 =====
+const costingColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'materialName', label: '已入库产成品', width: 'w-[240px]', wrap: true },
+  { key: 'materialCode', label: '产成品编码', width: 'w-36' },
+  { key: 'inboundQty', label: '入库数', width: 'w-32' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-32' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-32' },
+]
+
+// 产成品名称归一化：忽略空格/下划线差异，用于跨系统（入库数据与工单数据）名称匹配
+function normalizeMaterialName(name) {
+  return String(name ?? '').replace(/[\s_]/g, '').toLowerCase()
+}
+
+// 已报工数量：按归一化产成品名称汇总工单的确认产量
+const reportedQtyMap = computed(() => {
+  const map = new Map()
+
+  for (const order of tableDataAll.value) {
+    const key = normalizeMaterialName(order.materialDesc)
+    if (!key) continue
+
+    map.set(key, (map.get(key) || 0) + (Number(order.confirmedQty) || 0))
+  }
+
+  return map
+})
+
+// 工单核算：以已入库产成品（入库汇总的物料名称去重）为行，入库数与已报工数汇总，差额为未报工数
+const costingRows = computed(() => {
+  const rows = new Map()
+
+  // 入库数：来自入库汇总数据，按物料名称去重
+  for (const record of allInboundRecords.value) {
+    const materialName = String(record.materialName ?? '').trim()
+    const key = normalizeMaterialName(materialName)
+    if (!key) continue
+
+    if (!rows.has(key)) {
+      rows.set(key, {
+        materialName,
+        materialCode: String(record.materialCode ?? '').trim(),
+        inboundQty: 0,
+        reportedQty: 0,
+      })
+    }
+
+    rows.get(key).inboundQty += Number(record.inboundQty) || 0
+  }
+
+  // 已报工数：按产成品名称匹配工单报工数据
+  for (const row of rows.values()) {
+    row.reportedQty = reportedQtyMap.value.get(normalizeMaterialName(row.materialName)) || 0
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      inboundQty: formatQty(row.inboundQty),
+      reportedQty: formatQty(row.reportedQty),
+      unreportedQty: formatQty(row.inboundQty - row.reportedQty),
+    }))
+    .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
+})
+
+// ===== 原辅料核算 =====
+// 暂照搬工单核算的列与计算逻辑，后续按原辅料规则单独调整（不影响工单核算）
+const materialCostingColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'materialName', label: '已领物料名称', width: 'w-[240px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'pickQty', label: '领料数', width: 'w-32' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-32' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-32' },
+]
+
+// 货物移动：按物料编码汇总移动数量（原辅料核算的「已报工数」来源）
+const GOODS_MOVE_FIELD_MAP = {
+  materialCode: ['materialCode', 'materialNo'],
+  moveQty: ['moveQty', 'quantity', 'moveQuantity', 'qty'],
+  moveDate: ['moveDate', 'postingDate', 'postDate'],
+  moveType: ['moveType', 'movementType', 'type'],
+}
+
+const goodsMoveRecords = ref([])
+const goodsMoveError = ref('')
+// 货物移动查询时间范围（默认当月初至今天）
+const goodsMoveStartDate = ref(getFirstDayOfCurrentMonth())
+const goodsMoveEndDate = ref(getToday())
+
+const goodsMoveQtyMap = computed(() => {
+  const map = new Map()
+
+  for (const record of goodsMoveRecords.value) {
+    const code = String(record.materialCode ?? '').trim()
+    if (!code) continue
+
+    map.set(code, (map.get(code) || 0) + (Number(record.moveQty) || 0))
+  }
+
+  return map
+})
+
+function normalizeGoodsMoveRecord(item) {
+  if (!item) return null
+  return Object.fromEntries(
+    Object.entries(GOODS_MOVE_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
+  )
+}
+
+async function fetchGoodsMoveRecords() {
+  goodsMoveError.value = ''
+
+  try {
+    const res = await request.get('/api/goods-move/list', {
+      params: {
+        startDate: goodsMoveStartDate.value,
+        endDate: goodsMoveEndDate.value,
+      },
+    })
+
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '货物移动接口返回异常。')
+    }
+
+    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
+    goodsMoveRecords.value = dataList
+      .map(normalizeGoodsMoveRecord)
+      .filter((record) => {
+        if (!record) return false
+
+        const moveDate = String(record.moveDate ?? '').slice(0, 10)
+        // 无日期字段时不过滤（避免后端未返回该字段导致数据全空）
+        if (!moveDate) return true
+
+        return moveDate >= goodsMoveStartDate.value && moveDate <= goodsMoveEndDate.value
+      })
+  } catch (error) {
+    goodsMoveRecords.value = []
+    goodsMoveError.value = error?.response?.status === 404
+      ? '货物移动接口不存在，请确认后端服务已实现该接口。'
+      : error.response?.data?.msg || error.message || '货物移动数据加载失败。'
+  }
+}
+
+// 原辅料核算：以领料汇总的物料名称去重为行，领料数按物料累加，已报工数取货物移动数量合计
+const materialCostingRows = computed(() => {
+  const rows = new Map()
+
+  // 领料数：来自领料汇总数据，按物料名称去重
+  for (const record of allPickRecords.value) {
+    const materialName = String(record.materialName ?? '').trim()
+    const key = normalizeMaterialName(materialName)
+    if (!key) continue
+
+    if (!rows.has(key)) {
+      rows.set(key, {
+        materialName,
+        materialCode: String(record.materialCode ?? '').trim(),
+        pickQty: 0,
+        reportedQty: 0,
+      })
+    }
+
+    rows.get(key).pickQty += Number(record.pickQty) || 0
+  }
+
+  // 已报工数：按物料编码汇总货物移动数量，先求和再取绝对值
+  for (const row of rows.values()) {
+    const code = String(row.materialCode ?? '').trim()
+    row.reportedQty = Math.abs(goodsMoveQtyMap.value.get(code) || 0)
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      pickQty: formatQty(row.pickQty),
+      reportedQty: formatQty(row.reportedQty),
+      unreportedQty: formatQty(row.pickQty - row.reportedQty),
+    }))
+    .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
+})
+
+onMounted(() => {
+  fetchWorkOrders()
+  fetchPickRecords()
+  fetchInboundRecords()
+  fetchGoodsMoveRecords()
+})
 </script>
 
 <template>
@@ -652,6 +1147,450 @@ onMounted(fetchWorkOrders)
         :selected="productFilter"
         @select="handleProductSelected"
       />
+      </div>
+
+      <div v-show="activeTab === 'material'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-4">
+            <el-date-picker
+              v-model="pickStartDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="起始日期"
+              :first-day-of-week="1"
+              @change="filterPickRecords"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <el-date-picker
+              v-model="pickEndDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :first-day-of-week="1"
+              @change="filterPickRecords"
+            />
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <div v-if="pickLoading" class="loading-mask" aria-label="正在加载领料汇总">
+              <div class="loader" role="status" aria-label="正在加载">
+                <div class="loader-text">Loading...</div>
+                <div class="loader-bar"></div>
+              </div>
+            </div>
+
+            <div v-else-if="pickError" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">!</div>
+              <h2 class="text-base font-semibold text-slate-900">暂时无法获取领料汇总</h2>
+              <p class="mt-2 text-sm text-slate-500">{{ pickError }}</p>
+              <button
+                type="button"
+                class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                @click="fetchPickRecords"
+              >
+                重新加载
+              </button>
+            </div>
+
+            <div v-else-if="pickTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
+              <h2 class="text-base font-semibold text-slate-900">暂无领料数据</h2>
+              <p class="mt-2 text-sm text-slate-500">当前没有可展示的领料记录</p>
+            </div>
+
+            <div v-else>
+              <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                  <colgroup>
+                    <col v-for="column in pickColumns" :key="column.key" :class="column.width" />
+                  </colgroup>
+                  <thead class="bg-slate-50">
+                    <tr>
+                      <th
+                        v-for="column in pickColumns"
+                        :key="column.key"
+                        scope="col"
+                        class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr
+                      v-for="(record, index) in pickTableData"
+                      :key="`${record.materialCode}-${record.pickDate}-${index}`"
+                      class="transition hover:bg-slate-50"
+                    >
+                      <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                        {{ record.materialName }}
+                      </td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.pickDate }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.pickQty }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                        <span
+                          v-if="record.imageUrl"
+                          class="inline-block cursor-pointer"
+                          @click="openPickImageDialog(record)"
+                        >
+                          <img
+                            :src="record.imageUrl"
+                            alt="领料单据"
+                            class="h-12 w-12 rounded-lg object-cover transition hover:opacity-80"
+                          />
+                        </span>
+                        <span
+                          v-else
+                          class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-400"
+                          aria-label="暂无图片"
+                        >
+                          <svg
+                            class="h-6 w-6"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="m21 15-5-5L5 21" />
+                          </svg>
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+                <el-pagination
+                  v-model:current-page="pickPageNum"
+                  :page-size="pickPageSize"
+                  :total="pickTotal"
+                  layout="total, prev, pager, next"
+                  background
+                  @current-change="getPickPageData"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <el-dialog
+          v-model="pickImageDialogVisible"
+          width="70vw"
+          align-center
+        >
+          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
+            <img
+              v-if="currentPickImage"
+              :src="currentPickImage"
+              alt="领料单据大图"
+              class="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        </el-dialog>
+      </div>
+
+      <div v-show="activeTab === 'inbound'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-4">
+            <el-date-picker
+              v-model="inboundStartDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="起始日期"
+              :first-day-of-week="1"
+              @change="filterInboundRecords"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <el-date-picker
+              v-model="inboundEndDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :first-day-of-week="1"
+              @change="filterInboundRecords"
+            />
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <div v-if="inboundLoading" class="loading-mask" aria-label="正在加载入库汇总">
+              <div class="loader" role="status" aria-label="正在加载">
+                <div class="loader-text">Loading...</div>
+                <div class="loader-bar"></div>
+              </div>
+            </div>
+
+            <div v-else-if="inboundError" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">!</div>
+              <h2 class="text-base font-semibold text-slate-900">暂时无法获取入库汇总</h2>
+              <p class="mt-2 text-sm text-slate-500">{{ inboundError }}</p>
+              <button
+                type="button"
+                class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                @click="fetchInboundRecords"
+              >
+                重新加载
+              </button>
+            </div>
+
+            <div v-else-if="inboundTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
+              <h2 class="text-base font-semibold text-slate-900">暂无入库数据</h2>
+              <p class="mt-2 text-sm text-slate-500">当前没有可展示的入库记录</p>
+            </div>
+
+            <div v-else>
+              <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                  <colgroup>
+                    <col v-for="column in inboundColumns" :key="column.key" :class="column.width" />
+                  </colgroup>
+                  <thead class="bg-slate-50">
+                    <tr>
+                      <th
+                        v-for="column in inboundColumns"
+                        :key="column.key"
+                        scope="col"
+                        class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr
+                      v-for="(record, index) in inboundTableData"
+                      :key="`${record.materialCode}-${record.inboundDate}-${index}`"
+                      class="transition hover:bg-slate-50"
+                    >
+                      <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                        {{ record.materialName }}
+                      </td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.inboundDate }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.inboundQty }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                        <span
+                          v-if="record.imageUrl"
+                          class="inline-block cursor-pointer"
+                          @click="openInboundImageDialog(record)"
+                        >
+                          <img
+                            :src="record.imageUrl"
+                            alt="入库单据"
+                            class="h-12 w-12 rounded-lg object-cover transition hover:opacity-80"
+                          />
+                        </span>
+                        <span
+                          v-else
+                          class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-400"
+                          aria-label="暂无图片"
+                        >
+                          <svg
+                            class="h-6 w-6"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="m21 15-5-5L5 21" />
+                          </svg>
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+                <el-pagination
+                  v-model:current-page="inboundPageNum"
+                  :page-size="inboundPageSize"
+                  :total="inboundTotal"
+                  layout="total, prev, pager, next"
+                  background
+                  @current-change="getInboundPageData"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <el-dialog
+          v-model="inboundImageDialogVisible"
+          width="70vw"
+          align-center
+        >
+          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
+            <img
+              v-if="currentInboundImage"
+              :src="currentInboundImage"
+              alt="入库单据大图"
+              class="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        </el-dialog>
+      </div>
+
+      <div v-show="activeTab === 'report'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+              <colgroup>
+                <col v-for="column in reportColumns" :key="column.key" :class="column.width" />
+              </colgroup>
+              <thead class="bg-slate-50">
+                <tr>
+                  <th
+                    v-for="column in reportColumns"
+                    :key="column.key"
+                    scope="col"
+                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {{ column.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 bg-white">
+                <tr v-if="reportRows.length === 0">
+                  <td :colspan="reportColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                    暂无报工数据
+                  </td>
+                </tr>
+                <tr
+                  v-for="(item, index) in reportRows"
+                  :key="`${item.orderType}-${item.materialDesc}-${index}`"
+                  class="transition hover:bg-slate-50"
+                >
+                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderType }}</td>
+                  <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                    {{ item.materialDesc }}
+                  </td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderQty }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.confirmedQty }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'costing'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+              <colgroup>
+                <col v-for="column in costingColumns" :key="column.key" :class="column.width" />
+              </colgroup>
+              <thead class="bg-slate-50">
+                <tr>
+                  <th
+                    v-for="column in costingColumns"
+                    :key="column.key"
+                    scope="col"
+                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {{ column.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 bg-white">
+                <tr v-if="costingRows.length === 0">
+                  <td :colspan="costingColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                    暂无核算数据
+                  </td>
+                </tr>
+                <tr
+                  v-for="(item, index) in costingRows"
+                  :key="`${item.materialName}-${index}`"
+                  class="transition hover:bg-slate-50"
+                >
+                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                    {{ item.materialName }}
+                  </td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.materialCode }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.inboundQty }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.reportedQty }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'materialCosting'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="overflow-x-auto">
+            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+              <colgroup>
+                <col v-for="column in materialCostingColumns" :key="column.key" :class="column.width" />
+              </colgroup>
+              <thead class="bg-slate-50">
+                <tr>
+                  <th
+                    v-for="column in materialCostingColumns"
+                    :key="column.key"
+                    scope="col"
+                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {{ column.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 bg-white">
+                <tr v-if="materialCostingRows.length === 0">
+                  <td :colspan="materialCostingColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                    暂无核算数据
+                  </td>
+                </tr>
+                <tr
+                  v-for="(item, index) in materialCostingRows"
+                  :key="`${item.materialName}-${index}`"
+                  class="transition hover:bg-slate-50"
+                >
+                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                    {{ item.materialName }}
+                  </td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.materialCode }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.pickQty }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.reportedQty }}</td>
+                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'weekly'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
+            <h2 class="text-base font-semibold text-slate-900">周统计</h2>
+            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
+          </div>
+        </section>
       </div>
 
       <div v-show="activeTab === 'import'">

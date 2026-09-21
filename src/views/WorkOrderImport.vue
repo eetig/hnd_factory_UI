@@ -51,6 +51,22 @@ const GOODS_MOVE_COLUMNS = [
   { key: 'postingDate', label: '过账日期', width: 'w-36' },
 ]
 
+const INBOUND_COLUMNS = [
+  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'inboundDate', label: '领料时间', width: 'w-36' },
+  { key: 'inboundQty', label: '领料数量', width: 'w-28' },
+  { key: 'unit', label: '单位', width: 'w-24' },
+]
+
+const PICK_COLUMNS = [
+  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'pickDate', label: '领料时间', width: 'w-36' },
+  { key: 'pickQty', label: '领料数量', width: 'w-28' },
+  { key: 'unit', label: '单位', width: 'w-24' },
+]
+
 // 货物移动字段别名容错（后端字段名有出入时自动适配）
 const GOODS_MOVE_FIELD_MAP = {
   orderNo: ['orderNo', 'workOrderNo', 'orderCode'],
@@ -62,9 +78,37 @@ const GOODS_MOVE_FIELD_MAP = {
   postingDate: ['postingDate', 'postDate', 'moveDate', 'moveTime'],
 }
 
-const isGoodsMove = computed(() => String(workOrderType.value).includes('货物移动'))
+// 生产入库单字段别名容错
+const INBOUND_FIELD_MAP = {
+  materialName: ['materialName', 'materialDesc'],
+  materialCode: ['materialCode', 'materialNo'],
+  inboundDate: ['inboundDate', 'inboundTime'],
+  inboundQty: ['inboundQty', 'inboundQuantity', 'quantity'],
+  unit: ['unit'],
+}
 
-const columns = computed(() => (isGoodsMove.value ? GOODS_MOVE_COLUMNS : WORK_ORDER_COLUMNS))
+// 领料汇总字段别名容错
+const PICK_FIELD_MAP = {
+  materialName: ['materialName', 'materialDesc'],
+  materialCode: ['materialCode', 'materialNo'],
+  pickDate: ['pickDate', 'pickTime'],
+  pickQty: ['pickQty', 'pickQuantity', 'quantity'],
+  unit: ['unit'],
+}
+
+// 识别类型 → 表格配置（未命中的类型回落到工单汇总表头）
+const TABLE_CONFIGS = [
+  { type: '生产入库单', columns: INBOUND_COLUMNS, fieldMap: INBOUND_FIELD_MAP },
+  { type: '领料汇总', columns: PICK_COLUMNS, fieldMap: PICK_FIELD_MAP },
+  { type: '货物移动', columns: GOODS_MOVE_COLUMNS, fieldMap: GOODS_MOVE_FIELD_MAP },
+]
+
+const activeTableConfig = computed(() => {
+  const type = String(workOrderType.value)
+  return TABLE_CONFIGS.find((config) => type.includes(config.type)) ?? null
+})
+
+const columns = computed(() => activeTableConfig.value?.columns ?? WORK_ORDER_COLUMNS)
 
 function pickField(item, aliases) {
   for (const alias of aliases) {
@@ -79,10 +123,12 @@ function pickField(item, aliases) {
 // 按当前识别类型的字段映射规整每行数据，保证与表头一一对应
 function normalizePreviewRow(item) {
   if (!item) return null
-  if (!isGoodsMove.value) return item
+
+  const fieldMap = activeTableConfig.value?.fieldMap
+  if (!fieldMap) return item
 
   return Object.fromEntries(
-    Object.entries(GOODS_MOVE_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
+    Object.entries(fieldMap).map(([key, aliases]) => [key, pickField(item, aliases)]),
   )
 }
 
@@ -171,6 +217,12 @@ function collectEmptyOrderNoErrors(list) {
   }, [])
 }
 
+// 仅含工单号的类型才校验工单号必填（如工单汇总、货物移动；生产入库单无此字段）
+const requiresOrderNo = computed(() => {
+  const fieldMap = activeTableConfig.value?.fieldMap
+  return fieldMap ? 'orderNo' in fieldMap : true
+})
+
 async function fetchPreview(file) {
   resetState()
   currentFile.value = file
@@ -192,7 +244,7 @@ async function fetchPreview(file) {
     workOrderType.value = data.workOrderType || ''
     taskId.value = data.taskId || ''
     errorRows.value = Array.isArray(data.errorRows) ? data.errorRows : []
-    localErrors.value = collectEmptyOrderNoErrors(previewList.value)
+    localErrors.value = requiresOrderNo.value ? collectEmptyOrderNoErrors(previewList.value) : []
     pageNum.value = 1
     getPageData()
 
