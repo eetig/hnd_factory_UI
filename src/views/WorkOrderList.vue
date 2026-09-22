@@ -15,7 +15,9 @@ import {
   ElDialog,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElPagination,
+  ElSelect,
 } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'element-plus/dist/index.css'
@@ -1698,6 +1700,42 @@ function renderVessel() {
   }
 }
 
+// 步进调节液位（配合软拟态按钮）
+function stepVesselLevel(direction, step = 10) {
+  const next = Number(vesselLevel.value || 0) + direction * step
+  vesselLevel.value = Math.max(0, Math.min(vesselGeometry.value.maxLevel, next))
+}
+
+// 按住按钮时连续调节：先响应一次，停顿 320ms 后进入连发，步长加大以便快速扫过
+let vesselStepDelayTimer = null
+let vesselStepRepeatTimer = null
+
+function stopStepHold() {
+  if (vesselStepDelayTimer) {
+    clearTimeout(vesselStepDelayTimer)
+    vesselStepDelayTimer = null
+  }
+  if (vesselStepRepeatTimer) {
+    clearInterval(vesselStepRepeatTimer)
+    vesselStepRepeatTimer = null
+  }
+  window.removeEventListener('pointerup', stopStepHold)
+  window.removeEventListener('pointercancel', stopStepHold)
+}
+
+function startStepHold(direction) {
+  stopStepHold()
+  stepVesselLevel(direction)
+
+  vesselStepDelayTimer = setTimeout(() => {
+    vesselStepRepeatTimer = setInterval(() => stepVesselLevel(direction, 25), 40)
+  }, 320)
+
+  // 在按钮外松开鼠标也能停止
+  window.addEventListener('pointerup', stopStepHold)
+  window.addEventListener('pointercancel', stopStepHold)
+}
+
 watch(vesselLevel, (value) => {
   const maxLevel = vesselGeometry.value.maxLevel
   const clamped = Math.max(0, Math.min(maxLevel, Number(value) || 0))
@@ -1747,7 +1785,10 @@ onMounted(() => {
   loadVesselImage()
 })
 
-onUnmounted(stopVesselLoop)
+onUnmounted(() => {
+  stopVesselLoop()
+  stopStepHold()
+})
 
 // 切到压力容器 Tab 时启动波纹动画，离开时停帧
 watch(activeTab, (tab) => {
@@ -2709,29 +2750,50 @@ watch(activeTab, (tab) => {
 
           <div class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 px-6 py-4">
             <div>
-              <select
-                v-model="vesselKey"
-                aria-label="选择储罐"
-                class="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-base font-semibold text-slate-900 outline-none transition hover:border-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-              >
-                <option v-for="vessel in VESSELS" :key="vessel.key" :value="vessel.key">
-                  {{ vessel.label }}
-                </option>
-              </select>
+              <el-select v-model="vesselKey" class="vessel-select" aria-label="选择储罐">
+                <el-option
+                  v-for="vessel in VESSELS"
+                  :key="vessel.key"
+                  :label="vessel.label"
+                  :value="vessel.key"
+                />
+              </el-select>
               <p class="mt-1.5 text-xs text-slate-500">{{ vesselDescription }}</p>
             </div>
 
-            <label class="flex items-center gap-3 text-sm text-slate-700">
-              液位高度（mm）
-              <input
-                v-model.number="vesselLevel"
-                type="number"
-                min="0"
-                :max="vesselGeometry.maxLevel"
-                step="10"
-                class="w-28 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-right text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
-              />
-            </label>
+            <div class="flex items-center gap-3 text-sm text-slate-700">
+              <span>液位高度（mm）</span>
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  class="vessel-step"
+                  aria-label="降低液位"
+                  @pointerdown.prevent="startStepHold(-1)"
+                  @keydown.enter.prevent="stepVesselLevel(-1)"
+                  @keydown.space.prevent="stepVesselLevel(-1)"
+                >
+                  −
+                </button>
+                <input
+                  v-model.number="vesselLevel"
+                  type="number"
+                  min="0"
+                  :max="vesselGeometry.maxLevel"
+                  step="10"
+                  class="vessel-level-input w-24 text-right"
+                />
+                <button
+                  type="button"
+                  class="vessel-step"
+                  aria-label="升高液位"
+                  @pointerdown.prevent="startStepHold(1)"
+                  @keydown.enter.prevent="stepVesselLevel(1)"
+                  @keydown.space.prevent="stepVesselLevel(1)"
+                >
+                  +
+                </button>
+              </div>
+            </div>
           </div>
 
           <div class="flex flex-wrap items-center gap-x-10 gap-y-3 border-t border-slate-100 px-6 py-4">
@@ -2802,6 +2864,101 @@ watch(activeTab, (tab) => {
 </template>
 
 <style scoped>
+/* 软拟态（Soft UI）步进按钮：降低/升高液位 */
+.vessel-step {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ffffff, #e8ecf1);
+  color: #475569;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  box-shadow:
+    4px 4px 8px rgba(163, 177, 198, 0.45),
+    -3px -3px 8px rgba(255, 255, 255, 0.9),
+    inset 0 -2px 3px -1px rgba(0, 0, 0, 0.06),
+    inset 0 2px 3px -1px rgba(255, 255, 255, 0.9);
+  transition: all 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.vessel-step:hover {
+  color: #0f172a;
+}
+
+.vessel-step:active {
+  filter: blur(0.4px);
+  background: linear-gradient(145deg, #e8ecf1, #ffffff);
+  box-shadow:
+    inset 4px 4px 8px rgba(163, 177, 198, 0.5),
+    inset -3px -3px 8px rgba(255, 255, 255, 0.95);
+}
+
+/* 液位输入框：软拟态外观 + 隐藏原生上下箭头 */
+.vessel-level-input {
+  border: none;
+  border-radius: 12px;
+  padding: 9px 14px;
+  background-color: #eef1f5;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  box-shadow:
+    4px 4px 8px rgba(163, 177, 198, 0.45),
+    -3px -3px 8px rgba(255, 255, 255, 0.9);
+  transition: box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* 聚焦时呈"按入"质感的凹陷效果 */
+.vessel-level-input:focus {
+  background-color: #f5f8fb;
+  box-shadow:
+    inset 3px 3px 6px rgba(163, 177, 198, 0.4),
+    inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+}
+
+.vessel-level-input::-webkit-outer-spin-button,
+.vessel-level-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.vessel-level-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* 储罐选择器：按标题样式呈现 */
+.vessel-select {
+  min-width: 220px;
+}
+
+.vessel-select :deep(.el-select__wrapper) {
+  padding: 7px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgb(15 23 42);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px rgb(203 213 225) inset;
+  transition: box-shadow 0.2s ease;
+}
+
+.vessel-select :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px rgb(148 163 184) inset;
+}
+
+.vessel-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px rgb(14 165 233) inset, 0 0 0 3px rgb(224 242 254);
+}
+
 /* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */
 .math-formula {
   font-family: Cambria, 'Cambria Math', 'Times New Roman', 'Songti SC', serif;
