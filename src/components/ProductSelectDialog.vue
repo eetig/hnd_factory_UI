@@ -6,6 +6,7 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   options: { type: Array, default: () => [] },
   selected: { type: String, default: '' },
+  label: { type: String, default: '产成品' },
 })
 
 const emit = defineEmits(['update:modelValue', 'select'])
@@ -43,12 +44,12 @@ function handleSelect(item) {
     @update:model-value="emit('update:modelValue', $event)"
   >
     <template #header>
-      <span class="text-base font-semibold text-slate-900">选择产成品</span>
+      <span class="text-base font-semibold text-slate-900">选择{{ label }}</span>
     </template>
 
     <el-input
       v-model="keyword"
-      placeholder="输入关键词搜索产成品"
+      :placeholder="`输入关键词搜索${label}`"
       clearable
       autofocus
     />
@@ -71,7 +72,7 @@ function handleSelect(item) {
       </button>
 
       <p v-if="!filteredOptions.length" class="px-4 py-10 text-center text-sm text-slate-400">
-        没有匹配的产成品
+        没有匹配的{{ label }}
       </p>
     </div>
   </el-dialog>

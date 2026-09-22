@@ -1,9 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import request from '../api/request'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
 import WorkOrderImport from './WorkOrderImport.vue'
+import vesselImageUrl from '../assets/vessel.png'
+import vesselProduct150ImageUrl from '../assets/vessel-product150.png'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 import {
@@ -30,6 +32,8 @@ const tabs = [
   { key: 'costing', label: '工单核算' },
   { key: 'materialCosting', label: '原辅料核算' },
   { key: 'weekly', label: '周统计' },
+  { key: 'daily', label: '日报表记录' },
+  { key: 'vessel', label: '压力容器体积计算' },
   { key: 'import', label: '文件导入' },
 ]
 
@@ -38,8 +42,8 @@ const reportColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'orderType', label: '工单类型', width: 'w-40' },
   { key: 'materialDesc', label: '产成品', width: 'w-[200px]' },
-  { key: 'orderQty', label: '订单数量', width: 'w-28' },
-  { key: 'confirmedQty', label: '确认的产量', width: 'w-32' },
+  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
 ]
 
 // 工单类型：按单号前缀识别
@@ -82,6 +86,34 @@ const imageUploading = ref(false)
 const imageDeleting = ref(false)
 const productDialogVisible = ref(false)
 const productFilter = ref('')
+const orderTypeDialogVisible = ref(false)
+const orderTypeFilter = ref('')
+const orderNoDialogVisible = ref(false)
+const orderNoFilter = ref('')
+
+// 工单号可选项（当前日期范围内的工单号，倒序）
+const orderNoOptions = computed(() => {
+  const orderNos = allWorkOrders.value
+    .filter(matchesDateRange)
+    .map((order) => String(order.orderNo ?? '').trim())
+    .filter(Boolean)
+
+  return [...new Set(orderNos)].sort((left, right) =>
+    String(right).localeCompare(String(left), undefined, { numeric: true }),
+  )
+})
+
+// 工单类型可选项（按 操作→包装→转桶→返工 固定顺序）
+const orderTypeOptions = computed(() => {
+  const types = new Set(
+    allWorkOrders.value
+      .filter(matchesDateRange)
+      .map((order) => getReportOrderType(order.orderNo))
+      .filter(Boolean),
+  )
+
+  return REPORT_ORDER_TYPES.map((type) => type.label).filter((label) => types.has(label))
+})
 
 const productOptions = computed(() => {
   const names = allWorkOrders.value
@@ -132,14 +164,15 @@ const reportRows = computed(() => {
 })
 
 const columns = [
-  { key: 'index', label: '序号' },
-  { key: 'orderNo', label: '工单类型' },
-  { key: 'materialCode', label: '物料编码' },
-  { key: 'materialDesc', label: '产成品' },
-  { key: 'orderQty', label: '订单数量' },
-  { key: 'planStartDate', label: '基本开始日期' },
-  { key: 'confirmedQty', label: '确认的产量' },
-  { key: 'imageUrl', label: '入库单据' },
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'planStartDate', label: '基本开始日期', width: 'w-36' },
+  { key: 'orderNo', label: '工单号', width: 'w-40' },
+  { key: 'orderType', label: '工单类型', width: 'w-32' },
+  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'materialDesc', label: '产成品', width: 'w-[180px]' },
+  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
+  { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
 ]
 
 function formatDate(date) {
@@ -260,6 +293,36 @@ function handleProductSelected(materialDesc) {
 
 function clearProductFilter() {
   productFilter.value = ''
+  filterWorkOrders()
+}
+
+function openOrderTypeDialog() {
+  orderTypeDialogVisible.value = true
+}
+
+function handleOrderTypeSelected(orderType) {
+  orderTypeFilter.value = orderType
+  orderTypeDialogVisible.value = false
+  filterWorkOrders()
+}
+
+function clearOrderTypeFilter() {
+  orderTypeFilter.value = ''
+  filterWorkOrders()
+}
+
+function openOrderNoDialog() {
+  orderNoDialogVisible.value = true
+}
+
+function handleOrderNoSelected(orderNo) {
+  orderNoFilter.value = orderNo
+  orderNoDialogVisible.value = false
+  filterWorkOrders()
+}
+
+function clearOrderNoFilter() {
+  orderNoFilter.value = ''
   filterWorkOrders()
 }
 
@@ -416,9 +479,23 @@ function matchesProductFilter(order) {
   return String(order.materialDesc ?? '').trim() === productFilter.value
 }
 
+function matchesOrderTypeFilter(order) {
+  if (!orderTypeFilter.value) return true
+  return getReportOrderType(order.orderNo) === orderTypeFilter.value
+}
+
+function matchesOrderNoFilter(order) {
+  if (!orderNoFilter.value) return true
+  return String(order.orderNo ?? '').trim() === orderNoFilter.value
+}
+
 function filterWorkOrders() {
   tableDataAll.value = allWorkOrders.value.filter(
-    (order) => matchesDateRange(order) && matchesProductFilter(order),
+    (order) =>
+      matchesDateRange(order) &&
+      matchesProductFilter(order) &&
+      matchesOrderTypeFilter(order) &&
+      matchesOrderNoFilter(order),
   )
 
   total.value = tableDataAll.value.length
@@ -460,10 +537,10 @@ async function fetchWorkOrders() {
 // ===== 领料汇总 =====
 const pickColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'pickDate', label: '领料时间', width: 'w-36' },
   { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'pickDate', label: '领料时间', width: 'w-36' },
-  { key: 'pickQty', label: '领料数量', width: 'w-28' },
+  { key: 'pickQty', label: '领料数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
   { key: 'imageUrl', label: '线下单据', width: 'w-24' },
 ]
@@ -582,10 +659,10 @@ async function fetchPickRecords() {
 // ===== 入库汇总 =====
 const inboundColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'inboundDate', label: '入库时间', width: 'w-36' },
   { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'inboundDate', label: '领料时间', width: 'w-36' },
-  { key: 'inboundQty', label: '领料数量', width: 'w-28' },
+  { key: 'inboundQty', label: '领料数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
   { key: 'imageUrl', label: '线下单据', width: 'w-24' },
 ]
@@ -696,9 +773,9 @@ const costingColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'materialName', label: '已入库产成品', width: 'w-[240px]', wrap: true },
   { key: 'materialCode', label: '产成品编码', width: 'w-36' },
-  { key: 'inboundQty', label: '入库数', width: 'w-32' },
-  { key: 'reportedQty', label: '已报工数', width: 'w-32' },
-  { key: 'unreportedQty', label: '未报工数', width: 'w-32' },
+  { key: 'inboundQty', label: '入库数', width: 'w-32', align: 'right' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right' },
 ]
 
 // 产成品名称归一化：忽略空格/下划线差异，用于跨系统（入库数据与工单数据）名称匹配
@@ -763,10 +840,15 @@ const materialCostingColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'materialName', label: '已领物料名称', width: 'w-[240px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'pickQty', label: '领料数', width: 'w-32' },
-  { key: 'reportedQty', label: '已报工数', width: 'w-32' },
-  { key: 'unreportedQty', label: '未报工数', width: 'w-32' },
+  { key: 'pickQty', label: '领料数', width: 'w-32', align: 'right' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right' },
 ]
+
+// 领料数换算系数（按物料编码，如 HND-V150_辅料包 ×3.2）
+const MATERIAL_COSTING_QTY_FACTORS = {
+  '112004292': 3.2,
+}
 
 // 货物移动：按物料编码汇总移动数量（原辅料核算的「已报工数」来源）
 const GOODS_MOVE_FIELD_MAP = {
@@ -859,9 +941,13 @@ const materialCostingRows = computed(() => {
     rows.get(key).pickQty += Number(record.pickQty) || 0
   }
 
-  // 已报工数：按物料编码汇总货物移动数量，先求和再取绝对值
+  // 领料数换算系数 + 已报工数：按物料编码处理
   for (const row of rows.values()) {
     const code = String(row.materialCode ?? '').trim()
+
+    // 领料数乘以该物料的换算系数（无配置则为 1）
+    row.pickQty *= MATERIAL_COSTING_QTY_FACTORS[code] ?? 1
+    // 已报工数按物料编码汇总货物移动数量，先求和再取绝对值
     row.reportedQty = Math.abs(goodsMoveQtyMap.value.get(code) || 0)
   }
 
@@ -879,23 +965,23 @@ const materialCostingRows = computed(() => {
 // 表头（固定展示项，内容暂为固定值，后续再接入实际数据）
 const weeklyColumns = [
   { key: 'name', label: '名称' },
-  { key: 'pickQty', label: '原料领用' },
-  { key: 'remainingQty', label: '车间剩余' },
-  { key: 'actualQty', label: '实际使用' },
+  { key: 'pickQty', label: '原料领用', align: 'right' },
+  { key: 'remainingQty', label: '车间剩余', align: 'right' },
+  { key: 'actualQty', label: '实际使用', align: 'right' },
   { key: 'unitConsumption', label: '单耗' },
 ]
 
-// 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示；remainingQty 为车间剩余初始值）
-// unitLabel 为单耗单位；unitFactor 为单耗换算系数（氯铂酸按克计，需 ×1000）
+// 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示）
+// unitLabel 为单耗单位；unitFactor 为单耗换算系数（氯铂酸按克计，需 ×1000）；qtyFactor 为领用数量换算系数
 const WEEKLY_ROW_DEFINITIONS = [
-  { materialCode: '111001787', name: '三氯氢硅（kg）', remainingQty: '3554', unitLabel: '吨/吨', unitFactor: 1 },
-  { materialCode: '111001786', name: '电石（kg）', remainingQty: '', unitLabel: '吨/吨', unitFactor: 1 },
-  { materialCode: '112004292', name: '氯铂酸（g）', remainingQty: '', unitLabel: '克/吨', unitFactor: 1000 },
+  { materialCode: '111001787', name: '三氯氢硅（kg）', unitLabel: '吨/吨', unitFactor: 1, qtyFactor: 1 },
+  { materialCode: '111001786', name: '电石（kg）', unitLabel: '吨/吨', unitFactor: 1, qtyFactor: 1 },
+  { materialCode: '112004292', name: '氯铂酸（g）', unitLabel: '克/吨', unitFactor: 1000, qtyFactor: 20 },
 ]
 
-// 车间剩余：手动填写（按物料编码存放），不填显示 /
+// 车间剩余：手动填写（按物料编码存放），默认全部为空，不填显示 /
 const weeklyRemaining = ref(
-  Object.fromEntries(WEEKLY_ROW_DEFINITIONS.map((row) => [row.materialCode, row.remainingQty])),
+  Object.fromEntries(WEEKLY_ROW_DEFINITIONS.map((row) => [row.materialCode, ''])),
 )
 
 // 150产品（HND-V150）物料编码
@@ -946,7 +1032,8 @@ const weeklyRows = computed(() => {
   const inboundQty = weeklyInboundQty.value
 
   return WEEKLY_ROW_DEFINITIONS.map((row) => {
-    const pickQty = getWeeklyPickQty(row.materialCode)
+    // 原料领用：领料汇总求和后乘以该物料的换算系数
+    const pickQty = formatQty(getWeeklyPickQty(row.materialCode) * (row.qtyFactor ?? 1))
     // 实际使用 = 原料领用 − 车间剩余（车间剩余未填按 0 计）
     const remainingQty = Number(weeklyRemaining.value[row.materialCode]) || 0
     const actualQty = formatQty(pickQty - remainingQty)
@@ -1276,11 +1363,399 @@ async function fetchWeeklyOrders() {
   }
 }
 
+// ===== 储罐体积计算 =====
+// 储罐配置：新增储罐只需在数组里加一项
+// imageBounds 为底图中罐体的像素边界（由图像分析 + 轮廓叠加验证得出）
+const VESSELS = [
+  {
+    key: 'silane',
+    type: 'horizontal',
+    label: '三氯氢硅储罐A/B示意图',
+    diameter: 2800, // 筒体内径 φ2.8m
+    cylinderLength: 5500, // 筒体长度 l=5.5m
+    straightFlange: 40, // 封头直边 0.04m
+    headDepth: 700, // 封头曲面内高度 hi=0.7m
+    image: vesselImageUrl,
+    imageBounds: { width: 2150, height: 1060, left: 75, right: 2069, top: 131, bottom: 931 },
+    displayWidth: 680,
+    liquid: { fill: 'rgba(208, 226, 128, 0.28)', line: '#a6cb3c' }, // 浅黄绿（氯系介质特征色，柔和不刺眼）
+  },
+  {
+    key: 'product150',
+    type: 'vertical',
+    label: '150产品储罐示意图',
+    diameter: 3600, // 筒体内径 φ3.6m
+    cylinderHeight: 4800, // 筒体高度 4.8m
+    headDepth: 900, // 顶部封头曲面内高度 0.9m
+    image: vesselProduct150ImageUrl,
+    imageBounds: { width: 1760, height: 1938, left: 131, right: 1351, top: 63, tangent: 310, bottom: 1930 },
+    displayWidth: 420,
+    liquid: { fill: 'rgba(0, 255, 255, 0.4)', line: '#00ffff' },
+  },
+]
+
+const vesselKey = ref(VESSELS[0].key)
+const selectedVessel = computed(
+  () => VESSELS.find((item) => item.key === vesselKey.value) ?? VESSELS[0],
+)
+
+// 当前储罐的几何参数（统一两种罐型的字段）
+const vesselGeometry = computed(() => {
+  const vessel = selectedVessel.value
+
+  if (vessel.type === 'vertical') {
+    return {
+      type: 'vertical',
+      diameter: vessel.diameter,
+      radius: vessel.diameter / 2,
+      cylinderHeight: vessel.cylinderHeight,
+      headDepth: vessel.headDepth,
+      maxLevel: vessel.cylinderHeight + vessel.headDepth,
+      imageBounds: vessel.imageBounds,
+      displayWidth: vessel.displayWidth ?? 680,
+      liquid: vessel.liquid,
+    }
+  }
+
+  const headTotal = vessel.straightFlange + vessel.headDepth
+  return {
+    type: 'horizontal',
+    diameter: vessel.diameter,
+    radius: vessel.diameter / 2,
+    cylinderLength: vessel.cylinderLength,
+    straightFlange: vessel.straightFlange,
+    headDepth: vessel.headDepth,
+    headTotal,
+    totalLength: vessel.cylinderLength + 2 * headTotal,
+    maxLevel: vessel.diameter,
+    imageBounds: vessel.imageBounds,
+      displayWidth: vessel.displayWidth ?? 680,
+      liquid: vessel.liquid,
+  }
+})
+
+const vesselLevel = ref(1400)
+const vesselDisplayLevel = ref(1400) // 动画中的实时液位
+const vesselCanvas = ref(null)
+const vesselImage = ref(null)
+
+// 液体体积（mm³）—— 闭式解，依据工艺核算公式：
+//   V(h) = L[ πr²/2 − (r−h)√(2rh−h²) − r²·arcsin((r−h)/r) ]
+//        + (π·hi)/(3r) · [ 3r²h − r³ + (r−h)³ ]
+// 第一项为筒体（含两端直边）内液体体积，第二项为两端椭圆封头曲面内液体体积合计
+function liquidVolumeMm3(depth, geometry) {
+  const r = geometry.radius
+  const h = Math.max(0, Math.min(geometry.maxLevel, Number(depth) || 0))
+  if (h <= 0) return 0
+
+  // 立式储罐：筒体为等径圆柱，顶部为半椭球封头
+  //   V = πr²h（筒体段） + πr²[ t − t³/(3hi²) ]（封头段，t = h − 筒体高度）
+  if (geometry.type === 'vertical') {
+    const cylinderPart = Math.PI * r * r * Math.min(h, geometry.cylinderHeight)
+    if (h <= geometry.cylinderHeight) return cylinderPart
+
+    const t = h - geometry.cylinderHeight
+    const hi = geometry.headDepth
+    const headPart = Math.PI * r * r * (t - Math.pow(t, 3) / (3 * hi * hi))
+    return cylinderPart + headPart
+  }
+
+  // 卧式储罐：闭式解，依据工艺核算公式
+  const straightLength = geometry.cylinderLength + 2 * geometry.straightFlange
+  const sqrtTerm = Math.sqrt(Math.max(0, 2 * r * h - h * h))
+  const asinTerm = Math.asin(Math.max(-1, Math.min(1, (r - h) / r)))
+
+  const cylinder =
+    straightLength * ((Math.PI * r * r) / 2 - (r - h) * sqrtTerm - r * r * asinTerm)
+  const heads =
+    ((Math.PI * geometry.headDepth) / (3 * r)) *
+    (3 * r * r * h - Math.pow(r, 3) + Math.pow(r - h, 3))
+
+  return cylinder + heads
+}
+
+const vesselVolume = computed(
+  () => liquidVolumeMm3(vesselDisplayLevel.value, vesselGeometry.value) / 1e9,
+)
+const vesselCapacity = computed(
+  () => liquidVolumeMm3(vesselGeometry.value.maxLevel, vesselGeometry.value) / 1e9,
+)
+
+// 规格说明（随所选储罐变化）
+const vesselDescription = computed(() => {
+  const g = vesselGeometry.value
+  const m = (value) => (value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+  const capacity = vesselCapacity.value.toFixed(1)
+
+  if (g.type === 'vertical') {
+    return `筒体 φ${m(g.diameter)}m，筒体高度 ${m(g.cylinderHeight)}m，封头内高度 ${m(g.headDepth)}m，总容积 ${capacity} m³`
+  }
+
+  return `筒体 l=${m(g.cylinderLength)}m，φ${m(g.diameter)}m，直边 ${m(g.straightFlange)}m，封头内高度 hi=${m(g.headDepth)}m，总容积 ${capacity} m³`
+})
+
+// 水波纹参数
+const VESSEL_WAVE = {
+  amplitude: 3.5, // 波幅（画布像素）
+  wavelength: 120, // 波长（画布像素）
+  speed: 0.04, // 相位推进速度（弧度 / 60fps 帧），约 2.6 秒一个周期
+}
+
+let vesselFrameId = null
+let vesselWavePhase = 0
+let vesselLastFrameTime = 0
+let vesselTransition = null // 液位缓动过渡状态
+
+function stopVesselLoop() {
+  if (vesselFrameId !== null) {
+    cancelAnimationFrame(vesselFrameId)
+    vesselFrameId = null
+  }
+  vesselLastFrameTime = 0
+}
+
+// 单帧：推进液位缓动 + 波纹相位，然后重绘
+function vesselFrame(now) {
+  // 按真实时间推进，避免不同刷新率下速度不一致
+  const deltaMs = vesselLastFrameTime ? Math.min(50, now - vesselLastFrameTime) : 16.7
+  vesselLastFrameTime = now
+
+  if (vesselTransition) {
+    const progress = Math.min(1, (now - vesselTransition.startTime) / vesselTransition.duration)
+    const eased = 1 - Math.pow(1 - progress, 3) // easeOutCubic：起步快、接近目标时放缓
+
+    vesselDisplayLevel.value = vesselTransition.from + vesselTransition.delta * eased
+
+    if (progress >= 1) {
+      vesselDisplayLevel.value = vesselTransition.from + vesselTransition.delta
+      vesselTransition = null
+    }
+  }
+
+  vesselWavePhase += VESSEL_WAVE.speed * (deltaMs / 16.7)
+  renderVessel()
+
+  // 切到其他 Tab 时自动停帧，不浪费性能
+  if (activeTab.value === 'vessel') {
+    vesselFrameId = requestAnimationFrame(vesselFrame)
+  } else {
+    vesselFrameId = null
+  }
+}
+
+function startVesselLoop() {
+  if (vesselFrameId === null && activeTab.value === 'vessel') {
+    vesselFrameId = requestAnimationFrame(vesselFrame)
+  }
+}
+
+// 液位平滑过渡到目标值（时长随变化幅度自适应，700~2000ms）
+function animateVesselTo(target) {
+  const from = vesselDisplayLevel.value
+  const delta = target - from
+
+  if (Math.abs(delta) < 0.5) {
+    vesselDisplayLevel.value = target
+    vesselTransition = null
+    renderVessel()
+    return
+  }
+
+  vesselTransition = {
+    from,
+    delta,
+    duration: 700 + (Math.abs(delta) / vesselGeometry.value.maxLevel) * 1300,
+    startTime: performance.now(),
+  }
+
+  startVesselLoop()
+}
+
+// 底图：卧式椭圆封头储罐图纸
+// 罐体在底图中的像素边界（由图像分析 + 轮廓叠加验证得出，横纵比例尺一致：0.28567 px/mm）
+
+// 绘制罐体底图与液位填充
+function renderVessel() {
+  const canvas = vesselCanvas.value
+  if (!canvas) return
+
+  const image = vesselImage.value
+  if (!image) return
+
+  const geometry = vesselGeometry.value
+  const bounds = geometry.imageBounds
+  const dpr = window.devicePixelRatio || 1
+
+  // 画布尺寸按底图比例自适应
+  const W = 1075
+  const H = Math.round((W * bounds.height) / bounds.width)
+
+  canvas.width = W * dpr
+  canvas.height = H * dpr
+
+  const ctx = canvas.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, W, H)
+  ctx.drawImage(image, 0, 0, W, H)
+
+  const s = W / bounds.width
+  const vesselPath = new Path2D()
+  let tankLeft
+  let tankRight
+  let bottomY
+  let levelY
+
+  if (geometry.type === 'vertical') {
+    // 立式罐：顶部半椭球封头 + 等径筒体
+    const left = bounds.left * s
+    const right = bounds.right * s
+    const tangentY = bounds.tangent * s
+    const bottom = bounds.bottom * s
+    const cx = (left + right) / 2
+    const rx = (right - left) / 2
+    const ry = tangentY - bounds.top * s
+
+    vesselPath.moveTo(left, tangentY)
+    vesselPath.ellipse(cx, tangentY, rx, ry, 0, Math.PI, Math.PI * 2)
+    vesselPath.lineTo(right, bottom)
+    vesselPath.lineTo(left, bottom)
+    vesselPath.closePath()
+
+    tankLeft = left
+    tankRight = right
+    bottomY = bottom
+
+    // 液位映射：筒体段、封头段分别对应底图中各自的高度
+    // （底图封头绘制得比实际略扁，分段映射可保证液面始终贴合图纸结构）
+    const level = vesselDisplayLevel.value
+    const apexY = bounds.top * s
+
+    if (level <= geometry.cylinderHeight) {
+      levelY = bottom - (level / geometry.cylinderHeight) * (bottom - tangentY)
+    } else {
+      const t = Math.min(geometry.headDepth, level - geometry.cylinderHeight)
+      levelY = tangentY - (t / geometry.headDepth) * (tangentY - apexY)
+    }
+  } else {
+    // 卧式罐：椭圆封头曲面 + 直边 + 圆筒
+    const R = ((bounds.bottom - bounds.top) / 2) * s
+    const cy = ((bounds.top + bounds.bottom) / 2) * s
+    const hiPx = (geometry.headDepth / geometry.diameter) * 2 * R // 曲面深度
+    const flangePx = (geometry.straightFlange / geometry.diameter) * 2 * R // 直边
+    const xEllipseLeft = bounds.left * s + hiPx
+    const xEllipseRight = bounds.right * s - hiPx
+    const xCylLeft = xEllipseLeft + flangePx
+    const bottom = bounds.bottom * s
+
+    vesselPath.moveTo(xCylLeft, cy - R)
+    vesselPath.lineTo(xEllipseRight, cy - R)
+    vesselPath.ellipse(xEllipseRight, cy, hiPx, R, 0, -Math.PI / 2, Math.PI / 2)
+    vesselPath.lineTo(xEllipseLeft, cy + R)
+    vesselPath.ellipse(xEllipseLeft, cy, hiPx, R, 0, Math.PI / 2, Math.PI * 1.5)
+    vesselPath.closePath()
+
+    tankLeft = bounds.left * s
+    tankRight = bounds.right * s
+    bottomY = bottom
+    levelY = bottom - (vesselDisplayLevel.value / geometry.diameter) * 2 * R
+  }
+
+  // 液位填充：以正弦波纹作为液面，裁剪到罐体内腔轮廓
+  if (vesselDisplayLevel.value > 0) {
+    const span = tankRight - tankLeft
+    const steps = 140
+    const wavePoints = []
+
+    for (let i = 0; i <= steps; i += 1) {
+      const x = tankLeft + (span * i) / steps
+      const phase = ((x - tankLeft) / VESSEL_WAVE.wavelength) * Math.PI * 2 + vesselWavePhase
+      wavePoints.push([x, levelY + Math.sin(phase) * VESSEL_WAVE.amplitude])
+    }
+
+    // 填充区：波纹 + 下边界闭合
+    const fillPath = new Path2D()
+    wavePoints.forEach(([x, y], i) => (i === 0 ? fillPath.moveTo(x, y) : fillPath.lineTo(x, y)))
+    fillPath.lineTo(tankRight, bottomY + 6)
+    fillPath.lineTo(tankLeft, bottomY + 6)
+    fillPath.closePath()
+
+    // 液面线：只描波纹本身
+    const surfacePath = new Path2D()
+    wavePoints.forEach(([x, y], i) =>
+      (i === 0 ? surfacePath.moveTo(x, y) : surfacePath.lineTo(x, y)),
+    )
+
+    ctx.save()
+    ctx.clip(vesselPath)
+    ctx.fillStyle = geometry.liquid.fill
+    ctx.fill(fillPath)
+
+    ctx.strokeStyle = geometry.liquid.line
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    ctx.stroke(surfacePath)
+    ctx.restore()
+  }
+}
+
+watch(vesselLevel, (value) => {
+  const maxLevel = vesselGeometry.value.maxLevel
+  const clamped = Math.max(0, Math.min(maxLevel, Number(value) || 0))
+  if (clamped !== value) {
+    vesselLevel.value = clamped
+    return
+  }
+  animateVesselTo(clamped)
+})
+
+// 切换储罐：液位按新罐径钳制、底图按需重载
+let loadedVesselImageUrl = ''
+
+function loadVesselImage() {
+  const url = selectedVessel.value.image
+  if (loadedVesselImageUrl === url && vesselImage.value) {
+    renderVessel()
+    return
+  }
+
+  loadedVesselImageUrl = url
+  const image = new Image()
+  image.onload = () => {
+    vesselImage.value = image
+    renderVessel()
+  }
+  image.src = url
+}
+
+watch(vesselKey, () => {
+  const maxLevel = vesselGeometry.value.maxLevel
+  if (vesselLevel.value > maxLevel) vesselLevel.value = maxLevel
+  if (vesselDisplayLevel.value > maxLevel) {
+    vesselDisplayLevel.value = maxLevel
+    vesselTransition = null
+  }
+  loadVesselImage()
+})
+
 onMounted(() => {
   fetchWorkOrders()
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+
+  // 加载罐体底图后再绘制液位
+  loadVesselImage()
+})
+
+onUnmounted(stopVesselLoop)
+
+// 切到压力容器 Tab 时启动波纹动画，离开时停帧
+watch(activeTab, (tab) => {
+  if (tab === 'vessel') {
+    startVesselLoop()
+  } else {
+    stopVesselLoop()
+  }
 })
 </script>
 
@@ -1360,7 +1835,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <div v-else-if="tableData.length === 0 && !productFilter" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+        <div v-else-if="tableData.length === 0 && !productFilter && !orderTypeFilter && !orderNoFilter" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
           <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
           <h2 class="text-base font-semibold text-slate-900">暂无工单数据</h2>
           <p class="mt-2 text-sm text-slate-500">当前没有可展示的工单记录</p>
@@ -1370,19 +1845,82 @@ onMounted(() => {
           <div class="overflow-x-auto">
             <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
               <colgroup>
-                <col class="w-16" />
-                <col class="w-40" />
-                <col class="w-36" />
-                <col class="w-[180px]" />
-                <col class="w-28" />
-                <col class="w-36" />
-                <col class="w-32" />
-                <col class="w-24" />
+                <col v-for="column in columns" :key="column.key" :class="column.width" />
               </colgroup>
               <thead class="bg-slate-50">
                 <tr>
-                  <th v-for="column in columns" :key="column.key" scope="col" class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <template v-if="column.key === 'materialDesc'">
+                  <th
+                    v-for="column in columns"
+                    :key="column.key"
+                    scope="col"
+                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                  >
+                    <template v-if="column.key === 'orderNo'">
+                      <span class="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                          :class="orderNoFilter ? 'text-sky-600' : ''"
+                          :title="orderNoFilter ? `已筛选：${orderNoFilter}` : '点击选择工单号'"
+                          @click="openOrderNoDialog"
+                        >
+                          <span class="truncate">{{ orderNoFilter || column.label }}</span>
+                          <svg
+                            class="h-3.5 w-3.5 shrink-0"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                          >
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                          </svg>
+                        </button>
+                        <button
+                          v-if="orderNoFilter"
+                          type="button"
+                          class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                          aria-label="清除工单号筛选"
+                          @click="clearOrderNoFilter"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </template>
+                    <template v-else-if="column.key === 'orderType'">
+                      <span class="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="inline-flex max-w-[110px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                          :class="orderTypeFilter ? 'text-sky-600' : ''"
+                          :title="orderTypeFilter ? `已筛选：${orderTypeFilter}` : '点击选择工单类型'"
+                          @click="openOrderTypeDialog"
+                        >
+                          <span class="truncate">{{ orderTypeFilter || column.label }}</span>
+                          <svg
+                            class="h-3.5 w-3.5 shrink-0"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            aria-hidden="true"
+                          >
+                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                          </svg>
+                        </button>
+                        <button
+                          v-if="orderTypeFilter"
+                          type="button"
+                          class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                          aria-label="清除工单类型筛选"
+                          @click="clearOrderTypeFilter"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    </template>
+                    <template v-else-if="column.key === 'materialDesc'">
                       <span class="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -1420,58 +1958,22 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-if="tableData.length === 0">
-                  <td :colspan="columns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                  <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-400">
                     没有符合筛选条件的工单
                   </td>
                 </tr>
                 <tr v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="transition hover:bg-slate-50">
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ order.orderNo }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ order.materialCode }}</td>
-                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.planStartDate }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.orderNo }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.materialCode }}</td>
+                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ order.materialDesc }}
                   </td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ order.orderQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ order.planStartDate }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ order.confirmedQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
-                    <span
-                      v-if="order.imageList?.length"
-                      class="relative inline-block cursor-pointer"
-                      @click="openImageDialog(order)"
-                    >
-                      <img
-                        :src="order.imageList[0]?.url"
-                        alt="入库单据"
-                        class="h-12 w-12 rounded-lg object-cover transition hover:opacity-80"
-                      />
-                      <span
-                        v-if="order.imageList.length > 1"
-                        class="absolute -right-2 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-xs font-semibold text-white"
-                      >
-                        {{ order.imageList.length }}
-                      </span>
-                    </span>
-                    <span
-                      v-else
-                      class="flex h-12 w-12 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-400 transition hover:bg-slate-200"
-                      aria-label="暂无入库单据"
-                      @click="openImageDialog(order)"
-                    >
-                      <svg
-                        class="h-6 w-6"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="1.5"
-                        aria-hidden="true"
-                      >
-                        <rect x="3" y="3" width="18" height="18" rx="2" />
-                        <circle cx="8.5" cy="8.5" r="1.5" />
-                        <path d="m21 15-5-5L5 21" />
-                      </svg>
-                    </span>
-                  </td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1571,11 +2073,27 @@ onMounted(() => {
         :selected="productFilter"
         @select="handleProductSelected"
       />
+
+      <ProductSelectDialog
+        v-model="orderTypeDialogVisible"
+        :options="orderTypeOptions"
+        :selected="orderTypeFilter"
+        label="工单类型"
+        @select="handleOrderTypeSelected"
+      />
+
+      <ProductSelectDialog
+        v-model="orderNoDialogVisible"
+        :options="orderNoOptions"
+        :selected="orderNoFilter"
+        label="工单号"
+        @select="handleOrderNoSelected"
+      />
       </div>
 
       <div v-show="activeTab === 'material'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-4">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <el-date-picker
               v-model="pickStartDate"
               type="date"
@@ -1637,7 +2155,8 @@ onMounted(() => {
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         {{ column.label }}
                       </th>
@@ -1649,15 +2168,15 @@ onMounted(() => {
                       :key="`${record.materialCode}-${record.pickDate}-${index}`"
                       class="transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.pickDate }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
                       </td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.pickDate }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.pickQty }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
                           v-if="record.imageUrl"
                           class="inline-block cursor-pointer"
@@ -1666,16 +2185,16 @@ onMounted(() => {
                           <img
                             :src="record.imageUrl"
                             alt="领料单据"
-                            class="h-12 w-12 rounded-lg object-cover transition hover:opacity-80"
+                            class="h-5 w-5 rounded border border-slate-200 object-cover transition hover:opacity-80"
                           />
                         </span>
                         <span
                           v-else
-                          class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-400"
+                          class="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-400"
                           aria-label="暂无图片"
                         >
                           <svg
-                            class="h-6 w-6"
+                            class="h-3 w-3"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -1693,7 +2212,7 @@ onMounted(() => {
                 </table>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
                 <el-pagination
                   v-model:current-page="pickPageNum"
                   :page-size="pickPageSize"
@@ -1725,7 +2244,7 @@ onMounted(() => {
 
       <div v-show="activeTab === 'inbound'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-4">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <el-date-picker
               v-model="inboundStartDate"
               type="date"
@@ -1787,7 +2306,8 @@ onMounted(() => {
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         {{ column.label }}
                       </th>
@@ -1799,15 +2319,15 @@ onMounted(() => {
                       :key="`${record.materialCode}-${record.inboundDate}-${index}`"
                       class="transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.inboundDate }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
                       </td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.inboundDate }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.inboundQty }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
                           v-if="record.imageUrl"
                           class="inline-block cursor-pointer"
@@ -1816,16 +2336,16 @@ onMounted(() => {
                           <img
                             :src="record.imageUrl"
                             alt="入库单据"
-                            class="h-12 w-12 rounded-lg object-cover transition hover:opacity-80"
+                            class="h-5 w-5 rounded border border-slate-200 object-cover transition hover:opacity-80"
                           />
                         </span>
                         <span
                           v-else
-                          class="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 text-slate-400"
+                          class="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-400"
                           aria-label="暂无图片"
                         >
                           <svg
-                            class="h-6 w-6"
+                            class="h-3 w-3"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="currentColor"
@@ -1843,7 +2363,7 @@ onMounted(() => {
                 </table>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
                 <el-pagination
                   v-model:current-page="inboundPageNum"
                   :page-size="inboundPageSize"
@@ -1886,7 +2406,8 @@ onMounted(() => {
                     v-for="column in reportColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
                   </th>
@@ -1894,7 +2415,7 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-if="reportRows.length === 0">
-                  <td :colspan="reportColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                  <td :colspan="reportColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
                     暂无报工数据
                   </td>
                 </tr>
@@ -1903,13 +2424,13 @@ onMounted(() => {
                   :key="`${item.orderType}-${item.materialDesc}-${index}`"
                   class="transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderType }}</td>
-                  <td class="max-w-[200px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.orderType }}</td>
+                  <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialDesc }}
                   </td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.orderQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.confirmedQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.orderQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.confirmedQty }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1930,7 +2451,8 @@ onMounted(() => {
                     v-for="column in costingColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
                   </th>
@@ -1938,7 +2460,7 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-if="costingRows.length === 0">
-                  <td :colspan="costingColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                  <td :colspan="costingColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
                     暂无核算数据
                   </td>
                 </tr>
@@ -1947,14 +2469,14 @@ onMounted(() => {
                   :key="`${item.materialName}-${index}`"
                   class="transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
                   </td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.materialCode }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.inboundQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.reportedQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.inboundQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1975,7 +2497,8 @@ onMounted(() => {
                     v-for="column in materialCostingColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap px-6 py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
                   </th>
@@ -1983,7 +2506,7 @@ onMounted(() => {
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-if="materialCostingRows.length === 0">
-                  <td :colspan="materialCostingColumns.length" class="px-6 py-16 text-center text-sm text-slate-400">
+                  <td :colspan="materialCostingColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
                     暂无核算数据
                   </td>
                 </tr>
@@ -1992,14 +2515,14 @@ onMounted(() => {
                   :key="`${item.materialName}-${index}`"
                   class="transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-3 text-sm text-slate-700">
+                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
+                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
                   </td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.materialCode }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.pickQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm text-slate-600">{{ item.reportedQty }}</td>
-                  <td class="whitespace-nowrap px-6 py-4 text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
+                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.pickQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</td>
+                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
                 </tr>
               </tbody>
             </table>
@@ -2041,7 +2564,7 @@ onMounted(() => {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th colspan="5" class="border border-slate-300 px-6 py-3.5 text-base font-bold tracking-wide text-slate-800">
+                    <th colspan="5" class="border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
                       {{ weeklyTitle }}
                     </th>
                   </tr>
@@ -2050,7 +2573,8 @@ onMounted(() => {
                       v-for="column in weeklyColumns"
                       :key="column.key"
                       scope="col"
-                      class="border border-slate-300 bg-cyan-100 px-6 py-3 text-sm font-semibold text-slate-700"
+                      class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
+                      :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                     >
                       {{ column.label }}
                     </th>
@@ -2058,23 +2582,23 @@ onMounted(() => {
                 </thead>
                 <tbody>
                   <tr v-for="row in weeklyRows" :key="row.name">
-                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.name }}</td>
-                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.pickQty }}</td>
+                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</td>
+                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
                     <td class="border border-slate-300 p-0">
                       <input
                         v-model="weeklyRemaining[row.materialCode]"
                         type="text"
                         placeholder="/"
                         aria-label="车间剩余"
-                        class="w-full bg-transparent px-3 py-3 text-center text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                        class="w-full bg-transparent py-2 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
                       />
                     </td>
-                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.actualQty }}</td>
-                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
+                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
+                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
                   </tr>
                   <tr>
-                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
-                    <td colspan="4" class="border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-800">
+                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
+                    <td colspan="4" class="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
                       {{ weeklyInboundRow.value }}
                     </td>
                   </tr>
@@ -2166,6 +2690,109 @@ onMounted(() => {
         />
       </div>
 
+      <div v-show="activeTab === 'daily'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
+            <h2 class="text-base font-semibold text-slate-900">日报表记录</h2>
+            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
+          </div>
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'vessel'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="p-6">
+            <canvas ref="vesselCanvas" class="mx-auto block h-auto w-full"
+            :style="{ maxWidth: `${vesselGeometry.displayWidth}px` }"></canvas>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 px-6 py-4">
+            <div>
+              <select
+                v-model="vesselKey"
+                aria-label="选择储罐"
+                class="cursor-pointer rounded-lg border border-slate-300 bg-white px-3 py-2 text-base font-semibold text-slate-900 outline-none transition hover:border-slate-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              >
+                <option v-for="vessel in VESSELS" :key="vessel.key" :value="vessel.key">
+                  {{ vessel.label }}
+                </option>
+              </select>
+              <p class="mt-1.5 text-xs text-slate-500">{{ vesselDescription }}</p>
+            </div>
+
+            <label class="flex items-center gap-3 text-sm text-slate-700">
+              液位高度（mm）
+              <input
+                v-model.number="vesselLevel"
+                type="number"
+                min="0"
+                :max="vesselGeometry.maxLevel"
+                step="10"
+                class="w-28 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-right text-sm text-slate-900 outline-none transition focus:border-sky-500 focus:bg-white focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-x-10 gap-y-3 border-t border-slate-100 px-6 py-4">
+            <div class="text-sm text-slate-500">
+              当前液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselDisplayLevel) }}</span> mm
+            </div>
+            <div class="text-sm text-slate-500">
+              当前液体体积：<span class="text-lg font-semibold text-sky-600">{{ vesselVolume.toFixed(2) }}</span> m³
+            </div>
+            <div class="text-sm text-slate-500">
+              充满率：<span class="font-semibold text-slate-700">{{ ((vesselDisplayLevel / vesselGeometry.maxLevel) * 100).toFixed(1) }}</span>%
+            </div>
+          </div>
+
+          <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+            <div class="mx-auto max-w-[820px] overflow-x-auto">
+              <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+                液体体积计算公式
+              </p>
+
+              <div v-if="vesselGeometry.type === 'vertical'" class="math-formula text-center text-slate-700">
+                <div>
+                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
+                  <span class="ml-3 text-xs text-slate-400">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
+                </div>
+                <div class="mt-2">
+                  = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
+                  <span class="frac"><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span> ]
+                  <span class="ml-3 text-xs text-slate-400">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
+                </div>
+              </div>
+
+              <div v-else class="math-formula text-center text-slate-700">
+                <div>
+                  <i>V</i>(<i>h</i>) = <i>L</i> [
+                  <span class="frac"><span>π<i>r</i>²</span><span>2</span></span>
+                  − (<i>r</i> − <i>h</i>)<span class="sqrt">√<span>2<i>rh</i> − <i>h</i>²</span></span>
+                  − <i>r</i>² · arcsin<span class="paren">(</span><span class="frac"><span><i>r</i> − <i>h</i></span><span><i>r</i></span></span><span class="paren">)</span> ]
+                </div>
+                <div class="mt-2">
+                  +
+                  <span class="frac"><span>π · <i>h</i><sub>i</sub></span><span>3<i>r</i></span></span>
+                  · [ 3<i>r</i>²<i>h</i> − <i>r</i>³ + (<i>r</i> − <i>h</i>)³ ]
+                </div>
+              </div>
+
+              <p v-if="vesselGeometry.type === 'vertical'" class="mt-3 text-center text-xs leading-relaxed text-slate-500">
+                <i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>H</i> 筒体高度　<i>h</i><sub>i</sub> 封头曲面内高度
+                <span class="text-slate-400">｜</span>
+                程序按此式实时计算液体体积
+              </p>
+              <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
+                <i>L</i> 筒体长度（含两端直边）　<i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>h</i><sub>i</sub> 封头曲面内高度
+                <span class="text-slate-400">｜</span>
+                程序按此式实时计算液体体积
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <div v-show="activeTab === 'import'">
         <WorkOrderImport @cancel="handleImportCancel" @back="handleImportBack" />
       </div>
@@ -2175,6 +2802,54 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */
+.math-formula {
+  font-family: Cambria, 'Cambria Math', 'Times New Roman', 'Songti SC', serif;
+  font-size: 16px;
+  line-height: 2.1;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.math-formula i {
+  font-style: italic;
+}
+
+.math-formula sub {
+  font-size: 0.7em;
+}
+
+.math-formula .frac {
+  display: inline-flex;
+  flex-direction: column;
+  margin: 0 4px;
+  vertical-align: middle;
+  font-size: 0.85em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.math-formula .frac > span:first-child {
+  border-bottom: 1px solid currentColor;
+  padding: 0 5px;
+}
+
+.math-formula .frac > span:last-child {
+  padding: 0 5px;
+}
+
+.math-formula .sqrt > span {
+  border-top: 1px solid currentColor;
+  padding: 0 4px 0 2px;
+  margin-left: -1px;
+}
+
+.math-formula .paren {
+  display: inline-block;
+  transform: scaleY(1.35);
+  margin: 0 2px;
+}
+
 .loading-mask {
   position: absolute;
   inset: 0;
