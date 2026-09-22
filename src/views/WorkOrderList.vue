@@ -159,6 +159,29 @@ function getFirstDayOfCurrentMonth() {
   return formatDate(date)
 }
 
+// 上周一（周统计默认起始）
+function getLastWeekMonday() {
+  const date = new Date()
+  const dayOfWeek = (date.getDay() + 6) % 7 // 周一=0 ... 周日=6
+  date.setDate(date.getDate() - dayOfWeek - 7)
+  return formatDate(date)
+}
+
+// 上周日（周统计默认截止）
+function getLastWeekSunday() {
+  const date = new Date()
+  const dayOfWeek = (date.getDay() + 6) % 7 // 周一=0 ... 周日=6
+  date.setDate(date.getDate() - dayOfWeek - 1)
+  return formatDate(date)
+}
+
+// yyyy-MM-dd → M月D日
+function formatMonthDay(dateString) {
+  const [, month, day] = String(dateString ?? '').split('-')
+  if (!month || !day) return dateString ?? ''
+  return `${Number(month)}月${Number(day)}日`
+}
+
 function normalizeImage(image) {
   if (typeof image === 'string') {
     return { imageId: image, url: image }
@@ -851,6 +874,407 @@ const materialCostingRows = computed(() => {
     }))
     .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
 })
+
+// ===== 周统计 =====
+// 表头（固定展示项，内容暂为固定值，后续再接入实际数据）
+const weeklyColumns = [
+  { key: 'name', label: '名称' },
+  { key: 'pickQty', label: '原料领用' },
+  { key: 'remainingQty', label: '车间剩余' },
+  { key: 'actualQty', label: '实际使用' },
+  { key: 'unitConsumption', label: '单耗' },
+]
+
+// 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示；remainingQty 为车间剩余初始值）
+// unitLabel 为单耗单位；unitFactor 为单耗换算系数（氯铂酸按克计，需 ×1000）
+const WEEKLY_ROW_DEFINITIONS = [
+  { materialCode: '111001787', name: '三氯氢硅（kg）', remainingQty: '3554', unitLabel: '吨/吨', unitFactor: 1 },
+  { materialCode: '111001786', name: '电石（kg）', remainingQty: '', unitLabel: '吨/吨', unitFactor: 1 },
+  { materialCode: '112004292', name: '氯铂酸（g）', remainingQty: '', unitLabel: '克/吨', unitFactor: 1000 },
+]
+
+// 车间剩余：手动填写（按物料编码存放），不填显示 /
+const weeklyRemaining = ref(
+  Object.fromEntries(WEEKLY_ROW_DEFINITIONS.map((row) => [row.materialCode, row.remainingQty])),
+)
+
+// 150产品（HND-V150）物料编码
+const WEEKLY_INBOUND_MATERIAL_CODE = '114001897'
+
+// 150产品入库数：按物料编码 + 时间范围，累计入库汇总的数量
+const weeklyInboundQty = computed(() => {
+  const sum = allInboundRecords.value
+    .filter((record) => {
+      if (String(record.materialCode ?? '').trim() !== WEEKLY_INBOUND_MATERIAL_CODE) return false
+
+      const inboundDate = getInboundDate(record)
+      if (!inboundDate) return true
+
+      return inboundDate >= weeklyStartDate.value && inboundDate <= weeklyEndDate.value
+    })
+    .reduce((total, record) => total + (Number(record.inboundQty) || 0), 0)
+
+  return formatQty(sum)
+})
+
+const weeklyInboundRow = computed(() => ({
+  materialCode: WEEKLY_INBOUND_MATERIAL_CODE,
+  name: '150产品入库数（kg）',
+  value: weeklyInboundQty.value,
+}))
+
+// 原料领用：按时间范围 + 物料编码，从领料汇总数据求和
+function getWeeklyPickQty(materialCode) {
+  const code = String(materialCode ?? '').trim()
+  if (!code) return 0
+
+  const sum = allPickRecords.value
+    .filter((record) => {
+      if (String(record.materialCode ?? '').trim() !== code) return false
+
+      const pickDate = getPickDate(record)
+      if (!pickDate) return true
+
+      return pickDate >= weeklyStartDate.value && pickDate <= weeklyEndDate.value
+    })
+    .reduce((total, record) => total + (Number(record.pickQty) || 0), 0)
+
+  return formatQty(sum)
+}
+
+const weeklyRows = computed(() => {
+  const inboundQty = weeklyInboundQty.value
+
+  return WEEKLY_ROW_DEFINITIONS.map((row) => {
+    const pickQty = getWeeklyPickQty(row.materialCode)
+    // 实际使用 = 原料领用 − 车间剩余（车间剩余未填按 0 计）
+    const remainingQty = Number(weeklyRemaining.value[row.materialCode]) || 0
+    const actualQty = formatQty(pickQty - remainingQty)
+
+    // 单耗 = 实际使用 / 150产品入库数 × 换算系数（固定保留 2 位小数）
+    const unitConsumption = inboundQty > 0
+      ? ((actualQty * (row.unitFactor ?? 1)) / inboundQty).toFixed(2)
+      : '0.00'
+
+    return {
+      ...row,
+      pickQty,
+      actualQty,
+      unitConsumption,
+    }
+  })
+})
+
+const weeklyTableData = ref([])
+const weeklyTableDataAll = ref([])
+const allWeeklyOrders = ref([])
+const weeklyPageNum = ref(1)
+const weeklyPageSize = ref(10)
+const weeklyTotal = ref(0)
+const weeklyLoading = ref(false)
+const weeklyError = ref('')
+const weeklyStartDate = ref(getLastWeekMonday())
+const weeklyEndDate = ref(getLastWeekSunday())
+
+// 标题：按所选日期范围生成，如「9月7日-9月13日周统计（截止9月13日晚8点）」
+const weeklyTitle = computed(() => {
+  const start = formatMonthDay(weeklyStartDate.value)
+  const end = formatMonthDay(weeklyEndDate.value)
+  return `${start}-${end}周统计（截止${end}晚8点）`
+})
+const weeklyImageList = ref([])
+const weeklyCurrentIndex = ref(0)
+const weeklyCurrentMaterialDesc = ref('')
+const weeklyCurrentConfirmedQty = ref('')
+const weeklyCurrentOrderNo = ref('')
+const weeklyImageDialogVisible = ref(false)
+const weeklyImageFileInput = ref(null)
+const weeklyImageUploading = ref(false)
+const weeklyImageDeleting = ref(false)
+const weeklyProductDialogVisible = ref(false)
+const weeklyProductFilter = ref('')
+
+const weeklyProductOptions = computed(() => {
+  const names = allWeeklyOrders.value
+    .filter(matchesWeeklyDateRange)
+    .map((order) => String(order.materialDesc ?? '').trim())
+    .filter(Boolean)
+
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+})
+
+function normalizeWeeklyImage(image) {
+  if (typeof image === 'string') {
+    return { imageId: image, url: image }
+  }
+
+  return {
+    imageId: image?.imageId ?? image?.id ?? '',
+    url: image?.url ?? image?.imageUrl ?? image?.fileUrl ?? image?.path ?? '',
+  }
+}
+
+function normalizeWeeklyImageList(images) {
+  let imageValues = images
+
+  if (typeof imageValues === 'string') {
+    try {
+      imageValues = JSON.parse(imageValues)
+    } catch {
+      imageValues = imageValues ? [imageValues] : []
+    }
+  }
+
+  if (!Array.isArray(imageValues)) {
+    imageValues = imageValues ? [imageValues] : []
+  }
+
+  return imageValues.map(normalizeWeeklyImage).filter((image) => image.url)
+}
+
+async function refreshWeeklyImageList(order) {
+  if (!weeklyCurrentOrderNo.value) {
+    weeklyImageList.value = normalizeWeeklyImageList(order?.imageList)
+    return
+  }
+
+  const res = await request.get('/api/work-order/image/list', {
+    params: { orderNo: weeklyCurrentOrderNo.value },
+  })
+  weeklyImageList.value = normalizeWeeklyImageList(res.data?.data || [])
+}
+
+function updateWeeklyOrderImages(images) {
+  const normalizedImages = normalizeWeeklyImageList(images)
+  const updateImages = (order) => {
+    if (String(order.orderNo) === String(weeklyCurrentOrderNo.value)) {
+      order.imageList = normalizedImages
+    }
+  }
+
+  allWeeklyOrders.value.forEach(updateImages)
+  weeklyTableDataAll.value.forEach(updateImages)
+  weeklyImageList.value = normalizedImages
+  filterWeeklyOrders()
+}
+
+async function openWeeklyImageDialog(order) {
+  weeklyCurrentMaterialDesc.value = order?.materialDesc || '-'
+  weeklyCurrentConfirmedQty.value = order?.confirmedQty ?? '-'
+  weeklyCurrentOrderNo.value = order?.orderNo || ''
+  weeklyImageList.value = normalizeWeeklyImageList(order?.imageList)
+  weeklyCurrentIndex.value = 0
+  weeklyImageDialogVisible.value = true
+
+  await refreshWeeklyImageList(order)
+}
+
+function openWeeklyProductDialog() {
+  weeklyProductDialogVisible.value = true
+}
+
+function handleWeeklyProductSelected(materialDesc) {
+  weeklyProductFilter.value = materialDesc
+  weeklyProductDialogVisible.value = false
+  filterWeeklyOrders()
+}
+
+function clearWeeklyProductFilter() {
+  weeklyProductFilter.value = ''
+  filterWeeklyOrders()
+}
+
+function openWeeklyFilePicker() {
+  weeklyImageFileInput.value?.click()
+}
+
+function showWeeklyPreviousImage() {
+  if (!weeklyImageList.value.length) return
+  weeklyCurrentIndex.value =
+    (weeklyCurrentIndex.value - 1 + weeklyImageList.value.length) % weeklyImageList.value.length
+}
+
+function showWeeklyNextImage() {
+  if (!weeklyImageList.value.length) return
+  weeklyCurrentIndex.value = (weeklyCurrentIndex.value + 1) % weeklyImageList.value.length
+}
+
+async function handleWeeklyImageSelected(event) {
+  const files = Array.from(event.target.files || [])
+  event.target.value = ''
+
+  if (!files.length || !weeklyCurrentOrderNo.value) return
+
+  weeklyImageUploading.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('orderNo', weeklyCurrentOrderNo.value)
+    files.forEach((file) => formData.append('files', file))
+
+    const res = await request.post('/api/work-order/image/upload', formData)
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '图片上传失败。')
+    }
+
+    const uploadedImages = normalizeWeeklyImageList(res.data?.data || [])
+    if (uploadedImages.length) {
+      updateWeeklyOrderImages([...weeklyImageList.value, ...uploadedImages])
+      weeklyCurrentIndex.value = weeklyImageList.value.length - 1
+    } else {
+      await fetchWeeklyOrders()
+      const currentOrder = allWeeklyOrders.value.find(
+        (order) => String(order.orderNo) === String(weeklyCurrentOrderNo.value),
+      )
+      await refreshWeeklyImageList(currentOrder)
+    }
+    ElMessage.success('图片上传成功')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || error.message || '图片上传失败，请重试。')
+  } finally {
+    weeklyImageUploading.value = false
+  }
+}
+
+async function deleteWeeklyImage(image) {
+  if (!weeklyCurrentOrderNo.value || !image?.imageId) return
+
+  try {
+    await ElMessageBox.confirm(
+      '删除后将无法在当前工单中查看该图片，是否继续？',
+      '确认删除图片',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch {
+    return
+  }
+
+  weeklyImageDeleting.value = true
+
+  try {
+    const res = await request.delete('/api/work-order/image/delete', {
+      params: { imageId: image.imageId },
+      data: { imageId: image.imageId },
+    })
+
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '图片删除失败。')
+    }
+
+    const remainingImages = weeklyImageList.value.filter(
+      (item) => String(item.imageId) !== String(image.imageId),
+    )
+    updateWeeklyOrderImages(remainingImages)
+    if (weeklyCurrentIndex.value >= weeklyImageList.value.length) {
+      weeklyCurrentIndex.value = Math.max(0, weeklyImageList.value.length - 1)
+    }
+    ElMessage.success('图片已删除')
+  } catch (error) {
+    ElMessage.error(error.response?.data?.msg || error.message || '图片删除失败，请重试。')
+  } finally {
+    weeklyImageDeleting.value = false
+  }
+}
+
+function getWeeklyPageData(page = weeklyPageNum.value) {
+  weeklyPageNum.value = page
+  const startIndex = (weeklyPageNum.value - 1) * weeklyPageSize.value
+  const endIndex = startIndex + weeklyPageSize.value
+  weeklyTableData.value = weeklyTableDataAll.value.slice(startIndex, endIndex)
+}
+
+function getWeeklyCellValue(row, columnKey, index) {
+  if (columnKey === 'index') {
+    return (weeklyPageNum.value - 1) * weeklyPageSize.value + index + 1
+  }
+  return row?.[columnKey] ?? ''
+}
+
+function normalizeWeeklyOrder(item) {
+  if (!item) return null
+  const order = item.workOrder
+    ? { ...item.workOrder, ...item }
+    : { ...item }
+  order.imageList = normalizeWeeklyImageList(order.imageList)
+  return order
+}
+
+function getWeeklyOrderDate(order) {
+  return String(order?.planStartDate || '').slice(0, 10)
+}
+
+function sortWeeklyOrders(orders) {
+  return [...orders].sort((left, right) => {
+    const leftDate = new Date(left.planStartDate || 0).getTime()
+    const rightDate = new Date(right.planStartDate || 0).getTime()
+
+    if (leftDate !== rightDate) {
+      return rightDate - leftDate
+    }
+
+    return String(right.orderNo ?? '').localeCompare(
+      String(left.orderNo ?? ''),
+      undefined,
+      { numeric: true },
+    )
+  })
+}
+
+function matchesWeeklyDateRange(order) {
+  const planStartDate = getWeeklyOrderDate(order)
+  if (!planStartDate) return false
+  return planStartDate >= weeklyStartDate.value && planStartDate <= weeklyEndDate.value
+}
+
+function matchesWeeklyProductFilter(order) {
+  if (!weeklyProductFilter.value) return true
+  return String(order.materialDesc ?? '').trim() === weeklyProductFilter.value
+}
+
+function filterWeeklyOrders() {
+  weeklyTableDataAll.value = allWeeklyOrders.value.filter(
+    (order) => matchesWeeklyDateRange(order) && matchesWeeklyProductFilter(order),
+  )
+
+  weeklyTotal.value = weeklyTableDataAll.value.length
+  weeklyPageNum.value = 1
+  getWeeklyPageData()
+}
+
+async function fetchWeeklyOrders() {
+  weeklyLoading.value = true
+  weeklyError.value = ''
+
+  try {
+    const res = await request.get('/api/work-order/list')
+    if (res.data.success === true) {
+      const dataList = Array.isArray(res.data.dataList)
+        ? res.data.dataList.map(normalizeWeeklyOrder).filter(Boolean)
+        : []
+
+      allWeeklyOrders.value = sortWeeklyOrders(dataList)
+      filterWeeklyOrders()
+    } else {
+      allWeeklyOrders.value = []
+      weeklyTableDataAll.value = []
+      weeklyTableData.value = []
+      weeklyTotal.value = 0
+      weeklyError.value = res.data.msg || '工单接口返回异常，请稍后重试。'
+    }
+  } catch (error) {
+    allWeeklyOrders.value = []
+    weeklyTableDataAll.value = []
+    weeklyTableData.value = []
+    weeklyTotal.value = 0
+    weeklyError.value = error.response?.data?.msg || '工单数据加载失败，请稍后重试。'
+  } finally {
+    weeklyLoading.value = false
+  }
+}
 
 onMounted(() => {
   fetchWorkOrders()
@@ -1585,12 +2009,161 @@ onMounted(() => {
 
       <div v-show="activeTab === 'weekly'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-            <h2 class="text-base font-semibold text-slate-900">周统计</h2>
-            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
+          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+            <el-date-picker
+              v-model="weeklyStartDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="起始日期"
+              :first-day-of-week="1"
+              @change="filterWeeklyOrders"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <el-date-picker
+              v-model="weeklyEndDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :first-day-of-week="1"
+              @change="filterWeeklyOrders"
+            />
+          </div>
+
+          <div class="p-6">
+            <div class="overflow-x-auto">
+              <table class="w-full table-fixed border-collapse text-center">
+                <colgroup>
+                  <col class="w-[220px]" />
+                  <col class="w-32" />
+                  <col class="w-32" />
+                  <col class="w-32" />
+                  <col class="w-32" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th colspan="5" class="border border-slate-300 px-6 py-3.5 text-base font-bold tracking-wide text-slate-800">
+                      {{ weeklyTitle }}
+                    </th>
+                  </tr>
+                  <tr>
+                    <th
+                      v-for="column in weeklyColumns"
+                      :key="column.key"
+                      scope="col"
+                      class="border border-slate-300 bg-cyan-100 px-6 py-3 text-sm font-semibold text-slate-700"
+                    >
+                      {{ column.label }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in weeklyRows" :key="row.name">
+                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.name }}</td>
+                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.pickQty }}</td>
+                    <td class="border border-slate-300 p-0">
+                      <input
+                        v-model="weeklyRemaining[row.materialCode]"
+                        type="text"
+                        placeholder="/"
+                        aria-label="车间剩余"
+                        class="w-full bg-transparent px-3 py-3 text-center text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                      />
+                    </td>
+                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.actualQty }}</td>
+                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
+                  </tr>
+                  <tr>
+                    <td class="border border-slate-300 px-6 py-3 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
+                    <td colspan="4" class="border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-800">
+                      {{ weeklyInboundRow.value }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
+
+        <el-dialog
+          v-model="weeklyImageDialogVisible"
+          width="80vw"
+          class="image-preview-dialog"
+          align-center
+        >
+          <template #header>
+            <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pr-6 text-sm text-slate-700">
+              <span>物料描述：{{ weeklyCurrentMaterialDesc }}</span>
+              <span>确认的产量：{{ weeklyCurrentConfirmedQty }}</span>
+            </div>
+          </template>
+
+          <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-lg bg-slate-50 p-6">
+            <div v-if="weeklyImageList.length" class="relative flex w-full items-center justify-center">
+              <el-button
+                v-if="weeklyImageList.length > 1"
+                circle
+                class="absolute left-2 z-10"
+                aria-label="上一张"
+                @click="showWeeklyPreviousImage"
+              >
+                ‹
+              </el-button>
+              <img
+                :src="weeklyImageList[weeklyCurrentIndex].url"
+                alt="物料原图"
+                class="max-h-[70vh] max-w-[85%] rounded-lg object-contain"
+              />
+              <el-button
+                v-if="weeklyImageList.length > 1"
+                circle
+                class="absolute right-2 z-10"
+                aria-label="下一张"
+                @click="showWeeklyNextImage"
+              >
+                ›
+              </el-button>
+              <el-button
+                type="danger"
+                size="small"
+                class="absolute bottom-2 left-1/2 -translate-x-1/2"
+                :loading="weeklyImageDeleting"
+                @click="deleteWeeklyImage(weeklyImageList[weeklyCurrentIndex])"
+              >
+                删除当前图片
+              </el-button>
+            </div>
+            <span v-if="!weeklyImageList.length" class="w-full text-center text-sm text-slate-400">
+              暂无图片
+            </span>
+          </div>
+
+          <div v-if="weeklyImageList.length" class="mt-3 text-center text-sm text-slate-500">
+            第 {{ weeklyCurrentIndex + 1 }} 张 / 共 {{ weeklyImageList.length }} 张
+          </div>
+
+          <template #footer>
+            <div class="flex justify-end gap-3">
+              <input
+                ref="weeklyImageFileInput"
+                type="file"
+                accept="image/*"
+                multiple
+                class="hidden"
+                @change="handleWeeklyImageSelected"
+              />
+              <el-button :loading="weeklyImageUploading" @click="openWeeklyFilePicker">
+                添加图片
+              </el-button>
+            </div>
+          </template>
+        </el-dialog>
+
+        <ProductSelectDialog
+          v-model="weeklyProductDialogVisible"
+          :options="weeklyProductOptions"
+          :selected="weeklyProductFilter"
+          @select="handleWeeklyProductSelected"
+        />
       </div>
 
       <div v-show="activeTab === 'import'">
