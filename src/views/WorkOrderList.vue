@@ -36,6 +36,7 @@ const tabs = [
   { key: 'weekly', label: '周统计' },
   { key: 'daily', label: '日报表记录' },
   { key: 'vessel', label: '压力容器体积计算' },
+  { key: 'electricity', label: '电费预提' },
   { key: 'import', label: '文件导入' },
 ]
 
@@ -613,14 +614,48 @@ function getPickPageData(page = pickPageNum.value) {
   pickTableData.value = pickFiltered.value.slice(startIndex, endIndex)
 }
 
+// 物料名称筛选
+const pickMaterialDialogVisible = ref(false)
+const pickMaterialFilter = ref('')
+
+const pickMaterialOptions = computed(() => {
+  const names = allPickRecords.value
+    .filter(matchesPickDateRange)
+    .map((record) => String(record.materialName ?? '').trim())
+    .filter(Boolean)
+
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+})
+
+function matchesPickDateRange(record) {
+  const pickDate = getPickDate(record)
+  if (!pickDate) return false
+  return pickDate >= pickStartDate.value && pickDate <= pickEndDate.value
+}
+
+function matchesPickFilters(record) {
+  if (!matchesPickDateRange(record)) return false
+  if (!pickMaterialFilter.value) return true
+  return String(record.materialName ?? '').trim() === pickMaterialFilter.value
+}
+
+function openPickMaterialDialog() {
+  pickMaterialDialogVisible.value = true
+}
+
+function handlePickMaterialSelected(materialName) {
+  pickMaterialFilter.value = materialName
+  pickMaterialDialogVisible.value = false
+  filterPickRecords()
+}
+
+function clearPickMaterialFilter() {
+  pickMaterialFilter.value = ''
+  filterPickRecords()
+}
+
 function filterPickRecords() {
-  pickFiltered.value = sortPickRecords(
-    allPickRecords.value.filter((record) => {
-      const pickDate = getPickDate(record)
-      if (!pickDate) return false
-      return pickDate >= pickStartDate.value && pickDate <= pickEndDate.value
-    }),
-  )
+  pickFiltered.value = sortPickRecords(allPickRecords.value.filter(matchesPickFilters))
 
   pickTotal.value = pickFiltered.value.length
   pickPageNum.value = 1
@@ -725,14 +760,48 @@ function getInboundPageData(page = inboundPageNum.value) {
   inboundTableData.value = inboundFiltered.value.slice(startIndex, endIndex)
 }
 
+// 物料名称筛选
+const inboundMaterialDialogVisible = ref(false)
+const inboundMaterialFilter = ref('')
+
+const inboundMaterialOptions = computed(() => {
+  const names = allInboundRecords.value
+    .filter(matchesInboundDateRange)
+    .map((record) => String(record.materialName ?? '').trim())
+    .filter(Boolean)
+
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+})
+
+function matchesInboundDateRange(record) {
+  const inboundDate = getInboundDate(record)
+  if (!inboundDate) return false
+  return inboundDate >= inboundStartDate.value && inboundDate <= inboundEndDate.value
+}
+
+function matchesInboundFilters(record) {
+  if (!matchesInboundDateRange(record)) return false
+  if (!inboundMaterialFilter.value) return true
+  return String(record.materialName ?? '').trim() === inboundMaterialFilter.value
+}
+
+function openInboundMaterialDialog() {
+  inboundMaterialDialogVisible.value = true
+}
+
+function handleInboundMaterialSelected(materialName) {
+  inboundMaterialFilter.value = materialName
+  inboundMaterialDialogVisible.value = false
+  filterInboundRecords()
+}
+
+function clearInboundMaterialFilter() {
+  inboundMaterialFilter.value = ''
+  filterInboundRecords()
+}
+
 function filterInboundRecords() {
-  inboundFiltered.value = sortInboundRecords(
-    allInboundRecords.value.filter((record) => {
-      const inboundDate = getInboundDate(record)
-      if (!inboundDate) return false
-      return inboundDate >= inboundStartDate.value && inboundDate <= inboundEndDate.value
-    }),
-  )
+  inboundFiltered.value = sortInboundRecords(allInboundRecords.value.filter(matchesInboundFilters))
 
   inboundTotal.value = inboundFiltered.value.length
   inboundPageNum.value = 1
@@ -1391,7 +1460,7 @@ const VESSELS = [
     headDepth: 900, // 顶部封头曲面内高度 0.9m
     image: vesselProduct150ImageUrl,
     imageBounds: { width: 1760, height: 1938, left: 131, right: 1351, top: 63, tangent: 310, bottom: 1930 },
-    displayWidth: 420,
+    displayWidth: 470,
     liquid: { fill: 'rgba(0, 255, 255, 0.4)', line: '#00ffff' },
   },
 ]
@@ -1436,10 +1505,28 @@ const vesselGeometry = computed(() => {
   }
 })
 
-const vesselLevel = ref(1400)
-const vesselDisplayLevel = ref(1400) // 动画中的实时液位
+// 起始液位 / 终止液位：两个独立液位，用于对比与体积差计算
+const vesselStartLevel = ref(1400)
+const vesselEndLevel = ref(1400)
+const vesselStartDisplay = ref(1400) // 动画中的起始液位
+const vesselEndDisplay = ref(1400) // 动画中的终止液位
 const vesselCanvas = ref(null)
 const vesselImage = ref(null)
+const vesselSwitching = ref(false) // 切换储罐时淡出/淡入
+
+// 立式罐：图形与信息区并排布局（横卧罐图形较宽，保持上下堆叠）
+const isVerticalVessel = computed(() => vesselGeometry.value.type === 'vertical')
+
+// 画布尺寸：底图宽度 + 右侧引线标注栏
+const VESSEL_CANVAS_WIDTH = 1075
+const VESSEL_LABEL_COLUMN = 300
+
+// 画布宽高比（用于 CSS 平滑过渡罐型切换时的高度变化）
+const vesselCanvasAspect = computed(() => {
+  const bounds = vesselGeometry.value.imageBounds
+  const height = Math.round((VESSEL_CANVAS_WIDTH * bounds.height) / bounds.width)
+  return (VESSEL_CANVAS_WIDTH + VESSEL_LABEL_COLUMN) / height
+})
 
 // 液体体积（mm³）—— 闭式解，依据工艺核算公式：
 //   V(h) = L[ πr²/2 − (r−h)√(2rh−h²) − r²·arcsin((r−h)/r) ]
@@ -1476,9 +1563,14 @@ function liquidVolumeMm3(depth, geometry) {
   return cylinder + heads
 }
 
-const vesselVolume = computed(
-  () => liquidVolumeMm3(vesselDisplayLevel.value, vesselGeometry.value) / 1e9,
+const vesselStartVolume = computed(
+  () => liquidVolumeMm3(vesselStartDisplay.value, vesselGeometry.value) / 1e9,
 )
+const vesselEndVolume = computed(
+  () => liquidVolumeMm3(vesselEndDisplay.value, vesselGeometry.value) / 1e9,
+)
+// 体积变化 = 终止 − 起始（正数为增加）
+const vesselVolumeDelta = computed(() => vesselEndVolume.value - vesselStartVolume.value)
 const vesselCapacity = computed(
   () => liquidVolumeMm3(vesselGeometry.value.maxLevel, vesselGeometry.value) / 1e9,
 )
@@ -1506,7 +1598,7 @@ const VESSEL_WAVE = {
 let vesselFrameId = null
 let vesselWavePhase = 0
 let vesselLastFrameTime = 0
-let vesselTransition = null // 液位缓动过渡状态
+let vesselTransitions = { start: null, end: null } // 起始/终止液位的缓动过渡状态
 
 function stopVesselLoop() {
   if (vesselFrameId !== null) {
@@ -1522,15 +1614,18 @@ function vesselFrame(now) {
   const deltaMs = vesselLastFrameTime ? Math.min(50, now - vesselLastFrameTime) : 16.7
   vesselLastFrameTime = now
 
-  if (vesselTransition) {
-    const progress = Math.min(1, (now - vesselTransition.startTime) / vesselTransition.duration)
+  for (const which of ['start', 'end']) {
+    const transition = vesselTransitions[which]
+    if (!transition) continue
+
+    const progress = Math.min(1, (now - transition.startTime) / transition.duration)
     const eased = 1 - Math.pow(1 - progress, 3) // easeOutCubic：起步快、接近目标时放缓
 
-    vesselDisplayLevel.value = vesselTransition.from + vesselTransition.delta * eased
+    levelDisplayRef(which).value = transition.from + transition.delta * eased
 
     if (progress >= 1) {
-      vesselDisplayLevel.value = vesselTransition.from + vesselTransition.delta
-      vesselTransition = null
+      levelDisplayRef(which).value = transition.from + transition.delta
+      vesselTransitions[which] = null
     }
   }
 
@@ -1552,18 +1647,27 @@ function startVesselLoop() {
 }
 
 // 液位平滑过渡到目标值（时长随变化幅度自适应，700~2000ms）
-function animateVesselTo(target) {
-  const from = vesselDisplayLevel.value
+function levelTargetRef(which) {
+  return which === 'start' ? vesselStartLevel : vesselEndLevel
+}
+
+function levelDisplayRef(which) {
+  return which === 'start' ? vesselStartDisplay : vesselEndDisplay
+}
+
+function animateVesselTo(which, target) {
+  const displayRef = levelDisplayRef(which)
+  const from = displayRef.value
   const delta = target - from
 
   if (Math.abs(delta) < 0.5) {
-    vesselDisplayLevel.value = target
-    vesselTransition = null
+    displayRef.value = target
+    vesselTransitions[which] = null
     renderVessel()
     return
   }
 
-  vesselTransition = {
+  vesselTransitions[which] = {
     from,
     delta,
     duration: 700 + (Math.abs(delta) / vesselGeometry.value.maxLevel) * 1300,
@@ -1589,8 +1693,10 @@ function renderVessel() {
   const dpr = window.devicePixelRatio || 1
 
   // 画布尺寸按底图比例自适应
-  const W = 1075
-  const H = Math.round((W * bounds.height) / bounds.width)
+  const IMAGE_W = VESSEL_CANVAS_WIDTH
+  const LABEL_COLUMN = VESSEL_LABEL_COLUMN
+  const W = IMAGE_W + LABEL_COLUMN
+  const H = Math.round((IMAGE_W * bounds.height) / bounds.width)
 
   canvas.width = W * dpr
   canvas.height = H * dpr
@@ -1598,14 +1704,14 @@ function renderVessel() {
   const ctx = canvas.getContext('2d')
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, W, H)
-  ctx.drawImage(image, 0, 0, W, H)
+  ctx.drawImage(image, 0, 0, IMAGE_W, H)
 
-  const s = W / bounds.width
+  const s = IMAGE_W / bounds.width
   const vesselPath = new Path2D()
   let tankLeft
   let tankRight
   let bottomY
-  let levelY
+  let levelToY
 
   if (geometry.type === 'vertical') {
     // 立式罐：顶部半椭球封头 + 等径筒体
@@ -1616,6 +1722,7 @@ function renderVessel() {
     const cx = (left + right) / 2
     const rx = (right - left) / 2
     const ry = tangentY - bounds.top * s
+    const apexY = bounds.top * s
 
     vesselPath.moveTo(left, tangentY)
     vesselPath.ellipse(cx, tangentY, rx, ry, 0, Math.PI, Math.PI * 2)
@@ -1629,14 +1736,12 @@ function renderVessel() {
 
     // 液位映射：筒体段、封头段分别对应底图中各自的高度
     // （底图封头绘制得比实际略扁，分段映射可保证液面始终贴合图纸结构）
-    const level = vesselDisplayLevel.value
-    const apexY = bounds.top * s
-
-    if (level <= geometry.cylinderHeight) {
-      levelY = bottom - (level / geometry.cylinderHeight) * (bottom - tangentY)
-    } else {
+    levelToY = (level) => {
+      if (level <= geometry.cylinderHeight) {
+        return bottom - (level / geometry.cylinderHeight) * (bottom - tangentY)
+      }
       const t = Math.min(geometry.headDepth, level - geometry.cylinderHeight)
-      levelY = tangentY - (t / geometry.headDepth) * (tangentY - apexY)
+      return tangentY - (t / geometry.headDepth) * (tangentY - apexY)
     }
   } else {
     // 卧式罐：椭圆封头曲面 + 直边 + 圆筒
@@ -1659,51 +1764,160 @@ function renderVessel() {
     tankLeft = bounds.left * s
     tankRight = bounds.right * s
     bottomY = bottom
-    levelY = bottom - (vesselDisplayLevel.value / geometry.diameter) * 2 * R
+    levelToY = (level) => bottom - (level / geometry.diameter) * 2 * R
   }
 
-  // 液位填充：以正弦波纹作为液面，裁剪到罐体内腔轮廓
-  if (vesselDisplayLevel.value > 0) {
+  const levelY = levelToY(vesselEndDisplay.value)
+  const startLevelY = levelToY(vesselStartDisplay.value)
+
+  // 液位绘制：终止液位（实线 + 填充）与起始液位（黑色粗虚线），均为波浪形
+  if (vesselEndDisplay.value > 0 || vesselStartDisplay.value > 0) {
     const span = tankRight - tankLeft
     const steps = 140
-    const wavePoints = []
 
-    for (let i = 0; i <= steps; i += 1) {
-      const x = tankLeft + (span * i) / steps
-      const phase = ((x - tankLeft) / VESSEL_WAVE.wavelength) * Math.PI * 2 + vesselWavePhase
-      wavePoints.push([x, levelY + Math.sin(phase) * VESSEL_WAVE.amplitude])
+    // 生成指定基准高度上的波浪路径点（与液面同一波形、同相位）
+    const buildWave = (baseY) => {
+      const points = []
+      for (let i = 0; i <= steps; i += 1) {
+        const x = tankLeft + (span * i) / steps
+        const phase = ((x - tankLeft) / VESSEL_WAVE.wavelength) * Math.PI * 2 + vesselWavePhase
+        points.push([x, baseY + Math.sin(phase) * VESSEL_WAVE.amplitude])
+      }
+      return points
     }
 
-    // 填充区：波纹 + 下边界闭合
-    const fillPath = new Path2D()
-    wavePoints.forEach(([x, y], i) => (i === 0 ? fillPath.moveTo(x, y) : fillPath.lineTo(x, y)))
-    fillPath.lineTo(tankRight, bottomY + 6)
-    fillPath.lineTo(tankLeft, bottomY + 6)
-    fillPath.closePath()
-
-    // 液面线：只描波纹本身
-    const surfacePath = new Path2D()
-    wavePoints.forEach(([x, y], i) =>
-      (i === 0 ? surfacePath.moveTo(x, y) : surfacePath.lineTo(x, y)),
-    )
+    const toPath = (points, closeToBottom) => {
+      const path = new Path2D()
+      points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)))
+      if (closeToBottom) {
+        path.lineTo(tankRight, bottomY + 6)
+        path.lineTo(tankLeft, bottomY + 6)
+        path.closePath()
+      }
+      return path
+    }
 
     ctx.save()
     ctx.clip(vesselPath)
-    ctx.fillStyle = geometry.liquid.fill
-    ctx.fill(fillPath)
-
-    ctx.strokeStyle = geometry.liquid.line
-    ctx.lineWidth = 2
     ctx.lineJoin = 'round'
-    ctx.stroke(surfacePath)
+
+    // 终止液位：填充 + 实线液面
+    if (vesselEndDisplay.value > 0) {
+      const wavePoints = buildWave(levelY)
+      ctx.fillStyle = geometry.liquid.fill
+      ctx.fill(toPath(wavePoints, true))
+
+      ctx.strokeStyle = geometry.liquid.line
+      ctx.lineWidth = 2
+      ctx.stroke(toPath(wavePoints, false))
+    }
+
+    // 起止液位之间的差值区：斜线剖面填充，直观展示消耗量/增加量
+    const levelDelta = vesselStartDisplay.value - vesselEndDisplay.value
+
+    if (Math.abs(levelDelta) > 1) {
+      const isDecrease = levelDelta > 0 // 终止低于起始 → 消耗
+      const upperY = Math.min(startLevelY, levelY)
+      const lowerY = Math.max(startLevelY, levelY)
+
+      // 差值带：上边界波浪 + 下边界波浪（同相位，等厚）
+      const upperWave = buildWave(upperY)
+      const lowerWave = buildWave(lowerY)
+      const bandPath = new Path2D()
+      upperWave.forEach(([x, y], i) => (i === 0 ? bandPath.moveTo(x, y) : bandPath.lineTo(x, y)))
+      for (let i = lowerWave.length - 1; i >= 0; i -= 1) {
+        bandPath.lineTo(lowerWave[i][0], lowerWave[i][1])
+      }
+      bandPath.closePath()
+
+      ctx.save()
+      ctx.clip(bandPath)
+
+      const bandTop = upperY - VESSEL_WAVE.amplitude - 4
+      const bandHeight = lowerY - upperY + VESSEL_WAVE.amplitude * 2 + 8
+      const bandWidth = tankRight - tankLeft
+
+      // 底色
+      ctx.fillStyle = isDecrease ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.12)'
+      ctx.fillRect(tankLeft, bandTop, bandWidth, bandHeight)
+
+      // 斜线剖面线
+      ctx.globalAlpha = 0.4
+      ctx.strokeStyle = isDecrease ? '#e11d48' : '#059669'
+      ctx.lineWidth = 1.4
+      ctx.beginPath()
+      for (let offset = -bandHeight; offset < bandWidth; offset += 11) {
+        ctx.moveTo(tankLeft + offset, bandTop + bandHeight)
+        ctx.lineTo(tankLeft + offset + bandHeight, bandTop)
+      }
+      ctx.stroke()
+      ctx.globalAlpha = 1
+      ctx.restore()
+    }
+
+    // 起始液位：黑色偏粗波浪虚线，用于对比起止液位
+    if (vesselStartDisplay.value > 0) {
+      ctx.strokeStyle = '#0f172a'
+      ctx.lineWidth = 3
+      ctx.setLineDash([9, 6])
+      ctx.stroke(toPath(buildWave(startLevelY), false))
+      ctx.setLineDash([])
+    }
+
     ctx.restore()
+
+    // 差值区引线标注（绘制在裁剪区之外）
+    if (Math.abs(levelDelta) > 1) {
+      const isDecrease = levelDelta > 0
+      const color = isDecrease ? '#e11d48' : '#059669'
+
+      // 画布会被 CSS 缩放显示，字号按缩放比例反向补偿，保证屏幕上大小恒定
+      const displayWidth = canvas.clientWidth || IMAGE_W
+      const uiScale = Math.min(4, W / displayWidth)
+      const fs = 13 * uiScale
+
+      const line1 = `${isDecrease ? '消耗' : '增加'} ${Math.abs(levelDelta).toFixed(0)} mm`
+      const line2 = `${isDecrease ? '−' : '+'}${Math.abs(vesselVolumeDelta.value).toFixed(2)} m³`
+
+      ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif`
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'middle'
+
+      const textRight = W - fs * 0.7
+      const textWidth = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width)
+      const textLeft = textRight - textWidth
+
+      const anchorX = tankRight - 30
+      const anchorY = (Math.min(startLevelY, levelY) + Math.max(startLevelY, levelY)) / 2
+      const labelY = Math.max(fs * 1.4, Math.min(H - fs * 1.4, anchorY - fs * 3.2))
+
+      // 引线：罐体 → 水平出线 → 折角指向文字
+      ctx.strokeStyle = color
+      ctx.lineWidth = Math.max(1.2, fs * 0.12)
+      ctx.beginPath()
+      ctx.moveTo(anchorX, anchorY)
+      ctx.lineTo(textLeft - fs * 1.5, anchorY)
+      ctx.lineTo(textLeft - fs * 0.45, labelY)
+      ctx.stroke()
+
+      // 起点圆点
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.arc(anchorX, anchorY, fs * 0.26, 0, Math.PI * 2)
+      ctx.fill()
+
+      // 文字
+      ctx.fillText(line1, textRight, labelY - fs * 0.62)
+      ctx.fillText(line2, textRight, labelY + fs * 0.62)
+    }
   }
 }
 
 // 步进调节液位（配合软拟态按钮）
-function stepVesselLevel(direction, step = 10) {
-  const next = Number(vesselLevel.value || 0) + direction * step
-  vesselLevel.value = Math.max(0, Math.min(vesselGeometry.value.maxLevel, next))
+function stepVesselLevel(which, direction, step = 10) {
+  const targetRef = levelTargetRef(which)
+  const next = Number(targetRef.value || 0) + direction * step
+  targetRef.value = Math.max(0, Math.min(vesselGeometry.value.maxLevel, next))
 }
 
 // 按住按钮时连续调节：先响应一次，停顿 320ms 后进入连发，步长加大以便快速扫过
@@ -1723,12 +1937,12 @@ function stopStepHold() {
   window.removeEventListener('pointercancel', stopStepHold)
 }
 
-function startStepHold(direction) {
+function startStepHold(which, direction) {
   stopStepHold()
-  stepVesselLevel(direction)
+  stepVesselLevel(which, direction)
 
   vesselStepDelayTimer = setTimeout(() => {
-    vesselStepRepeatTimer = setInterval(() => stepVesselLevel(direction, 25), 40)
+    vesselStepRepeatTimer = setInterval(() => stepVesselLevel(which, direction, 25), 40)
   }, 320)
 
   // 在按钮外松开鼠标也能停止
@@ -1736,15 +1950,20 @@ function startStepHold(direction) {
   window.addEventListener('pointercancel', stopStepHold)
 }
 
-watch(vesselLevel, (value) => {
+function clampAndAnimateLevel(which, value) {
   const maxLevel = vesselGeometry.value.maxLevel
   const clamped = Math.max(0, Math.min(maxLevel, Number(value) || 0))
+
   if (clamped !== value) {
-    vesselLevel.value = clamped
+    levelTargetRef(which).value = clamped
     return
   }
-  animateVesselTo(clamped)
-})
+
+  animateVesselTo(which, clamped)
+}
+
+watch(vesselStartLevel, (value) => clampAndAnimateLevel('start', value))
+watch(vesselEndLevel, (value) => clampAndAnimateLevel('end', value))
 
 // 切换储罐：液位按新罐径钳制、底图按需重载
 let loadedVesselImageUrl = ''
@@ -1761,17 +1980,28 @@ function loadVesselImage() {
   image.onload = () => {
     vesselImage.value = image
     renderVessel()
+    // 等淡出动画基本结束再淡入，避免闪烁
+    window.setTimeout(() => {
+      vesselSwitching.value = false
+    }, 330)
   }
   image.src = url
 }
 
 watch(vesselKey, () => {
   const maxLevel = vesselGeometry.value.maxLevel
-  if (vesselLevel.value > maxLevel) vesselLevel.value = maxLevel
-  if (vesselDisplayLevel.value > maxLevel) {
-    vesselDisplayLevel.value = maxLevel
-    vesselTransition = null
+
+  for (const which of ['start', 'end']) {
+    const targetRef = levelTargetRef(which)
+    const displayRef = levelDisplayRef(which)
+
+    if (targetRef.value > maxLevel) targetRef.value = maxLevel
+    if (displayRef.value > maxLevel) {
+      displayRef.value = maxLevel
+      vesselTransitions[which] = null
+    }
   }
+
   loadVesselImage()
 })
 
@@ -1782,6 +2012,7 @@ onMounted(() => {
   fetchGoodsMoveRecords()
 
   // 加载罐体底图后再绘制液位
+  vesselSwitching.value = true
   loadVesselImage()
 })
 
@@ -2180,8 +2411,12 @@ watch(activeTab, (tab) => {
 
             <div v-else-if="pickTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
               <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-              <h2 class="text-base font-semibold text-slate-900">暂无领料数据</h2>
-              <p class="mt-2 text-sm text-slate-500">当前没有可展示的领料记录</p>
+              <h2 class="text-base font-semibold text-slate-900">
+                {{ pickMaterialFilter ? '没有符合筛选条件的记录' : '暂无领料数据' }}
+              </h2>
+              <p class="mt-2 text-sm text-slate-500">
+                {{ pickMaterialFilter ? `当前筛选：${pickMaterialFilter}` : '当前没有可展示的领料记录' }}
+              </p>
             </div>
 
             <div v-else>
@@ -2196,10 +2431,35 @@ watch(activeTab, (tab) => {
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
-                        {{ column.label }}
+                        <template v-if="column.key === 'materialName'">
+                          <span class="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                              :class="pickMaterialFilter ? 'text-sky-600' : ''"
+                              :title="pickMaterialFilter ? `已筛选：${pickMaterialFilter}` : '点击选择物料名称'"
+                              @click="openPickMaterialDialog"
+                            >
+                              <span class="truncate">{{ pickMaterialFilter || column.label }}</span>
+                              <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                              </svg>
+                            </button>
+                            <button
+                              v-if="pickMaterialFilter"
+                              type="button"
+                              class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                              aria-label="清除物料名称筛选"
+                              @click="clearPickMaterialFilter"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        </template>
+                        <template v-else>{{ column.label }}</template>
                       </th>
                     </tr>
                   </thead>
@@ -2281,6 +2541,14 @@ watch(activeTab, (tab) => {
             />
           </div>
         </el-dialog>
+
+        <ProductSelectDialog
+          v-model="pickMaterialDialogVisible"
+          :options="pickMaterialOptions"
+          :selected="pickMaterialFilter"
+          label="物料名称"
+          @select="handlePickMaterialSelected"
+        />
       </div>
 
       <div v-show="activeTab === 'inbound'">
@@ -2331,8 +2599,12 @@ watch(activeTab, (tab) => {
 
             <div v-else-if="inboundTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
               <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-              <h2 class="text-base font-semibold text-slate-900">暂无入库数据</h2>
-              <p class="mt-2 text-sm text-slate-500">当前没有可展示的入库记录</p>
+              <h2 class="text-base font-semibold text-slate-900">
+                {{ inboundMaterialFilter ? '没有符合筛选条件的记录' : '暂无入库数据' }}
+              </h2>
+              <p class="mt-2 text-sm text-slate-500">
+                {{ inboundMaterialFilter ? `当前筛选：${inboundMaterialFilter}` : '当前没有可展示的入库记录' }}
+              </p>
             </div>
 
             <div v-else>
@@ -2347,10 +2619,35 @@ watch(activeTab, (tab) => {
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
-                        {{ column.label }}
+                        <template v-if="column.key === 'materialName'">
+                          <span class="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                              :class="inboundMaterialFilter ? 'text-sky-600' : ''"
+                              :title="inboundMaterialFilter ? `已筛选：${inboundMaterialFilter}` : '点击选择物料名称'"
+                              @click="openInboundMaterialDialog"
+                            >
+                              <span class="truncate">{{ inboundMaterialFilter || column.label }}</span>
+                              <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                              </svg>
+                            </button>
+                            <button
+                              v-if="inboundMaterialFilter"
+                              type="button"
+                              class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                              aria-label="清除物料名称筛选"
+                              @click="clearInboundMaterialFilter"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        </template>
+                        <template v-else>{{ column.label }}</template>
                       </th>
                     </tr>
                   </thead>
@@ -2432,6 +2729,14 @@ watch(activeTab, (tab) => {
             />
           </div>
         </el-dialog>
+
+        <ProductSelectDialog
+          v-model="inboundMaterialDialogVisible"
+          :options="inboundMaterialOptions"
+          :selected="inboundMaterialFilter"
+          label="物料名称"
+          @select="handleInboundMaterialSelected"
+        />
       </div>
 
       <div v-show="activeTab === 'report'">
@@ -2743,73 +3048,146 @@ watch(activeTab, (tab) => {
 
       <div v-show="activeTab === 'vessel'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="p-6">
-            <canvas ref="vesselCanvas" class="mx-auto block h-auto w-full"
-            :style="{ maxWidth: `${vesselGeometry.displayWidth}px` }"></canvas>
+          <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
+          <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-3.5">
+            <p class="min-w-0 flex-1 text-xs text-slate-500">{{ vesselDescription }}</p>
+            <el-select v-model="vesselKey" class="vessel-select shrink-0" aria-label="选择储罐">
+              <el-option
+                v-for="vessel in VESSELS"
+                :key="vessel.key"
+                :label="vessel.label"
+                :value="vessel.key"
+              />
+            </el-select>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 px-6 py-4">
-            <div>
-              <el-select v-model="vesselKey" class="vessel-select" aria-label="选择储罐">
-                <el-option
-                  v-for="vessel in VESSELS"
-                  :key="vessel.key"
-                  :label="vessel.label"
-                  :value="vessel.key"
-                />
-              </el-select>
-              <p class="mt-1.5 text-xs text-slate-500">{{ vesselDescription }}</p>
+          <div class="flex flex-wrap items-stretch" :class="isVerticalVessel ? 'gap-x-6 p-6' : ''">
+            <div class="flex justify-center" :class="isVerticalVessel ? 'shrink-0' : 'w-full p-6'">
+              <canvas
+              ref="vesselCanvas"
+              class="vessel-canvas mx-auto block w-full"
+              :class="{ 'is-switching': vesselSwitching }"
+              :style="{
+                maxWidth: `${vesselGeometry.displayWidth}px`,
+                aspectRatio: String(vesselCanvasAspect),
+              }"
+            ></canvas>
             </div>
 
-            <div class="flex items-center gap-3 text-sm text-slate-700">
-              <span>液位高度（mm）</span>
+            <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
+            <div
+              class="flex flex-wrap items-center gap-4 py-4"
+              :class="isVerticalVessel ? 'px-0' : 'justify-end border-t border-slate-100 px-6'"
+            >
+            <div class="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
+              :class="isVerticalVessel ? 'flex-1' : ''">
+              <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
+                <span class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>
+                起始液位
+              </span>
               <div class="flex items-center gap-3">
-                <button
-                  type="button"
-                  class="vessel-step"
-                  aria-label="降低液位"
-                  @pointerdown.prevent="startStepHold(-1)"
-                  @keydown.enter.prevent="stepVesselLevel(-1)"
-                  @keydown.space.prevent="stepVesselLevel(-1)"
-                >
-                  −
-                </button>
-                <input
-                  v-model.number="vesselLevel"
-                  type="number"
-                  min="0"
-                  :max="vesselGeometry.maxLevel"
-                  step="10"
-                  class="vessel-level-input w-24 text-right"
-                />
-                <button
-                  type="button"
-                  class="vessel-step"
-                  aria-label="升高液位"
-                  @pointerdown.prevent="startStepHold(1)"
-                  @keydown.enter.prevent="stepVesselLevel(1)"
-                  @keydown.space.prevent="stepVesselLevel(1)"
-                >
-                  +
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    class="vessel-step"
+                    aria-label="降低液位"
+                    @pointerdown.prevent="startStepHold('start', -1)"
+                    @keydown.enter.prevent="stepVesselLevel('start', -1)"
+                    @keydown.space.prevent="stepVesselLevel('start', -1)"
+                  >
+                    −
+                  </button>
+                  <input
+                    v-model.number="vesselStartLevel"
+                    type="number"
+                    min="0"
+                    :max="vesselGeometry.maxLevel"
+                    step="10"
+                    class="vessel-level-input w-20 min-w-0 text-right"
+                  />
+                  <button
+                    type="button"
+                    class="vessel-step"
+                    aria-label="升高液位"
+                    @pointerdown.prevent="startStepHold('start', 1)"
+                    @keydown.enter.prevent="stepVesselLevel('start', 1)"
+                    @keydown.space.prevent="stepVesselLevel('start', 1)"
+                  >
+                    +
+                  </button>
+                </div>
+            </div>
+
+            <div class="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
+              :class="isVerticalVessel ? 'flex-1' : ''">
+              <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
+                <span
+                  class="inline-block h-0 w-5 border-t-2"
+                  :style="{ borderColor: vesselGeometry.liquid.line }"
+                  aria-hidden="true"
+                ></span>
+                终止液位
+              </span>
+              <div class="flex items-center gap-3">
+                  <button
+                    type="button"
+                    class="vessel-step"
+                    aria-label="降低液位"
+                    @pointerdown.prevent="startStepHold('end', -1)"
+                    @keydown.enter.prevent="stepVesselLevel('end', -1)"
+                    @keydown.space.prevent="stepVesselLevel('end', -1)"
+                  >
+                    −
+                  </button>
+                  <input
+                    v-model.number="vesselEndLevel"
+                    type="number"
+                    min="0"
+                    :max="vesselGeometry.maxLevel"
+                    step="10"
+                    class="vessel-level-input w-20 min-w-0 text-right"
+                  />
+                  <button
+                    type="button"
+                    class="vessel-step"
+                    aria-label="升高液位"
+                    @pointerdown.prevent="startStepHold('end', 1)"
+                    @keydown.enter.prevent="stepVesselLevel('end', 1)"
+                    @keydown.space.prevent="stepVesselLevel('end', 1)"
+                  >
+                    +
+                  </button>
+                </div>
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center gap-x-10 gap-y-3 border-t border-slate-100 px-6 py-4">
+          <div
+            class="flex flex-wrap items-center gap-x-10 gap-y-3 border-t border-slate-100 py-4"
+            :class="isVerticalVessel ? 'px-0' : 'px-6'"
+          >
             <div class="text-sm text-slate-500">
-              当前液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselDisplayLevel) }}</span> mm
+              起始液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
             </div>
             <div class="text-sm text-slate-500">
-              当前液体体积：<span class="text-lg font-semibold text-sky-600">{{ vesselVolume.toFixed(2) }}</span> m³
+              终止液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
             </div>
             <div class="text-sm text-slate-500">
-              充满率：<span class="font-semibold text-slate-700">{{ ((vesselDisplayLevel / vesselGeometry.maxLevel) * 100).toFixed(1) }}</span>%
+              起始体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³
+            </div>
+            <div class="text-sm text-slate-500">
+              终止体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³
+            </div>
+            <div class="text-sm text-slate-500">
+              体积变化：<span
+                class="text-lg font-semibold"
+                :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
+              >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span> m³
+            </div>
+            </div>
             </div>
           </div>
 
           <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
-            <div class="mx-auto max-w-[820px] overflow-x-auto">
+            <div class="mx-auto max-w-[900px] overflow-x-auto">
               <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
                 液体体积计算公式
               </p>
@@ -2817,12 +3195,11 @@ watch(activeTab, (tab) => {
               <div v-if="vesselGeometry.type === 'vertical'" class="math-formula text-center text-slate-700">
                 <div>
                   <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
-                  <span class="ml-3 text-xs text-slate-400">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
-                </div>
-                <div class="mt-2">
-                  = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
+                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
+                  <span class="mx-7 text-slate-300">｜</span>
+                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
                   <span class="frac"><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span> ]
-                  <span class="ml-3 text-xs text-slate-400">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
+                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
                 </div>
               </div>
 
@@ -2832,9 +3209,7 @@ watch(activeTab, (tab) => {
                   <span class="frac"><span>π<i>r</i>²</span><span>2</span></span>
                   − (<i>r</i> − <i>h</i>)<span class="sqrt">√<span>2<i>rh</i> − <i>h</i>²</span></span>
                   − <i>r</i>² · arcsin<span class="paren">(</span><span class="frac"><span><i>r</i> − <i>h</i></span><span><i>r</i></span></span><span class="paren">)</span> ]
-                </div>
-                <div class="mt-2">
-                  +
+                  &nbsp;+&nbsp;
                   <span class="frac"><span>π · <i>h</i><sub>i</sub></span><span>3<i>r</i></span></span>
                   · [ 3<i>r</i>²<i>h</i> − <i>r</i>³ + (<i>r</i> − <i>h</i>)³ ]
                 </div>
@@ -2855,6 +3230,48 @@ watch(activeTab, (tab) => {
         </section>
       </div>
 
+      <div v-show="activeTab === 'electricity'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <!-- 电价档位备注 -->
+          <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
+            <div class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-600">
+                !
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
+                <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                    <p class="text-xs text-slate-500">10 万度以内</p>
+                    <p class="mt-1 text-lg font-semibold text-slate-900">
+                      1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                    <p class="text-xs text-slate-500">20 万度以内</p>
+                    <p class="mt-1 text-lg font-semibold text-slate-900">
+                      0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                    <p class="text-xs text-slate-500">20 万度以上</p>
+                    <p class="mt-1 text-lg font-semibold text-slate-900">
+                      0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
+            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
+            <h2 class="text-base font-semibold text-slate-900">电费预提</h2>
+            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
+          </div>
+        </section>
+      </div>
+
       <div v-show="activeTab === 'import'">
         <WorkOrderImport @cancel="handleImportCancel" @back="handleImportBack" />
       </div>
@@ -2864,6 +3281,15 @@ watch(activeTab, (tab) => {
 </template>
 
 <style scoped>
+/* 储罐图：切换罐型时淡出淡入 + 高度平滑过渡 */
+.vessel-canvas {
+  transition: aspect-ratio 320ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+}
+
+.vessel-canvas.is-switching {
+  opacity: 0;
+}
+
 /* 软拟态（Soft UI）步进按钮：降低/升高液位 */
 .vessel-step {
   display: inline-flex;
@@ -2938,7 +3364,7 @@ watch(activeTab, (tab) => {
 
 /* 储罐选择器：按标题样式呈现 */
 .vessel-select {
-  min-width: 220px;
+  width: 224px; /* 固定宽度，避免被 Element Plus 默认样式拉伸到整行 */
 }
 
 .vessel-select :deep(.el-select__wrapper) {
