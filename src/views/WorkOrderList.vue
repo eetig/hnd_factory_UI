@@ -1449,6 +1449,9 @@ const VESSELS = [
     image: vesselImageUrl,
     imageBounds: { width: 2150, height: 1060, left: 75, right: 2069, top: 131, bottom: 931 },
     displayWidth: 680,
+    medium: '三氯氢硅',
+    density: 1.35, // 20°C、101.325kPa 工程取值（SIS 联锁/容积/物料衡算/泄放计算用）g/cm³
+    note: '三氯氢硅，若用于 SIS 联锁、储罐容积、物料衡算、泄放计算，工程上直接采用：20℃，101.325kPa，ρ=1.35 g/cm³',
     liquid: { fill: 'rgba(208, 226, 128, 0.28)', line: '#a6cb3c' }, // 浅黄绿（氯系介质特征色，柔和不刺眼）
   },
   {
@@ -1461,6 +1464,9 @@ const VESSELS = [
     image: vesselProduct150ImageUrl,
     imageBounds: { width: 1760, height: 1938, left: 131, right: 1351, top: 63, tangent: 310, bottom: 1930 },
     displayWidth: 470,
+    medium: '乙烯基三氯硅烷',
+    density: 1.27, // GB/T 35498-2017，20°C、101.325kPa g/cm³（数值上等于 t/m³）
+    note: '乙烯基三氯硅烷，基准条件：20℃，101.325 kPa（常压），液体密度 1.27 g/cm³；物性来源：GB/T 35498-2017《工业用乙烯基三氯硅烷》。',
     liquid: { fill: 'rgba(0, 255, 255, 0.4)', line: '#00ffff' },
   },
 ]
@@ -1485,6 +1491,9 @@ const vesselGeometry = computed(() => {
       imageBounds: vessel.imageBounds,
       displayWidth: vessel.displayWidth ?? 680,
       liquid: vessel.liquid,
+      medium: vessel.medium ?? '',
+      density: vessel.density ?? null,
+      note: vessel.note ?? '',
     }
   }
 
@@ -1502,6 +1511,9 @@ const vesselGeometry = computed(() => {
     imageBounds: vessel.imageBounds,
       displayWidth: vessel.displayWidth ?? 680,
       liquid: vessel.liquid,
+    medium: vessel.medium ?? '',
+    density: vessel.density ?? null,
+    note: vessel.note ?? '',
   }
 })
 
@@ -1571,6 +1583,18 @@ const vesselEndVolume = computed(
 )
 // 体积变化 = 终止 − 起始（正数为增加）
 const vesselVolumeDelta = computed(() => vesselEndVolume.value - vesselStartVolume.value)
+
+// 物料重量（吨）：体积 × 密度（g/cm³ 数值上等于 t/m³）；未配置密度时为 null
+function toMass(volume) {
+  const density = vesselGeometry.value.density
+  return density ? volume * density : null
+}
+
+const vesselStartMass = computed(() => toMass(vesselStartVolume.value))
+const vesselEndMass = computed(() => toMass(vesselEndVolume.value))
+const vesselMassDelta = computed(() =>
+  vesselStartMass.value === null ? null : toMass(vesselVolumeDelta.value),
+)
 const vesselCapacity = computed(
   () => liquidVolumeMm3(vesselGeometry.value.maxLevel, vesselGeometry.value) / 1e9,
 )
@@ -1581,8 +1605,12 @@ const vesselDescription = computed(() => {
   const m = (value) => (value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
   const capacity = vesselCapacity.value.toFixed(1)
 
+  const medium = g.medium && g.density
+    ? `介质 ${g.medium}（ρ=${g.density} g/cm³，20°C、101.325 kPa）｜`
+    : ''
+
   if (g.type === 'vertical') {
-    return `筒体 φ${m(g.diameter)}m，筒体高度 ${m(g.cylinderHeight)}m，封头内高度 ${m(g.headDepth)}m，总容积 ${capacity} m³`
+    return `${medium}筒体 φ${m(g.diameter)}m，筒体高度 ${m(g.cylinderHeight)}m，封头内高度 ${m(g.headDepth)}m，总容积 ${capacity} m³`
   }
 
   return `筒体 l=${m(g.cylinderLength)}m，φ${m(g.diameter)}m，直边 ${m(g.straightFlange)}m，封头内高度 hi=${m(g.headDepth)}m，总容积 ${capacity} m³`
@@ -1876,20 +1904,29 @@ function renderVessel() {
       const uiScale = Math.min(4, W / displayWidth)
       const fs = 13 * uiScale
 
-      const line1 = `${isDecrease ? '消耗' : '增加'} ${Math.abs(levelDelta).toFixed(0)} mm`
-      const line2 = `${isDecrease ? '−' : '+'}${Math.abs(vesselVolumeDelta.value).toFixed(2)} m³`
+      const sign = isDecrease ? '−' : '+'
+      const lines = [
+        `${isDecrease ? '消耗' : '增加'} ${Math.abs(levelDelta).toFixed(0)} mm`,
+        `${sign}${Math.abs(vesselVolumeDelta.value).toFixed(2)} m³`,
+      ]
+
+      // 配置了密度时，追加质量变化
+      const massDelta = vesselMassDelta.value
+      if (massDelta !== null) {
+        lines.push(`${sign}${Math.abs(massDelta).toFixed(2)} t`)
+      }
 
       ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif`
       ctx.textAlign = 'right'
       ctx.textBaseline = 'middle'
 
       const textRight = W - fs * 0.7
-      const textWidth = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width)
+      const textWidth = Math.max(...lines.map((text) => ctx.measureText(text).width))
       const textLeft = textRight - textWidth
 
       const anchorX = tankRight - 30
       const anchorY = (Math.min(startLevelY, levelY) + Math.max(startLevelY, levelY)) / 2
-      const labelY = Math.max(fs * 1.4, Math.min(H - fs * 1.4, anchorY - fs * 3.2))
+      const labelY = Math.max(fs * 1.9, Math.min(H - fs * 1.9, anchorY - fs * 3.2))
 
       // 引线：罐体 → 水平出线 → 折角指向文字
       ctx.strokeStyle = color
@@ -1906,9 +1943,12 @@ function renderVessel() {
       ctx.arc(anchorX, anchorY, fs * 0.26, 0, Math.PI * 2)
       ctx.fill()
 
-      // 文字
-      ctx.fillText(line1, textRight, labelY - fs * 0.62)
-      ctx.fillText(line2, textRight, labelY + fs * 0.62)
+      // 文字：整体相对 labelY 垂直居中
+      const lineGap = fs * 1.25
+      const startOffset = -((lines.length - 1) / 2) * lineGap
+      lines.forEach((text, i) => {
+        ctx.fillText(text, textRight, labelY + startOffset + i * lineGap)
+      })
     }
   }
 }
@@ -3050,7 +3090,12 @@ watch(activeTab, (tab) => {
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
           <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-3.5">
-            <p class="min-w-0 flex-1 text-xs text-slate-500">{{ vesselDescription }}</p>
+            <div class="min-w-0 flex-1">
+              <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
+              <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
+                {{ vesselGeometry.note }}
+              </p>
+            </div>
             <el-select v-model="vesselKey" class="vessel-select shrink-0" aria-label="选择储罐">
               <el-option
                 v-for="vessel in VESSELS"
@@ -3075,112 +3120,141 @@ watch(activeTab, (tab) => {
             </div>
 
             <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
+            <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
             <div
-              class="flex flex-wrap items-center gap-4 py-4"
-              :class="isVerticalVessel ? 'px-0' : 'justify-end border-t border-slate-100 px-6'"
+              class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
+              :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-100 px-6 pt-5'"
             >
-            <div class="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
-              :class="isVerticalVessel ? 'flex-1' : ''">
-              <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                <span class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>
-                起始液位
-              </span>
-              <div class="flex items-center gap-3">
-                  <button
-                    type="button"
-                    class="vessel-step"
-                    aria-label="降低液位"
-                    @pointerdown.prevent="startStepHold('start', -1)"
-                    @keydown.enter.prevent="stepVesselLevel('start', -1)"
-                    @keydown.space.prevent="stepVesselLevel('start', -1)"
-                  >
-                    −
-                  </button>
-                  <input
-                    v-model.number="vesselStartLevel"
-                    type="number"
-                    min="0"
-                    :max="vesselGeometry.maxLevel"
-                    step="10"
-                    class="vessel-level-input w-20 min-w-0 text-right"
-                  />
-                  <button
-                    type="button"
-                    class="vessel-step"
-                    aria-label="升高液位"
-                    @pointerdown.prevent="startStepHold('start', 1)"
-                    @keydown.enter.prevent="stepVesselLevel('start', 1)"
-                    @keydown.space.prevent="stepVesselLevel('start', 1)"
-                  >
-                    +
-                  </button>
-                </div>
-            </div>
-
-            <div class="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm"
-              :class="isVerticalVessel ? 'flex-1' : ''">
-              <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                <span
-                  class="inline-block h-0 w-5 border-t-2"
-                  :style="{ borderColor: vesselGeometry.liquid.line }"
-                  aria-hidden="true"
-                ></span>
-                终止液位
-              </span>
-              <div class="flex items-center gap-3">
-                  <button
-                    type="button"
-                    class="vessel-step"
-                    aria-label="降低液位"
-                    @pointerdown.prevent="startStepHold('end', -1)"
-                    @keydown.enter.prevent="stepVesselLevel('end', -1)"
-                    @keydown.space.prevent="stepVesselLevel('end', -1)"
-                  >
-                    −
-                  </button>
-                  <input
-                    v-model.number="vesselEndLevel"
-                    type="number"
-                    min="0"
-                    :max="vesselGeometry.maxLevel"
-                    step="10"
-                    class="vessel-level-input w-20 min-w-0 text-right"
-                  />
-                  <button
-                    type="button"
-                    class="vessel-step"
-                    aria-label="升高液位"
-                    @pointerdown.prevent="startStepHold('end', 1)"
-                    @keydown.enter.prevent="stepVesselLevel('end', 1)"
-                    @keydown.space.prevent="stepVesselLevel('end', 1)"
-                  >
-                    +
-                  </button>
-                </div>
-            </div>
-          </div>
-
-          <div
-            class="flex flex-wrap items-center gap-x-10 gap-y-3 border-t border-slate-100 py-4"
-            :class="isVerticalVessel ? 'px-0' : 'px-6'"
-          >
-            <div class="text-sm text-slate-500">
-              起始液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
-            </div>
-            <div class="text-sm text-slate-500">
-              终止液位：<span class="text-lg font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
-            </div>
-            <div class="text-sm text-slate-500">
-              起始体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³
-            </div>
-            <div class="text-sm text-slate-500">
-              终止体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³
-            </div>
-            <div class="text-sm text-slate-500">
-              体积变化：<span
-                class="text-lg font-semibold"
+            <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
+            <div class="flex justify-center" :class="isVerticalVessel ? 'w-full' : 'flex-1'">
+            <!-- 体积变化：居中作为视觉焦点 -->
+            <div
+                class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
+                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-xl border border-slate-200 bg-slate-50 px-6 py-4'"
+            >
+              <span class="text-sm text-slate-500">体积变化</span>
+              <span
+                class="text-2xl font-bold tracking-tight"
                 :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
-              >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span> m³
+              >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span>
+              <span class="text-sm text-slate-500">m³</span>
+              <span
+                v-if="vesselMassDelta !== null"
+                class="text-base font-semibold"
+                :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
+              >（{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }} t）</span>
+            </div>
+            </div>
+
+            <div
+                class="gap-x-6 gap-y-5"
+                :class="
+                  isVerticalVessel
+                    ? 'grid w-full grid-cols-2 px-0'
+                    : 'flex flex-wrap gap-x-6'
+                "
+              >
+              <!-- 起始液位：控件与其数据同列 -->
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
+                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
+                    <span class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>
+                    起始液位
+                  </span>
+                  <div class="flex items-center gap-3">
+                    <button
+                      type="button"
+                      class="vessel-step"
+                      aria-label="降低起始液位"
+                      @pointerdown.prevent="startStepHold('start', -1)"
+                      @keydown.enter.prevent="stepVesselLevel('start', -1)"
+                      @keydown.space.prevent="stepVesselLevel('start', -1)"
+                    >
+                      −
+                    </button>
+                    <input
+                      v-model.number="vesselStartLevel"
+                      type="number"
+                      min="0"
+                      :max="vesselGeometry.maxLevel"
+                      step="10"
+                      class="vessel-level-input w-20 min-w-0 text-right"
+                    />
+                    <button
+                      type="button"
+                      class="vessel-step"
+                      aria-label="升高起始液位"
+                      @pointerdown.prevent="startStepHold('start', 1)"
+                      @keydown.enter.prevent="stepVesselLevel('start', 1)"
+                      @keydown.space.prevent="stepVesselLevel('start', 1)"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div class="space-y-1 pl-1 text-sm text-slate-500">
+                  <div>
+                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
+                  </div>
+                  <div>
+                    体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 终止液位：控件与其数据同列 -->
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
+                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
+                    <span
+                      class="inline-block h-0 w-5 border-t-2"
+                      :style="{ borderColor: vesselGeometry.liquid.line }"
+                      aria-hidden="true"
+                    ></span>
+                    终止液位
+                  </span>
+                  <div class="flex items-center gap-3">
+                    <button
+                      type="button"
+                      class="vessel-step"
+                      aria-label="降低终止液位"
+                      @pointerdown.prevent="startStepHold('end', -1)"
+                      @keydown.enter.prevent="stepVesselLevel('end', -1)"
+                      @keydown.space.prevent="stepVesselLevel('end', -1)"
+                    >
+                      −
+                    </button>
+                    <input
+                      v-model.number="vesselEndLevel"
+                      type="number"
+                      min="0"
+                      :max="vesselGeometry.maxLevel"
+                      step="10"
+                      class="vessel-level-input w-20 min-w-0 text-right"
+                    />
+                    <button
+                      type="button"
+                      class="vessel-step"
+                      aria-label="升高终止液位"
+                      @pointerdown.prevent="startStepHold('end', 1)"
+                      @keydown.enter.prevent="stepVesselLevel('end', 1)"
+                      @keydown.space.prevent="stepVesselLevel('end', 1)"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div class="space-y-1 pl-1 text-sm text-slate-500">
+                  <div>
+                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
+                  </div>
+                  <div>
+                    体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
+                  </div>
+                </div>
+              </div>
             </div>
             </div>
             </div>
