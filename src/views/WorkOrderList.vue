@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
+import { clearAuth, getRoleName, hasPerm } from '../api/auth'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
 import WorkOrderImport from './WorkOrderImport.vue'
 import vesselImageUrl from '../assets/vessel.png'
@@ -37,8 +39,24 @@ const tabs = [
   { key: 'daily', label: '日报表记录' },
   { key: 'vessel', label: '压力容器体积计算' },
   { key: 'electricity', label: '电费预提' },
-  { key: 'import', label: '文件导入' },
+  { key: 'import', label: '文件导入', perm: 'work_order:import' },
 ]
+
+// 按权限过滤可见 Tab
+const visibleTabs = computed(() => tabs.filter((tab) => hasPerm(tab.perm)))
+
+const roleName = computed(() => getRoleName() || '已登录')
+
+async function handleLogout() {
+  try {
+    await request.post('/api/logout')
+  } catch {
+    // 退出接口异常不影响本地凭据清理
+  }
+
+  clearAuth()
+  router.replace('/login')
+}
 
 // 工单报工表格列
 const reportColumns = [
@@ -66,6 +84,7 @@ function getReportOrderType(orderNo) {
 function formatQty(value) {
   return Number.isFinite(value) ? Number(value.toFixed(3)) : 0
 }
+const router = useRouter()
 const activeTab = ref('workOrder')
 
 const tableData = ref([])
@@ -921,12 +940,33 @@ const MATERIAL_COSTING_QTY_FACTORS = {
   '112004292': 3.2,
 }
 
+// 派生行：领料数由其他物料折算，报工数取指定库位的货物移动
+const MATERIAL_COSTING_DERIVED = [
+  {
+    materialCode: '111001792',
+    materialName: '氯铂酸_150',
+    sourceMaterialCode: '112004292', // HND-V150_辅料包
+    qtyMultiplier: 20, // 领料数 = 辅料包领料数 × 20
+    fromLocation: '5003', // 报工数仅统计来源库位 5003 的氯铂酸
+    reportedMultiplier: 1000, // 报工数 = 该库位氯铂酸数量合计 × 1000
+  },
+  {
+    materialCode: '111001792',
+    materialName: '氯铂酸_171',
+    sourceMaterialName: 'HND-V171_辅料包',
+    qtyMultiplier: 20, // 领料数 = V171 辅料包领料数 × 20
+    fromLocation: '5002', // 报工数仅统计来源库位 5002 的氯铂酸
+    reportedMultiplier: 1000, // 报工数 = 该库位氯铂酸数量合计 × 1000
+  },
+]
+
 // 货物移动：按物料编码汇总移动数量（原辅料核算的「已报工数」来源）
 const GOODS_MOVE_FIELD_MAP = {
   materialCode: ['materialCode', 'materialNo'],
   moveQty: ['moveQty', 'quantity', 'moveQuantity', 'qty'],
   moveDate: ['moveDate', 'postingDate', 'postDate'],
   moveType: ['moveType', 'movementType', 'type'],
+  fromLocation: ['fromLocation', 'fromStorage', 'sourceLocation'],
 }
 
 const goodsMoveRecords = ref([])
@@ -1022,6 +1062,38 @@ const materialCostingRows = computed(() => {
     row.reportedQty = Math.abs(goodsMoveQtyMap.value.get(code) || 0)
   }
 
+  // 派生行：领料数由源物料折算；报工数按物料编码 + 来源库位筛选货物移动后求和取绝对值
+  for (const derived of MATERIAL_COSTING_DERIVED) {
+    const sourceRow = [...rows.values()].find((row) => {
+      if (
+        derived.sourceMaterialCode &&
+        String(row.materialCode ?? '').trim() === derived.sourceMaterialCode
+      ) {
+        return true
+      }
+      if (derived.sourceMaterialName) {
+        return normalizeMaterialName(row.materialName) === normalizeMaterialName(derived.sourceMaterialName)
+      }
+      return false
+    })
+    const pickQty = (sourceRow?.pickQty ?? 0) * derived.qtyMultiplier
+
+    const moveSum = goodsMoveRecords.value
+      .filter((record) => {
+        if (String(record.materialCode ?? '').trim() !== derived.materialCode) return false
+        if (!derived.fromLocation) return true
+        return String(record.fromLocation ?? '').trim() === derived.fromLocation
+      })
+      .reduce((sum, record) => sum + (Number(record.moveQty) || 0), 0)
+
+    rows.set(`derived:${derived.materialName}`, {
+      materialName: derived.materialName,
+      materialCode: derived.materialCode,
+      pickQty,
+      reportedQty: Math.abs(moveSum) * (derived.reportedMultiplier ?? 1),
+    })
+  }
+
   return [...rows.values()]
     .map((row) => ({
       ...row,
@@ -1029,6 +1101,8 @@ const materialCostingRows = computed(() => {
       reportedQty: formatQty(row.reportedQty),
       unreportedQty: formatQty(row.pickQty - row.reportedQty),
     }))
+    // 领料数与报工数都为 0 的行不展示（如派生行缺少对应数据）
+    .filter((row) => row.pickQty !== 0 || row.reportedQty !== 0)
     .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
 })
 
@@ -2081,14 +2155,23 @@ watch(activeTab, (tab) => {
           <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">工单汇总</h1>
           <p class="mt-2 text-sm text-slate-500">查看当前所有生产工单及处理状态</p>
         </div>
-        <div class="text-sm text-slate-500">
-          共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单
+        <div class="flex items-center gap-3 text-sm text-slate-500">
+          <span>共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单</span>
+          <span class="text-slate-300">|</span>
+          <span>{{ roleName }}</span>
+          <button
+            type="button"
+            class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+            @click="handleLogout"
+          >
+            退出
+          </button>
         </div>
       </header>
 
       <nav class="mb-6 flex gap-8 border-b border-slate-200" aria-label="页面切换">
         <button
-          v-for="tab in tabs"
+          v-for="tab in visibleTabs"
           :key="tab.key"
           type="button"
           class="relative pb-3 pt-1 text-sm font-medium transition focus:outline-none"
@@ -2344,6 +2427,7 @@ watch(activeTab, (tab) => {
               ›
             </el-button>
             <el-button
+              v-if="hasPerm('work_order:image:delete')"
               type="danger"
               size="small"
               class="absolute bottom-2 left-1/2 -translate-x-1/2"
@@ -2372,7 +2456,11 @@ watch(activeTab, (tab) => {
               class="hidden"
               @change="handleImageSelected"
             />
-            <el-button :loading="imageUploading" @click="openFilePicker">
+            <el-button
+              v-if="hasPerm('work_order:image:upload')"
+              :loading="imageUploading"
+              @click="openFilePicker"
+            >
               添加图片
             </el-button>
           </div>

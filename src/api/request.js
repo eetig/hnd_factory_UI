@@ -1,23 +1,26 @@
 import axios from 'axios'
 import router from '../router'
-
-const TOKEN_KEY = 'token'
+import { clearAuth, getToken } from './auth'
 
 const request = axios.create({
   baseURL: '/',
   timeout: 20000,
 })
 
-request.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY)
+request.interceptors.request.use(
+  (config) => {
+    const token = getToken()
 
-  if (token) {
-    config.headers = config.headers || {}
-    config.headers.Authorization = `Bearer ${token}`
-  }
+    if (token) {
+      config.headers = config.headers || {}
+      // 后端使用 Sa-Token，鉴权头为 satoken（不是 Authorization: Bearer）
+      config.headers.satoken = token
+    }
 
-  return config
-}, (error) => Promise.reject(error))
+    return config
+  },
+  (error) => Promise.reject(error),
+)
 
 request.interceptors.response.use(
   (response) => response,
@@ -26,19 +29,21 @@ request.interceptors.response.use(
     const data = response?.data || {}
     const message = typeof data === 'string' ? data : data.message || data.msg || ''
     const status = response?.status
-    const isAuthError =
-      status === 401 ||
-      status === 403 ||
-      String(data.code) === '401' ||
-      String(data.code) === '403' ||
-      /未登录|登录过期|token|Token|unauthorized|forbidden|expired/i.test(message)
+    const code = String(data.code ?? '')
 
-    if (isAuthError) {
-      localStorage.removeItem(TOKEN_KEY)
+    // 401：未登录或 token 失效 → 清空凭据并跳登录页
+    const isUnauthorized =
+      status === 401 ||
+      code === '401' ||
+      /未登录|登录过期|token\s*(失效|无效)|unauthorized|expired/i.test(message)
+
+    if (isUnauthorized) {
+      clearAuth()
       if (router.currentRoute.value?.path !== '/login') {
         router.replace('/login')
       }
     }
+    // 403：已登录但无权限 —— 保留登录态，由调用方提示错误即可
 
     return Promise.reject(error)
   },

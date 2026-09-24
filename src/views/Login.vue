@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '../api/request'
+import { saveAuth } from '../api/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,18 +29,18 @@ async function handleLogin() {
       password: pass,
     })
 
+    // 登录成功返回裸对象；失败时为 HTTP 200 + { success:false, msg }
+    const body = res.data || {}
+    const payload = { ...(body.data || {}), ...body }
     const token =
-      res.data?.token ||
-      res.data?.data?.token ||
-      res.data?.data?.accessToken ||
-      res.data?.data?.jwt ||
-      res.data?.access_token
+      payload.token || payload.accessToken || payload.access_token || payload.jwt
 
     if (!token) {
-      throw new Error(res.data?.msg || '登录失败，未返回 token')
+      throw new Error(body.msg || body.message || '登录失败，未返回 token')
     }
 
-    localStorage.setItem('token', token)
+    // 保存 token 及角色、权限（用于按钮显隐与刷新后恢复）
+    saveAuth({ ...payload, token })
 
     const redirectPath = route.query.redirect || '/'
     await router.replace(redirectPath)
