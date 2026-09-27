@@ -30,3 +30,6 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+# 运维手册（含公网地址、FRP 端口、MinIO 凭据，严禁入库 —— 本仓库为公开仓库）
+minio同步手册.md
