@@ -8,6 +8,18 @@ import ProductSelectDialog from '../components/ProductSelectDialog.vue'
 import WorkOrderImport from './WorkOrderImport.vue'
 import vesselImageUrl from '../assets/vessel.png'
 import vesselProduct150ImageUrl from '../assets/vessel-product150.png'
+import { REPORT_ORDER_TYPES, getReportOrderType } from '../constants/orderTypes'
+import {
+  formatDate,
+  getToday,
+  getFirstDayOfCurrentMonth,
+  getLastWeekMonday,
+  getLastWeekSunday,
+  formatMonthDay,
+  formatQty,
+  normalizeMaterialName,
+  pickField,
+} from '../utils/format'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 import {
@@ -67,23 +79,6 @@ const reportColumns = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
 ]
 
-// 工单类型：按单号前缀识别
-const REPORT_ORDER_TYPES = [
-  { prefix: '1000', label: '操作工单' },
-  { prefix: '2000', label: '包装工单' },
-  { prefix: '3000', label: '转桶工单' },
-  { prefix: '4000', label: '返工工单' },
-]
-
-function getReportOrderType(orderNo) {
-  const matched = REPORT_ORDER_TYPES.find((type) => String(orderNo ?? '').startsWith(type.prefix))
-  return matched?.label ?? ''
-}
-
-// 数量求和后去掉浮点误差（保留至多 3 位小数）
-function formatQty(value) {
-  return Number.isFinite(value) ? Number(value.toFixed(3)) : 0
-}
 const router = useRouter()
 const activeTab = ref('workOrder')
 
@@ -197,45 +192,6 @@ const columns = [
   { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
 ]
 
-function formatDate(date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function getToday() {
-  return formatDate(new Date())
-}
-
-function getFirstDayOfCurrentMonth() {
-  const date = new Date()
-  date.setDate(1)
-  return formatDate(date)
-}
-
-// 上周一（周统计默认起始）
-function getLastWeekMonday() {
-  const date = new Date()
-  const dayOfWeek = (date.getDay() + 6) % 7 // 周一=0 ... 周日=6
-  date.setDate(date.getDate() - dayOfWeek - 7)
-  return formatDate(date)
-}
-
-// 上周日（周统计默认截止）
-function getLastWeekSunday() {
-  const date = new Date()
-  const dayOfWeek = (date.getDay() + 6) % 7 // 周一=0 ... 周日=6
-  date.setDate(date.getDate() - dayOfWeek - 1)
-  return formatDate(date)
-}
-
-// yyyy-MM-dd → M月D日
-function formatMonthDay(dateString) {
-  const [, month, day] = String(dateString ?? '').split('-')
-  if (!month || !day) return dateString ?? ''
-  return `${Number(month)}月${Number(day)}日`
-}
 
 function normalizeImage(image) {
   if (typeof image === 'string') {
@@ -596,15 +552,6 @@ function openPickImageDialog(record) {
   pickImageDialogVisible.value = true
 }
 
-function pickField(item, aliases) {
-  for (const alias of aliases) {
-    const value = item?.[alias]
-    if (value !== undefined && value !== null) {
-      return value
-    }
-  }
-  return ''
-}
 
 function normalizePickRecord(item) {
   if (!item) return null
@@ -867,11 +814,6 @@ const costingColumns = [
   { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
   { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right' },
 ]
-
-// 产成品名称归一化：忽略空格/下划线差异，用于跨系统（入库数据与工单数据）名称匹配
-function normalizeMaterialName(name) {
-  return String(name ?? '').replace(/[\s_]/g, '').toLowerCase()
-}
 
 // 已报工数量：按归一化产成品名称汇总工单的确认产量
 const reportedQtyMap = computed(() => {
