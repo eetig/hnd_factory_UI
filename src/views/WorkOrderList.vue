@@ -5,6 +5,9 @@ import dayjs from 'dayjs'
 import request from '../api/request'
 import { clearAuth, getRoleName, hasPerm } from '../api/auth'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
+import LoadingMask from '../components/LoadingMask.vue'
+import PanelState from '../components/PanelState.vue'
+import FilterHeaderCell from '../components/FilterHeaderCell.vue'
 import { useWorkOrderData } from '../composables/useWorkOrderData'
 import { usePickData } from '../composables/usePickData'
 import { useInboundData } from '../composables/useInboundData'
@@ -1705,31 +1708,22 @@ watch(activeTab, (tab) => {
           </div>
 
           <div class="relative">
-            <div v-if="loading" class="loading-mask" aria-label="正在加载工单">
-          <div class="loader" role="status" aria-label="正在加载">
-            <div class="loader-text">Loading...</div>
-            <div class="loader-bar"></div>
-          </div>
-        </div>
+            <LoadingMask v-if="loading" />
 
-        <div v-else-if="errorMessage" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-          <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">!</div>
-          <h2 class="text-base font-semibold text-slate-900">暂时无法获取工单</h2>
-          <p class="mt-2 text-sm text-slate-500">{{ errorMessage }}</p>
-          <button
-            type="button"
-            class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-            @click="fetchWorkOrders"
-          >
-            重新加载
-          </button>
-        </div>
+        <PanelState
+              v-else-if="errorMessage"
+              type="error"
+              title="暂时无法获取工单"
+              :description="errorMessage"
+              action-text="重新加载"
+              @action="fetchWorkOrders"
+            />
 
-        <div v-else-if="tableData.length === 0 && !productFilter && !orderTypeFilter && !orderNoFilter" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-          <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-          <h2 class="text-base font-semibold text-slate-900">暂无工单数据</h2>
-          <p class="mt-2 text-sm text-slate-500">当前没有可展示的工单记录</p>
-        </div>
+        <PanelState
+              v-else-if="tableData.length === 0 && !productFilter && !orderTypeFilter && !orderNoFilter"
+              title="暂无工单数据"
+              description="当前没有可展示的工单记录"
+            />
 
         <div v-else>
           <div class="overflow-x-auto">
@@ -1747,101 +1741,38 @@ watch(activeTab, (tab) => {
                     :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     <template v-if="column.key === 'orderNo'">
-                      <span class="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                          :class="orderNoFilter ? 'text-sky-600' : ''"
-                          :title="orderNoFilter ? `已筛选：${orderNoFilter}` : '点击选择工单号'"
-                          @click="openOrderNoDialog"
-                        >
-                          <span class="truncate">{{ orderNoFilter || column.label }}</span>
-                          <svg
-                            class="h-3.5 w-3.5 shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            aria-hidden="true"
-                          >
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                          </svg>
-                        </button>
-                        <button
-                          v-if="orderNoFilter"
-                          type="button"
-                          class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                          aria-label="清除工单号筛选"
-                          @click="clearOrderNoFilter"
-                        >
-                          ×
-                        </button>
-                      </span>
+                      <FilterHeaderCell
+                        :label="column.label"
+                        :selected="orderNoFilter"
+                        hint="工单号"
+                        max-width-class="max-w-[130px]"
+                        @open="openOrderNoDialog"
+                        @clear="clearOrderNoFilter"
+                      />
                     </template>
+
                     <template v-else-if="column.key === 'orderType'">
-                      <span class="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          class="inline-flex max-w-[110px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                          :class="orderTypeFilter ? 'text-sky-600' : ''"
-                          :title="orderTypeFilter ? `已筛选：${orderTypeFilter}` : '点击选择工单类型'"
-                          @click="openOrderTypeDialog"
-                        >
-                          <span class="truncate">{{ orderTypeFilter || column.label }}</span>
-                          <svg
-                            class="h-3.5 w-3.5 shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            aria-hidden="true"
-                          >
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                          </svg>
-                        </button>
-                        <button
-                          v-if="orderTypeFilter"
-                          type="button"
-                          class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                          aria-label="清除工单类型筛选"
-                          @click="clearOrderTypeFilter"
-                        >
-                          ×
-                        </button>
-                      </span>
+                      <FilterHeaderCell
+                        :label="column.label"
+                        :selected="orderTypeFilter"
+                        hint="工单类型"
+                        max-width-class="max-w-[110px]"
+                        @open="openOrderTypeDialog"
+                        @clear="clearOrderTypeFilter"
+                      />
                     </template>
+
                     <template v-else-if="column.key === 'materialDesc'">
-                      <span class="inline-flex items-center gap-1">
-                        <button
-                          type="button"
-                          class="inline-flex max-w-[110px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                          :class="productFilter ? 'text-sky-600' : ''"
-                          :title="productFilter ? `已筛选：${productFilter}` : '点击选择产成品'"
-                          @click="openProductDialog"
-                        >
-                          <span class="truncate">{{ productFilter || column.label }}</span>
-                          <svg
-                            class="h-3.5 w-3.5 shrink-0"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            aria-hidden="true"
-                          >
-                            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                          </svg>
-                        </button>
-                        <button
-                          v-if="productFilter"
-                          type="button"
-                          class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                          aria-label="清除产成品筛选"
-                          @click="clearProductFilter"
-                        >
-                          ×
-                        </button>
-                      </span>
+                      <FilterHeaderCell
+                        :label="column.label"
+                        :selected="productFilter"
+                        hint="产成品"
+                        max-width-class="max-w-[110px]"
+                        @open="openProductDialog"
+                        @clear="clearProductFilter"
+                      />
                     </template>
+
                     <template v-else>{{ column.label }}</template>
                   </th>
                 </tr>
@@ -2012,35 +1943,22 @@ watch(activeTab, (tab) => {
           </div>
 
           <div class="relative">
-            <div v-if="pickLoading" class="loading-mask" aria-label="正在加载领料汇总">
-              <div class="loader" role="status" aria-label="正在加载">
-                <div class="loader-text">Loading...</div>
-                <div class="loader-bar"></div>
-              </div>
-            </div>
+            <LoadingMask v-if="pickLoading" />
 
-            <div v-else-if="pickError" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">!</div>
-              <h2 class="text-base font-semibold text-slate-900">暂时无法获取领料汇总</h2>
-              <p class="mt-2 text-sm text-slate-500">{{ pickError }}</p>
-              <button
-                type="button"
-                class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-                @click="fetchPickRecords"
-              >
-                重新加载
-              </button>
-            </div>
+            <PanelState
+              v-else-if="pickError"
+              type="error"
+              title="暂时无法获取领料汇总"
+              :description="pickError"
+              action-text="重新加载"
+              @action="fetchPickRecords"
+            />
 
-            <div v-else-if="pickTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-              <h2 class="text-base font-semibold text-slate-900">
-                {{ pickMaterialFilter ? '没有符合筛选条件的记录' : '暂无领料数据' }}
-              </h2>
-              <p class="mt-2 text-sm text-slate-500">
-                {{ pickMaterialFilter ? `当前筛选：${pickMaterialFilter}` : '当前没有可展示的领料记录' }}
-              </p>
-            </div>
+            <PanelState
+              v-else-if="pickTableData.length === 0"
+              :title="pickMaterialFilter ? '没有符合筛选条件的记录' : '暂无领料数据'"
+              :description="pickMaterialFilter ? `当前筛选：${pickMaterialFilter}` : '当前没有可展示的领料记录'"
+            />
 
             <div v-else>
               <div class="overflow-x-auto">
@@ -2058,30 +1976,16 @@ watch(activeTab, (tab) => {
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
-                          <span class="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                              :class="pickMaterialFilter ? 'text-sky-600' : ''"
-                              :title="pickMaterialFilter ? `已筛选：${pickMaterialFilter}` : '点击选择物料名称'"
-                              @click="openPickMaterialDialog"
-                            >
-                              <span class="truncate">{{ pickMaterialFilter || column.label }}</span>
-                              <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                              </svg>
-                            </button>
-                            <button
-                              v-if="pickMaterialFilter"
-                              type="button"
-                              class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                              aria-label="清除物料名称筛选"
-                              @click="clearPickMaterialFilter"
-                            >
-                              ×
-                            </button>
-                          </span>
+                          <FilterHeaderCell
+                            :label="column.label"
+                            :selected="pickMaterialFilter"
+                            hint="物料名称"
+                            max-width-class="max-w-[130px]"
+                            @open="openPickMaterialDialog"
+                            @clear="clearPickMaterialFilter"
+                          />
                         </template>
+
                         <template v-else>{{ column.label }}</template>
                       </th>
                     </tr>
@@ -2200,35 +2104,22 @@ watch(activeTab, (tab) => {
           </div>
 
           <div class="relative">
-            <div v-if="inboundLoading" class="loading-mask" aria-label="正在加载入库汇总">
-              <div class="loader" role="status" aria-label="正在加载">
-                <div class="loader-text">Loading...</div>
-                <div class="loader-bar"></div>
-              </div>
-            </div>
+            <LoadingMask v-if="inboundLoading" />
 
-            <div v-else-if="inboundError" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-500">!</div>
-              <h2 class="text-base font-semibold text-slate-900">暂时无法获取入库汇总</h2>
-              <p class="mt-2 text-sm text-slate-500">{{ inboundError }}</p>
-              <button
-                type="button"
-                class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-                @click="fetchInboundRecords"
-              >
-                重新加载
-              </button>
-            </div>
+            <PanelState
+              v-else-if="inboundError"
+              type="error"
+              title="暂时无法获取入库汇总"
+              :description="inboundError"
+              action-text="重新加载"
+              @action="fetchInboundRecords"
+            />
 
-            <div v-else-if="inboundTableData.length === 0" class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-              <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-              <h2 class="text-base font-semibold text-slate-900">
-                {{ inboundMaterialFilter ? '没有符合筛选条件的记录' : '暂无入库数据' }}
-              </h2>
-              <p class="mt-2 text-sm text-slate-500">
-                {{ inboundMaterialFilter ? `当前筛选：${inboundMaterialFilter}` : '当前没有可展示的入库记录' }}
-              </p>
-            </div>
+            <PanelState
+              v-else-if="inboundTableData.length === 0"
+              :title="inboundMaterialFilter ? '没有符合筛选条件的记录' : '暂无入库数据'"
+              :description="inboundMaterialFilter ? `当前筛选：${inboundMaterialFilter}` : '当前没有可展示的入库记录'"
+            />
 
             <div v-else>
               <div class="overflow-x-auto">
@@ -2246,30 +2137,16 @@ watch(activeTab, (tab) => {
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
-                          <span class="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              class="inline-flex max-w-[130px] items-center gap-1 rounded transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
-                              :class="inboundMaterialFilter ? 'text-sky-600' : ''"
-                              :title="inboundMaterialFilter ? `已筛选：${inboundMaterialFilter}` : '点击选择物料名称'"
-                              @click="openInboundMaterialDialog"
-                            >
-                              <span class="truncate">{{ inboundMaterialFilter || column.label }}</span>
-                              <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                              </svg>
-                            </button>
-                            <button
-                              v-if="inboundMaterialFilter"
-                              type="button"
-                              class="rounded px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                              aria-label="清除物料名称筛选"
-                              @click="clearInboundMaterialFilter"
-                            >
-                              ×
-                            </button>
-                          </span>
+                          <FilterHeaderCell
+                            :label="column.label"
+                            :selected="inboundMaterialFilter"
+                            hint="物料名称"
+                            max-width-class="max-w-[130px]"
+                            @open="openInboundMaterialDialog"
+                            @clear="clearInboundMaterialFilter"
+                          />
                         </template>
+
                         <template v-else>{{ column.label }}</template>
                       </th>
                     </tr>
@@ -2661,11 +2538,10 @@ watch(activeTab, (tab) => {
 
       <div v-show="activeTab === 'daily'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-            <h2 class="text-base font-semibold text-slate-900">日报表记录</h2>
-            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
-          </div>
+          <PanelState
+              title="日报表记录"
+              description="功能建设中，敬请期待"
+            />
         </section>
       </div>
 
@@ -2921,11 +2797,10 @@ watch(activeTab, (tab) => {
             </div>
           </div>
 
-          <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-            <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600">∅</div>
-            <h2 class="text-base font-semibold text-slate-900">电费预提</h2>
-            <p class="mt-2 text-sm text-slate-500">功能建设中，敬请期待</p>
-          </div>
+          <PanelState
+              title="电费预提"
+              description="功能建设中，敬请期待"
+            />
         </section>
       </div>
 
@@ -3088,54 +2963,5 @@ watch(activeTab, (tab) => {
   display: inline-block;
   transform: scaleY(1.35);
   margin: 0 2px;
-}
-
-.loading-mask {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.loader {
-  display: flex;
-  width: min(360px, 80%);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.loader-text {
-  align-self: center;
-  margin-bottom: 20px;
-  color: rgb(0, 0, 0);
-  font-size: 24px;
-}
-
-.loader-bar {
-  width: 30%;
-  min-width: 110px;
-  height: 10px;
-  overflow: hidden;
-  border-radius: 5px;
-  background-color: rgb(0, 0, 0);
-  animation: loader-bar-animation 2s ease-in-out infinite;
-}
-
-@keyframes loader-bar-animation {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  50% {
-    transform: translateX(100%);
-  }
-
-  100% {
-    transform: translateX(-100%);
-  }
 }
 </style>
