@@ -5,10 +5,15 @@ import dayjs from 'dayjs'
 import request from '../api/request'
 import { clearAuth, getRoleName, hasPerm } from '../api/auth'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
+import { useWorkOrderData } from '../composables/useWorkOrderData'
+import { usePickData } from '../composables/usePickData'
+import { useInboundData } from '../composables/useInboundData'
+import { useGoodsMoveData } from '../composables/useGoodsMoveData'
 import WorkOrderImport from './WorkOrderImport.vue'
 import vesselImageUrl from '../assets/vessel.png'
 import vesselProduct150ImageUrl from '../assets/vessel-product150.png'
 import { REPORT_ORDER_TYPES, getReportOrderType } from '../constants/orderTypes'
+import { normalizeImageList } from '../utils/image'
 import {
   formatDate,
   getToday,
@@ -18,7 +23,6 @@ import {
   formatMonthDay,
   formatQty,
   normalizeMaterialName,
-  pickField,
 } from '../utils/format'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
@@ -82,16 +86,99 @@ const reportColumns = [
 const router = useRouter()
 const activeTab = ref('workOrder')
 
-const tableData = ref([])
-const tableDataAll = ref([])
-const allWorkOrders = ref([])
-const pageNum = ref(1)
-const pageSize = ref(10)
-const total = ref(0)
-const loading = ref(false)
-const errorMessage = ref('')
-const startDate = ref(getFirstDayOfCurrentMonth())
-const endDate = ref(getToday())
+// 工单数据与筛选（与工单报工面板共享同一份数据）
+const {
+  tableData,
+  tableDataAll,
+  allWorkOrders,
+  pageNum,
+  pageSize,
+  total,
+  loading,
+  errorMessage,
+  startDate,
+  endDate,
+  productFilter,
+  orderTypeFilter,
+  orderNoFilter,
+  productDialogVisible,
+  orderTypeDialogVisible,
+  orderNoDialogVisible,
+  productOptions,
+  orderTypeOptions,
+  orderNoOptions,
+  getPageData,
+  filterWorkOrders,
+  fetchWorkOrders,
+  openProductDialog,
+  handleProductSelected,
+  clearProductFilter,
+  openOrderTypeDialog,
+  handleOrderTypeSelected,
+  clearOrderTypeFilter,
+  openOrderNoDialog,
+  handleOrderNoSelected,
+  clearOrderNoFilter,
+} = useWorkOrderData()
+
+// 领料汇总数据（与原辅料核算、周统计面板共享）
+const {
+  allPickRecords,
+  pickFiltered,
+  pickTableData,
+  pickPageNum,
+  pickPageSize,
+  pickTotal,
+  pickLoading,
+  pickError,
+  pickStartDate,
+  pickEndDate,
+  pickMaterialDialogVisible,
+  pickMaterialFilter,
+  pickMaterialOptions,
+  getPickDate,
+  getPickPageData,
+  filterPickRecords,
+  fetchPickRecords,
+  openPickMaterialDialog,
+  handlePickMaterialSelected,
+  clearPickMaterialFilter,
+} = usePickData()
+
+// 入库汇总数据（与工单核算、周统计面板共享）
+const {
+  allInboundRecords,
+  inboundFiltered,
+  inboundTableData,
+  inboundPageNum,
+  inboundPageSize,
+  inboundTotal,
+  inboundLoading,
+  inboundError,
+  inboundStartDate,
+  inboundEndDate,
+  inboundMaterialDialogVisible,
+  inboundMaterialFilter,
+  inboundMaterialOptions,
+  getInboundDate,
+  getInboundPageData,
+  filterInboundRecords,
+  fetchInboundRecords,
+  openInboundMaterialDialog,
+  handleInboundMaterialSelected,
+  clearInboundMaterialFilter,
+} = useInboundData()
+
+// 货物移动数据（原辅料核算的「已报工数」来源）
+const {
+  goodsMoveRecords,
+  goodsMoveError,
+  goodsMoveStartDate,
+  goodsMoveEndDate,
+  goodsMoveQtyMap,
+  fetchGoodsMoveRecords,
+} = useGoodsMoveData()
+
 const imageList = ref([])
 const currentIndex = ref(0)
 const currentMaterialDesc = ref('')
@@ -101,46 +188,8 @@ const imageDialogVisible = ref(false)
 const imageFileInput = ref(null)
 const imageUploading = ref(false)
 const imageDeleting = ref(false)
-const productDialogVisible = ref(false)
-const productFilter = ref('')
-const orderTypeDialogVisible = ref(false)
-const orderTypeFilter = ref('')
-const orderNoDialogVisible = ref(false)
-const orderNoFilter = ref('')
 
 // 工单号可选项（当前日期范围内的工单号，倒序）
-const orderNoOptions = computed(() => {
-  const orderNos = allWorkOrders.value
-    .filter(matchesDateRange)
-    .map((order) => String(order.orderNo ?? '').trim())
-    .filter(Boolean)
-
-  return [...new Set(orderNos)].sort((left, right) =>
-    String(right).localeCompare(String(left), undefined, { numeric: true }),
-  )
-})
-
-// 工单类型可选项（按 操作→包装→转桶→返工 固定顺序）
-const orderTypeOptions = computed(() => {
-  const types = new Set(
-    allWorkOrders.value
-      .filter(matchesDateRange)
-      .map((order) => getReportOrderType(order.orderNo))
-      .filter(Boolean),
-  )
-
-  return REPORT_ORDER_TYPES.map((type) => type.label).filter((label) => types.has(label))
-})
-
-const productOptions = computed(() => {
-  const names = allWorkOrders.value
-    .filter(matchesDateRange)
-    .map((order) => String(order.materialDesc ?? '').trim())
-    .filter(Boolean)
-
-  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
-})
-
 // 工单报工数据：取工单汇总页当前查出的数据，按 工单类型 + 产成品 分组，数量与产量按组求和
 const reportRows = computed(() => {
   const rows = new Map()
@@ -193,35 +242,6 @@ const columns = [
 ]
 
 
-function normalizeImage(image) {
-  if (typeof image === 'string') {
-    return { imageId: image, url: image }
-  }
-
-  return {
-    imageId: image?.imageId ?? image?.id ?? '',
-    url: image?.url ?? image?.imageUrl ?? image?.fileUrl ?? image?.path ?? '',
-  }
-}
-
-function normalizeImageList(images) {
-  let imageValues = images
-
-  if (typeof imageValues === 'string') {
-    try {
-      imageValues = JSON.parse(imageValues)
-    } catch {
-      imageValues = imageValues ? [imageValues] : []
-    }
-  }
-
-  if (!Array.isArray(imageValues)) {
-    imageValues = imageValues ? [imageValues] : []
-  }
-
-  return imageValues.map(normalizeImage).filter((image) => image.url)
-}
-
 async function refreshImageList(order) {
   if (!currentOrderNo.value) {
     imageList.value = normalizeImageList(order?.imageList)
@@ -257,51 +277,6 @@ async function openImageDialog(order) {
   imageDialogVisible.value = true
 
   await refreshImageList(order)
-}
-
-function openProductDialog() {
-  productDialogVisible.value = true
-}
-
-function handleProductSelected(materialDesc) {
-  productFilter.value = materialDesc
-  productDialogVisible.value = false
-  filterWorkOrders()
-}
-
-function clearProductFilter() {
-  productFilter.value = ''
-  filterWorkOrders()
-}
-
-function openOrderTypeDialog() {
-  orderTypeDialogVisible.value = true
-}
-
-function handleOrderTypeSelected(orderType) {
-  orderTypeFilter.value = orderType
-  orderTypeDialogVisible.value = false
-  filterWorkOrders()
-}
-
-function clearOrderTypeFilter() {
-  orderTypeFilter.value = ''
-  filterWorkOrders()
-}
-
-function openOrderNoDialog() {
-  orderNoDialogVisible.value = true
-}
-
-function handleOrderNoSelected(orderNo) {
-  orderNoFilter.value = orderNo
-  orderNoDialogVisible.value = false
-  filterWorkOrders()
-}
-
-function clearOrderNoFilter() {
-  orderNoFilter.value = ''
-  filterWorkOrders()
 }
 
 function openFilePicker() {
@@ -409,109 +384,6 @@ async function deleteImage(image) {
   }
 }
 
-function getPageData(page = pageNum.value) {
-  pageNum.value = page
-  const startIndex = (pageNum.value - 1) * pageSize.value
-  const endIndex = startIndex + pageSize.value
-  tableData.value = tableDataAll.value.slice(startIndex, endIndex)
-}
-
-function normalizeWorkOrder(item) {
-  if (!item) return null
-  const order = item.workOrder
-    ? { ...item.workOrder, ...item }
-    : { ...item }
-  order.imageList = normalizeImageList(order.imageList)
-  return order
-}
-
-function getOrderDate(order) {
-  return String(order?.planStartDate || '').slice(0, 10)
-}
-
-function sortWorkOrders(workOrders) {
-  return [...workOrders].sort((left, right) => {
-    const leftDate = new Date(left.planStartDate || 0).getTime()
-    const rightDate = new Date(right.planStartDate || 0).getTime()
-
-    if (leftDate !== rightDate) {
-      return rightDate - leftDate
-    }
-
-    return String(right.orderNo ?? '').localeCompare(
-      String(left.orderNo ?? ''),
-      undefined,
-      { numeric: true },
-    )
-  })
-}
-
-function matchesDateRange(order) {
-  const planStartDate = getOrderDate(order)
-  if (!planStartDate) return false
-  return planStartDate >= startDate.value && planStartDate <= endDate.value
-}
-
-function matchesProductFilter(order) {
-  if (!productFilter.value) return true
-  return String(order.materialDesc ?? '').trim() === productFilter.value
-}
-
-function matchesOrderTypeFilter(order) {
-  if (!orderTypeFilter.value) return true
-  return getReportOrderType(order.orderNo) === orderTypeFilter.value
-}
-
-function matchesOrderNoFilter(order) {
-  if (!orderNoFilter.value) return true
-  return String(order.orderNo ?? '').trim() === orderNoFilter.value
-}
-
-function filterWorkOrders() {
-  tableDataAll.value = allWorkOrders.value.filter(
-    (order) =>
-      matchesDateRange(order) &&
-      matchesProductFilter(order) &&
-      matchesOrderTypeFilter(order) &&
-      matchesOrderNoFilter(order),
-  )
-
-  total.value = tableDataAll.value.length
-  pageNum.value = 1
-  getPageData()
-}
-
-async function fetchWorkOrders() {
-  loading.value = true
-  errorMessage.value = ''
-
-  try {
-    const res = await request.get('/api/work-order/list')
-    if (res.data.success === true) {
-      const dataList = Array.isArray(res.data.dataList)
-        ? res.data.dataList.map(normalizeWorkOrder).filter(Boolean)
-        : []
-
-      allWorkOrders.value = sortWorkOrders(dataList)
-      filterWorkOrders()
-    } else {
-      allWorkOrders.value = []
-      tableDataAll.value = []
-      tableData.value = []
-      total.value = 0
-      errorMessage.value = res.data.msg || '工单接口返回异常，请稍后重试。'
-    }
-  } catch (error) {
-    allWorkOrders.value = []
-    tableDataAll.value = []
-    tableData.value = []
-    total.value = 0
-    errorMessage.value = error.response?.data?.msg || '工单数据加载失败，请稍后重试。'
-  } finally {
-    loading.value = false
-  }
-}
-
 // ===== 领料汇总 =====
 const pickColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
@@ -523,26 +395,6 @@ const pickColumns = [
   { key: 'imageUrl', label: '线下单据', width: 'w-24' },
 ]
 
-// 领料汇总字段别名容错（后端字段名有出入时自动适配）
-const PICK_FIELD_MAP = {
-  materialName: ['materialName', 'materialDesc'],
-  materialCode: ['materialCode', 'materialNo'],
-  pickDate: ['pickDate', 'pickTime'],
-  pickQty: ['pickQty', 'pickQuantity', 'quantity'],
-  unit: ['unit'],
-  imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
-}
-
-const pickStartDate = ref(getFirstDayOfCurrentMonth())
-const pickEndDate = ref(getToday())
-const allPickRecords = ref([])
-const pickFiltered = ref([])
-const pickTableData = ref([])
-const pickPageNum = ref(1)
-const pickPageSize = ref(10)
-const pickTotal = ref(0)
-const pickLoading = ref(false)
-const pickError = ref('')
 const pickImageDialogVisible = ref(false)
 const currentPickImage = ref('')
 
@@ -553,111 +405,6 @@ function openPickImageDialog(record) {
 }
 
 
-function normalizePickRecord(item) {
-  if (!item) return null
-  return Object.fromEntries(
-    Object.entries(PICK_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
-  )
-}
-
-function getPickDate(record) {
-  return String(record?.pickDate ?? '').slice(0, 10)
-}
-
-// 领料时间由近到远排序
-function sortPickRecords(records) {
-  return [...records].sort((left, right) => {
-    const leftTime = new Date(getPickDate(left) || 0).getTime()
-    const rightTime = new Date(getPickDate(right) || 0).getTime()
-    return rightTime - leftTime
-  })
-}
-
-function getPickPageData(page = pickPageNum.value) {
-  pickPageNum.value = page
-  const startIndex = (pickPageNum.value - 1) * pickPageSize.value
-  const endIndex = startIndex + pickPageSize.value
-  pickTableData.value = pickFiltered.value.slice(startIndex, endIndex)
-}
-
-// 物料名称筛选
-const pickMaterialDialogVisible = ref(false)
-const pickMaterialFilter = ref('')
-
-const pickMaterialOptions = computed(() => {
-  const names = allPickRecords.value
-    .filter(matchesPickDateRange)
-    .map((record) => String(record.materialName ?? '').trim())
-    .filter(Boolean)
-
-  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
-})
-
-function matchesPickDateRange(record) {
-  const pickDate = getPickDate(record)
-  if (!pickDate) return false
-  return pickDate >= pickStartDate.value && pickDate <= pickEndDate.value
-}
-
-function matchesPickFilters(record) {
-  if (!matchesPickDateRange(record)) return false
-  if (!pickMaterialFilter.value) return true
-  return String(record.materialName ?? '').trim() === pickMaterialFilter.value
-}
-
-function openPickMaterialDialog() {
-  pickMaterialDialogVisible.value = true
-}
-
-function handlePickMaterialSelected(materialName) {
-  pickMaterialFilter.value = materialName
-  pickMaterialDialogVisible.value = false
-  filterPickRecords()
-}
-
-function clearPickMaterialFilter() {
-  pickMaterialFilter.value = ''
-  filterPickRecords()
-}
-
-function filterPickRecords() {
-  pickFiltered.value = sortPickRecords(allPickRecords.value.filter(matchesPickFilters))
-
-  pickTotal.value = pickFiltered.value.length
-  pickPageNum.value = 1
-  getPickPageData()
-}
-
-async function fetchPickRecords() {
-  pickLoading.value = true
-  pickError.value = ''
-
-  try {
-    const res = await request.get('/api/pick/list')
-
-    if (res.data?.success === false) {
-      throw new Error(res.data.msg || '领料汇总接口返回异常，请稍后重试。')
-    }
-
-    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
-    allPickRecords.value = dataList.map(normalizePickRecord).filter(Boolean)
-    filterPickRecords()
-  } catch (error) {
-    allPickRecords.value = []
-    pickFiltered.value = []
-    pickTableData.value = []
-    pickTotal.value = 0
-
-    if (error?.response?.status === 404) {
-      pickError.value = '领料汇总接口不存在，请确认后端服务已实现该接口。'
-    } else {
-      pickError.value =
-        error.response?.data?.msg || error.message || '领料汇总数据加载失败，请稍后重试。'
-    }
-  } finally {
-    pickLoading.value = false
-  }
-}
 
 // ===== 入库汇总 =====
 const inboundColumns = [
@@ -670,26 +417,6 @@ const inboundColumns = [
   { key: 'imageUrl', label: '线下单据', width: 'w-24' },
 ]
 
-// 入库汇总字段别名容错（后端字段名有出入时自动适配）
-const INBOUND_FIELD_MAP = {
-  materialName: ['materialName', 'materialDesc'],
-  materialCode: ['materialCode', 'materialNo'],
-  inboundDate: ['inboundDate', 'inboundTime'],
-  inboundQty: ['inboundQty', 'inboundQuantity', 'quantity'],
-  unit: ['unit'],
-  imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
-}
-
-const inboundStartDate = ref(getFirstDayOfCurrentMonth())
-const inboundEndDate = ref(getToday())
-const allInboundRecords = ref([])
-const inboundFiltered = ref([])
-const inboundTableData = ref([])
-const inboundPageNum = ref(1)
-const inboundPageSize = ref(10)
-const inboundTotal = ref(0)
-const inboundLoading = ref(false)
-const inboundError = ref('')
 const inboundImageDialogVisible = ref(false)
 const currentInboundImage = ref('')
 
@@ -699,111 +426,6 @@ function openInboundImageDialog(record) {
   inboundImageDialogVisible.value = true
 }
 
-function normalizeInboundRecord(item) {
-  if (!item) return null
-  return Object.fromEntries(
-    Object.entries(INBOUND_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
-  )
-}
-
-function getInboundDate(record) {
-  return String(record?.inboundDate ?? '').slice(0, 10)
-}
-
-// 入库时间由近到远排序
-function sortInboundRecords(records) {
-  return [...records].sort((left, right) => {
-    const leftTime = new Date(getInboundDate(left) || 0).getTime()
-    const rightTime = new Date(getInboundDate(right) || 0).getTime()
-    return rightTime - leftTime
-  })
-}
-
-function getInboundPageData(page = inboundPageNum.value) {
-  inboundPageNum.value = page
-  const startIndex = (inboundPageNum.value - 1) * inboundPageSize.value
-  const endIndex = startIndex + inboundPageSize.value
-  inboundTableData.value = inboundFiltered.value.slice(startIndex, endIndex)
-}
-
-// 物料名称筛选
-const inboundMaterialDialogVisible = ref(false)
-const inboundMaterialFilter = ref('')
-
-const inboundMaterialOptions = computed(() => {
-  const names = allInboundRecords.value
-    .filter(matchesInboundDateRange)
-    .map((record) => String(record.materialName ?? '').trim())
-    .filter(Boolean)
-
-  return [...new Set(names)].sort((left, right) => left.localeCompare(right, 'zh-CN'))
-})
-
-function matchesInboundDateRange(record) {
-  const inboundDate = getInboundDate(record)
-  if (!inboundDate) return false
-  return inboundDate >= inboundStartDate.value && inboundDate <= inboundEndDate.value
-}
-
-function matchesInboundFilters(record) {
-  if (!matchesInboundDateRange(record)) return false
-  if (!inboundMaterialFilter.value) return true
-  return String(record.materialName ?? '').trim() === inboundMaterialFilter.value
-}
-
-function openInboundMaterialDialog() {
-  inboundMaterialDialogVisible.value = true
-}
-
-function handleInboundMaterialSelected(materialName) {
-  inboundMaterialFilter.value = materialName
-  inboundMaterialDialogVisible.value = false
-  filterInboundRecords()
-}
-
-function clearInboundMaterialFilter() {
-  inboundMaterialFilter.value = ''
-  filterInboundRecords()
-}
-
-function filterInboundRecords() {
-  inboundFiltered.value = sortInboundRecords(allInboundRecords.value.filter(matchesInboundFilters))
-
-  inboundTotal.value = inboundFiltered.value.length
-  inboundPageNum.value = 1
-  getInboundPageData()
-}
-
-async function fetchInboundRecords() {
-  inboundLoading.value = true
-  inboundError.value = ''
-
-  try {
-    const res = await request.get('/api/inbound/list')
-
-    if (res.data?.success === false) {
-      throw new Error(res.data.msg || '入库汇总接口返回异常，请稍后重试。')
-    }
-
-    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
-    allInboundRecords.value = dataList.map(normalizeInboundRecord).filter(Boolean)
-    filterInboundRecords()
-  } catch (error) {
-    allInboundRecords.value = []
-    inboundFiltered.value = []
-    inboundTableData.value = []
-    inboundTotal.value = 0
-
-    if (error?.response?.status === 404) {
-      inboundError.value = '入库汇总接口不存在，请确认后端服务已实现该接口。'
-    } else {
-      inboundError.value =
-        error.response?.data?.msg || error.message || '入库汇总数据加载失败，请稍后重试。'
-    }
-  } finally {
-    inboundLoading.value = false
-  }
-}
 
 // ===== 工单核算 =====
 const costingColumns = [
@@ -902,75 +524,6 @@ const MATERIAL_COSTING_DERIVED = [
   },
 ]
 
-// 货物移动：按物料编码汇总移动数量（原辅料核算的「已报工数」来源）
-const GOODS_MOVE_FIELD_MAP = {
-  materialCode: ['materialCode', 'materialNo'],
-  moveQty: ['moveQty', 'quantity', 'moveQuantity', 'qty'],
-  moveDate: ['moveDate', 'postingDate', 'postDate'],
-  moveType: ['moveType', 'movementType', 'type'],
-  fromLocation: ['fromLocation', 'fromStorage', 'sourceLocation'],
-}
-
-const goodsMoveRecords = ref([])
-const goodsMoveError = ref('')
-// 货物移动查询时间范围（默认当月初至今天）
-const goodsMoveStartDate = ref(getFirstDayOfCurrentMonth())
-const goodsMoveEndDate = ref(getToday())
-
-const goodsMoveQtyMap = computed(() => {
-  const map = new Map()
-
-  for (const record of goodsMoveRecords.value) {
-    const code = String(record.materialCode ?? '').trim()
-    if (!code) continue
-
-    map.set(code, (map.get(code) || 0) + (Number(record.moveQty) || 0))
-  }
-
-  return map
-})
-
-function normalizeGoodsMoveRecord(item) {
-  if (!item) return null
-  return Object.fromEntries(
-    Object.entries(GOODS_MOVE_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
-  )
-}
-
-async function fetchGoodsMoveRecords() {
-  goodsMoveError.value = ''
-
-  try {
-    const res = await request.get('/api/goods-move/list', {
-      params: {
-        startDate: goodsMoveStartDate.value,
-        endDate: goodsMoveEndDate.value,
-      },
-    })
-
-    if (res.data?.success === false) {
-      throw new Error(res.data.msg || '货物移动接口返回异常。')
-    }
-
-    const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
-    goodsMoveRecords.value = dataList
-      .map(normalizeGoodsMoveRecord)
-      .filter((record) => {
-        if (!record) return false
-
-        const moveDate = String(record.moveDate ?? '').slice(0, 10)
-        // 无日期字段时不过滤（避免后端未返回该字段导致数据全空）
-        if (!moveDate) return true
-
-        return moveDate >= goodsMoveStartDate.value && moveDate <= goodsMoveEndDate.value
-      })
-  } catch (error) {
-    goodsMoveRecords.value = []
-    goodsMoveError.value = error?.response?.status === 404
-      ? '货物移动接口不存在，请确认后端服务已实现该接口。'
-      : error.response?.data?.msg || error.message || '货物移动数据加载失败。'
-  }
-}
 
 // 原辅料核算：以领料汇总的物料名称去重为行，领料数按物料累加，已报工数取货物移动数量合计
 const materialCostingRows = computed(() => {
