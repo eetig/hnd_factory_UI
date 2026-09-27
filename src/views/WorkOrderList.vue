@@ -1638,10 +1638,7 @@ onMounted(() => {
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
-
-  // 加载罐体底图后再绘制液位
-  vesselSwitching.value = true
-  loadVesselImage()
+  // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
 
 onUnmounted(() => {
@@ -1649,9 +1646,10 @@ onUnmounted(() => {
   stopStepHold()
 })
 
-// 切到压力容器 Tab 时启动波纹动画，离开时停帧
+// 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
 watch(activeTab, (tab) => {
   if (tab === 'vessel') {
+    loadVesselImage()
     startVesselLoop()
   } else {
     stopVesselLoop()
