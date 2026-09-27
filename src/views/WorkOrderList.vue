@@ -407,6 +407,22 @@ function openPickImageDialog(record) {
   pickImageDialogVisible.value = true
 }
 
+/**
+ * 列表图片加载失败的逐级降级（整流-001）：
+ *   缩略图失败 → 回退原图 → 仍失败则隐藏，露出底层占位图标
+ */
+function handleImgError(event, record) {
+  const el = event.target
+
+  if (record?.imageUrl && el.dataset.thumbFallback !== '1') {
+    el.dataset.thumbFallback = '1'
+    el.src = record.imageUrl
+    return
+  }
+
+  el.style.display = 'none'
+}
+
 
 
 // ===== 入库汇总 =====
@@ -2006,20 +2022,9 @@ watch(activeTab, (tab) => {
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
-                          v-if="record.imageUrl"
-                          class="inline-block cursor-pointer"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                          :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
                           @click="openPickImageDialog(record)"
-                        >
-                          <img
-                            :src="record.imageUrl"
-                            alt="领料单据"
-                            class="h-5 w-5 rounded border border-slate-200 object-cover transition hover:opacity-80"
-                          />
-                        </span>
-                        <span
-                          v-else
-                          class="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-400"
-                          aria-label="暂无图片"
                         >
                           <svg
                             class="h-3 w-3"
@@ -2033,6 +2038,16 @@ watch(activeTab, (tab) => {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <path d="m21 15-5-5L5 21" />
                           </svg>
+                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
+                          <img
+                            v-if="record.thumbnailUrl || record.imageUrl"
+                            :src="record.thumbnailUrl || record.imageUrl"
+                            alt="领料单据"
+                            loading="lazy"
+                            decoding="async"
+                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                            @error="handleImgError($event, record)"
+                          />
                         </span>
                       </td>
                     </tr>
@@ -2167,20 +2182,9 @@ watch(activeTab, (tab) => {
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
-                          v-if="record.imageUrl"
-                          class="inline-block cursor-pointer"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                          :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
                           @click="openInboundImageDialog(record)"
-                        >
-                          <img
-                            :src="record.imageUrl"
-                            alt="入库单据"
-                            class="h-5 w-5 rounded border border-slate-200 object-cover transition hover:opacity-80"
-                          />
-                        </span>
-                        <span
-                          v-else
-                          class="flex h-5 w-5 items-center justify-center rounded bg-slate-100 text-slate-400"
-                          aria-label="暂无图片"
                         >
                           <svg
                             class="h-3 w-3"
@@ -2194,6 +2198,16 @@ watch(activeTab, (tab) => {
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <path d="m21 15-5-5L5 21" />
                           </svg>
+                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
+                          <img
+                            v-if="record.thumbnailUrl || record.imageUrl"
+                            :src="record.thumbnailUrl || record.imageUrl"
+                            alt="入库单据"
+                            loading="lazy"
+                            decoding="async"
+                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                            @error="handleImgError($event, record)"
+                          />
                         </span>
                       </td>
                     </tr>

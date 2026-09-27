@@ -26,6 +26,8 @@ const PICK_FIELD_MAP = {
   pickDate: ['pickDate', 'pickTime'],
   pickQty: ['pickQty', 'pickQuantity', 'quantity'],
   unit: ['unit'],
+  // 列表缩略图（整改-001 新增）：缺失时前端回退用 imageUrl
+  thumbnailUrl: ['thumbnailUrl', 'thumbUrl'],
   imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
 }
 
