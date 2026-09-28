@@ -13,9 +13,15 @@ const emit = defineEmits(['cancel', 'back'])
 const fileInputRef = ref(null)
 const dragActive = ref(false)
 const uploading = ref(false)
+const uploadPercent = ref(0)
+const uploadPhase = ref('uploading') // 'uploading' 上传中 | 'parsing' 服务端解析中
 const importing = ref(false)
 const imported = ref(false)
 const currentFile = ref(null)
+// 原始文件（未剥图）保留在内存：确认导入时按需从中提取图片
+const originalFile = ref(null)
+// 本次需要上传的图片 ID（来自预览接口，已去重；全部重复时为空数组）
+const needImageIds = ref([])
 const previewList = ref([])
 const tableData = ref([])
 const pageNum = ref(1)
@@ -27,7 +33,7 @@ const previewError = ref('')
 const errorRows = ref([])
 const localErrors = ref([])
 const importFailRows = ref([])
-const importSummary = ref({ addCount: 0, updateCount: 0 })
+const importSummary = ref({ addCount: 0, updateCount: 0, skipCount: 0 })
 
 // 各识别类型对应的表头定义（含列宽与换行样式）
 const WORK_ORDER_COLUMNS = [
@@ -158,7 +164,8 @@ function resetState() {
   errorRows.value = []
   localErrors.value = []
   importFailRows.value = []
-  importSummary.value = { addCount: 0, updateCount: 0 }
+  importSummary.value = { addCount: 0, updateCount: 0, skipCount: 0 }
+  needImageIds.value = []
   imported.value = false
 }
 
@@ -188,6 +195,14 @@ function handleFileInputChange(event) {
 function isExcelFile(file) {
   const name = file?.name || ''
   return /\.(xlsx|xls)$/i.test(name)
+}
+
+// 让用户直观看到文件大小 —— 内嵌单据图片的 Excel 可达十几 MB，是上传慢的主因
+function formatFileSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function getErrorMessage(error, fallback) {
@@ -226,13 +241,38 @@ const requiresOrderNo = computed(() => {
 async function fetchPreview(file) {
   resetState()
   currentFile.value = file
+  // 保留原始文件：确认导入时要从中按需提取图片
+  originalFile.value = file
   uploading.value = true
+  uploadPercent.value = 0
+  uploadPhase.value = 'uploading'
 
   try {
-    const formData = new FormData()
-    formData.append('file', file)
+    // 剥离内嵌单据图片后再上传 —— 预览只读单元格里的 DISPIMG("ID_xxx") 文本，
+    // 不需要图片二进制。实测 16.58MB → 约 0.13MB，传输量降 99%。
+    // 注：.xls 是二进制格式不是 zip，剥离会失败 —— 此时回退上传原文件
+    let uploadBlob = file
+    try {
+      // 动态导入：jszip 约 100KB，只在导入时加载，不进主包
+      const { stripImages } = await import('../utils/xlsxStrip')
+      uploadBlob = await stripImages(file)
+    } catch {
+      uploadBlob = file
+    }
 
-    const res = await request.post('/api/work-order/import/preview', formData)
+    const formData = new FormData()
+    // 必须带原文件名：后端按 .xlsx 后缀决定是否清洗，并以文件名兜底识别单据类型
+    formData.append('file', uploadBlob, file.name)
+
+    const res = await request.post('/api/work-order/import/preview', formData, {
+      // 剥图后文件很小，进度条通常一闪而过；保留以应对剥离回退的大文件场景
+      onUploadProgress: (e) => {
+        if (!e.total) return
+        const percent = Math.round((e.loaded / e.total) * 100)
+        uploadPercent.value = Math.min(100, percent)
+        if (percent >= 100) uploadPhase.value = 'parsing'
+      },
+    })
     const data = res.data?.data || {}
 
     if (res.data?.success === false) {
@@ -243,6 +283,7 @@ async function fetchPreview(file) {
     total.value = Number(data.total) || previewList.value.length
     workOrderType.value = data.workOrderType || ''
     taskId.value = data.taskId || ''
+    needImageIds.value = Array.isArray(data.needImageIds) ? data.needImageIds : []
     errorRows.value = Array.isArray(data.errorRows) ? data.errorRows : []
     localErrors.value = requiresOrderNo.value ? collectEmptyOrderNoErrors(previewList.value) : []
     pageNum.value = 1
@@ -267,9 +308,23 @@ async function handleImport() {
   importing.value = true
 
   try {
-    const res = await request.post('/api/work-order/import/save', {
-      taskId: taskId.value,
-    })
+    const ids = needImageIds.value
+    let res
+
+    if (ids.length > 0 && originalFile.value) {
+      // 有新增/变更行 → 只上传这些行需要的图片（已去重）
+      // 文件名 = dispimgId，后端去掉扩展名后按此匹配
+      const { extractImages } = await import('../utils/xlsxStrip')
+      const images = await extractImages(originalFile.value, ids)
+      const formData = new FormData()
+      formData.append('taskId', taskId.value)
+      images.forEach((image) => formData.append('files', image))
+      res = await request.post('/api/work-order/import/save', formData)
+    } else {
+      // 全部重复（needImageIds 为空）→ 0 图片传输，走 JSON 路径
+      res = await request.post('/api/work-order/import/save', { taskId: taskId.value })
+    }
+
     const data = res.data?.data || {}
 
     if (res.data?.success === false) {
@@ -279,17 +334,18 @@ async function handleImport() {
     importSummary.value = {
       addCount: Number(data.addCount) || 0,
       updateCount: Number(data.updateCount) || 0,
+      skipCount: Number(data.skipCount) || 0,
     }
     importFailRows.value = Array.isArray(data.failRows) ? data.failRows : []
     imported.value = true
 
     if (importFailRows.value.length) {
       ElMessage.warning(
-        `导入完成：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条，失败 ${importFailRows.value.length} 条`,
+        `导入完成：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条，跳过 ${importSummary.value.skipCount} 条，失败 ${importFailRows.value.length} 条`,
       )
     } else {
       ElMessage.success(
-        `导入成功：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条`,
+        `导入成功：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条，跳过 ${importSummary.value.skipCount} 条`,
       )
     }
   } catch (error) {
@@ -326,12 +382,32 @@ function handleBackToList() {
       @dragleave.prevent="dragActive = false"
       @drop.prevent="handleDrop"
     >
-      <div v-if="uploading" class="flex flex-col items-center gap-4 py-4">
-        <div class="loader" role="status" aria-label="正在解析文件">
+      <div v-if="uploading" class="flex w-full flex-col items-center gap-4 py-4">
+        <!-- 上传阶段：显示真实进度（大文件可达十几 MB，需要让用户看到在动） -->
+        <div v-if="uploadPhase === 'uploading'" class="w-full max-w-md">
+          <p class="mb-2 text-center text-sm font-medium text-slate-700">
+            正在上传 {{ uploadPercent }}%
+          </p>
+          <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+            <div
+              class="h-full rounded-full bg-sky-500 transition-[width] duration-200 ease-out"
+              :style="{ width: `${uploadPercent}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- 解析阶段：上传已完成，服务端解析中（时长不可预知，用不确定动画） -->
+        <div v-else class="loader" role="status" aria-label="正在解析文件">
           <div class="loader-text">解析中...</div>
           <div class="loader-bar"></div>
         </div>
-        <p class="text-sm text-slate-500">{{ currentFile?.name }}</p>
+
+        <p class="text-sm text-slate-500">
+          {{ currentFile?.name }}
+          <span v-if="currentFile?.size" class="text-slate-400">
+            （{{ formatFileSize(currentFile.size) }}）
+          </span>
+        </p>
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
@@ -460,7 +536,8 @@ function handleBackToList() {
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
           新增 <span class="font-semibold text-emerald-600">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条
+          更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条，
+          跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>
 
