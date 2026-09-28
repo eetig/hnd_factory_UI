@@ -74,10 +74,22 @@ src/
 |---|---|
 | `/api/ocr/recognize` | 本来就是单文件，直接用 `uploadFile` |
 | `/api/work-order/image/upload`（工单图片、周统计图片） | **循环单文件**请求同一接口（`uploadFiles`） |
+| `/api/work-order/ocr/confirm`（确认入库） | ⚠️ **漏了没改**，仍走 `uni.request` + `FormData`，见下 |
 
 > ⚠️ **需要后端确认**：上述循环调用要求 `/api/work-order/image/upload` 接受
 > **单元素**的 `files` 数组。若后端声明的是 Spring 的 `MultipartFile[]`，天然合法；
 > 若有「至少 N 张」之类的校验，需同步调整。
+
+> ⚠️ **已知未修复：`/api/work-order/ocr/confirm` 现在发不出 body（三端一致）。**
+> `src/composables/useOcrConfirm.js` 仍在用 `uni.request` + `FormData`（`payload` + 可选 `file`），
+> 正是上面这条规则禁止的写法 —— 迁移时漏改了这个文件。
+> H5 实测（拦截请求看服务端实收）：`Content-Type: application/json`、body 为 `{}`，
+> **payload 与文件被静默丢弃**，而前端拿到的是成功响应、不报错。
+> 结果是「确认入库」在页面上必然表现为「提示保存成功、库里没有数据」。
+>
+> 修法有两条，都涉及接口契约，按约定需先与后端确认再动，故先挂起：
+> 前端改走 `uni.uploadFile`（`file` 是可选参数，需用占位空文件凑数），
+> 或后端加一个纯 JSON 的入口。相关记录见 `前后端改动统筹.md` 变更-003 §8.8。
 
 ---
 
@@ -160,7 +172,16 @@ App 与小程序端**整块排除**（条件编译 `#ifdef H5`，含组件导入
 ### 5.4 其它
 
 - **长按连续调节液位**：`pointerdown` + `window.addEventListener('pointerup')` →
-  `@touchstart` + `@touchend`/`@touchcancel`（触点在元素上就归它，比全局监听更准）
+  `@touchstart` + `@touchend`/`@touchcancel`（触点在元素上就归它，比全局监听更准）。
+  ⚠️ 但**只绑 touch 会让 H5 桌面端整个按不动** —— 桌面浏览器根本不产生 touch 事件。
+  现在 touch 与 mouse 两组都绑，再用 700ms 时间窗丢弃「触摸后浏览器补发的 mouse」，
+  避免一次操作走两格（`startStepHoldByTouch` / `startStepHoldByMouse`）。
+- **`<button>` 的 touch/mouse 不能只绑一组**：小程序与 App 真机只有 touch，
+  H5 桌面只有 mouse，缺哪组哪端就是死键。凡「按下—抬起」型交互都要两组齐全。
+- **`wd-pagination` 的 `change` 载荷是 `{ value: N }` 对象，不是页码**，且它
+  **先于 `update:modelValue` 触发**（此时 v-model 还是旧值）。`el-pagination` 传的是数字，
+  照旧写法直接绑处理函数会让页码被赋成对象 → `slice(NaN, NaN)` → **列表静默变空、不报错**。
+  必须写成 `@change="(e) => getPageData(e.value)"`。工单/领料/入库汇总与导入页共 4 处。
 - **页面壳**：`pages/index/index` 声明了 `navigationStyle: custom`（页面自带标题栏，
   不再叠原生导航栏），代价是要自己用 `--status-bar-height` 给状态栏让位。
 - **登录跳转**：`route.query.redirect` 在 uni-app 无对应物，改成「有上一页就返回，否则回首页」。
