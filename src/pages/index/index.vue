@@ -1857,6 +1857,25 @@ function startStepHold(which, direction) {
   }, 320)
 }
 
+// 液位按钮的按下/抬起必须同时覆盖触摸与鼠标：
+//   · 小程序端与 App 真机只有 touch 事件；
+//   · H5 桌面端只有 mouse 事件 —— 只绑 @touchstart 的话，鼠标点一下完全没反应。
+// 两边都绑就得防「一次操作走两格」：触摸屏上浏览器会在 touchend 之后补发一套 mouse
+// 兼容事件。touchstart 的 .prevent 通常会抑制它们，但个别 webview 不保证，所以再用
+// 时间窗兜一道：刚发生过触摸，短时间内来的 mouse 按下直接丢弃。
+let vesselLastTouchAt = 0
+const VESSEL_TOUCH_DEDUPE_MS = 700
+
+function startStepHoldByTouch(which, direction) {
+  vesselLastTouchAt = Date.now()
+  startStepHold(which, direction)
+}
+
+function startStepHoldByMouse(which, direction) {
+  if (Date.now() - vesselLastTouchAt < VESSEL_TOUCH_DEDUPE_MS) return
+  startStepHold(which, direction)
+}
+
 function clampAndAnimateLevel(which, value) {
   const maxLevel = vesselGeometry.value.maxLevel
   const clamped = Math.max(0, Math.min(maxLevel, Number(value) || 0))
@@ -2833,12 +2852,16 @@ watch(activeTab, (tab, prevTab) => {
                     起始液位
                   </span>
                   <div class="flex items-center gap-3">
+                    <!-- touch 与 mouse 两组都要绑，缺一组就有一端按不动（见 startStepHoldByTouch 的注释） -->
                     <button
                       class="vessel-step"
                       aria-label="降低起始液位"
-                      @touchstart.prevent="startStepHold('start', -1)"
+                      @touchstart.prevent="startStepHoldByTouch('start', -1)"
                       @touchend="stopStepHold"
                       @touchcancel="stopStepHold"
+                      @mousedown.prevent="startStepHoldByMouse('start', -1)"
+                      @mouseup="stopStepHold"
+                      @mouseleave="stopStepHold"
                     >
                       −
                     </button>
@@ -2853,9 +2876,12 @@ watch(activeTab, (tab, prevTab) => {
                     <button
                       class="vessel-step"
                       aria-label="升高起始液位"
-                      @touchstart.prevent="startStepHold('start', 1)"
+                      @touchstart.prevent="startStepHoldByTouch('start', 1)"
                       @touchend="stopStepHold"
                       @touchcancel="stopStepHold"
+                      @mousedown.prevent="startStepHoldByMouse('start', 1)"
+                      @mouseup="stopStepHold"
+                      @mouseleave="stopStepHold"
                     >
                       +
                     </button>
@@ -2887,9 +2913,12 @@ watch(activeTab, (tab, prevTab) => {
                     <button
                       class="vessel-step"
                       aria-label="降低终止液位"
-                      @touchstart.prevent="startStepHold('end', -1)"
+                      @touchstart.prevent="startStepHoldByTouch('end', -1)"
                       @touchend="stopStepHold"
                       @touchcancel="stopStepHold"
+                      @mousedown.prevent="startStepHoldByMouse('end', -1)"
+                      @mouseup="stopStepHold"
+                      @mouseleave="stopStepHold"
                     >
                       −
                     </button>
@@ -2904,9 +2933,12 @@ watch(activeTab, (tab, prevTab) => {
                     <button
                       class="vessel-step"
                       aria-label="升高终止液位"
-                      @touchstart.prevent="startStepHold('end', 1)"
+                      @touchstart.prevent="startStepHoldByTouch('end', 1)"
                       @touchend="stopStepHold"
                       @touchcancel="stopStepHold"
+                      @mousedown.prevent="startStepHoldByMouse('end', 1)"
+                      @mouseup="stopStepHold"
+                      @mouseleave="stopStepHold"
                     >
                       +
                     </button>
