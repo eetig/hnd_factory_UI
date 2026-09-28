@@ -352,7 +352,9 @@ function handleBackToList() {
         <p class="text-xs text-slate-400">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
-          <span class="font-medium text-emerald-600">解析完成</span>
+          <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
+          <span v-if="previewError" class="font-medium text-rose-600">解析失败</span>
+          <span v-else-if="previewList.length" class="font-medium text-emerald-600">解析完成</span>
         </p>
       </div>
     </section>

@@ -4,7 +4,9 @@ import { clearAuth, getToken } from './auth'
 
 const request = axios.create({
   baseURL: '/',
-  timeout: 20000,
+  // 超时放宽到 5 分钟：Excel 导入（解析/预览/保存）耗时较长，
+  // 原 20s 会在解析大文件时误报 "timeout of 20000ms exceeded"。
+  timeout: 300000,
 })
 
 request.interceptors.request.use(
