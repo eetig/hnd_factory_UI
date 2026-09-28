@@ -1,0 +1,63 @@
+// uni.scss —— 会被自动注入到每个组件的 <style lang="scss"> 中。
+// ⚠️ 这里只能放变量 / mixin / function，绝对不能写会产出 CSS 的规则，
+//    否则每个组件都会重复一份，包体迅速膨胀。
+
+// ===== 色板 =====
+// 取值与改造前 Tailwind 主题一致（slate / sky / rose / emerald / amber），
+// 保证「Tailwind 保留 + 问题处补 SCSS」两条路径出来的视觉效果统一。
+$slate-50: #f8fafc;
+$slate-100: #f1f5f9;
+$slate-200: #e2e8f0;
+$slate-300: #cbd5e1;
+$slate-400: #94a3b8;
+$slate-500: #64748b;
+$slate-600: #475569;
+$slate-700: #334155;
+$slate-900: #0f172a;
+
+$sky-50: #f0f9ff;
+$sky-100: #e0f2fe;
+$sky-500: #0ea5e9;
+$sky-600: #0284c7;
+$sky-700: #0369a1;
+
+$rose-50: #fff1f2;
+$rose-500: #f43f5e;
+$rose-600: #e11d48;
+
+$emerald-50: #ecfdf5;
+$emerald-600: #059669;
+
+$amber-50: #fffbeb;
+$amber-200: #fde68a;
+$amber-700: #b45309;
+$amber-800: #92400e;
+
+// ===== 结构 =====
+$radius-lg: 16rpx;
+$radius-xl: 24rpx;
+
+// ===== mixin =====
+
+// 卡片容器：等价于原来的 rounded-xl border border-slate-200 bg-white shadow-sm
+@mixin card {
+  border: 1px solid $slate-200;
+  border-radius: $radius-xl;
+  background-color: #fff;
+}
+
+// 列表分隔线。
+// 说明：`divide-y divide-slate-100` 这类 Tailwind 类**不需要**在这里替代 ——
+// 实测 weapp-tailwindcss 已把 `:not([hidden])~:not([hidden])` 自动改写成
+// `.divide-y>view+view` 等合法形态，小程序端正常生效。
+// 这个 mixin 只留给以后确实需要手写分隔线的场景。
+@mixin divide-list($color: $slate-100, $width: 1px) {
+  > :not(:first-child) {
+    border-top: $width solid $color;
+  }
+}
+
+// 顶部安全区补白（index 页用了 navigationStyle: custom，没有原生导航栏兜住状态栏）
+@mixin safe-area-top {
+  padding-top: var(--status-bar-height, 0px);
+}

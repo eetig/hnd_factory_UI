@@ -1,13 +1,15 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useToast } from 'wot-design-uni'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
-import {
-  ElButton,
-  ElMessage,
-  ElPagination,
-} from 'element-plus'
-import 'element-plus/dist/index.css'
+
+// 本组件只在 H5 端启用（见 pages/index/index.vue 里对「文件导入」Tab 的条件编译）。
+// 原因：Excel 导入依赖 <input type="file"> 与 File/Blob/DOMParser，
+// 而 App / 小程序端没有 DOM，uni-app 也没有内置的 xlsx 选择器（uni.chooseFile 仅 H5）。
+//
+// toast 由页面 provide（useToast 走 provide/inject），所以这里是直接复用页面的实例。
+const toast = useToast()
 
 // imported：导入成功时通知父组件（父组件需在离开本页时刷新各数据集）
 const emit = defineEmits(['cancel', 'back', 'imported'])
@@ -210,7 +212,7 @@ function handleFile(file) {
   if (!file) return
 
   if (!isExcelFile(file)) {
-    ElMessage.error('仅支持 .xlsx / .xls 格式的 Excel 文件')
+    toast.error('仅支持 .xlsx / .xls 格式的 Excel 文件')
     return
   }
 
@@ -284,13 +286,13 @@ async function fetchPreview(file) {
     getPageData()
 
     if (!workOrderType.value) {
-      ElMessage.warning('文件解析完成，但未能识别出工单类型。')
+      toast.warning('文件解析完成，但未能识别出工单类型。')
     } else {
-      ElMessage.success(`文件解析完成，识别为${workOrderType.value}`)
+      toast.success(`文件解析完成，识别为${workOrderType.value}`)
     }
   } catch (error) {
     previewError.value = getErrorMessage(error, '文件解析失败，请稍后重试。')
-    ElMessage.error(previewError.value)
+    toast.error(previewError.value)
   } finally {
     uploading.value = false
   }
@@ -335,16 +337,16 @@ async function handleImport() {
     emit('imported')
 
     if (importFailRows.value.length) {
-      ElMessage.warning(
+      toast.warning(
         `导入完成：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条，跳过 ${importSummary.value.skipCount} 条，失败 ${importFailRows.value.length} 条`,
       )
     } else {
-      ElMessage.success(
+      toast.success(
         `导入成功：新增 ${importSummary.value.addCount} 条，更新 ${importSummary.value.updateCount} 条，跳过 ${importSummary.value.skipCount} 条`,
       )
     }
   } catch (error) {
-    ElMessage.error(getErrorMessage(error, '导入失败，请稍后重试。'))
+    toast.error(getErrorMessage(error, '导入失败，请稍后重试。'))
   } finally {
     importing.value = false
   }
@@ -514,13 +516,13 @@ function handleBackToList() {
       </div>
 
       <div class="flex justify-end border-t border-slate-100 px-6 py-4">
-        <el-pagination
-          v-model:current-page="pageNum"
+        <wd-pagination
+          v-model="pageNum"
           :page-size="pageSize"
           :total="total"
-          layout="total, prev, pager, next"
-          background
-          @current-change="getPageData"
+          show-message
+          :hide-if-one-page="false"
+          @change="getPageData"
         />
       </div>
     </section>
@@ -558,10 +560,10 @@ function handleBackToList() {
     </section>
 
     <div class="mt-6 flex justify-end gap-3">
-      <el-button v-if="!imported" :disabled="importing" @click="handleCancel">
+      <wd-button v-if="!imported" :disabled="importing" @click="handleCancel">
         取消
-      </el-button>
-      <el-button
+      </wd-button>
+      <wd-button
         v-if="!imported"
         type="primary"
         :loading="importing"
@@ -570,10 +572,10 @@ function handleBackToList() {
         @click="handleImport"
       >
         确认导入
-      </el-button>
-      <el-button v-else type="primary" @click="handleBackToList">
+      </wd-button>
+      <wd-button v-else type="primary" @click="handleBackToList">
         返回工单汇总
-      </el-button>
+      </wd-button>
     </div>
   </div>
 </template>

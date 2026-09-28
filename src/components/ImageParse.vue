@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
-import { ElDialog, ElImage } from 'element-plus'
 import request from '../api/request'
+import { uploadFile } from '../api/upload'
 import { formatFileSize } from '../utils/format'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
 import {
@@ -18,17 +18,11 @@ const MAX_COUNT = 5
 // 与 myocr 的 ocr.max-image-bytes 默认值保持一致，避免选完才在服务端被拒
 const MAX_SIZE = 10 * 1024 * 1024
 
-// 只收 PNG / JPG —— 腾讯云 ExtractDocMulti 本身只支持 PNG/JPG/JPEG（不支持 WEBP/BMP），
-// 而落库时单据图要存入 img-service，它同样只接受 jpg/png。
-// 收进来却在识别或存图那一步失败，不如一开始就不让选。
-const ACCEPT = 'image/png,image/jpeg'
-
 // images[].status：idle 未提交 | loading 识别中 | success 成功 | error 失败
 const images = ref([])
 const message = ref('')
 const dragActive = ref(false)
 const submitting = ref(false)
-const fileInputRef = ref(null)
 
 let nextId = 1
 
@@ -44,44 +38,96 @@ const dropZoneClass = computed(() => {
   return 'border-slate-300 hover:border-sky-400'
 })
 
+// 从相册 / 相机选图。
+// 改造前是隐藏的 <input type="file" multiple> + .click()；App 与小程序端没有 DOM，
+// 改用 uni.chooseImage —— 三端统一，App/小程序端还能直接调相机。
 function openFilePicker() {
   if (isFull.value) return
-  fileInputRef.value?.click()
+
+  uni.chooseImage({
+    count: remaining.value,
+    sizeType: ['original', 'compressed'],
+    sourceType: ['camera', 'album'],
+    success: (res) => {
+      const paths = res.tempFilePaths || []
+      const tempFiles = res.tempFiles || []
+
+      addFiles(
+        paths.map((path, index) => ({
+          filePath: path,
+          // uni.chooseImage 不保证给出原始文件名（App/小程序端根本没有这个信息）。
+          // 后端拿 fileName 辅助判断单据类型，所以有名字更好、没有也别因此失败。
+          name: tempFiles[index]?.name || fileNameFromPath(path, index),
+          size: Number(tempFiles[index]?.size) || 0,
+          mime: 'image/*',
+        })),
+      )
+    },
+  })
+}
+
+/** 从临时路径抠文件名；抠不到就给一个带序号的兜底名 */
+function fileNameFromPath(path, index) {
+  const fromPath = /([^/\\?#]+\.(?:png|jpe?g))$/i.exec(String(path || ''))
+  if (fromPath) return fromPath[1]
+
+  const fromDataUrl = /^data:image\/(png|jpe?g)/i.exec(String(path || ''))
+  const ext = fromDataUrl ? fromDataUrl[1].replace(/^jpeg$/i, 'jpg') : 'jpg'
+  return `image_${index + 1}.${ext}`
+}
+
+/**
+ * 大图预览。
+ * 替代 el-image 的 preview-src-list —— uni-app 有原生的 uni.previewImage，
+ * 各端都会调起平台自己的图片查看器（可缩放、可保存），比自己实现好得多。
+ */
+function previewImage(url) {
+  if (!url) return
+  uni.previewImage({ urls: [url], current: url })
 }
 
 // 部分来源（如从某些系统拖拽、相机导出）不带 MIME，退回按扩展名判断
-function isImageFile(file) {
-  return /^image\//.test(file.type || '') || /\.(png|jpe?g)$/i.test(file.name || '')
+function isImageFile(entry) {
+  return /^image\//.test(entry?.mime || '') || /\.(png|jpe?g)$/i.test(entry?.name || '')
 }
 
+/**
+ * H5 端的拖拽上传。
+ *
+ * 拖拽是纯 DOM 能力（dataTransfer），App / 小程序端没有 —— 所以整段实现只在 H5 编译进去，
+ * 其它端这个函数是空的，模板上的 @dragover / @drop 也就成了无害的空绑定。
+ */
 function handleDrop(event) {
   dragActive.value = false
   if (isFull.value) return
-  addFiles(Array.from(event.dataTransfer?.files || []))
+
+  // #ifdef H5
+  addFiles(
+    Array.from(event.dataTransfer?.files || []).map((file) => {
+      // 拖进来的是真正的 File 对象：原始文件名、MIME、大小都齐全（这些正是
+      // chooseImage 给不了的），转成 blob URL 后走同一条上传链路
+      const objectUrl = URL.createObjectURL(file)
+      return { filePath: objectUrl, name: file.name, size: file.size, mime: file.type, objectUrl }
+    }),
+  )
+  // #endif
 }
 
-function handleFileInputChange(event) {
-  const files = Array.from(event.target.files || [])
-  // 清空，否则连续选同一个文件不会再触发 change
-  event.target.value = ''
-  addFiles(files)
-}
-
-function addFiles(files) {
-  if (!files.length) return
+function addFiles(entries) {
+  if (!entries.length) return
   message.value = ''
 
   let notImage = 0
   let oversized = 0
   const accepted = []
 
-  for (const file of files) {
-    if (!isImageFile(file)) {
+  for (const entry of entries) {
+    if (!isImageFile(entry)) {
       notImage += 1
-    } else if (file.size > MAX_SIZE) {
+    } else if (entry.size > MAX_SIZE) {
       oversized += 1
     } else {
-      accepted.push(file)
+      accepted.push(entry)
     }
   }
 
@@ -89,14 +135,17 @@ function addFiles(files) {
   const overflow = Math.max(0, accepted.length - room)
   const added = accepted.slice(0, room)
 
-  for (const file of added) {
+  for (const entry of added) {
     images.value.push({
       id: nextId,
-      file,
-      // 预览用 objectURL：必须在移除/卸载时 revoke，否则整页生命周期内持续占用内存
-      url: URL.createObjectURL(file),
-      name: file.name,
-      size: file.size,
+      // 上传用的路径：chooseImage 的临时路径，或 H5 拖拽时创建的 blob URL
+      filePath: entry.filePath,
+      // 只有拖拽进来的 blob URL 需要 revoke；chooseImage 的临时文件由平台管理
+      objectUrl: entry.objectUrl || '',
+      // 预览直接用同一个路径即可（<image> 能吃本地临时路径和 blob URL）
+      url: entry.filePath,
+      name: entry.name,
+      size: entry.size,
       status: 'idle',
       result: null,
       table: null,
@@ -122,17 +171,30 @@ function addFiles(files) {
   }
 }
 
+/**
+ * 释放 blob URL。
+ *
+ * 改造前一律 revoke image.url —— 因为那时每张预览图都是 createObjectURL 出来的。
+ * 现在预览路径同时可能是 uni.chooseImage 给的临时文件路径（由平台管理，不能也不该 revoke），
+ * 所以按 objectUrl 字段区分：只有 H5 拖拽上传进来的才需要释放。
+ */
+function releaseObjectUrl(image) {
+  // #ifdef H5
+  if (image?.objectUrl) URL.revokeObjectURL(image.objectUrl)
+  // #endif
+}
+
 function removeImage(id) {
   const index = images.value.findIndex((image) => image.id === id)
   if (index === -1) return
 
-  URL.revokeObjectURL(images.value[index].url)
+  releaseObjectUrl(images.value[index])
   images.value.splice(index, 1)
   message.value = ''
 }
 
 function clearAll() {
-  images.value.forEach((image) => URL.revokeObjectURL(image.url))
+  images.value.forEach(releaseObjectUrl)
   images.value = []
   message.value = ''
 }
@@ -142,15 +204,20 @@ function clearAll() {
 // ------------------------------------------------------------------
 
 async function recognizeOne(image) {
-  const formData = new FormData()
-  formData.append('file', image.file)
-  formData.append('fileName', image.name)
+  // 改造点：原来是 FormData + request.post。
+  // uni.request 在任何端都发不了 multipart（H5 端也一样），改走 uni.uploadFile。
+  // 这个接口本来就是单文件，正好对上 uploadFile 一次一个文件的限制。
+  const res = await uploadFile({
+    url: '/api/ocr/recognize',
+    filePath: image.filePath,
+    name: 'file',
+    formData: { fileName: image.name },
+  })
 
-  const res = await request.post('/api/ocr/recognize', formData)
   const body = res.data || {}
 
   // myocr 的业务错误是 HTTP 200 + code≠200（异常处理器未设响应状态），
-  // axios 不会 reject，必须自己判 code，否则失败会被当成成功
+  // 不判 code 会把失败当成成功
   if (body.code !== 200) {
     throw new Error(body.message || '识别失败')
   }
@@ -162,7 +229,9 @@ function toErrorText(error) {
     const body = error.response.data || {}
     return body.message || body.msg || `识别服务返回 ${error.response.status}`
   }
-  if (error?.code === 'ERR_NETWORK') {
+  // 改造前判的是 axios 的 error.code === 'ERR_NETWORK'；
+  // 新的请求层没有这个码，网络层失败统一标 isNetworkError（见 api/http-common.js）
+  if (error?.isNetworkError) {
     return '无法连接识别服务，请确认 myocr 已启动（默认 8085）'
   }
   return error?.message || '识别失败'
@@ -559,21 +628,12 @@ function confirmButtonText(image) {
 
 onUnmounted(() => {
   clearTimeout(pickerSearchTimer)
-  images.value.forEach((image) => URL.revokeObjectURL(image.url))
+  images.value.forEach(releaseObjectUrl)
 })
 </script>
 
 <template>
   <div class="space-y-4">
-    <input
-      ref="fileInputRef"
-      type="file"
-      :accept="ACCEPT"
-      multiple
-      class="hidden"
-      @change="handleFileInputChange"
-    />
-
     <section
       class="rounded-xl border-2 border-dashed bg-white p-10 text-center transition"
       :class="dropZoneClass"
@@ -587,20 +647,8 @@ onUnmounted(() => {
           class="mb-1 flex h-12 w-12 items-center justify-center rounded-full"
           :class="isFull ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-600'"
         >
-          <svg
-            class="h-6 w-6"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <path d="M21 15l-5-5L5 21" />
-          </svg>
+          <!-- 占位图标：原来用内联 <svg>，小程序不支持 svg 标签，换组件库图标 -->
+          <wd-icon name="picture" size="24px" />
         </div>
 
         <p class="text-base font-semibold" :class="isFull ? 'text-slate-400' : 'text-slate-900'">
@@ -750,12 +798,13 @@ onUnmounted(() => {
                     >
                       <!-- 线下单据：原图缩略图，点开可放大 -->
                       <div v-if="col.key === 'image'" class="flex justify-center">
-                        <el-image
+                        <!-- el-image 的自带预览（preview-src-list）在 uni 里没有对应物，
+                             改用 uni.previewImage 这个原生大图预览能力 -->
+                        <image
+                          class="picker-thumb"
                           :src="image.url"
-                          :preview-src-list="[image.url]"
-                          :preview-teleported="true"
-                          fit="cover"
-                          class="h-8 w-8 rounded border border-slate-200"
+                          mode="aspectFill"
+                          @click="previewImage(image.url)"
                         />
                       </div>
 
@@ -796,18 +845,7 @@ onUnmounted(() => {
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
                         >
-                          <svg
-                            class="h-3.5 w-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2.2"
-                            stroke-linecap="round"
-                            aria-hidden="true"
-                          >
-                            <circle cx="11" cy="11" r="7" />
-                            <path d="M20 20l-3.5-3.5" />
-                          </svg>
+                          <wd-icon name="search" size="14px" />
                         </button>
                       </div>
 
@@ -882,22 +920,34 @@ onUnmounted(() => {
 
     <!-- 物料候选：识别出的名称查不到唯一主数据时，给人一个挑选的入口。
          用对话框而不是下拉，是因为表格单元格里放弹层容易被裁切、也不好定位。 -->
-    <el-dialog
+    <!-- 物料选择器。原为 el-dialog（width="640px" 居中弹窗）。
+         移动端改成底部弹层 + scroll-view —— 注意小程序的 <view> 上写
+         overflow-y: auto 是不会滚的，必须用 scroll-view 才滚得起来。 -->
+    <wd-popup
       v-model="pickerVisible"
-      title="选择物料"
-      width="640px"
-      @closed="closeMaterialPicker"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      custom-style="max-height: 80vh; display: flex; flex-direction: column;"
+      @close="closeMaterialPicker"
     >
-      <div class="mb-3">
+      <view class="picker-head">
+        <text class="picker-head__title">选择物料</text>
+      </view>
+
+      <view class="picker-search">
+        <wd-icon name="search" size="14px" />
         <input
           v-model="pickerKeyword"
+          class="picker-search__input"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+          placeholder-class="picker-search__ph"
+          confirm-type="search"
           @input="handlePickerInput"
-          @keyup.enter="runPickerSearch"
+          @confirm="runPickerSearch"
         />
-      </div>
+      </view>
 
       <!-- 已有结果时不清空：边打字边刷新，结果列表不闪 -->
       <p
@@ -911,26 +961,109 @@ onUnmounted(() => {
         输入名称、编码或规格开始搜索
       </p>
 
-      <ul
-        v-else-if="pickerResults.length"
-        class="max-h-80 overflow-y-auto rounded-lg border border-slate-200"
-      >
-        <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
-          <button
-            type="button"
-            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-sky-50"
-            @click="selectMaterial(item)"
-          >
-            <span class="w-28 shrink-0 font-mono text-sm text-slate-900">{{ item.code }}</span>
-            <span class="min-w-0 flex-1 truncate text-sm text-slate-700" :title="item.name">
-              {{ item.name }}
-            </span>
-            <span class="shrink-0 text-xs text-slate-400">{{ item.unit || '' }}</span>
-          </button>
-        </li>
-      </ul>
+      <scroll-view v-else-if="pickerResults.length" class="picker-list" scroll-y>
+        <view
+          v-for="item in pickerResults"
+          :key="`${item.code}|${item.name}`"
+          class="picker-item"
+          @click="selectMaterial(item)"
+        >
+          <text class="picker-item__code">{{ item.code }}</text>
+          <text class="picker-item__name">{{ item.name }}</text>
+          <text class="picker-item__unit">{{ item.unit || '' }}</text>
+        </view>
+      </scroll-view>
 
       <p v-else class="py-6 text-center text-sm text-slate-500">没有匹配的物料，请换个关键词。</p>
-    </el-dialog>
+    </wd-popup>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* ===== 物料选择器 =====
+   原来这里是 Element Plus 的 el-dialog，内部样式全靠 Tailwind 工具类撑着。
+   改成 wd-popup 之后，弹层结构变了，且滚动必须由 scroll-view 承担
+   （小程序的 <view> 上写 overflow-y: auto 不会滚），所以落成显式样式。 */
+.picker-head {
+  padding: 24px 20px 8px;
+
+  &__title {
+    color: $slate-900;
+    font-size: 16px;
+    font-weight: 600;
+  }
+}
+
+.picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 20px 12px;
+  padding: 0 12px;
+  border: 1px solid $slate-300;
+  border-radius: 8px;
+  color: $slate-400;
+
+  &__input {
+    flex: 1;
+    min-height: 40px;
+    color: $slate-900;
+    font-size: 14px;
+  }
+
+  &__ph {
+    color: $slate-400;
+  }
+}
+
+.picker-list {
+  /* scroll-view 必须有确定高度才会滚动 */
+  height: 56vh;
+  margin: 0 20px 20px;
+  border: 1px solid $slate-200;
+  border-radius: 8px;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+
+  &:not(:first-child) {
+    border-top: 1px solid $slate-100;
+  }
+
+  &__code {
+    flex-shrink: 0;
+    width: 112px;
+    color: $slate-900;
+    font-family: ui-monospace, monospace;
+    font-size: 14px;
+  }
+
+  &__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: $slate-700;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__unit {
+    flex-shrink: 0;
+    color: $slate-400;
+    font-size: 12px;
+  }
+}
+
+/* 识别结果里的物料缩略图（替代 el-image 的 fit="cover"） */
+.picker-thumb {
+  width: 32px;
+  height: 32px;
+  border: 1px solid $slate-200;
+  border-radius: 4px;
+}
+</style>

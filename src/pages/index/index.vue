@@ -1,23 +1,32 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { onUnload } from '@dcloudio/uni-app'
+import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
-import request from '../api/request'
-import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../api/auth'
-import ProductSelectDialog from '../components/ProductSelectDialog.vue'
-import LoadingMask from '../components/LoadingMask.vue'
-import PanelState from '../components/PanelState.vue'
-import FilterHeaderCell from '../components/FilterHeaderCell.vue'
-import { useWorkOrderData } from '../composables/useWorkOrderData'
-import { usePickData } from '../composables/usePickData'
-import { useInboundData } from '../composables/useInboundData'
-import { useGoodsMoveData } from '../composables/useGoodsMoveData'
-import WorkOrderImport from './WorkOrderImport.vue'
-import ImageParse from './ImageParse.vue'
-import vesselImageUrl from '../assets/vessel.png'
-import vesselProduct150ImageUrl from '../assets/vessel-product150.png'
-import { REPORT_ORDER_TYPES, getReportOrderType } from '../constants/orderTypes'
-import { normalizeImageList } from '../utils/image'
+import request from '../../api/request'
+import { uploadFiles } from '../../api/upload'
+import { resolveAssetUrl } from '../../api/config'
+import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../../api/auth'
+import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
+import DateField from '../../components/DateField.vue'
+import LoadingMask from '../../components/LoadingMask.vue'
+import PanelState from '../../components/PanelState.vue'
+import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
+import { useWorkOrderData } from '../../composables/useWorkOrderData'
+import { usePickData } from '../../composables/usePickData'
+import { useInboundData } from '../../composables/useInboundData'
+import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
+// Excel 导入只在 H5 端保留。
+// 原因（已确认）：App 与小程序没有 DOM，uni-app 也没有内置的 xlsx 文件选择器
+//（uni.chooseFile 仅 H5 支持，小程序只能用 chooseMessageFile 从微信会话里选），
+// 且「一次传 N 张图」的 multipart 也需要另做设计。
+// 用条件编译整块排除，避免这笔代码进不了任何一端的包。
+// #ifdef H5
+import WorkOrderImport from '../../components/WorkOrderImport.vue'
+// #endif
+import ImageParse from '../../components/ImageParse.vue'
+import { REPORT_ORDER_TYPES, getReportOrderType } from '../../constants/orderTypes'
+import { normalizeImageList } from '../../utils/image'
 import {
   formatDate,
   getToday,
@@ -27,26 +36,20 @@ import {
   formatMonthDay,
   formatQty,
   normalizeMaterialName,
-} from '../utils/format'
+} from '../../utils/format'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
-import {
-  ElButton,
-  ElConfigProvider,
-  ElDatePicker,
-  ElDialog,
-  ElMessage,
-  ElMessageBox,
-  ElOption,
-  ElPagination,
-  ElSelect,
-} from 'element-plus'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import 'element-plus/dist/index.css'
 
 dayjs.extend(updateLocale)
 dayjs.updateLocale('zh-cn', { weekStart: 1 })
 dayjs.locale('zh-cn')
+
+// 提示与确认框：wot-design-uni 用 provide/inject 在组件树里共享实例。
+// 本页调用 useToast()/useMessage() 会 provide 出选项 ref，
+// 模板里的 <wd-toast/>、<wd-message-box/> 以及子组件（ImageParse 等）
+// 再调用同名方法时会 inject 到同一份状态 —— 所以整页共用一个提示通道。
+const toast = useToast()
+const message = useMessage()
 
 const tabs = [
   { key: 'workOrder', label: '工单汇总' },
@@ -59,7 +62,9 @@ const tabs = [
   { key: 'daily', label: '日报表记录' },
   { key: 'vessel', label: '压力容器体积计算' },
   { key: 'electricity', label: '电费预提' },
+  // #ifdef H5
   { key: 'import', label: '文件导入', perm: 'work_order:import' },
+  // #endif
   // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
   { key: 'imageParse', label: '图片解析', perm: 'work_order:import' },
 ]
@@ -80,7 +85,9 @@ watch(visibleTabs, (list) => {
 })
 
 function goLogin() {
-  router.push('/login')
+  // 原来是 vue-router 的 router.push('/login')。
+  // uni-app 用页面栈：navigateTo 压栈（登录页有返回按钮），比 reLaunch 更贴合「去登录再回来」的语义。
+  uni.navigateTo({ url: '/pages/login/login' })
 }
 
 async function handleLogout() {
@@ -92,8 +99,11 @@ async function handleLogout() {
 
   clearAuth()
   // 退出即回到只读浏览：读接口本就免登录，数据无需重取；
-  // 写入类 Tab 与按钮会随 authState 变化自动隐藏
-  router.replace('/')
+  // 写入类 Tab 与按钮会随 authState 变化自动隐藏。
+  //
+  // 原来这里还有一句 router.replace('/')，在单页应用里等价于「留在本页」；
+  // uni-app 里没有等价且必要的操作（reLaunch 到当前页反而会重建页面、白重取一次数据），
+  // 所以直接省掉。
 }
 
 // 工单报工表格列
@@ -105,7 +115,6 @@ const reportColumns = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
 ]
 
-const router = useRouter()
 const activeTab = ref('workOrder')
 
 // 工单数据与筛选（与工单报工面板共享同一份数据）
@@ -207,7 +216,6 @@ const currentMaterialDesc = ref('')
 const currentConfirmedQty = ref('')
 const currentOrderNo = ref('')
 const imageDialogVisible = ref(false)
-const imageFileInput = ref(null)
 const imageUploading = ref(false)
 const imageDeleting = ref(false)
 
@@ -301,8 +309,22 @@ async function openImageDialog(order) {
   await refreshImageList(order)
 }
 
-function openFilePicker() {
-  imageFileInput.value?.click()
+// 一次最多选几张。后端接口本身不限张数，这里只为避免一次选太多把上传拖很久
+const MAX_IMAGE_PICK = 9
+
+function openImagePicker() {
+  if (imageUploading.value || !currentOrderNo.value) return
+
+  // 改造前是隐藏的 <input type="file" multiple> + .click()，
+  // 小程序/App 端没有 DOM，改用 uni.chooseImage（三端统一，且能直接调相机）
+  uni.chooseImage({
+    count: MAX_IMAGE_PICK,
+    sizeType: ['original', 'compressed'],
+    sourceType: ['camera', 'album'],
+    success: (res) => {
+      handleImageSelected(res.tempFilePaths || [])
+    },
+  })
 }
 
 function handleImportCancel() {
@@ -340,20 +362,23 @@ function showNextImage() {
   currentIndex.value = (currentIndex.value + 1) % imageList.value.length
 }
 
-async function handleImageSelected(event) {
-  const files = Array.from(event.target.files || [])
-  event.target.value = ''
-
-  if (!files.length || !currentOrderNo.value) return
+async function handleImageSelected(tempFilePaths) {
+  if (!tempFilePaths.length || !currentOrderNo.value) return
 
   imageUploading.value = true
 
   try {
-    const formData = new FormData()
-    formData.append('orderNo', currentOrderNo.value)
-    files.forEach((file) => formData.append('files', file))
+    // 改造点：原来是 `new FormData()` 一次 POST 传 N 张图。
+    // uni.request 在任何端都发不了 FormData，multipart 只能走 uni.uploadFile，
+    // 而后者一次只带一个文件 —— 于是改成循环单文件请求同一接口（见 api/upload.js）。
+    // 后端若声明的是 MultipartFile[]，单元素数组天然合法，返回值也仍是「本次上传的图片列表」。
+    const res = await uploadFiles({
+      url: '/api/work-order/image/upload',
+      name: 'files',
+      files: tempFilePaths,
+      formData: { orderNo: currentOrderNo.value },
+    })
 
-    const res = await request.post('/api/work-order/image/upload', formData)
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '图片上传失败。')
     }
@@ -369,9 +394,9 @@ async function handleImageSelected(event) {
       )
       await refreshImageList(currentOrder)
     }
-    ElMessage.success('图片上传成功')
+    toast.success('图片上传成功')
   } catch (error) {
-    ElMessage.error(error.response?.data?.msg || error.message || '图片上传失败，请重试。')
+    toast.error(error.response?.data?.msg || error.message || '图片上传失败，请重试。')
   } finally {
     imageUploading.value = false
   }
@@ -381,15 +406,12 @@ async function deleteImage(image) {
   if (!currentOrderNo.value || !image?.imageId) return
 
   try {
-    await ElMessageBox.confirm(
-      '删除后将无法在当前工单中查看该图片，是否继续？',
-      '确认删除图片',
-      {
-        type: 'warning',
-        confirmButtonText: '确认删除',
-        cancelButtonText: '取消',
-      },
-    )
+    await message.confirm({
+      title: '确认删除图片',
+      msg: '删除后将无法在当前工单中查看该图片，是否继续？',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+    })
   } catch {
     return
   }
@@ -413,9 +435,9 @@ async function deleteImage(image) {
     if (currentIndex.value >= imageList.value.length) {
       currentIndex.value = Math.max(0, imageList.value.length - 1)
     }
-    ElMessage.success('图片已删除')
+    toast.success('图片已删除')
   } catch (error) {
-    ElMessage.error(error.response?.data?.msg || error.message || '图片删除失败，请重试。')
+    toast.error(error.response?.data?.msg || error.message || '图片删除失败，请重试。')
   } finally {
     imageDeleting.value = false
   }
@@ -442,19 +464,41 @@ function openPickImageDialog(record) {
 }
 
 /**
- * 列表图片加载失败的逐级降级（整流-001）：
+ * 列表图片加载失败的逐级降级（变更-001）：
  *   缩略图失败 → 回退原图 → 仍失败则隐藏，露出底层占位图标
+ *
+ * 改造前是直接改 DOM 的（el.dataset 记降级标记、el.src 换回原图、el.style.display 隐藏）。
+ * 小程序与 App 端没有可操作的 DOM —— uni 的 <image> 只给一个 errMsg 事件，
+ * 拿不到元素。所以改成用响应式状态驱动：按记录 key 记「已降级到原图」与「已隐藏」。
  */
-function handleImgError(event, record) {
-  const el = event.target
+const thumbnailFallbacks = reactive({})
+const hiddenThumbnails = reactive({})
 
-  if (record?.imageUrl && el.dataset.thumbFallback !== '1') {
-    el.dataset.thumbFallback = '1'
-    el.src = record.imageUrl
+function imageKeyOf(record) {
+  return String(record?.imageId ?? record?.imageUrl ?? record?.thumbnailUrl ?? '')
+}
+
+/** 当前该用的图片地址：经过降级链之后的结果 */
+function resolveThumbnail(record) {
+  const key = imageKeyOf(record)
+  return thumbnailFallbacks[key] || record?.thumbnailUrl || record?.imageUrl || ''
+}
+
+function isThumbnailHidden(record) {
+  return !!hiddenThumbnails[imageKeyOf(record)]
+}
+
+function handleImgError(event, record) {
+  const key = imageKeyOf(record)
+
+  // 第一级：缩略图失败了，回退原图
+  if (record?.imageUrl && !thumbnailFallbacks[key]) {
+    thumbnailFallbacks[key] = record.imageUrl
     return
   }
 
-  el.style.display = 'none'
+  // 第二级：原图也失败，隐藏，露出底层的占位图标
+  hiddenThumbnails[key] = true
 }
 
 
@@ -656,12 +700,14 @@ const materialCostingRows = computed(() => {
 
 // ===== 周统计 =====
 // 表头（固定展示项，内容暂为固定值，后续再接入实际数据）
+// width 是改造时补的：原来由 <colgroup> 里的 <col class="w-*"> 提供列宽，
+// 改成 flex 后列宽必须落到单元格上，表头与数据行共用这里的一份定义。
 const weeklyColumns = [
-  { key: 'name', label: '名称' },
-  { key: 'pickQty', label: '原料领用', align: 'right' },
-  { key: 'remainingQty', label: '车间剩余', align: 'right' },
-  { key: 'actualQty', label: '实际使用', align: 'right' },
-  { key: 'unitConsumption', label: '单耗' },
+  { key: 'name', label: '名称', width: 'w-[220px]' },
+  { key: 'pickQty', label: '原料领用', width: 'w-32', align: 'right' },
+  { key: 'remainingQty', label: '车间剩余', width: 'w-32', align: 'right' },
+  { key: 'actualQty', label: '实际使用', width: 'w-32', align: 'right' },
+  { key: 'unitConsumption', label: '单耗', width: 'w-32' },
 ]
 
 // 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示）
@@ -768,7 +814,6 @@ const weeklyCurrentMaterialDesc = ref('')
 const weeklyCurrentConfirmedQty = ref('')
 const weeklyCurrentOrderNo = ref('')
 const weeklyImageDialogVisible = ref(false)
-const weeklyImageFileInput = ref(null)
 const weeklyImageUploading = ref(false)
 const weeklyImageDeleting = ref(false)
 const weeklyProductDialogVisible = ref(false)
@@ -865,7 +910,16 @@ function clearWeeklyProductFilter() {
 }
 
 function openWeeklyFilePicker() {
-  weeklyImageFileInput.value?.click()
+  if (weeklyImageUploading.value || !weeklyCurrentOrderNo.value) return
+
+  uni.chooseImage({
+    count: MAX_IMAGE_PICK,
+    sizeType: ['original', 'compressed'],
+    sourceType: ['camera', 'album'],
+    success: (res) => {
+      handleWeeklyImageSelected(res.tempFilePaths || [])
+    },
+  })
 }
 
 function showWeeklyPreviousImage() {
@@ -879,20 +933,20 @@ function showWeeklyNextImage() {
   weeklyCurrentIndex.value = (weeklyCurrentIndex.value + 1) % weeklyImageList.value.length
 }
 
-async function handleWeeklyImageSelected(event) {
-  const files = Array.from(event.target.files || [])
-  event.target.value = ''
-
-  if (!files.length || !weeklyCurrentOrderNo.value) return
+async function handleWeeklyImageSelected(tempFilePaths) {
+  if (!tempFilePaths.length || !weeklyCurrentOrderNo.value) return
 
   weeklyImageUploading.value = true
 
   try {
-    const formData = new FormData()
-    formData.append('orderNo', weeklyCurrentOrderNo.value)
-    files.forEach((file) => formData.append('files', file))
+    // 同工单汇总：多文件 multipart → 循环单文件（见 api/upload.js 的说明）
+    const res = await uploadFiles({
+      url: '/api/work-order/image/upload',
+      name: 'files',
+      files: tempFilePaths,
+      formData: { orderNo: weeklyCurrentOrderNo.value },
+    })
 
-    const res = await request.post('/api/work-order/image/upload', formData)
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '图片上传失败。')
     }
@@ -908,9 +962,9 @@ async function handleWeeklyImageSelected(event) {
       )
       await refreshWeeklyImageList(currentOrder)
     }
-    ElMessage.success('图片上传成功')
+    toast.success('图片上传成功')
   } catch (error) {
-    ElMessage.error(error.response?.data?.msg || error.message || '图片上传失败，请重试。')
+    toast.error(error.response?.data?.msg || error.message || '图片上传失败，请重试。')
   } finally {
     weeklyImageUploading.value = false
   }
@@ -920,15 +974,12 @@ async function deleteWeeklyImage(image) {
   if (!weeklyCurrentOrderNo.value || !image?.imageId) return
 
   try {
-    await ElMessageBox.confirm(
-      '删除后将无法在当前工单中查看该图片，是否继续？',
-      '确认删除图片',
-      {
-        type: 'warning',
-        confirmButtonText: '确认删除',
-        cancelButtonText: '取消',
-      },
-    )
+    await message.confirm({
+      title: '确认删除图片',
+      msg: '删除后将无法在当前工单中查看该图片，是否继续？',
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+    })
   } catch {
     return
   }
@@ -952,9 +1003,9 @@ async function deleteWeeklyImage(image) {
     if (weeklyCurrentIndex.value >= weeklyImageList.value.length) {
       weeklyCurrentIndex.value = Math.max(0, weeklyImageList.value.length - 1)
     }
-    ElMessage.success('图片已删除')
+    toast.success('图片已删除')
   } catch (error) {
-    ElMessage.error(error.response?.data?.msg || error.message || '图片删除失败，请重试。')
+    toast.error(error.response?.data?.msg || error.message || '图片删除失败，请重试。')
   } finally {
     weeklyImageDeleting.value = false
   }
@@ -1068,7 +1119,10 @@ const VESSELS = [
     cylinderLength: 5500, // 筒体长度 l=5.5m
     straightFlange: 40, // 封头直边 0.04m
     headDepth: 700, // 封头曲面内高度 hi=0.7m
-    image: vesselImageUrl,
+    // 底图改用 /static 下的绝对路径。
+    // 原因是 canvas 画图拿到的是路径字符串（不是 import 出来的模块 URL），
+    // 三端里只有 /static 的路径是各端都认的（App 端由打包进 www 的资源解析）。
+    image: '/static/vessel.png',
     imageBounds: { width: 2150, height: 1060, left: 75, right: 2069, top: 131, bottom: 931 },
     displayWidth: 680,
     medium: '三氯氢硅',
@@ -1083,7 +1137,7 @@ const VESSELS = [
     diameter: 3600, // 筒体内径 φ3.6m
     cylinderHeight: 4800, // 筒体高度 4.8m
     headDepth: 900, // 顶部封头曲面内高度 0.9m
-    image: vesselProduct150ImageUrl,
+    image: '/static/vessel-product150.png',
     imageBounds: { width: 1760, height: 1938, left: 131, right: 1351, top: 63, tangent: 310, bottom: 1930 },
     displayWidth: 470,
     medium: '乙烯基三氯硅烷',
@@ -1096,6 +1150,11 @@ const VESSELS = [
 const vesselKey = ref(VESSELS[0].key)
 const selectedVessel = computed(
   () => VESSELS.find((item) => item.key === vesselKey.value) ?? VESSELS[0],
+)
+
+// wd-picker 的选项格式（默认 valueKey='value'、labelKey='label'）
+const vesselColumns = computed(() =>
+  VESSELS.map((vessel) => ({ value: vessel.key, label: vessel.label })),
 )
 
 // 当前储罐的几何参数（统一两种罐型的字段）
@@ -1144,9 +1203,20 @@ const vesselStartLevel = ref(1400)
 const vesselEndLevel = ref(1400)
 const vesselStartDisplay = ref(1400) // 动画中的起始液位
 const vesselEndDisplay = ref(1400) // 动画中的终止液位
-const vesselCanvas = ref(null)
-const vesselImage = ref(null)
 const vesselSwitching = ref(false) // 切换储罐时淡出/淡入
+
+// 储罐画布：改造前直接用 DOM canvas（canvas.getContext('2d') + Path2D + devicePixelRatio），
+// 这些东西在小程序/App 端都不存在。改用 uni.createCanvasContext —— 老版画布 API，
+// 三端（H5 / App / 小程序）都有实现，是唯一一条能三端通用的路径。
+//
+// 它相对标准 Canvas2D 缺了三样东西，下面各有替代实现：
+//   1. 没有 Path2D 对象（且 clip()/fill()/stroke() 不吃参数）→ createPath() 记录 + 回放
+//   2. 没有 ellipse()                                      → ellipseTo() 用贝塞尔逼近
+//   3. 不自动上屏                                          → 每次绘制结尾必须 ctx.draw()
+const VESSEL_CANVAS_ID = 'vesselCanvas'
+let vesselCtx = null
+let vesselCanvasSize = null // { width, height } 画布实际显示的 CSS 尺寸
+let vesselImagePath = '' // 底图路径（老版 drawImage 直接吃路径字符串）
 
 // 立式罐：图形与信息区并排布局（横卧罐图形较宽，保持上下堆叠）
 const isVerticalVessel = computed(() => vesselGeometry.value.type === 'vertical')
@@ -1250,9 +1320,164 @@ let vesselWavePhase = 0
 let vesselLastFrameTime = 0
 let vesselTransitions = { start: null, end: null } // 起始/终止液位的缓动过渡状态
 
+// ===== 画布移植 helper =====
+
+// 动画时钟统一走 Date.now()。
+// requestAnimationFrame 回调给的是 performance.now() 基准的时间戳，
+// 而小程序端没有它（退回 setTimeout 时只能拿到 Date.now()），两个时钟混用
+// 会让与 startTime 的差值算成天文数字、缓动直接跳到终点。统一在入口转换。
+function vesselNow() {
+  return Date.now()
+}
+
+// 小程序没有全局 requestAnimationFrame（只有 type="2d" canvas 节点上的同名方法）。
+// 有就用，与刷新率对齐；没有就退回约 30fps 的定时器 —— 老版画布每帧要
+// 序列化一次绘制指令再上屏，60fps 在中低端机上是浪费。
+const vesselRaf =
+  typeof requestAnimationFrame === 'function'
+    ? (cb) => requestAnimationFrame(() => cb(vesselNow()))
+    : (cb) => setTimeout(() => cb(vesselNow()), 33)
+
+const vesselCaf =
+  typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout
+
+/**
+ * Path2D 的替代品：记录路径指令，用的时候回放到 ctx 上。
+ *
+ * 老版画布的 clip() / fill() / stroke() 都不接受参数，只能消费「当前路径」；
+ * 而罐体轮廓这条路径在代码里要反复使用（先 clip，再做差值带，再画虚线液位），
+ * 所以必须能把同一条路径回放多次。
+ */
+function createPath() {
+  const ops = []
+  const push = (name) => (...args) => ops.push([name, ...args])
+
+  return {
+    moveTo: push('moveTo'),
+    lineTo: push('lineTo'),
+    closePath: push('closePath'),
+    ellipse: push('ellipse'),
+    replay(ctx) {
+      ctx.beginPath()
+      for (const [name, ...args] of ops) {
+        if (name === 'ellipse') ellipseTo(ctx, ...args)
+        else if (name === 'closePath') ctx.closePath()
+        else ctx[name](...args)
+      }
+      return ctx
+    },
+  }
+}
+
+/**
+ * 椭圆弧 → 三次贝塞尔。
+ * 老版 CanvasContext 没有 ellipse()，而两种罐型的封头都必须画椭圆弧。
+ * 按 ≤90° 分段，每段用一条贝塞尔逼近（标准 kappa 构造，误差远小于一个像素）。
+ */
+function ellipseTo(ctx, cx, cy, rx, ry, rotation, startAngle, endAngle) {
+  const segments = Math.ceil(Math.abs(endAngle - startAngle) / (Math.PI / 2)) || 1
+  const step = (endAngle - startAngle) / segments
+  const cosR = Math.cos(rotation)
+  const sinR = Math.sin(rotation)
+
+  // 椭圆上一点（含旋转）
+  const pointAt = (angle) => {
+    const x = rx * Math.cos(angle)
+    const y = ry * Math.sin(angle)
+    return [cx + x * cosR - y * sinR, cy + x * sinR + y * cosR]
+  }
+
+  // 椭圆在 angle 处的切线方向（未旋转）
+  const tangentAt = (angle) => [-rx * Math.sin(angle), ry * Math.cos(angle)]
+
+  for (let i = 0; i < segments; i += 1) {
+    const a1 = startAngle + step * i
+    const a2 = a1 + step
+    const k = (4 / 3) * Math.tan((a2 - a1) / 4)
+
+    const [x1, y1] = pointAt(a1)
+    const [x2, y2] = pointAt(a2)
+    const [dx1, dy1] = tangentAt(a1)
+    const [dx2, dy2] = tangentAt(a2)
+
+    ctx.bezierCurveTo(
+      x1 + k * (dx1 * cosR - dy1 * sinR),
+      y1 + k * (dx1 * sinR + dy1 * cosR),
+      x2 - k * (dx2 * cosR - dy2 * sinR),
+      y2 - k * (dx2 * sinR + dy2 * cosR),
+      x2,
+      y2,
+    )
+  }
+}
+
+/** 等底图加载好（老版 drawImage 内部会自行加载，这里只需把路径记下来） */
+function loadVesselImage() {
+  const url = selectedVessel.value.image
+  if (vesselImagePath === url) {
+    renderVessel()
+    return
+  }
+
+  vesselImagePath = url
+  // 切换罐型时给画布一个淡出 → 淡入的过渡
+  vesselSwitching.value = true
+  ensureCanvasContext().then(() => {
+    renderVessel()
+    // 等淡出动画基本结束再淡入，避免闪烁
+    setTimeout(() => {
+      vesselSwitching.value = false
+    }, 330)
+  })
+}
+
+/**
+ * 取画布上下文与它实际显示的尺寸。
+ *
+ * 老版画布的坐标就是元素实际渲染的 CSS 像素，而绘制逻辑是按逻辑坐标系
+ * (W × H) 写的，所以必须知道真实尺寸才能把逻辑坐标缩放上去 ——
+ * 这等价于改造前的「canvas.width = W * dpr + setTransform(dpr, ...)」，
+ * 只是缩放比现在由布局决定，而不是 devicePixelRatio。
+ *
+ * 两个坑导致这里要重试：
+ *   1. 压力容器 Tab 用 v-show 隐藏，元素为 display:none 时量出来是 0×0；
+ *   2. 切 Tab 的 watch 默认在 DOM 更新前触发。
+ * 所以先等一拍，量不到就再等一帧，最多试 10 次后放弃（避免死循环）。
+ */
+function ensureCanvasContext(attempt = 0) {
+  return nextTick().then(
+    () =>
+      new Promise((resolve) => {
+        const measure = () =>
+          uni
+            .createSelectorQuery()
+            .select(`#${VESSEL_CANVAS_ID}`)
+            .boundingClientRect((rect) => {
+              vesselCtx = uni.createCanvasContext(VESSEL_CANVAS_ID)
+
+              if (rect && rect.width && rect.height) {
+                vesselCanvasSize = { width: rect.width, height: rect.height }
+                resolve()
+                return
+              }
+
+              if (attempt >= 10) {
+                resolve()
+                return
+              }
+
+              setTimeout(() => resolve(ensureCanvasContext(attempt + 1)), 32)
+            })
+            .exec()
+
+        measure()
+      }),
+  )
+}
+
 function stopVesselLoop() {
   if (vesselFrameId !== null) {
-    cancelAnimationFrame(vesselFrameId)
+    vesselCaf(vesselFrameId)
     vesselFrameId = null
   }
   vesselLastFrameTime = 0
@@ -1284,7 +1509,7 @@ function vesselFrame(now) {
 
   // 切到其他 Tab 时自动停帧，不浪费性能
   if (activeTab.value === 'vessel') {
-    vesselFrameId = requestAnimationFrame(vesselFrame)
+    vesselFrameId = vesselRaf(vesselFrame)
   } else {
     vesselFrameId = null
   }
@@ -1292,7 +1517,7 @@ function vesselFrame(now) {
 
 function startVesselLoop() {
   if (vesselFrameId === null && activeTab.value === 'vessel') {
-    vesselFrameId = requestAnimationFrame(vesselFrame)
+    vesselFrameId = vesselRaf(vesselFrame)
   }
 }
 
@@ -1321,7 +1546,7 @@ function animateVesselTo(which, target) {
     from,
     delta,
     duration: 700 + (Math.abs(delta) / vesselGeometry.value.maxLevel) * 1300,
-    startTime: performance.now(),
+    startTime: vesselNow(),
   }
 
   startVesselLoop()
@@ -1332,15 +1557,11 @@ function animateVesselTo(which, target) {
 
 // 绘制罐体底图与液位填充
 function renderVessel() {
-  const canvas = vesselCanvas.value
-  if (!canvas) return
-
-  const image = vesselImage.value
-  if (!image) return
+  const ctx = vesselCtx
+  if (!ctx || !vesselImagePath) return
 
   const geometry = vesselGeometry.value
   const bounds = geometry.imageBounds
-  const dpr = window.devicePixelRatio || 1
 
   // 画布尺寸按底图比例自适应
   const IMAGE_W = VESSEL_CANVAS_WIDTH
@@ -1348,16 +1569,24 @@ function renderVessel() {
   const W = IMAGE_W + LABEL_COLUMN
   const H = Math.round((IMAGE_W * bounds.height) / bounds.width)
 
-  canvas.width = W * dpr
-  canvas.height = H * dpr
+  // 逻辑坐标系 (W × H) → 画布实际 CSS 尺寸。
+  // 首帧可能还没量到尺寸（boundingClientRect 是异步的），此时跳过这一帧，
+  // 等 ensureCanvasContext 的 promise 回来会再触发一次绘制。
+  const size = vesselCanvasSize
+  if (!size) return
 
-  const ctx = canvas.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.save()
+  // 取 min 而不是只按宽度缩放：万一某端不支持 CSS aspect-ratio、
+  // 画布高度被平台默认值顶掉，按宽度缩放会把底部裁掉。取 min 的代价只是留白，
+  // 不会丢内容。尺寸正确时（绝大多数情况）两者相等。
+  const scale = Math.min(size.width / W, size.height / H)
+  ctx.scale(scale, scale)
+
   ctx.clearRect(0, 0, W, H)
-  ctx.drawImage(image, 0, 0, IMAGE_W, H)
+  ctx.drawImage(vesselImagePath, 0, 0, IMAGE_W, H)
 
   const s = IMAGE_W / bounds.width
-  const vesselPath = new Path2D()
+  const vesselPath = createPath()
   let tankLeft
   let tankRight
   let bottomY
@@ -1437,7 +1666,7 @@ function renderVessel() {
     }
 
     const toPath = (points, closeToBottom) => {
-      const path = new Path2D()
+      const path = createPath()
       points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)))
       if (closeToBottom) {
         path.lineTo(tankRight, bottomY + 6)
@@ -1448,18 +1677,21 @@ function renderVessel() {
     }
 
     ctx.save()
-    ctx.clip(vesselPath)
+    vesselPath.replay(ctx)
+    ctx.clip()
     ctx.lineJoin = 'round'
 
     // 终止液位：填充 + 实线液面
     if (vesselEndDisplay.value > 0) {
       const wavePoints = buildWave(levelY)
       ctx.fillStyle = geometry.liquid.fill
-      ctx.fill(toPath(wavePoints, true))
+      toPath(wavePoints, true).replay(ctx)
+      ctx.fill()
 
       ctx.strokeStyle = geometry.liquid.line
       ctx.lineWidth = 2
-      ctx.stroke(toPath(wavePoints, false))
+      toPath(wavePoints, false).replay(ctx)
+      ctx.stroke()
     }
 
     // 起止液位之间的差值区：斜线剖面填充，直观展示消耗量/增加量
@@ -1473,7 +1705,7 @@ function renderVessel() {
       // 差值带：上边界波浪 + 下边界波浪（同相位，等厚）
       const upperWave = buildWave(upperY)
       const lowerWave = buildWave(lowerY)
-      const bandPath = new Path2D()
+      const bandPath = createPath()
       upperWave.forEach(([x, y], i) => (i === 0 ? bandPath.moveTo(x, y) : bandPath.lineTo(x, y)))
       for (let i = lowerWave.length - 1; i >= 0; i -= 1) {
         bandPath.lineTo(lowerWave[i][0], lowerWave[i][1])
@@ -1481,7 +1713,8 @@ function renderVessel() {
       bandPath.closePath()
 
       ctx.save()
-      ctx.clip(bandPath)
+      bandPath.replay(ctx)
+      ctx.clip()
 
       const bandTop = upperY - VESSEL_WAVE.amplitude - 4
       const bandHeight = lowerY - upperY + VESSEL_WAVE.amplitude * 2 + 8
@@ -1509,9 +1742,11 @@ function renderVessel() {
     if (vesselStartDisplay.value > 0) {
       ctx.strokeStyle = '#0f172a'
       ctx.lineWidth = 3
-      ctx.setLineDash([9, 6])
-      ctx.stroke(toPath(buildWave(startLevelY), false))
-      ctx.setLineDash([])
+      // 老版 setLineDash 签名是 (pattern, offset)，只传 pattern 在部分端上会报错
+      ctx.setLineDash([9, 6], 0)
+      toPath(buildWave(startLevelY), false).replay(ctx)
+      ctx.stroke()
+      ctx.setLineDash([], 0)
     }
 
     ctx.restore()
@@ -1539,8 +1774,9 @@ function renderVessel() {
       }
 
       ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif`
-      ctx.textAlign = 'right'
-      ctx.textBaseline = 'middle'
+      // 老版画布没有 textAlign / textBaseline 属性，只有 setter 方法
+      ctx.setTextAlign('right')
+      ctx.setTextBaseline('middle')
 
       const textRight = W - fs * 0.7
       const textWidth = Math.max(...lines.map((text) => ctx.measureText(text).width))
@@ -1573,6 +1809,12 @@ function renderVessel() {
       })
     }
   }
+
+  ctx.restore()
+
+  // 老版画布不会自动上屏：前面所有绘制都只是入队，必须显式 draw() 才真正画出来。
+  // 少了这一句，画布永远是空白的。
+  ctx.draw()
 }
 
 // 步进调节液位（配合软拟态按钮）
@@ -1595,8 +1837,6 @@ function stopStepHold() {
     clearInterval(vesselStepRepeatTimer)
     vesselStepRepeatTimer = null
   }
-  window.removeEventListener('pointerup', stopStepHold)
-  window.removeEventListener('pointercancel', stopStepHold)
 }
 
 function startStepHold(which, direction) {
@@ -1606,10 +1846,6 @@ function startStepHold(which, direction) {
   vesselStepDelayTimer = setTimeout(() => {
     vesselStepRepeatTimer = setInterval(() => stepVesselLevel(which, direction, 25), 40)
   }, 320)
-
-  // 在按钮外松开鼠标也能停止
-  window.addEventListener('pointerup', stopStepHold)
-  window.addEventListener('pointercancel', stopStepHold)
 }
 
 function clampAndAnimateLevel(which, value) {
@@ -1628,28 +1864,8 @@ watch(vesselStartLevel, (value) => clampAndAnimateLevel('start', value))
 watch(vesselEndLevel, (value) => clampAndAnimateLevel('end', value))
 
 // 切换储罐：液位按新罐径钳制、底图按需重载
-let loadedVesselImageUrl = ''
-
-function loadVesselImage() {
-  const url = selectedVessel.value.image
-  if (loadedVesselImageUrl === url && vesselImage.value) {
-    renderVessel()
-    return
-  }
-
-  loadedVesselImageUrl = url
-  const image = new Image()
-  image.onload = () => {
-    vesselImage.value = image
-    renderVessel()
-    // 等淡出动画基本结束再淡入，避免闪烁
-    window.setTimeout(() => {
-      vesselSwitching.value = false
-    }, 330)
-  }
-  image.src = url
-}
-
+// （loadVesselImage 的定义在画布 helper 那一段 —— 老版画布不需要 Image 对象，
+//   底图路径直接交给 drawImage，所以实现比改造前短很多）
 watch(vesselKey, () => {
   const maxLevel = vesselGeometry.value.maxLevel
 
@@ -1667,6 +1883,14 @@ watch(vesselKey, () => {
   loadVesselImage()
 })
 
+// 离开页面时的清理。
+// 注册两份是因为：小程序端页面销毁走的是 uni-app 的 onUnload，
+// 而 H5/App 端 Vue 的 onUnmounted 也会触发（两边都调一次也无妨，清理函数是幂等的）。
+function cleanupVessel() {
+  stopVesselLoop()
+  stopStepHold()
+}
+
 onMounted(() => {
   fetchWorkOrders()
   fetchPickRecords()
@@ -1675,10 +1899,8 @@ onMounted(() => {
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
 
-onUnmounted(() => {
-  stopVesselLoop()
-  stopStepHold()
-})
+onUnmounted(cleanupVessel)
+onUnload(cleanupVessel)
 
 // 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
 watch(activeTab, (tab, prevTab) => {
@@ -1698,9 +1920,12 @@ watch(activeTab, (tab, prevTab) => {
 </script>
 
 <template>
-  <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
-    <div class="mx-auto max-w-7xl">
+  <!-- 改造前这里套了一层 <el-config-provider :locale="zhCn"> 只为给 Element Plus 注入
+       中文 locale。wot-design-uni 默认就是中文，不需要这层包裹，直接去掉。
+       原来写死在这层的 Tailwind 布局类（min-h-screen / px-4 py-8 …）
+       挪到 .page 里 —— 顶部还要叠加状态栏高度，Tailwind 表达不了 calc(var())。 -->
+  <view class="page">
+    <view class="mx-auto max-w-7xl">
       <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
@@ -1715,7 +1940,7 @@ watch(activeTab, (tab, prevTab) => {
           <template v-if="loggedIn">
             <span>{{ roleName }}</span>
             <button
-              type="button"
+             
               class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
               @click="handleLogout"
             >
@@ -1725,7 +1950,7 @@ watch(activeTab, (tab, prevTab) => {
           <template v-else>
             <span class="text-slate-400">只读浏览</span>
             <button
-              type="button"
+             
               class="rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
               @click="goLogin"
             >
@@ -1739,7 +1964,7 @@ watch(activeTab, (tab, prevTab) => {
         <button
           v-for="tab in visibleTabs"
           :key="tab.key"
-          type="button"
+         
           class="relative pb-3 pt-1 text-sm font-medium transition focus:outline-none"
           :class="activeTab === tab.key ? 'text-sky-600' : 'text-slate-500 hover:text-slate-700'"
           @click="activeTab = tab.key"
@@ -1756,23 +1981,9 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'workOrder'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
-            <el-date-picker
-              v-model="startDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起始日期"
-              :first-day-of-week="1"
-              @change="filterWorkOrders"
-            />
+            <DateField v-model="startDate" placeholder="起始日期" @change="filterWorkOrders" />
             <span class="text-sm text-slate-500">至</span>
-            <el-date-picker
-              v-model="endDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :first-day-of-week="1"
-              @change="filterWorkOrders"
-            />
+            <DateField v-model="endDate" placeholder="结束日期" @change="filterWorkOrders" />
           </div>
 
           <div class="relative">
@@ -1795,17 +2006,14 @@ watch(activeTab, (tab, prevTab) => {
 
         <div v-else>
           <div class="overflow-x-auto">
-            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-              <colgroup>
-                <col v-for="column in columns" :key="column.key" :class="column.width" />
-              </colgroup>
-              <thead class="bg-slate-50">
-                <tr>
-                  <th
+            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+              <view class="dt__head bg-slate-50">
+                <view class="dt__row">
+                  <view
                     v-for="column in columns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                     :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     <template v-if="column.key === 'orderNo'">
@@ -1842,124 +2050,121 @@ watch(activeTab, (tab, prevTab) => {
                     </template>
 
                     <template v-else>{{ column.label }}</template>
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-if="tableData.length === 0">
-                  <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+                  </view>
+                </view>
+              </view>
+              <view class="dt__body divide-y divide-slate-100 bg-white">
+                <view class="dt__row" v-if="tableData.length === 0">
+                  <view class="dt__empty px-3 py-16 text-center text-sm text-slate-400">
                     没有符合筛选条件的工单
-                  </td>
-                </tr>
-                <tr v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="transition hover:bg-slate-50">
-                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.planStartDate }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.orderNo }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.materialCode }}</td>
-                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  </view>
+                </view>
+                <view v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="dt__row transition hover:bg-slate-50">
+                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</view>
+                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.planStartDate }}</view>
+                  <view class="dt__cell w-40 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.orderNo }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</view>
+                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.materialCode }}</view>
+                  <view class="dt__cell w-[180px] max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ order.materialDesc }}
-                  </td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  </view>
+                  <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</view>
+                </view>
+              </view>
+            </view>
           </div>
 
           <div class="flex justify-end border-t border-slate-100 px-6 py-4">
-            <el-pagination
-              v-model:current-page="pageNum"
-              :page-size="pageSize"
+            <wd-pagination
+              v-model="pageNum"
               :total="total"
-              layout="total, prev, pager, next"
-              background
-              @current-change="getPageData"
+              :page-size="pageSize"
+              show-message
+              :hide-if-one-page="false"
+              @change="getPageData"
             />
           </div>
         </div>
           </div>
         </section>
 
-      <el-dialog
+      <!-- 单张工单的图片查看器。
+           改造前是 el-dialog（width="80vw"，居中弹窗）。
+           移动端看大图更适合近全屏，改成 wd-popup 居中弹层；
+           原来的 #header / #footer 两个具名插槽在 wd-popup 里没有对应物，
+           直接落成普通的头部/底部块。 -->
+      <wd-popup
         v-model="imageDialogVisible"
-        width="80vw"
-        class="image-preview-dialog"
-        align-center
+        position="center"
+        custom-style="width: 92vw; max-height: 88vh; border-radius: 16px; background-color: #fff; display: flex; flex-direction: column; overflow: hidden;"
       >
-        <template #header>
-          <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pr-6 text-sm text-slate-700">
-            <span>物料描述：{{ currentMaterialDesc }}</span>
-            <span>确认的产量：{{ currentConfirmedQty }}</span>
-          </div>
-        </template>
+        <view class="viewer-head">
+          <text>物料描述：{{ currentMaterialDesc }}</text>
+          <text>确认的产量：{{ currentConfirmedQty }}</text>
+        </view>
 
-        <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-lg bg-slate-50 p-6">
-          <div v-if="imageList.length" class="relative flex w-full items-center justify-center">
-            <el-button
+        <view class="viewer-body">
+          <view v-if="imageList.length" class="viewer-stage">
+            <view
               v-if="imageList.length > 1"
-              circle
-              class="absolute left-2 z-10"
+              class="viewer-nav viewer-nav--prev"
               aria-label="上一张"
               @click="showPreviousImage"
             >
-              ‹
-            </el-button>
-            <img
-              :src="imageList[currentIndex].url"
+              <text>‹</text>
+            </view>
+
+            <!-- <img> 要换成 <image>：uni 的 image 组件用 mode 控制填充方式，
+                 没有 object-contain 那套 CSS；且必须给显式高度才撑得开。 -->
+            <image
+              class="viewer-stage__img"
+              :src="resolveAssetUrl(imageList[currentIndex].url)"
+              mode="aspectFit"
               alt="物料原图"
-              class="max-h-[70vh] max-w-[85%] rounded-lg object-contain"
             />
-            <el-button
+
+            <view
               v-if="imageList.length > 1"
-              circle
-              class="absolute right-2 z-10"
+              class="viewer-nav viewer-nav--next"
               aria-label="下一张"
               @click="showNextImage"
             >
-              ›
-            </el-button>
-            <el-button
-              v-if="hasPerm('work_order:image:delete')"
-              type="danger"
-              size="small"
-              class="absolute bottom-2 left-1/2 -translate-x-1/2"
-              :loading="imageDeleting"
-              @click="deleteImage(imageList[currentIndex])"
-            >
-              删除当前图片
-            </el-button>
-          </div>
-          <span v-if="!imageList.length" class="w-full text-center text-sm text-slate-400">
-            暂无图片
-          </span>
-        </div>
+              <text>›</text>
+            </view>
 
-        <div v-if="imageList.length" class="mt-3 text-center text-sm text-slate-500">
+            <view v-if="hasPerm('work_order:image:delete')" class="viewer-stage__delete">
+              <wd-button
+                type="error"
+                size="small"
+                :loading="imageDeleting"
+                @click="deleteImage(imageList[currentIndex])"
+              >
+                删除当前图片
+              </wd-button>
+            </view>
+          </view>
+
+          <text v-else class="viewer-empty">暂无图片</text>
+        </view>
+
+        <view v-if="imageList.length" class="viewer-counter">
           第 {{ currentIndex + 1 }} 张 / 共 {{ imageList.length }} 张
-        </div>
+        </view>
 
-        <template #footer>
-          <div class="flex justify-end gap-3">
-            <input
-              ref="imageFileInput"
-              type="file"
-              accept="image/*"
-              multiple
-              class="hidden"
-              @change="handleImageSelected"
-            />
-            <el-button
-              v-if="hasPerm('work_order:image:upload')"
-              :loading="imageUploading"
-              @click="openFilePicker"
-            >
-              添加图片
-            </el-button>
-          </div>
-        </template>
-      </el-dialog>
+        <view class="viewer-foot">
+          <!-- 原来的隐藏 <input type="file"> 已移除：
+               小程序/App 没有 DOM，改用 uni.chooseImage（见 openImagePicker） -->
+          <wd-button
+            v-if="hasPerm('work_order:image:upload')"
+            :loading="imageUploading"
+            @click="openImagePicker"
+          >
+            添加图片
+          </wd-button>
+        </view>
+      </wd-popup>
 
       <ProductSelectDialog
         v-model="productDialogVisible"
@@ -1988,23 +2193,9 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'material'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
-            <el-date-picker
-              v-model="pickStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起始日期"
-              :first-day-of-week="1"
-              @change="filterPickRecords"
-            />
+            <DateField v-model="pickStartDate" placeholder="起始日期" @change="filterPickRecords" />
             <span class="text-sm text-slate-500">至</span>
-            <el-date-picker
-              v-model="pickEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :first-day-of-week="1"
-              @change="filterPickRecords"
-            />
+            <DateField v-model="pickEndDate" placeholder="结束日期" @change="filterPickRecords" />
             <span class="ml-auto text-sm text-slate-500">
               共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
             </span>
@@ -2030,17 +2221,14 @@ watch(activeTab, (tab, prevTab) => {
 
             <div v-else>
               <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in pickColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
+                <view class="dt min-w-full divide-y divide-slate-200 text-left">
+                  <view class="dt__head bg-slate-50">
+                    <view class="dt__row">
+                      <view
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="dt__cell whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -2055,86 +2243,77 @@ watch(activeTab, (tab, prevTab) => {
                         </template>
 
                         <template v-else>{{ column.label }}</template>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
+                      </view>
+                    </view>
+                  </view>
+                  <view class="dt__body divide-y divide-slate-100 bg-white">
+                    <view
                       v-for="(record, index) in pickTableData"
                       :key="`${record.materialCode}-${record.pickDate}-${index}`"
-                      class="transition hover:bg-slate-50"
+                      class="dt__row transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.pickDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.pickDate }}</view>
+                      <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                      </view>
+                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
+                      <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        <view
+                          class="thumb"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
                           @click="openPickImageDialog(record)"
                         >
-                          <svg
-                            class="h-3 w-3"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="m21 15-5-5L5 21" />
-                          </svg>
-                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
-                          <img
-                            v-if="record.thumbnailUrl || record.imageUrl"
-                            :src="record.thumbnailUrl || record.imageUrl"
+                          <!-- 占位图标：原来用内联 <svg>，小程序不支持 svg 标签，换组件库图标 -->
+                          <wd-icon name="picture" size="12px" />
+                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级（见 handleImgError），
+                               最终隐藏并露出底层图标。src 要过 resolveAssetUrl ——
+                               后端返回的是 /thumbs、/files 这类相对路径。 -->
+                          <image
+                            v-if="(record.thumbnailUrl || record.imageUrl) && !isThumbnailHidden(record)"
+                            class="thumb__img"
+                            :src="resolveAssetUrl(resolveThumbnail(record))"
+                            mode="aspectFill"
+                            lazy-load
                             alt="领料单据"
-                            loading="lazy"
-                            decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
                             @error="handleImgError($event, record)"
                           />
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
               </div>
 
               <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
-                <el-pagination
-                  v-model:current-page="pickPageNum"
-                  :page-size="pickPageSize"
-                  :total="pickTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getPickPageData"
-                />
+                <wd-pagination
+              v-model="pickPageNum"
+              :total="pickTotal"
+              :page-size="pickPageSize"
+              show-message
+              :hide-if-one-page="false"
+              @change="getPickPageData"
+            />
               </div>
             </div>
           </div>
         </section>
 
-        <el-dialog
+        <wd-popup
           v-model="pickImageDialogVisible"
-          width="70vw"
-          align-center
+          position="center"
+          custom-style="width: 90vw; border-radius: 16px; padding: 16px; background-color: #f8fafc;"
         >
-          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
-            <img
-              v-if="currentPickImage"
-              :src="currentPickImage"
-              alt="领料单据大图"
-              class="max-h-[70vh] max-w-full rounded-lg object-contain"
-            />
-          </div>
-        </el-dialog>
+          <image
+            v-if="currentPickImage"
+            class="simple-viewer__img"
+            :src="resolveAssetUrl(currentPickImage)"
+            mode="aspectFit"
+            alt="领料单据大图"
+          />
+        </wd-popup>
 
         <ProductSelectDialog
           v-model="pickMaterialDialogVisible"
@@ -2148,23 +2327,9 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'inbound'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
-            <el-date-picker
-              v-model="inboundStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起始日期"
-              :first-day-of-week="1"
-              @change="filterInboundRecords"
-            />
+            <DateField v-model="inboundStartDate" placeholder="起始日期" @change="filterInboundRecords" />
             <span class="text-sm text-slate-500">至</span>
-            <el-date-picker
-              v-model="inboundEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :first-day-of-week="1"
-              @change="filterInboundRecords"
-            />
+            <DateField v-model="inboundEndDate" placeholder="结束日期" @change="filterInboundRecords" />
             <span class="ml-auto text-sm text-slate-500">
               共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
             </span>
@@ -2190,17 +2355,14 @@ watch(activeTab, (tab, prevTab) => {
 
             <div v-else>
               <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in inboundColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
+                <view class="dt min-w-full divide-y divide-slate-200 text-left">
+                  <view class="dt__head bg-slate-50">
+                    <view class="dt__row">
+                      <view
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="dt__cell whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -2215,86 +2377,77 @@ watch(activeTab, (tab, prevTab) => {
                         </template>
 
                         <template v-else>{{ column.label }}</template>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
+                      </view>
+                    </view>
+                  </view>
+                  <view class="dt__body divide-y divide-slate-100 bg-white">
+                    <view
                       v-for="(record, index) in inboundTableData"
                       :key="`${record.materialCode}-${record.inboundDate}-${index}`"
-                      class="transition hover:bg-slate-50"
+                      class="dt__row transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.inboundDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.inboundDate }}</view>
+                      <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                      </view>
+                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
+                      <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        <view
+                          class="thumb"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
                           @click="openInboundImageDialog(record)"
                         >
-                          <svg
-                            class="h-3 w-3"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="m21 15-5-5L5 21" />
-                          </svg>
-                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
-                          <img
-                            v-if="record.thumbnailUrl || record.imageUrl"
-                            :src="record.thumbnailUrl || record.imageUrl"
+                          <!-- 占位图标：原来用内联 <svg>，小程序不支持 svg 标签，换组件库图标 -->
+                          <wd-icon name="picture" size="12px" />
+                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级（见 handleImgError），
+                               最终隐藏并露出底层图标。src 要过 resolveAssetUrl ——
+                               后端返回的是 /thumbs、/files 这类相对路径。 -->
+                          <image
+                            v-if="(record.thumbnailUrl || record.imageUrl) && !isThumbnailHidden(record)"
+                            class="thumb__img"
+                            :src="resolveAssetUrl(resolveThumbnail(record))"
+                            mode="aspectFill"
+                            lazy-load
                             alt="入库单据"
-                            loading="lazy"
-                            decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
                             @error="handleImgError($event, record)"
                           />
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
               </div>
 
               <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
-                <el-pagination
-                  v-model:current-page="inboundPageNum"
-                  :page-size="inboundPageSize"
-                  :total="inboundTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getInboundPageData"
-                />
+                <wd-pagination
+              v-model="inboundPageNum"
+              :total="inboundTotal"
+              :page-size="inboundPageSize"
+              show-message
+              :hide-if-one-page="false"
+              @change="getInboundPageData"
+            />
               </div>
             </div>
           </div>
         </section>
 
-        <el-dialog
+        <wd-popup
           v-model="inboundImageDialogVisible"
-          width="70vw"
-          align-center
+          position="center"
+          custom-style="width: 90vw; border-radius: 16px; padding: 16px; background-color: #f8fafc;"
         >
-          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
-            <img
-              v-if="currentInboundImage"
-              :src="currentInboundImage"
-              alt="入库单据大图"
-              class="max-h-[70vh] max-w-full rounded-lg object-contain"
-            />
-          </div>
-        </el-dialog>
+          <image
+            v-if="currentInboundImage"
+            class="simple-viewer__img"
+            :src="resolveAssetUrl(currentInboundImage)"
+            mode="aspectFit"
+            alt="入库单据大图"
+          />
+        </wd-popup>
 
         <ProductSelectDialog
           v-model="inboundMaterialDialogVisible"
@@ -2308,44 +2461,41 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'report'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-              <colgroup>
-                <col v-for="column in reportColumns" :key="column.key" :class="column.width" />
-              </colgroup>
-              <thead class="bg-slate-50">
-                <tr>
-                  <th
+            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+              <view class="dt__head bg-slate-50">
+                <view class="dt__row">
+                  <view
                     v-for="column in reportColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                     :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-if="reportRows.length === 0">
-                  <td :colspan="reportColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+                  </view>
+                </view>
+              </view>
+              <view class="dt__body divide-y divide-slate-100 bg-white">
+                <view class="dt__row" v-if="reportRows.length === 0">
+                  <view class="dt__empty px-3 py-16 text-center text-sm text-slate-400">
                     暂无报工数据
-                  </td>
-                </tr>
-                <tr
+                  </view>
+                </view>
+                <view
                   v-for="(item, index) in reportRows"
                   :key="`${item.orderType}-${item.materialDesc}-${index}`"
-                  class="transition hover:bg-slate-50"
+                  class="dt__row transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.orderType }}</td>
-                  <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-40 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.orderType }}</view>
+                  <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialDesc }}
-                  </td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.orderQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.confirmedQty }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  </view>
+                  <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.orderQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.confirmedQty }}</view>
+                </view>
+              </view>
+            </view>
           </div>
         </section>
       </div>
@@ -2353,45 +2503,42 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'costing'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-              <colgroup>
-                <col v-for="column in costingColumns" :key="column.key" :class="column.width" />
-              </colgroup>
-              <thead class="bg-slate-50">
-                <tr>
-                  <th
+            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+              <view class="dt__head bg-slate-50">
+                <view class="dt__row">
+                  <view
                     v-for="column in costingColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                     :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-if="costingRows.length === 0">
-                  <td :colspan="costingColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+                  </view>
+                </view>
+              </view>
+              <view class="dt__body divide-y divide-slate-100 bg-white">
+                <view class="dt__row" v-if="costingRows.length === 0">
+                  <view class="dt__empty px-3 py-16 text-center text-sm text-slate-400">
                     暂无核算数据
-                  </td>
-                </tr>
-                <tr
+                  </view>
+                </view>
+                <view
                   v-for="(item, index) in costingRows"
                   :key="`${item.materialName}-${index}`"
-                  class="transition hover:bg-slate-50"
+                  class="dt__row transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-[240px] max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.inboundQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  </view>
+                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.inboundQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                </view>
+              </view>
+            </view>
           </div>
         </section>
       </div>
@@ -2399,45 +2546,42 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'materialCosting'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-              <colgroup>
-                <col v-for="column in materialCostingColumns" :key="column.key" :class="column.width" />
-              </colgroup>
-              <thead class="bg-slate-50">
-                <tr>
-                  <th
+            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+              <view class="dt__head bg-slate-50">
+                <view class="dt__row">
+                  <view
                     v-for="column in materialCostingColumns"
                     :key="column.key"
                     scope="col"
-                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                     :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                   >
                     {{ column.label }}
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-if="materialCostingRows.length === 0">
-                  <td :colspan="materialCostingColumns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+                  </view>
+                </view>
+              </view>
+              <view class="dt__body divide-y divide-slate-100 bg-white">
+                <view class="dt__row" v-if="materialCostingRows.length === 0">
+                  <view class="dt__empty px-3 py-16 text-center text-sm text-slate-400">
                     暂无核算数据
-                  </td>
-                </tr>
-                <tr
+                  </view>
+                </view>
+                <view
                   v-for="(item, index) in materialCostingRows"
                   :key="`${item.materialName}-${index}`"
-                  class="transition hover:bg-slate-50"
+                  class="dt__row transition hover:bg-slate-50"
                 >
-                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</td>
-                  <td class="max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-[240px] max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.pickQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  </view>
+                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.pickQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
+                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                </view>
+              </view>
+            </view>
           </div>
         </section>
       </div>
@@ -2445,159 +2589,135 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'weekly'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
-            <el-date-picker
-              v-model="weeklyStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起始日期"
-              :first-day-of-week="1"
-              @change="filterWeeklyOrders"
-            />
+            <DateField v-model="weeklyStartDate" placeholder="起始日期" @change="filterWeeklyOrders" />
             <span class="text-sm text-slate-500">至</span>
-            <el-date-picker
-              v-model="weeklyEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :first-day-of-week="1"
-              @change="filterWeeklyOrders"
-            />
+            <DateField v-model="weeklyEndDate" placeholder="结束日期" @change="filterWeeklyOrders" />
           </div>
 
-          <div class="p-6">
-            <div class="overflow-x-auto">
-              <table class="w-full table-fixed border-collapse text-center">
-                <colgroup>
-                  <col class="w-[220px]" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th colspan="5" class="border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
+          <view class="p-6">
+            <view class="overflow-x-auto">
+              <!-- 周统计表：改造前是带边框的原生表格（border-collapse 合并相邻边）。
+                   这里同样换成 flex 行；单元格保留各自的 border 类，相邻边框靠
+                   .weekly-grid 里的负边距重叠来还原 1px 单线（见样式区注释）。 -->
+              <view class="dt weekly-grid w-full text-center">
+                <view class="dt__body">
+                  <view class="dt__row">
+                    <view class="dt__grow border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
                       {{ weeklyTitle }}
-                    </th>
-                  </tr>
-                  <tr>
-                    <th
+                    </view>
+                  </view>
+
+                  <view class="dt__row">
+                    <view
                       v-for="column in weeklyColumns"
                       :key="column.key"
-                      scope="col"
-                      class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
-                      :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                      class="dt__cell border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
+                      :class="[column.width, column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3']"
                     >
                       {{ column.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in weeklyRows" :key="row.name">
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</td>
-                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
-                    <td class="border border-slate-300 p-0">
+                    </view>
+                  </view>
+                </view>
+
+                <view class="dt__body">
+                  <view v-for="row in weeklyRows" :key="row.name" class="dt__row">
+                    <view class="dt__cell w-[220px] border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</view>
+                    <view class="dt__cell w-32 border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</view>
+                    <view class="dt__cell w-32 border border-slate-300 p-0">
                       <input
                         v-model="weeklyRemaining[row.materialCode]"
                         type="text"
                         placeholder="/"
                         aria-label="车间剩余"
-                        class="w-full bg-transparent py-2 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                        class="weekly-input"
                       />
-                    </td>
-                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
-                  </tr>
-                  <tr>
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
-                    <td colspan="4" class="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
+                    </view>
+                    <view class="dt__cell w-32 border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</view>
+                    <view class="dt__cell w-32 border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</view>
+                  </view>
+
+                  <view class="dt__row">
+                    <view class="dt__cell w-[220px] border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</view>
+                    <view class="dt__grow border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
                       {{ weeklyInboundRow.value }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+                    </view>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
         </section>
 
-        <el-dialog
+        <!-- 周统计的图片查看器 —— 与上面工单汇总那个结构一致，
+             沿用同一套 .viewer-* 样式。
+             （这两块的重复是先前的既有写法，迁移时保持原样不做额外重构，
+               以免在换平台的同时改变行为。） -->
+        <wd-popup
           v-model="weeklyImageDialogVisible"
-          width="80vw"
-          class="image-preview-dialog"
-          align-center
+          position="center"
+          custom-style="width: 92vw; max-height: 88vh; border-radius: 16px; background-color: #fff; display: flex; flex-direction: column; overflow: hidden;"
         >
-          <template #header>
-            <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pr-6 text-sm text-slate-700">
-              <span>物料描述：{{ weeklyCurrentMaterialDesc }}</span>
-              <span>确认的产量：{{ weeklyCurrentConfirmedQty }}</span>
-            </div>
-          </template>
+          <view class="viewer-head">
+            <text>物料描述：{{ weeklyCurrentMaterialDesc }}</text>
+            <text>确认的产量：{{ weeklyCurrentConfirmedQty }}</text>
+          </view>
 
-          <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-lg bg-slate-50 p-6">
-            <div v-if="weeklyImageList.length" class="relative flex w-full items-center justify-center">
-              <el-button
+          <view class="viewer-body">
+            <view v-if="weeklyImageList.length" class="viewer-stage">
+              <view
                 v-if="weeklyImageList.length > 1"
-                circle
-                class="absolute left-2 z-10"
+                class="viewer-nav viewer-nav--prev"
                 aria-label="上一张"
                 @click="showWeeklyPreviousImage"
               >
-                ‹
-              </el-button>
-              <img
-                :src="weeklyImageList[weeklyCurrentIndex].url"
+                <text>‹</text>
+              </view>
+
+              <image
+                class="viewer-stage__img"
+                :src="resolveAssetUrl(weeklyImageList[weeklyCurrentIndex].url)"
+                mode="aspectFit"
                 alt="物料原图"
-                class="max-h-[70vh] max-w-[85%] rounded-lg object-contain"
               />
-              <el-button
+
+              <view
                 v-if="weeklyImageList.length > 1"
-                circle
-                class="absolute right-2 z-10"
+                class="viewer-nav viewer-nav--next"
                 aria-label="下一张"
                 @click="showWeeklyNextImage"
               >
-                ›
-              </el-button>
-              <el-button
-                v-if="hasPerm('work_order:image:delete')"
-                type="danger"
-                size="small"
-                class="absolute bottom-2 left-1/2 -translate-x-1/2"
-                :loading="weeklyImageDeleting"
-                @click="deleteWeeklyImage(weeklyImageList[weeklyCurrentIndex])"
-              >
-                删除当前图片
-              </el-button>
-            </div>
-            <span v-if="!weeklyImageList.length" class="w-full text-center text-sm text-slate-400">
-              暂无图片
-            </span>
-          </div>
+                <text>›</text>
+              </view>
 
-          <div v-if="weeklyImageList.length" class="mt-3 text-center text-sm text-slate-500">
+              <view v-if="hasPerm('work_order:image:delete')" class="viewer-stage__delete">
+                <wd-button
+                  type="error"
+                  size="small"
+                  :loading="weeklyImageDeleting"
+                  @click="deleteWeeklyImage(weeklyImageList[weeklyCurrentIndex])"
+                >
+                  删除当前图片
+                </wd-button>
+              </view>
+            </view>
+
+            <text v-else class="viewer-empty">暂无图片</text>
+          </view>
+
+          <view v-if="weeklyImageList.length" class="viewer-counter">
             第 {{ weeklyCurrentIndex + 1 }} 张 / 共 {{ weeklyImageList.length }} 张
-          </div>
+          </view>
 
-          <template #footer>
-            <div class="flex justify-end gap-3">
-              <input
-                ref="weeklyImageFileInput"
-                type="file"
-                accept="image/*"
-                multiple
-                class="hidden"
-                @change="handleWeeklyImageSelected"
-              />
-              <el-button
-                v-if="hasPerm('work_order:image:upload')"
-                :loading="weeklyImageUploading"
-                @click="openWeeklyFilePicker"
-              >
-                添加图片
-              </el-button>
-            </div>
-          </template>
-        </el-dialog>
+          <view class="viewer-foot">
+            <wd-button
+              v-if="hasPerm('work_order:image:upload')"
+              :loading="weeklyImageUploading"
+              @click="openWeeklyFilePicker"
+            >
+              添加图片
+            </wd-button>
+          </view>
+        </wd-popup>
 
         <ProductSelectDialog
           v-model="weeklyProductDialogVisible"
@@ -2626,27 +2746,33 @@ watch(activeTab, (tab, prevTab) => {
                 {{ vesselGeometry.note }}
               </p>
             </div>
-            <el-select v-model="vesselKey" class="vessel-select shrink-0" aria-label="选择储罐">
-              <el-option
-                v-for="vessel in VESSELS"
-                :key="vessel.key"
-                :label="vessel.label"
-                :value="vessel.key"
-              />
-            </el-select>
+            <!-- 储罐选择：el-select 换成 wd-picker。
+                 wd-picker 支持默认插槽做触发器，这里沿用原来那个紧凑的行内样式，
+                 而不是它默认的「标签 + 值」表单行 —— 位置在两种罐型下要保持一致。 -->
+            <wd-picker v-model="vesselKey" :columns="vesselColumns">
+              <view class="vessel-select" aria-label="选择储罐">
+                <text>{{ selectedVessel.label }}</text>
+                <wd-icon name="arrow-down" size="14px" />
+              </view>
+            </wd-picker>
           </div>
 
           <div class="flex flex-wrap items-stretch" :class="isVerticalVessel ? 'gap-x-6 p-6' : ''">
             <div class="flex justify-center" :class="isVerticalVessel ? 'shrink-0' : 'w-full p-6'">
+              <!-- 储罐画布（老版画布 API）：
+                   canvas-id 是 uni.createCanvasContext 的取用键；
+                   id 供 createSelectorQuery 量尺寸 —— 量到的实际宽高决定
+                   逻辑坐标系 (W × H) 的缩放比，所以两者都不能省。 -->
               <canvas
-              ref="vesselCanvas"
-              class="vessel-canvas mx-auto block w-full"
-              :class="{ 'is-switching': vesselSwitching }"
-              :style="{
-                maxWidth: `${vesselGeometry.displayWidth}px`,
-                aspectRatio: String(vesselCanvasAspect),
-              }"
-            ></canvas>
+                id="vesselCanvas"
+                canvas-id="vesselCanvas"
+                class="vessel-canvas mx-auto block w-full"
+                :class="{ 'is-switching': vesselSwitching }"
+                :style="{
+                  maxWidth: `${vesselGeometry.displayWidth}px`,
+                  aspectRatio: String(vesselCanvasAspect),
+                }"
+              ></canvas>
             </div>
 
             <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
@@ -2693,12 +2819,11 @@ watch(activeTab, (tab, prevTab) => {
                   </span>
                   <div class="flex items-center gap-3">
                     <button
-                      type="button"
                       class="vessel-step"
                       aria-label="降低起始液位"
-                      @pointerdown.prevent="startStepHold('start', -1)"
-                      @keydown.enter.prevent="stepVesselLevel('start', -1)"
-                      @keydown.space.prevent="stepVesselLevel('start', -1)"
+                      @touchstart.prevent="startStepHold('start', -1)"
+                      @touchend="stopStepHold"
+                      @touchcancel="stopStepHold"
                     >
                       −
                     </button>
@@ -2711,12 +2836,11 @@ watch(activeTab, (tab, prevTab) => {
                       class="vessel-level-input w-20 min-w-0 text-right"
                     />
                     <button
-                      type="button"
                       class="vessel-step"
                       aria-label="升高起始液位"
-                      @pointerdown.prevent="startStepHold('start', 1)"
-                      @keydown.enter.prevent="stepVesselLevel('start', 1)"
-                      @keydown.space.prevent="stepVesselLevel('start', 1)"
+                      @touchstart.prevent="startStepHold('start', 1)"
+                      @touchend="stopStepHold"
+                      @touchcancel="stopStepHold"
                     >
                       +
                     </button>
@@ -2746,12 +2870,11 @@ watch(activeTab, (tab, prevTab) => {
                   </span>
                   <div class="flex items-center gap-3">
                     <button
-                      type="button"
                       class="vessel-step"
                       aria-label="降低终止液位"
-                      @pointerdown.prevent="startStepHold('end', -1)"
-                      @keydown.enter.prevent="stepVesselLevel('end', -1)"
-                      @keydown.space.prevent="stepVesselLevel('end', -1)"
+                      @touchstart.prevent="startStepHold('end', -1)"
+                      @touchend="stopStepHold"
+                      @touchcancel="stopStepHold"
                     >
                       −
                     </button>
@@ -2764,12 +2887,11 @@ watch(activeTab, (tab, prevTab) => {
                       class="vessel-level-input w-20 min-w-0 text-right"
                     />
                     <button
-                      type="button"
                       class="vessel-step"
                       aria-label="升高终止液位"
-                      @pointerdown.prevent="startStepHold('end', 1)"
-                      @keydown.enter.prevent="stepVesselLevel('end', 1)"
-                      @keydown.space.prevent="stepVesselLevel('end', 1)"
+                      @touchstart.prevent="startStepHold('end', 1)"
+                      @touchend="stopStepHold"
+                      @touchcancel="stopStepHold"
                     >
                       +
                     </button>
@@ -2798,34 +2920,34 @@ watch(activeTab, (tab, prevTab) => {
 
               <div v-if="vesselGeometry.type === 'vertical'" class="math-formula text-center text-slate-700">
                 <div>
-                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
-                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
+                  <text class="mf-var">V</text>(<text class="mf-var">h</text>) = π<text class="mf-var">r</text>²<text class="mf-var">h</text>
+                  <span class="ml-2 text-xs text-slate-400">（<text class="mf-var">h</text> ≤ <text class="mf-var">H</text>，筒体段）</span>
                   <span class="mx-7 text-slate-300">｜</span>
-                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
-                  <span class="frac"><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span> ]
-                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
+                  <text class="mf-var">V</text>(<text class="mf-var">h</text>) = π<text class="mf-var">r</text>²<text class="mf-var">H</text> + π<text class="mf-var">r</text>²[ <text class="mf-var">t</text> −
+                  <span class="frac"><span class="frac-num"><text class="mf-var">t</text>³</span><span class="frac-den">3<text class="mf-var">h</text><text class="mf-sub">i</text>²</span></span> ]
+                  <span class="ml-2 text-xs text-slate-400">（<text class="mf-var">h</text> &gt; <text class="mf-var">H</text>，<text class="mf-var">t</text> = <text class="mf-var">h</text> − <text class="mf-var">H</text>）</span>
                 </div>
               </div>
 
               <div v-else class="math-formula text-center text-slate-700">
                 <div>
-                  <i>V</i>(<i>h</i>) = <i>L</i> [
-                  <span class="frac"><span>π<i>r</i>²</span><span>2</span></span>
-                  − (<i>r</i> − <i>h</i>)<span class="sqrt">√<span>2<i>rh</i> − <i>h</i>²</span></span>
-                  − <i>r</i>² · arcsin<span class="paren">(</span><span class="frac"><span><i>r</i> − <i>h</i></span><span><i>r</i></span></span><span class="paren">)</span> ]
+                  <text class="mf-var">V</text>(<text class="mf-var">h</text>) = <text class="mf-var">L</text> [
+                  <span class="frac"><span class="frac-num">π<text class="mf-var">r</text>²</span><span class="frac-den">2</span></span>
+                  − (<text class="mf-var">r</text> − <text class="mf-var">h</text>)<span class="sqrt">√<span class="sqrt-body">2<text class="mf-var">rh</text> − <text class="mf-var">h</text>²</span></span>
+                  − <text class="mf-var">r</text>² · arcsin<span class="paren">(</span><span class="frac"><span class="frac-num"><text class="mf-var">r</text> − <text class="mf-var">h</text></span><span class="frac-den"><text class="mf-var">r</text></span></span><span class="paren">)</span> ]
                   &nbsp;+&nbsp;
-                  <span class="frac"><span>π · <i>h</i><sub>i</sub></span><span>3<i>r</i></span></span>
-                  · [ 3<i>r</i>²<i>h</i> − <i>r</i>³ + (<i>r</i> − <i>h</i>)³ ]
+                  <span class="frac"><span class="frac-num">π · <text class="mf-var">h</text><text class="mf-sub">i</text></span><span class="frac-den">3<text class="mf-var">r</text></span></span>
+                  · [ 3<text class="mf-var">r</text>²<text class="mf-var">h</text> − <text class="mf-var">r</text>³ + (<text class="mf-var">r</text> − <text class="mf-var">h</text>)³ ]
                 </div>
               </div>
 
               <p v-if="vesselGeometry.type === 'vertical'" class="mt-3 text-center text-xs leading-relaxed text-slate-500">
-                <i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>H</i> 筒体高度　<i>h</i><sub>i</sub> 封头曲面内高度
+                <text class="mf-var">r</text> 筒体内半径　<text class="mf-var">h</text> 液位高度　<text class="mf-var">H</text> 筒体高度　<text class="mf-var">h</text><text class="mf-sub">i</text> 封头曲面内高度
                 <span class="text-slate-400">｜</span>
                 程序按此式实时计算液体体积
               </p>
               <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
-                <i>L</i> 筒体长度（含两端直边）　<i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>h</i><sub>i</sub> 封头曲面内高度
+                <text class="mf-var">L</text> 筒体长度（含两端直边）　<text class="mf-var">r</text> 筒体内半径　<text class="mf-var">h</text> 液位高度　<text class="mf-var">h</text><text class="mf-sub">i</text> 封头曲面内高度
                 <span class="text-slate-400">｜</span>
                 程序按此式实时计算液体体积
               </p>
@@ -2875,6 +2997,7 @@ watch(activeTab, (tab, prevTab) => {
         </section>
       </div>
 
+      <!-- #ifdef H5 -->
       <div v-show="activeTab === 'import'">
         <WorkOrderImport
           @cancel="handleImportCancel"
@@ -2882,16 +3005,223 @@ watch(activeTab, (tab, prevTab) => {
           @imported="importDirty = true"
         />
       </div>
+      <!-- #endif -->
 
       <div v-show="activeTab === 'imageParse'">
         <ImageParse />
       </div>
-    </div>
-    </main>
-  </el-config-provider>
+    </view>
+
+    <!-- 提示与确认框的宿主组件。
+         wot-design-uni 的 useToast()/useMessage() 走 provide/inject：
+         本页 setup 里调用它们会 provide 出选项 ref，这两个组件再 inject 回来。
+         挂在页面根部，本页与所有子组件（ImageParse 等）的提示都走同一对实例。 -->
+    <wd-toast />
+    <wd-message-box />
+  </view>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+/* 页面外壳。
+   本页在 pages.json 里声明了 navigationStyle: custom —— 页面自带标题栏，
+   就不该再叠一条原生导航栏。代价是要自己给状态栏让出高度，
+   否则内容会被状态栏压住（H5/App/H5 端 --status-bar-height 为 0 或实际值）。 */
+.page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: calc(var(--status-bar-height, 0px) + 32px) 16px 32px;
+  background-color: $slate-50;
+}
+
+/* ===== 数据表格 =====
+   改造前用的是原生 <table> + <colgroup> + table-fixed。
+   小程序端没有表格布局（WXSS 也不支持 display: table），<table>/<tr>/<td>
+   会被 uni-app 编译成一堆嵌套 view，表格排版整个丢失。
+   因此改成 flex 行：
+     - .dt__row 是 flex 容器，.dt__cell 为不收缩的定宽项；
+     - 列宽沿用原先 columns[].width 的那批 Tailwind w-* 类，语义不变；
+     - 跨列单元格（原 colspan）改用 .dt__grow 占满剩余宽度；
+     - 外层 overflow-x-auto 保留，列多时横向滚动，与改造前行为一致。
+   注：本块所在的 <style> 已声明 lang="scss"（用于 // 注释与 uni.scss 变量）。 */
+.dt {
+  min-width: 100%;
+}
+
+.dt__head {
+  background-color: $slate-50;
+}
+
+.dt__row {
+  display: flex;
+  min-width: 100%;
+  align-items: stretch;
+}
+
+/* flex 子项默认会被压缩，不关掉的话列宽对不齐 */
+.dt__row > view {
+  flex-shrink: 0;
+}
+
+/* 表格为空时的整行提示 */
+.dt__empty {
+  width: 100%;
+  padding: 64px 12px;
+  color: $slate-400;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 跨列单元格（原 colspan）：占满行内剩余宽度 */
+.dt__grow {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+/* 周统计表：改造前靠 border-collapse: collapse 合并相邻单元格边框。
+   flex 下相邻单元格各画一条边 → 视觉上变成 2px 双线。
+   给「除首列外的单元格」一个 -1px 左边距、给后续行一个 -1px 上边距，
+   让相邻边框互相重叠，还原成 1px 单线网格。 */
+.weekly-grid .dt__row > view + view {
+  margin-left: -1px;
+}
+
+.weekly-grid .dt__row + .dt__row {
+  margin-top: -1px;
+}
+
+/* 表格内的输入框。
+   改造前是一串 Tailwind 工具类，但其中 focus:ring-* 那类变体在小程序端
+   本就不生效，且小程序 input 需要显式高度才撑得起来，所以落成显式样式。 */
+.weekly-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 20px 0 12px;
+  border: 0;
+  background-color: transparent;
+  color: $slate-700;
+  font-size: 14px;
+  text-align: right;
+}
+
+/* ===== 列表里的单据缩略图 =====
+   改造前是「20×20 的 span 里叠一个内联 <svg> 占位图标 + 一张 img 覆盖其上」，
+   图片加载失败时逐级降级、最终隐藏露出图标。
+   小程序端没有 svg 标签，占位图标换成 wd-icon；img 换成 <image>。 */
+.thumb {
+  position: relative;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background-color: $slate-100;
+  color: $slate-400;
+}
+
+.thumb__img {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid $slate-200;
+  border-radius: 4px;
+  background-color: #fff;
+}
+
+/* ===== 图片查看器（工单汇总与周统计各一份，共用这套类名）=====
+   原来靠 Element Plus 的 el-dialog 提供弹层与 #header/#footer 插槽，
+   现在换成 wd-popup + 普通的头部/主体/底部三块，样式自己给。 */
+.viewer-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  padding: 16px 20px;
+  border-bottom: 1px solid $slate-100;
+  color: $slate-700;
+  font-size: 14px;
+}
+
+.viewer-body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: $slate-50;
+}
+
+.viewer-stage {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+/* uni 的 image 组件不会自己撑开，必须给显式高度 */
+.viewer-stage__img {
+  width: 100%;
+  height: 56vh;
+}
+
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 10;
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  /* 用负 margin 做垂直居中，省掉 translateY，两端表现更稳 */
+  margin-top: -18px;
+  border-radius: 50%;
+  background-color: rgba(15, 23, 42, 0.45);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+
+  &--prev {
+    left: 8px;
+  }
+
+  &--next {
+    right: 8px;
+  }
+}
+
+.viewer-stage__delete {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.viewer-empty {
+  color: $slate-400;
+  font-size: 14px;
+}
+
+.viewer-counter {
+  padding: 8px 20px;
+  color: $slate-500;
+  font-size: 13px;
+  text-align: center;
+}
+
+.viewer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 20px;
+  border-top: 1px solid $slate-100;
+}
+
 /* 储罐图：切换罐型时淡出淡入 + 高度平滑过渡 */
 .vessel-canvas {
   transition: aspect-ratio 320ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
@@ -2973,27 +3303,24 @@ watch(activeTab, (tab, prevTab) => {
   appearance: textfield;
 }
 
-/* 储罐选择器：按标题样式呈现 */
+/* 储罐选择器：按标题样式呈现。
+   改造前这些样式挂在 :deep(.el-select__wrapper) 上 —— 覆写的是 Element Plus 的
+   内部结构。现在触发器就是我们自己的 view，样式直接写在它身上，不再需要 :deep()；
+   同时去掉了 hover / is-focused 两条 —— 触屏没有 hover，
+   而 :deep(.is-focused) 那个类名也是 Element Plus 专属的。 */
 .vessel-select {
-  width: 224px; /* 固定宽度，避免被 Element Plus 默认样式拉伸到整行 */
-}
-
-.vessel-select :deep(.el-select__wrapper) {
+  display: inline-flex;
+  width: 224px; /* 固定宽度，避免被拉伸到整行 */
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 7px 12px;
-  font-size: 15px;
-  font-weight: 600;
-  color: rgb(15 23 42);
   border-radius: 10px;
   box-shadow: 0 0 0 1px rgb(203 213 225) inset;
+  color: rgb(15 23 42);
+  font-size: 15px;
+  font-weight: 600;
   transition: box-shadow 0.2s ease;
-}
-
-.vessel-select :deep(.el-select__wrapper:hover) {
-  box-shadow: 0 0 0 1px rgb(148 163 184) inset;
-}
-
-.vessel-select :deep(.el-select__wrapper.is-focused) {
-  box-shadow: 0 0 0 1px rgb(14 165 233) inset, 0 0 0 3px rgb(224 242 254);
 }
 
 /* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */
@@ -3005,12 +3332,16 @@ watch(activeTab, (tab, prevTab) => {
   letter-spacing: 0.02em;
 }
 
-.math-formula i {
+// 公式里的变量名与下标。
+// 改造前用的是 <i> / <sub> —— uni-app 会把它们编译成块级 view，行内排版直接崩掉
+// （「L 筒体长度」会变成两行）。所以改写成 <text>（行内组件）+ 显式类名表达斜体/下标。
+.math-formula .mf-var {
   font-style: italic;
 }
 
-.math-formula sub {
+.math-formula .mf-sub {
   font-size: 0.7em;
+  vertical-align: -0.15em;
 }
 
 .math-formula .frac {
@@ -3023,16 +3354,18 @@ watch(activeTab, (tab, prevTab) => {
   text-align: center;
 }
 
-.math-formula .frac > span:first-child {
+// 分子/分母改用显式类名，不再依赖 > :first-child / :last-child ——
+// span 转换后元素名变了，且小程序 WXSS 对结构伪类的支持并不在官方保证范围内。
+.math-formula .frac-num {
   border-bottom: 1px solid currentColor;
   padding: 0 5px;
 }
 
-.math-formula .frac > span:last-child {
+.math-formula .frac-den {
   padding: 0 5px;
 }
 
-.math-formula .sqrt > span {
+.math-formula .sqrt-body {
   border-top: 1px solid currentColor;
   padding: 0 4px 0 2px;
   margin-left: -1px;

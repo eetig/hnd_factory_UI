@@ -11,24 +11,78 @@ const emit = defineEmits(['action'])
 </script>
 
 <template>
-  <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
-    <div
-      class="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-      :class="type === 'error' ? 'bg-rose-50 text-rose-500' : 'bg-sky-50 text-sky-600'"
-    >
-      {{ type === 'error' ? '!' : '∅' }}
-    </div>
+  <view class="panel-state">
+    <view class="panel-state__badge" :class="type === 'error' ? 'is-error' : 'is-empty'">
+      <text>{{ type === 'error' ? '!' : '∅' }}</text>
+    </view>
 
-    <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
-    <p v-if="description" class="mt-2 text-sm text-slate-500">{{ description }}</p>
+    <text class="panel-state__title">{{ title }}</text>
+    <text v-if="description" class="panel-state__desc">{{ description }}</text>
 
-    <button
-      v-if="actionText"
-      type="button"
-      class="mt-5 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
-      @click="emit('action')"
-    >
+    <button v-if="actionText" class="panel-state__action" @click="emit('action')">
       {{ actionText }}
     </button>
-  </div>
+  </view>
 </template>
+
+<style lang="scss" scoped>
+// min-h-72（18rem）这类任意值类名在小程序端要构建期转义，这里直接写死尺寸更稳
+.panel-state {
+  display: flex;
+  min-height: 288px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 48rpx;
+  text-align: center;
+
+  &__badge {
+    display: flex;
+    width: 96rpx;
+    height: 96rpx;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 32rpx;
+    border-radius: 50%;
+    font-size: 36rpx;
+
+    &.is-error {
+      background-color: $rose-50;
+      color: $rose-500;
+    }
+
+    &.is-empty {
+      background-color: $sky-50;
+      color: $sky-600;
+    }
+  }
+
+  &__title {
+    color: $slate-900;
+    font-size: 32rpx;
+    font-weight: 600;
+  }
+
+  &__desc {
+    margin-top: 16rpx;
+    color: $slate-500;
+    font-size: 28rpx;
+  }
+
+  &__action {
+    margin-top: 40rpx;
+    padding: 16rpx 32rpx;
+    border: 0;
+    border-radius: 16rpx;
+    background-color: $slate-900;
+    color: #fff;
+    font-size: 28rpx;
+    font-weight: 500;
+    line-height: 1.4;
+
+    &::after {
+      border: 0;
+    }
+  }
+}
+</style>
