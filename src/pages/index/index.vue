@@ -1109,7 +1109,12 @@ async function fetchWeeklyOrders() {
 
 // ===== 储罐体积计算 =====
 // 储罐配置：新增储罐只需在数组里加一项
-// imageBounds 为底图中罐体的像素边界（由图像分析 + 轮廓叠加验证得出）
+// imageBounds 为底图中罐体的像素边界（由图像分析 + 轮廓叠加验证得出）。
+//
+// ⚠️ 这组坐标与底图的实际像素尺寸是**绑定**的：绘制时按 s = IMAGE_W / bounds.width
+//    把两者换算到画布坐标，所以图片一改尺寸，坐标必须等比跟着改，否则液位线会与
+//    图纸错位。底图现为原图 1/2 尺寸（为压小程序主包），用
+//    resources/compress-vessel-images.py 重新生成时会打印出配套的新坐标。
 const VESSELS = [
   {
     key: 'silane',
@@ -1123,7 +1128,10 @@ const VESSELS = [
     // 原因是 canvas 画图拿到的是路径字符串（不是 import 出来的模块 URL），
     // 三端里只有 /static 的路径是各端都认的（App 端由打包进 www 的资源解析）。
     image: '/static/vessel.png',
-    imageBounds: { width: 2150, height: 1060, left: 75, right: 2069, top: 131, bottom: 931 },
+    // 坐标已按压缩后的底图（1075x530 = 原图 1/2）等比缩放。
+    // ⚠️ 底图一换尺寸，这组数字必须同步重算，否则液位线会与图纸错位 ——
+    //    用 resources/compress-vessel-images.py 重新生成，它会把新值打印出来。
+    imageBounds: { width: 1075, height: 530, left: 37.5, right: 1034.5, top: 65.5, bottom: 465.5 },
     displayWidth: 680,
     medium: '三氯氢硅',
     density: 1.35, // 20°C、101.325kPa 工程取值（SIS 联锁/容积/物料衡算/泄放计算用）g/cm³
@@ -1138,7 +1146,8 @@ const VESSELS = [
     cylinderHeight: 4800, // 筒体高度 4.8m
     headDepth: 900, // 顶部封头曲面内高度 0.9m
     image: '/static/vessel-product150.png',
-    imageBounds: { width: 1760, height: 1938, left: 131, right: 1351, top: 63, tangent: 310, bottom: 1930 },
+    // 坐标已按压缩后的底图（880x969 = 原图 1/2）等比缩放，同见上方说明
+    imageBounds: { width: 880, height: 969, left: 65.5, right: 675.5, top: 31.5, tangent: 155, bottom: 965 },
     displayWidth: 470,
     medium: '乙烯基三氯硅烷',
     density: 1.27, // GB/T 35498-2017，20°C、101.325kPa g/cm³（数值上等于 t/m³）
