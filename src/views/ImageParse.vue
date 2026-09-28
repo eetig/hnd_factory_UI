@@ -374,6 +374,7 @@ const PICK_COLUMNS = [
   { key: 'quantity', label: '领料数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
   { key: 'image', label: '线下单据', align: 'center' },
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const INBOUND_COLUMNS = [
@@ -385,6 +386,7 @@ const INBOUND_COLUMNS = [
   { key: 'quantity', label: '入库数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
   { key: 'image', label: '线下单据', align: 'center' },
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const UNKNOWN_COLUMNS = [
@@ -394,6 +396,7 @@ const UNKNOWN_COLUMNS = [
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '数量', align: 'right' },
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN_COLUMNS }
@@ -413,21 +416,17 @@ const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN
 function buildTable(result) {
   const kind = resolveDocKind(result?.documentType)
 
-  const rows = (result?.items || []).map((item, index) => ({
-    index: index + 1,
+  const rows = (result?.items || []).map((item) => ({
+    ...blankRow(),
     materialName: fieldText(item.materialName),
     // 物料编码【不取识别值】，一律从空开始，等主数据按名称反查填入。
     // 理由：纸质单该列本就空白，模型对空白列会吐占位值或误取相邻的「规格」列
     // （实测出现过 materialCode="不存在"、"2.260813"）。留着它只会让人误以为是真编码。
     // 识别原值仍保留在 image.result 里，需要追溯时看得到。
-    materialCode: '',
     quantity: fieldText(item.quantity),
-    unit: '',
-    // 该行的物料候选（由 enrichMaterials 填充），供「查不到时人工选」
-    candidates: [],
   }))
 
-  return {
+  const table = {
     kind,
     columns: COLUMNS[kind],
     doc: {
@@ -436,6 +435,64 @@ function buildTable(result) {
     },
     rows,
   }
+  renumber(table)
+  return table
+}
+
+// ------------------------------------------------------------------
+// 行增删（识别结果需要人工校准行数）
+// ------------------------------------------------------------------
+
+/**
+ * 行的稳定标识，与「序号」刻意分开。
+ *
+ * <p>{@code index} 是给人看的行号，删掉中间一行后其余行都要往前挪，所以它会变；
+ * 拿它当 {@code :key} 会让 Vue 在重排时复用错组件，表现为输入框内容/焦点串行。
+ */
+let rowUid = 0
+
+/** 一张空白行。物料编码与单位照旧留空 —— 只能靠名称反查带出，不允许手填 */
+function blankRow() {
+  return {
+    key: ++rowUid,
+    index: 0, // 由 renumber 统一编
+    materialName: '',
+    materialCode: '',
+    quantity: '',
+    unit: '',
+    // 该行的物料候选（由 enrichMaterials 填充），供「查不到时人工选」
+    candidates: [],
+  }
+}
+
+/** 序号对齐数组下标：它是对外展示的行号，删掉中间一行后不能留空洞 */
+function renumber(table) {
+  table.rows.forEach((row, i) => {
+    row.index = i + 1
+  })
+}
+
+/**
+ * 识别漏行时手工补一行。
+ *
+ * <p>新行为空，因此会立刻让「确认入库」变成不可点（缺物料编码）——
+ * 这是预期的：补的行必须填完才能入库。
+ */
+function addRow(image) {
+  clearConfirm(image)
+  image.table.rows.push(blankRow())
+  renumber(image.table)
+}
+
+/** 识别多出幽灵行 / 重复行时删掉该行 */
+function removeRow(image, row) {
+  clearConfirm(image)
+  const rows = image.table.rows
+  const at = rows.indexOf(row)
+  if (at >= 0) {
+    rows.splice(at, 1)
+  }
+  renumber(image.table)
 }
 
 /** 可编辑单元格：静默时不显边框，悬停/聚焦才提示可改，避免整表看起来像表单控件 */
@@ -490,6 +547,11 @@ function confirmBlockReason(image) {
   }
   if (!String(image.table.doc.documentNo || '').trim()) {
     return '单据号为空，无法入库'
+  }
+
+  // 行可以删到 0（增删入口允许这么做），但 0 行的单据没有意义，别让它提交上去
+  if (!image.table.rows.length) {
+    return '没有可入库的明细行，请至少保留一行'
   }
 
   const bad = image.table.rows.filter(
@@ -742,7 +804,7 @@ onUnmounted(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="row in image.table.rows" :key="row.index">
+                  <tr v-for="row in image.table.rows" :key="row.key">
                     <td
                       v-for="col in image.table.columns"
                       :key="col.key"
@@ -822,6 +884,28 @@ onUnmounted(() => {
                         {{ row.materialCode || '—' }}
                       </span>
 
+                      <!-- 操作：删除该行（识别多出幽灵行 / 重复行时用） -->
+                      <div v-else-if="col.key === 'actions'" class="flex justify-center">
+                        <button
+                          type="button"
+                          class="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          title="删除该行"
+                          @click="removeRow(image, row)"
+                        >
+                          <svg
+                            class="h-3.5 w-3.5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2.2"
+                            stroke-linecap="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M5 12h14" />
+                          </svg>
+                        </button>
+                      </div>
+
                       <!-- 其余字段：逐行独立编辑 -->
                       <input
                         v-else
@@ -836,8 +920,34 @@ onUnmounted(() => {
               </table>
 
               <p v-else class="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                未识别到行项目。
+                暂无行项目，可点下方「增加一行」手工补充。
               </p>
+
+              <!-- 行数校准：识别会漏行（字迹潦草）也会多行（串到相邻单据），
+                   两者都只能靠人眼对着原图数，所以给一对增删入口而不是让流程中断 -->
+              <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+                  @click="addRow(image)"
+                >
+                  <svg
+                    class="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.2"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  增加一行
+                </button>
+                <p class="text-xs text-slate-400">
+                  对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
+                </p>
+              </div>
 
               <p class="mt-2 text-xs text-slate-400">
                 识别引擎 {{ image.result.engine || '—' }} · 耗时
