@@ -516,13 +516,16 @@ function handleBackToList() {
       </div>
 
       <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+        <!-- wd-pagination 的 change 传的是 `{ value: N }` 对象而非页码，
+             且它在 update:modelValue 之前触发（此时 pageNum 还是旧值），
+             所以必须显式取出新页码传进去，不能直接绑 getPageData。 -->
         <wd-pagination
           v-model="pageNum"
           :page-size="pageSize"
           :total="total"
           show-message
           :hide-if-one-page="false"
-          @change="getPageData"
+          @change="(event) => getPageData(event.value)"
         />
       </div>
     </section>

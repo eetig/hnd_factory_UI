@@ -2086,13 +2086,17 @@ watch(activeTab, (tab, prevTab) => {
           </div>
 
           <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+            <!-- wd-pagination 的 change 事件传的是 `{ value: N }` 对象，不是页码本身
+                 （el-pagination 传的是数字，迁移时直接绑函数会拿到对象）。
+                 而 change 又在 update:modelValue 之前触发，此时 pageNum 还是旧值，
+                 所以必须把新的页码显式取出来传进去，不能靠 v-model 已更新。 -->
             <wd-pagination
               v-model="pageNum"
               :total="total"
               :page-size="pageSize"
               show-message
               :hide-if-one-page="false"
-              @change="getPageData"
+              @change="(event) => getPageData(event.value)"
             />
           </div>
         </div>
@@ -2297,13 +2301,14 @@ watch(activeTab, (tab, prevTab) => {
               </div>
 
               <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+                <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="pickPageNum"
               :total="pickTotal"
               :page-size="pickPageSize"
               show-message
               :hide-if-one-page="false"
-              @change="getPickPageData"
+              @change="(event) => getPickPageData(event.value)"
             />
               </div>
             </div>
@@ -2431,13 +2436,14 @@ watch(activeTab, (tab, prevTab) => {
               </div>
 
               <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+                <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="inboundPageNum"
               :total="inboundTotal"
               :page-size="inboundPageSize"
               show-message
               :hide-if-one-page="false"
-              @change="getInboundPageData"
+              @change="(event) => getInboundPageData(event.value)"
             />
               </div>
             </div>
