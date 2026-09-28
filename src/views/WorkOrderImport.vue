@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import request from '../api/request'
+import { formatFileSize } from '../utils/format'
 import {
   ElButton,
   ElMessage,
@@ -196,14 +197,6 @@ function handleFileInputChange(event) {
 function isExcelFile(file) {
   const name = file?.name || ''
   return /\.(xlsx|xls)$/i.test(name)
-}
-
-// 让用户直观看到文件大小 —— 内嵌单据图片的 Excel 可达十几 MB，是上传慢的主因
-function formatFileSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function getErrorMessage(error, fallback) {

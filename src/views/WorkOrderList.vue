@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
-import { clearAuth, getRoleName, hasPerm } from '../api/auth'
+import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../api/auth'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
 import LoadingMask from '../components/LoadingMask.vue'
 import PanelState from '../components/PanelState.vue'
@@ -13,6 +13,7 @@ import { usePickData } from '../composables/usePickData'
 import { useInboundData } from '../composables/useInboundData'
 import { useGoodsMoveData } from '../composables/useGoodsMoveData'
 import WorkOrderImport from './WorkOrderImport.vue'
+import ImageParse from './ImageParse.vue'
 import vesselImageUrl from '../assets/vessel.png'
 import vesselProduct150ImageUrl from '../assets/vessel-product150.png'
 import { REPORT_ORDER_TYPES, getReportOrderType } from '../constants/orderTypes'
@@ -59,12 +60,28 @@ const tabs = [
   { key: 'vessel', label: '压力容器体积计算' },
   { key: 'electricity', label: '电费预提' },
   { key: 'import', label: '文件导入', perm: 'work_order:import' },
+  // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
+  { key: 'imageParse', label: '图片解析', perm: 'work_order:import' },
 ]
 
 // 按权限过滤可见 Tab
 const visibleTabs = computed(() => tabs.filter((tab) => hasPerm(tab.perm)))
 
+// 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
+const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
+
+// 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
+// 否则会停在一个空白的 activeTab 上
+watch(visibleTabs, (list) => {
+  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = list[0].key
+  }
+})
+
+function goLogin() {
+  router.push('/login')
+}
 
 async function handleLogout() {
   try {
@@ -74,7 +91,9 @@ async function handleLogout() {
   }
 
   clearAuth()
-  router.replace('/login')
+  // 退出即回到只读浏览：读接口本就免登录，数据无需重取；
+  // 写入类 Tab 与按钮会随 authState 变化自动隐藏
+  router.replace('/')
 }
 
 // 工单报工表格列
@@ -1691,14 +1710,28 @@ watch(activeTab, (tab, prevTab) => {
         <div class="flex items-center gap-3 text-sm text-slate-500">
           <span>共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单</span>
           <span class="text-slate-300">|</span>
-          <span>{{ roleName }}</span>
-          <button
-            type="button"
-            class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-            @click="handleLogout"
-          >
-            退出
-          </button>
+
+          <!-- 未登录即可只读浏览；写入类功能按权限隐藏，登录入口放这里 -->
+          <template v-if="loggedIn">
+            <span>{{ roleName }}</span>
+            <button
+              type="button"
+              class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+              @click="handleLogout"
+            >
+              退出
+            </button>
+          </template>
+          <template v-else>
+            <span class="text-slate-400">只读浏览</span>
+            <button
+              type="button"
+              class="rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+              @click="goLogin"
+            >
+              登录
+            </button>
+          </template>
         </div>
       </header>
 
@@ -2526,6 +2559,7 @@ watch(activeTab, (tab, prevTab) => {
                 ›
               </el-button>
               <el-button
+                v-if="hasPerm('work_order:image:delete')"
                 type="danger"
                 size="small"
                 class="absolute bottom-2 left-1/2 -translate-x-1/2"
@@ -2554,7 +2588,11 @@ watch(activeTab, (tab, prevTab) => {
                 class="hidden"
                 @change="handleWeeklyImageSelected"
               />
-              <el-button :loading="weeklyImageUploading" @click="openWeeklyFilePicker">
+              <el-button
+                v-if="hasPerm('work_order:image:upload')"
+                :loading="weeklyImageUploading"
+                @click="openWeeklyFilePicker"
+              >
                 添加图片
               </el-button>
             </div>
@@ -2843,6 +2881,10 @@ watch(activeTab, (tab, prevTab) => {
           @back="handleImportBack"
           @imported="importDirty = true"
         />
+      </div>
+
+      <div v-show="activeTab === 'imageParse'">
+        <ImageParse />
       </div>
     </div>
     </main>

@@ -33,3 +33,9 @@ temp/
 
 # 运维手册（含公网地址、FRP 端口、MinIO 凭据，严禁入库 —— 本仓库为公开仓库）
 minio同步手册.md
+
+# Claude Code 本地配置（含本机绝对路径的权限配置，不应入库）
+.claude/
+
+# 部署产物压缩包（构建产物，dist/ 已被忽略，这个包同理）
+hnd-ui-dist.zip

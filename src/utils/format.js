@@ -50,6 +50,14 @@ export function normalizeMaterialName(name) {
   return String(name ?? '').replace(/[\s_]/g, '').toLowerCase()
 }
 
+// 让用户直观看到文件大小 —— 内嵌单据图片的 Excel 可达十几 MB，是上传慢的主因
+export function formatFileSize(bytes) {
+  if (!bytes) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
 // 按别名顺序取第一个存在的字段值（后端字段名有出入时容错）
 export function pickField(item, aliases) {
   for (const alias of aliases) {
