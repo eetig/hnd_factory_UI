@@ -1765,8 +1765,11 @@ function renderVessel() {
       const isDecrease = levelDelta > 0
       const color = isDecrease ? '#e11d48' : '#059669'
 
-      // 画布会被 CSS 缩放显示，字号按缩放比例反向补偿，保证屏幕上大小恒定
-      const displayWidth = canvas.clientWidth || IMAGE_W
+      // 画布会被 CSS 缩放显示，字号按缩放比例反向补偿，保证屏幕上大小恒定。
+      // 这里原来读的是 canvas.clientWidth（改造前直接持有 DOM 元素），
+      // 改用 uni.createCanvasContext 后没有元素可读了 —— 用上面实测的布局宽度，
+      // 两者含义相同（都是画布的 CSS 像素宽度）。
+      const displayWidth = size.width || IMAGE_W
       const uiScale = Math.min(4, W / displayWidth)
       const fs = 13 * uiScale
 
