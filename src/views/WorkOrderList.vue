@@ -290,9 +290,24 @@ function handleImportCancel() {
   activeTab.value = 'workOrder'
 }
 
+/**
+ * 导入会新增/更新四类数据（工单、领料、入库、货物移动），
+ * 而它们又是工单报工、工单核算、原辅料核算、周统计的数据源 —— 因此全部重新拉取。
+ *
+ * 注意：不能只在「返回工单汇总」按钮里刷新 —— 用户也可能直接点顶部 Tab 切走，
+ * 所以用 importDirty 标记 + activeTab 监听统一处理。
+ */
+const importDirty = ref(false)
+
+function refreshAllData() {
+  fetchWorkOrders()
+  fetchPickRecords()
+  fetchInboundRecords()
+  fetchGoodsMoveRecords()
+}
+
 function handleImportBack() {
   activeTab.value = 'workOrder'
-  fetchWorkOrders()
 }
 
 function showPreviousImage() {
@@ -1647,12 +1662,18 @@ onUnmounted(() => {
 })
 
 // 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
-watch(activeTab, (tab) => {
+watch(activeTab, (tab, prevTab) => {
   if (tab === 'vessel') {
     loadVesselImage()
     startVesselLoop()
   } else {
     stopVesselLoop()
+  }
+
+  // 离开导入页且期间导入成功 → 刷新各数据集
+  if (prevTab === 'import' && importDirty.value) {
+    importDirty.value = false
+    refreshAllData()
   }
 })
 </script>
@@ -2817,7 +2838,11 @@ watch(activeTab, (tab) => {
       </div>
 
       <div v-show="activeTab === 'import'">
-        <WorkOrderImport @cancel="handleImportCancel" @back="handleImportBack" />
+        <WorkOrderImport
+          @cancel="handleImportCancel"
+          @back="handleImportBack"
+          @imported="importDirty = true"
+        />
       </div>
     </div>
     </main>

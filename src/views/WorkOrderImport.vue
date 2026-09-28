@@ -8,7 +8,8 @@ import {
 } from 'element-plus'
 import 'element-plus/dist/index.css'
 
-const emit = defineEmits(['cancel', 'back'])
+// imported：导入成功时通知父组件（父组件需在离开本页时刷新各数据集）
+const emit = defineEmits(['cancel', 'back', 'imported'])
 
 const fileInputRef = ref(null)
 const dragActive = ref(false)
@@ -338,6 +339,7 @@ async function handleImport() {
     }
     importFailRows.value = Array.isArray(data.failRows) ? data.failRows : []
     imported.value = true
+    emit('imported')
 
     if (importFailRows.value.length) {
       ElMessage.warning(
