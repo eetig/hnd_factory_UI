@@ -223,7 +223,55 @@ App 与小程序端**整块排除**（条件编译 `#ifdef H5`，含组件导入
 
 ---
 
-## 8. 常用命令
+## 8. 应用图标与站点图标
+
+图标由脚本从一张原始 logo 生成，**不要手工替换产物文件**：
+
+```bash
+python resources/generate-icons.py     # 需要 Pillow
+```
+
+| 路径 | 说明 |
+|---|---|
+| `resources/source-logo.png` | 原始 logo（1536×1536） |
+| `resources/icons/*.png` | App 全套尺寸（19 个），`_preview.png` 是预览拼图 |
+| `public/favicon.ico` | H5 站点图标（16 / 32 / 48 多尺寸） |
+| `public/apple-touch-icon.png` | iOS 添加到主屏时的图标（180） |
+
+脚本做的四件事：
+
+1. **擦水印**：原图右下角有「豆包AI生成」水印。经像素级验证，水印完全落在八边形
+   **之外**的白色背景上（水印框 x≥1263，而同高度处八边形右边界仅到 x≈897），
+   所以填白是无损的。⚠️ **以后换图务必先确认新图没有水印或其它来源标注。**
+2. **抠底**：八边形近似凸多边形，逐行扫描左右边界，把边界外刷成背景。
+   凸形状下逐行扫是精确的，且比 floodfill 快一个量级（纯 Python 无 numpy 时差别明显）。
+3. **缩到安全区**：八边形占画布 72%，其余是边距 —— iOS/Android 启动器会把图标
+   裁成圆角矩形或圆形，铺满画布时八边形的四个尖角会被切掉。
+4. **套渐变底**：深蓝径向渐变。这一步踩了两个坑，都写在注释里了：
+   - 外围填充**不能**用固定纯色，否则贴入矩形的四角与渐变对不上，
+     图标上会出现一圈肉眼可见的方块接缝；必须取该位置上的真实渐变来回填。
+   - 填充必须在 `crop` **之前**做。`crop` 返回的是副本，裁完再改原图改不到 badge 上，
+     那样四角会保留原始白底，贴上去变成一块白方块。
+
+App 图标的接入：
+
+- 尺寸与路径写在 `src/manifest.json` 的 `app-plus.distribute.icons`
+  （Android 6 档 + iOS 18 档，含 App Store 用的 1024）
+- 全程 RGB、不带 alpha —— iOS 的 App Store 图标不允许透明通道
+- `resources/` 刻意放在 `src/` **之外**：`src/static/` 会被打进每一端的包体，
+  而小程序主包已逼近 2MB 上限，再塞 1MB 多的图标会直接超限；
+  App 图标只用于原生打包，与包体无关
+- 代价是 uni-app 的 App 构建**不会**把 `resources/` 带进 `dist/build/app`，
+  而 HBuilderX 导入的正是那个目录 —— 所以 `build:app` 里挂了
+  `resources/sync-app-icons.mjs` 自动同步。手工处理 `dev:app` 的产物用
+  `npm run sync:app-icons -- dev`
+
+> **小程序头像不在这里配。** 小程序头像是在「微信公众平台 → 设置 → 基本设置 →
+> 小程序头像」上传的，与仓库代码无关，需要手动传一个 ≥144×144 的方形图。
+
+---
+
+## 9. 常用命令
 
 ```bash
 npm run dev:h5           # H5 开发（vite 代理仍指向本机 8084/8082/8085）
@@ -232,7 +280,10 @@ npm run dev:app          # App 开发，产物导入 HBuilderX 运行
 
 npm run build:h5
 npm run build:mp-weixin
-npm run build:app
+npm run build:app        # 会自动同步 App 图标到产物
+
+npm run sync:app-icons          # 仅同步图标到 dist/build/app
+npm run sync:app-icons -- dev   # 同步到 dist/dev/app
 ```
 
 各端产物输出到 `dist/build/<平台>/`。

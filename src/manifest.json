@@ -21,6 +21,40 @@
       "Camera": {}
     },
     "distribute": {
+      "icons": {
+        "android": {
+          "ldpi": "resources/icons/48x48.png",
+          "mdpi": "resources/icons/48x48.png",
+          "hdpi": "resources/icons/72x72.png",
+          "xhdpi": "resources/icons/96x96.png",
+          "xxhdpi": "resources/icons/144x144.png",
+          "xxxhdpi": "resources/icons/192x192.png"
+        },
+        "ios": {
+          "appstore": "resources/icons/1024x1024.png",
+          "iphone": {
+            "app@2x": "resources/icons/120x120.png",
+            "app@3x": "resources/icons/180x180.png",
+            "spotlight@2x": "resources/icons/80x80.png",
+            "spotlight@3x": "resources/icons/120x120.png",
+            "settings@2x": "resources/icons/58x58.png",
+            "settings@3x": "resources/icons/87x87.png",
+            "notification@2x": "resources/icons/40x40.png",
+            "notification@3x": "resources/icons/60x60.png"
+          },
+          "ipad": {
+            "app": "resources/icons/76x76.png",
+            "app@2x": "resources/icons/152x152.png",
+            "proapp@2x": "resources/icons/167x167.png",
+            "spotlight": "resources/icons/40x40.png",
+            "spotlight@2x": "resources/icons/80x80.png",
+            "settings": "resources/icons/29x29.png",
+            "settings@2x": "resources/icons/58x58.png",
+            "notification": "resources/icons/20x20.png",
+            "notification@2x": "resources/icons/40x40.png"
+          }
+        }
+      },
       "android": {
         "permissions": [
           "<uses-permission android:name=\"android.permission.INTERNET\"/>",
