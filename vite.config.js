@@ -26,36 +26,39 @@ export default defineConfig({
   },
 
   server: {
-    port: 9091,
+    port: 9092,
     host: true,
     // ⚠️ 以下代理仅 H5 端开发期有效。
     //    App 端与小程序端不走 devServer，请求直发真实域名（见 src/api/request.js 的 BASE_URL）。
+    //
+    // 当前为「接入已部署线上后端」的联调配置：三组路由全部指向 https://hbhnd.cloud。
+    // hbhnd.cloud 的生产 Nginx 已把 /api(FastAPI hnd_factory)、/api/ocr(myocr 8085)、
+    // /files、/thumbs(img-service 8082) 同源配好，故这里【不做任何 rewrite】，
+    // 原样透传即可，本地拓扑与生产完全一致。
+    //   若要回切到本地后端（8084 / 8082 / 8085），把下面 target 换成本地地址，
+    //   并把 /files、/thumbs 各自带上注释掉的 rewrite 即可（本地 img-service 需手工重写）。
     proxy: {
-      // 识别服务 myocr（变更-003）。
-      // ⚠️ 必须排在下面的 '/api' 之前：Vite 按定义顺序匹配上下文，
-      //    放到后面会被 '/api' 先吃掉，转发到 hnd_factory(8084) 而 404。
-      // 注意与其它服务不同，这里不重写路径 —— myocr 的路由本身就是 /api/ocr/*。
-      '/api/ocr': {
-        target: 'http://localhost:8085',
-        changeOrigin: true,
-      },
+      // 后端 hnd_factory 的 /api/*；/api/ocr/* 也由同一条规则吃掉，
+      // 交由 hbhnd.cloud 的 Nginx 分流到 myocr —— 无需再单独定义 '/api/ocr'。
       '/api': {
-        // 后端 hnd_factory 端口（本地与容器统一为 8084）
-        target: 'http://localhost:8084',
+        target: 'https://hbhnd.cloud',
         changeOrigin: true,
-        // 删除 rewrite，不去掉 /api，直接原样转发
+        secure: false,
       },
-      // 单据图片（整改-001）：生产由 Nginx 同源路由，本地开发转发到 img-service
-      // 注意：需重写路径 —— /files/X → /api/img/file/X，/thumbs/X → /api/img/thumb/X
+      // 单据图片（整改-001）：生产由 Nginx 同源路由到 img-service。
       '/files': {
-        target: 'http://localhost:8082',
+        target: 'https://hbhnd.cloud',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
+        secure: false,
+        // 本地直连 img-service 时启用：
+        // rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
       },
       '/thumbs': {
-        target: 'http://localhost:8082',
+        target: 'https://hbhnd.cloud',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
+        secure: false,
+        // 本地直连 img-service 时启用：
+        // rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
       },
     },
   },
