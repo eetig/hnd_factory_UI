@@ -42,20 +42,30 @@ const emit = defineEmits(['open', 'clear'])
 </template>
 
 <style lang="scss" scoped>
+// 深色主题下的表头筛选控件：未筛选时是一个透明按钮，
+// 已筛选时收成一枚强调色胶囊（带描边），右侧再挂一个圆形清除键。
 .filter-cell {
   display: flex;
   align-items: center;
-  gap: 4rpx;
+  gap: 8rpx;
 
   &__trigger {
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 4rpx;
-    border-radius: 8rpx;
+    // 紧凑表格下筛选表头的文字空间很紧（列宽见 index.vue 的 columns 定义），
+    // 所以内边距与图标间距都收窄，避免「工单类型」这类 4 字标签被截断。
+    gap: 6rpx;
+    padding: 4rpx 10rpx;
+    border: 1px solid transparent;
+    border-radius: $ui-radius-pill;
+    transition: color $ui-dur $ui-ease, background-color $ui-dur $ui-ease,
+      border-color $ui-dur $ui-ease;
 
     &.is-active {
-      color: $sky-600;
+      border-color: $ui-accent-strong;
+      background-color: $ui-accent-soft;
+      color: $ui-accent-text;
     }
   }
 
@@ -70,9 +80,22 @@ const emit = defineEmits(['open', 'clear'])
   }
 
   &__clear {
-    padding: 0 4rpx;
-    color: $slate-400;
+    display: flex;
+    width: 34rpx;
+    height: 34rpx;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background-color: $ui-raise-2;
+    color: $ui-text-3;
+    font-size: 24rpx;
     line-height: 1;
+    transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+
+    &:active {
+      background-color: $ui-raise-3;
+      color: $ui-text;
+    }
   }
 }
 </style>

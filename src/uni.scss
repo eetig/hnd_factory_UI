@@ -1,49 +1,212 @@
 // uni.scss —— 会被自动注入到每个组件的 <style lang="scss"> 中。
 // ⚠️ 这里只能放变量 / mixin / function，绝对不能写会产出 CSS 的规则，
 //    否则每个组件都会重复一份，包体迅速膨胀。
+//
+// 🚩 改完本文件后【必须重启 dev 进程】（Ctrl+C 后重新 npm run dev:h5 / dev:mp-weixin）。
+//    原因：uni 的实现是 vite-plugin-uni/dist/config/css.js 里的 resolveAdditionalData()，
+//    它在 vite 配置生成时【读一次】本文件、把内容整体内联成 scss.additionalData。
+//    也就是说 dev server 启动后就一直用着启动那一刻的变量快照 ——
+//    之后新增的变量（例如本轮新增的 $ui-accent）在新代码里会命中
+//    "Undefined variable" 并以 500 弹错误浮层；而热更新只重编 .vue，不会重读本文件。
+//    判断方法：构建能过、dev 报 undefined，就是这个快照过期了。
 
-// ===== 色板 =====
-// 取值与改造前 Tailwind 主题一致（slate / sky / rose / emerald / amber），
-// 保证「Tailwind 保留 + 问题处补 SCSS」两条路径出来的视觉效果统一。
-$slate-50: #f8fafc;
-$slate-100: #f1f5f9;
-$slate-200: #e2e8f0;
-$slate-300: #cbd5e1;
-$slate-400: #94a3b8;
-$slate-500: #64748b;
-$slate-600: #475569;
-$slate-700: #334155;
-$slate-900: #0f172a;
+// ===== 设计令牌（双主题 · 「豆包」视觉语言）=====
+// 视觉规则：浅色是「浅灰底 + 白卡片」，深色是「纯黑底 + 逐层变亮的表面」；
+// 两侧共用大圆角 + 胶囊控件 + 克制的蓝紫强调色。
+//
+// 约定（很重要，别绕过）：
+//   1. 新写样式一律引用 $ui-*；不要再写死色值，也不要再造一套"差不多"的灰。
+//   2. Tailwind 侧在 tailwind.config.js 里把 slate/sky/… 映射到同一组变量，
+//      因此「Tailwind 类名」和「SCSS 变量」两条路径出来的颜色逐字相同。
+//   3. 颜色靠"层次"而不是"明暗"保持语义：slate-50 永远是最贴近背景的一层，
+//      slate-900 永远是最亮的前景（正文色）。所以 $slate-* 这些历史变量名
+//      保留、只换值 —— 老组件一行不改也自动跟随主题，不会漏出白底黑字。
+//
+// ⚠️ 所有颜色令牌都指向 CSS 变量，具体数值按主题定义在 App.vue：
+//      page { --ui-bg: #0b0b0e; … }         ← 深色（默认值）
+//      .theme-light { --ui-bg: #f2f3f7; … }  ← 浅色（挂在页面根 view 上）
+//    于是「切主题」只换一个类名，样式不用重新编译。
+// ⚠️ 代价：令牌的值是变量而不是颜色字面量，**不能**再喂给
+//    rgba()/darken()/lighten()/mix() 这类 SCSS 颜色函数（编译期拿不到值，会报错）。
+//    要半透明层次请用现成的 $ui-raise / -2 / -3、$ui-hairline 或 $ui-*-soft。
 
-$sky-50: #f0f9ff;
-$sky-100: #e0f2fe;
-$sky-500: #0ea5e9;
-$sky-600: #0284c7;
-$sky-700: #0369a1;
+// 表面（越靠上层越亮 / 浅色下越白）
+$ui-bg: var(--ui-bg);                       // 页面底色
+$ui-surface: var(--ui-surface);             // 卡片
+$ui-surface-2: var(--ui-surface-2);         // 卡片内填充：输入框、表格头、缩略图底
+$ui-surface-3: var(--ui-surface-3);         // 选中 / hover 填充
+$ui-border: var(--ui-border);               // 常规描边
+$ui-border-strong: var(--ui-border-strong); // 表格网格线等强描边
+$ui-border-contrast: var(--ui-border-contrast); // 浮层控件上的醒目描边
 
-$rose-50: #fff1f2;
-$rose-500: #f43f5e;
-$rose-600: #e11d48;
+// 叠在任意表面上的"提亮 / 压暗"层：深色下是白色低透明，浅色下是黑色低透明
+$ui-hairline: var(--ui-hairline); // 分隔线
+$ui-raise: var(--ui-raise);       // 微提亮填充（按钮底、胶囊底）
+$ui-raise-2: var(--ui-raise-2);   // 一层（小圆按钮 / hover）
+$ui-raise-3: var(--ui-raise-3);   // 两层（弹层上的次级块 / 按下态）
 
-$emerald-50: #ecfdf5;
-$emerald-600: #059669;
+// 文字
+$ui-text: var(--ui-text);     // 标题 / 主文字
+$ui-text-2: var(--ui-text-2); // 正文 / 次要
+$ui-text-3: var(--ui-text-3); // 弱化 / 占位 / 空状态
 
-$amber-50: #fffbeb;
-$amber-200: #fde68a;
-$amber-700: #b45309;
-$amber-800: #92400e;
+// 强调色（蓝 → 紫）。浅色主题下整体加深，保证白底上的对比度
+$ui-accent: var(--ui-accent);
+$ui-accent-2: var(--ui-accent-2);
+$ui-accent-text: var(--ui-accent-text);     // 叠在表面上的强调文字
+$ui-accent-soft: var(--ui-accent-soft);     // 强调色淡填充
+$ui-accent-strong: var(--ui-accent-strong); // 强调色描边
+$ui-accent-glow: var(--ui-accent-glow);     // 强调色投影
+$ui-on-accent: var(--ui-on-accent);         // 强调色块上的文字
+$ui-on-light: var(--ui-on-light);           // 主按钮上的文字（深色主题里主按钮是白胶囊）
+
+// 语义色 + 配套的淡填充 / 描边
+$ui-danger: var(--ui-danger);
+$ui-success: var(--ui-success);
+$ui-warning: var(--ui-warning);
+$ui-danger-soft: var(--ui-danger-soft);
+$ui-danger-line: var(--ui-danger-line);
+$ui-success-soft: var(--ui-success-soft);
+$ui-success-line: var(--ui-success-line);
+
+// 软拟态（Soft UI）：液位加减按钮 / 液位输入框的"凸起-凹陷"。
+// 深色下是"暗面 + 亮边"，浅色下是"白面 + 灰影"，所以两个方向都要给变量。
+$ui-soft-a: var(--ui-soft-a);             // 凸起渐变起色
+$ui-soft-b: var(--ui-soft-b);             // 凸起渐变止色
+$ui-soft-shadow: var(--ui-soft-shadow);   // 深侧阴影
+$ui-soft-light: var(--ui-soft-light);     // 亮侧高光
+
+// 遮罩与浮层
+$ui-scrim: var(--ui-scrim);                 // 加载遮罩底色
+$ui-surface-trans: var(--ui-surface-trans); // 半透明卡片（遮罩上的小卡）
+$ui-shadow-strong: var(--ui-shadow-strong); // 大投影（卡片、弹层）
+
+// 背景氛围光晕（页面顶部 / 登录页极光）
+$ui-glow: var(--ui-glow);
+$ui-aurora-1: var(--ui-aurora-1);
+$ui-aurora-2: var(--ui-aurora-2);
+
+// 圆角（豆包式"大圆角"：卡片 32rpx、胶囊 999rpx）
+$ui-radius-sm: 14rpx;
+$ui-radius-md: 22rpx;
+$ui-radius-lg: 32rpx;
+$ui-radius-pill: 999rpx;
+
+// 动效：统一缓动，保证各页"丝滑"手感一致
+$ui-dur: 240ms;
+$ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+// ===== 历史调色板（名字保留、值改成同一组变量）=====
+// 模板/样式里已有上千处 $slate-* 引用，一行都不用改就跟着主题走。
+$slate-50: var(--ui-slate-50);
+$slate-100: var(--ui-slate-100);
+$slate-200: var(--ui-slate-200);
+$slate-300: var(--ui-slate-300);
+$slate-400: var(--ui-slate-400);
+$slate-500: var(--ui-slate-500);
+$slate-600: var(--ui-slate-600);
+$slate-700: var(--ui-slate-700);
+$slate-900: var(--ui-slate-900);
+
+$sky-50: var(--ui-sky-50);
+$sky-100: var(--ui-sky-100);
+$sky-500: var(--ui-sky-500);
+$sky-600: var(--ui-sky-600);
+$sky-700: var(--ui-sky-700);
+
+$rose-50: var(--ui-rose-50);
+$rose-500: var(--ui-rose-500);
+$rose-600: var(--ui-rose-600);
+
+$emerald-50: var(--ui-emerald-50);
+$emerald-600: var(--ui-emerald-600);
+
+$amber-50: var(--ui-amber-50);
+$amber-200: var(--ui-amber-200);
+$amber-700: var(--ui-amber-700);
+$amber-800: var(--ui-amber-800);
+
+$cyan-100: var(--ui-cyan-100);
 
 // ===== 结构 =====
+// 圆角：胶囊控件用 $ui-radius-pill；卡片用 $ui-radius-lg。
+// $radius-lg / $radius-xl 是历史名，保留以免旧样式引用不到。
 $radius-lg: 16rpx;
 $radius-xl: 24rpx;
 
 // ===== mixin =====
 
-// 卡片容器：等价于原来的 rounded-xl border border-slate-200 bg-white shadow-sm
+// 卡片容器：等价于模板里的 rounded-xl border border-slate-200 bg-white shadow-sm
 @mixin card {
-  border: 1px solid $slate-200;
-  border-radius: $radius-xl;
-  background-color: #fff;
+  border: 1px solid $ui-border;
+  border-radius: $ui-radius-lg;
+  background-color: $ui-surface;
+}
+
+// 胶囊容器（筛选条、标签、次级按钮的通用底）
+@mixin pill($bg: $ui-raise, $border: $ui-border) {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 14rpx 28rpx;
+  border: 1px solid $border;
+  border-radius: $ui-radius-pill;
+  background-color: $bg;
+  transition: background-color $ui-dur $ui-ease, border-color $ui-dur $ui-ease,
+    color $ui-dur $ui-ease, transform 160ms $ui-ease;
+}
+
+// 浅色（白）主按钮：深色主题下最高优先级的动作色。小程序 button 自带
+// ::after 描边，必须显式清掉，否则胶囊边上会多一条灰线。
+//
+// ⚠️ 用法约束：本 mixin 内部含嵌套规则（&::after / &:active），
+//    调用处必须把它放在所在选择块的最后一行 —— Sass 对"嵌套规则之后又写声明"
+//    会给出 mixed-decls 弃用警告，且新版本会改变声明顺序。
+//    需要更小的内边距/字号时用参数，别在 include 后面再覆盖。
+@mixin pill-button($bg: $ui-text, $color: $ui-on-light, $font: 26rpx) {
+  padding: 16rpx 36rpx;
+  border: 0;
+  border-radius: $ui-radius-pill;
+  background-color: $bg;
+  color: $color;
+  font-size: $font;
+  font-weight: 600;
+  line-height: 1;
+  transition: transform 160ms $ui-ease, opacity $ui-dur $ui-ease,
+    background-color $ui-dur $ui-ease;
+
+  &::after {
+    border: 0;
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+
+  &[disabled] {
+    opacity: 0.5;
+  }
+}
+
+// 深色主题下的"叠一层提亮"分隔线。小程序 WXSS 支持伪元素，但仅限 ::before/::after。
+@mixin hairline-top {
+  border-top: 1px solid $ui-hairline;
+}
+
+// 卡片入场动效。挂在 section 上：v-show 从 display:none 切回 block 时动画会重放，
+// 因此每次切 Tab 都能看到一次轻推入场的反馈（这是"丝滑"的主要来源）。
+// ⚠️ @keyframes 定义在 App.vue（全局样式只注入一次）——
+//    放这里会被复制进每个组件的样式块，包体白白变大。
+// ⚠️ 面板上绝不能出现 transform（踩过，别改回去）：按 CSS 规范，只要元素自身的
+//    transform 不是 none，它就成为后代 position: fixed 的包含块。面板一旦被「钉」住，
+//    嵌在里面的 DateField 日期弹层与 ProductSelectDialog 就只铺满面板而不是全屏 ——
+//    弹层底边贴着面板底边跑、点遮罩与点确定两条关闭路径同时失效（周统计踩过）。
+//    同理 animation-fill-mode 不能给 both / forwards：那会让动画终态永久驻留在元素上。
+//    位移改由 App.vue 的 ui-panel-in 用 top 承担（纯绘制偏移，不建包含块、不建层叠上下文）；
+//    这里的 position: relative 只为让 top 生效，z-index 仍为 auto，故不产生层叠上下文。
+@mixin panel-in {
+  position: relative;
+  animation: ui-panel-in 320ms $ui-ease;
 }
 
 // 列表分隔线。
@@ -60,4 +223,198 @@ $radius-xl: 24rpx;
 // 顶部安全区补白（index 页用了 navigationStyle: custom，没有原生导航栏兜住状态栏）
 @mixin safe-area-top {
   padding-top: var(--status-bar-height, 0px);
+}
+
+
+// ===== 主题变量（两组值，定义的位置见 App.vue）=====
+// 为什么做成 mixin 而不是直接写在 App.vue 的 page 规则里：
+//   H5 端的原生标题栏是 <uni-page-head>，它是 uni-page-body 的**兄弟节点**
+//   （page 选择器在 H5 会被编译成 uni-page-body），读不到 body 上的变量。
+//   所以同一份变量要在标题栏的祖先（uni-app / uni-page / body）上再铺一遍 ——
+//   铺的值由这两个 mixin 统一提供，避免两处各写一份导致漂移。
+@mixin theme-dark-vars {
+  // ---- 表面：越靠上层越亮 ----
+  --ui-bg: #0b0b0e;
+  --ui-surface: #17171c;
+  --ui-surface-2: #1f1f26;
+  --ui-surface-3: #26262e;
+  --ui-border: #2a2a33;
+  --ui-border-strong: #3a3a45;
+  --ui-border-contrast: rgba(255, 255, 255, 0.18);
+  // ---- 叠加层 ----
+  --ui-hairline: rgba(255, 255, 255, 0.06);
+  --ui-raise: rgba(255, 255, 255, 0.035);
+  --ui-raise-2: rgba(255, 255, 255, 0.08);
+  --ui-raise-3: rgba(255, 255, 255, 0.16);
+  // ---- 文字 ----
+  --ui-text: #f2f2f5;
+  --ui-text-2: #a6a6b2;
+  --ui-text-3: #70707c;
+  // ---- 强调色 ----
+  --ui-accent: #5aa9ff;
+  --ui-accent-2: #8b7bff;
+  --ui-accent-text: #7cbcff;
+  --ui-accent-soft: rgba(90, 169, 255, 0.14);
+  --ui-accent-strong: rgba(90, 169, 255, 0.34);
+  --ui-accent-glow: rgba(90, 169, 255, 0.95);
+  --ui-on-accent: #ffffff;
+  --ui-on-light: #0b0b0e;
+  // ---- 语义色 ----
+  --ui-danger: #ff6b7a;
+  --ui-success: #4ade9b;
+  --ui-warning: #f2c14e;
+  --ui-danger-soft: rgba(255, 107, 122, 0.14);
+  --ui-danger-line: rgba(255, 107, 122, 0.3);
+  --ui-success-soft: rgba(74, 222, 155, 0.12);
+  --ui-success-line: rgba(74, 222, 155, 0.28);
+  // ---- 软拟态 ----
+  --ui-soft-a: #2a2a33;
+  --ui-soft-b: #1b1b21;
+  --ui-soft-shadow: rgba(0, 0, 0, 0.55);
+  --ui-soft-light: rgba(255, 255, 255, 0.04);
+  // ---- 遮罩与浮层 ----
+  --ui-scrim: rgba(11, 11, 14, 0.72);
+  --ui-surface-trans: rgba(23, 23, 28, 0.94);
+  --ui-shadow-strong: rgba(0, 0, 0, 0.95);
+  // ---- 氛围光晕 ----
+  --ui-glow: rgba(90, 169, 255, 0.16);
+  --ui-aurora-1: rgba(90, 169, 255, 0.3);
+  --ui-aurora-2: rgba(139, 123, 255, 0.14);
+  // ---- Tailwind 调色板（与 tailwind.config.js 逐字对应）----
+  --ui-white: #17171c;
+  --ui-slate-50: #1f1f26;
+  --ui-slate-100: #26262e;
+  --ui-slate-200: #2a2a33;
+  --ui-slate-300: #3a3a45;
+  --ui-slate-400: #70707c;
+  --ui-slate-500: #a6a6b2;
+  --ui-slate-600: #c2c2cc;
+  --ui-slate-700: #d8d8e0;
+  --ui-slate-800: #e6e6ec;
+  --ui-slate-900: #f2f2f5;
+  --ui-sky-50: #16233a;
+  --ui-sky-100: #1d2f4d;
+  --ui-sky-400: #5aa9ff;
+  --ui-sky-500: #5aa9ff;
+  --ui-sky-600: #7cbcff;
+  --ui-sky-700: #a5d1ff;
+  --ui-rose-50: #2c1a1f;
+  --ui-rose-100: #3a2027;
+  --ui-rose-200: #4d2830;
+  --ui-rose-500: #ff6b7a;
+  --ui-rose-600: #ff8a95;
+  --ui-rose-700: #ffb3ba;
+  --ui-emerald-50: #152a22;
+  --ui-emerald-100: #1c3a2e;
+  --ui-emerald-600: #4ade9b;
+  --ui-emerald-700: #7fe3b4;
+  --ui-amber-50: #2a2416;
+  --ui-amber-100: #3a2f1a;
+  --ui-amber-200: #4d3d1f;
+  --ui-amber-600: #f2c14e;
+  --ui-amber-700: #f2c14e;
+  --ui-amber-800: #e0ac35;
+  --ui-cyan-100: #17323d;
+  // ---- Tailwind 投影 ----
+  --ui-shadow-sm: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
+  --ui-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.9);
+  --ui-shadow-md: 0 16px 36px -20px rgba(0, 0, 0, 0.95);
+  --ui-shadow-lg: 0 22px 48px -24px rgba(0, 0, 0, 0.95);
+  // 给 wot-design-uni 兜底主题色。
+  // ⚠️ 自定义属性是在「声明它的那个元素」上完成 var() 替换的，所以这一条在浅色块里
+  //    必须再写一次，否则浅色主题下的后代继承到的仍是深色主题那支强调色。
+  --wot-color-theme: var(--ui-accent);
+}
+
+// 浅色主题：值与 @mixin theme-dark-vars 一一对应，只是整体翻过来。
+@mixin theme-light-vars {
+  // ---- 表面：浅灰底 + 白卡片 ----
+  --ui-bg: #f2f3f7;
+  --ui-surface: #ffffff;
+  --ui-surface-2: #f5f6f9;
+  --ui-surface-3: #eaeef5;
+  --ui-border: #e3e6ee;
+  --ui-border-strong: #cfd5e0;
+  --ui-border-contrast: rgba(20, 22, 28, 0.16);
+  // ---- 叠加层：白底上改成低透明黑 ----
+  --ui-hairline: rgba(20, 22, 28, 0.07);
+  --ui-raise: rgba(20, 22, 28, 0.03);
+  --ui-raise-2: rgba(20, 22, 28, 0.055);
+  --ui-raise-3: rgba(20, 22, 28, 0.1);
+  // ---- 文字 ----
+  --ui-text: #14161c;
+  --ui-text-2: #5a6272;
+  --ui-text-3: #8b93a4;
+  // ---- 强调色：白底上要更深才够对比度 ----
+  --ui-accent: #2f7fe0;
+  --ui-accent-2: #6b5bf0;
+  --ui-accent-text: #1f6fd0;
+  --ui-accent-soft: rgba(47, 127, 224, 0.12);
+  --ui-accent-strong: rgba(47, 127, 224, 0.34);
+  --ui-accent-glow: rgba(47, 127, 224, 0.32);
+  --ui-on-accent: #ffffff;
+  --ui-on-light: #ffffff;
+  // ---- 语义色 ----
+  --ui-danger: #d93a4a;
+  --ui-success: #13935a;
+  --ui-warning: #c98a12;
+  --ui-danger-soft: rgba(217, 58, 74, 0.1);
+  --ui-danger-line: rgba(217, 58, 74, 0.28);
+  --ui-success-soft: rgba(19, 147, 90, 0.1);
+  --ui-success-line: rgba(19, 147, 90, 0.26);
+  // ---- 软拟态：白面 + 灰影 + 高光 ----
+  --ui-soft-a: #ffffff;
+  --ui-soft-b: #e8ebf2;
+  --ui-soft-shadow: rgba(20, 22, 28, 0.16);
+  --ui-soft-light: rgba(255, 255, 255, 0.9);
+  // ---- 遮罩与浮层 ----
+  --ui-scrim: rgba(242, 243, 247, 0.72);
+  --ui-surface-trans: rgba(255, 255, 255, 0.94);
+  --ui-shadow-strong: rgba(20, 22, 28, 0.16);
+  // ---- 氛围光晕：白底上要收敛 ----
+  --ui-glow: rgba(47, 127, 224, 0.1);
+  --ui-aurora-1: rgba(47, 127, 224, 0.16);
+  --ui-aurora-2: rgba(107, 91, 240, 0.1);
+  // ---- Tailwind 调色板 ----
+  --ui-white: #ffffff;
+  --ui-slate-50: #f6f7fa;
+  --ui-slate-100: #eef0f5;
+  --ui-slate-200: #e3e6ee;
+  --ui-slate-300: #cfd5e0;
+  --ui-slate-400: #8b93a4;
+  --ui-slate-500: #5f6779;
+  --ui-slate-600: #4b5364;
+  --ui-slate-700: #363d4a;
+  --ui-slate-800: #232833;
+  --ui-slate-900: #14161c;
+  --ui-sky-50: #eaf3ff;
+  --ui-sky-100: #d6e8ff;
+  --ui-sky-400: #2f7fe0;
+  --ui-sky-500: #2f7fe0;
+  --ui-sky-600: #1f6fd0;
+  --ui-sky-700: #1a5cb0;
+  --ui-rose-50: #fdf1f2;
+  --ui-rose-100: #fbe0e3;
+  --ui-rose-200: #f7c6cb;
+  --ui-rose-500: #e04a58;
+  --ui-rose-600: #cf3341;
+  --ui-rose-700: #ad2634;
+  --ui-emerald-50: #ecf9f2;
+  --ui-emerald-100: #d6f2e4;
+  --ui-emerald-600: #13935a;
+  --ui-emerald-700: #0f7a4a;
+  --ui-amber-50: #fdf7e8;
+  --ui-amber-100: #faedc8;
+  --ui-amber-200: #f2dc9a;
+  --ui-amber-600: #b47c10;
+  --ui-amber-700: #97650b;
+  --ui-amber-800: #7d530a;
+  --ui-cyan-100: #d9eef6;
+  // ---- 投影：浅色下改用低透明黑 ----
+  --ui-shadow-sm: 0 10px 24px -16px rgba(20, 22, 28, 0.12);
+  --ui-shadow: 0 12px 30px -18px rgba(20, 22, 28, 0.14);
+  --ui-shadow-md: 0 16px 36px -20px rgba(20, 22, 28, 0.16);
+  --ui-shadow-lg: 0 22px 48px -24px rgba(20, 22, 28, 0.18);
+  // 见 theme-dark-vars 末尾的说明：这两条派生值必须在每个定义点上重算
+  --wot-color-theme: var(--ui-accent);
 }

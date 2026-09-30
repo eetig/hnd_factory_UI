@@ -12,6 +12,10 @@ import DateField from '../../components/DateField.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
+import ThemeToggle from '../../components/ThemeToggle.vue'
+import DropdownMenu from '../../components/DropdownMenu.vue'
+import ImageViewer from '../../components/ImageViewer.vue'
+import { useTheme } from '../../composables/useTheme'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { usePickData } from '../../composables/usePickData'
 import { useInboundData } from '../../composables/useInboundData'
@@ -51,22 +55,29 @@ dayjs.locale('zh-cn')
 const toast = useToast()
 const message = useMessage()
 
+// 主题：颜色本体是 App.vue 里的两组 CSS 变量，这里只拿「当前是哪套 + 切一下」。
+// 深色是默认值（写在 page 上），浅色靠给页面根 view 加 .theme-light。
+// isLight 在这里多担一件事：储罐底图深浅两版是两个资源，按主题挑 src（见 VESSELS.imageDark）。
+const { isLight, themeClass, wotTheme, themeVars } = useTheme()
+
+// Tab 元数据同时喂给三处：顶部栏（当前标题 + 说明）、抽屉菜单（图标 + 名称 + 说明）。
+// icon 取值必须来自 wot-design-uni 的图标字体，写错会渲染成空白方块。
 const tabs = [
-  { key: 'workOrder', label: '工单汇总' },
-  { key: 'material', label: '领料汇总' },
-  { key: 'inbound', label: '入库汇总' },
-  { key: 'report', label: '工单报工' },
-  { key: 'costing', label: '工单核算' },
-  { key: 'materialCosting', label: '原辅料核算' },
-  { key: 'weekly', label: '周统计' },
-  { key: 'daily', label: '日报表记录' },
-  { key: 'vessel', label: '压力容器体积计算' },
-  { key: 'electricity', label: '电费预提' },
+  { key: 'workOrder', label: '工单汇总', icon: 'list', hint: '查看当前所有生产工单及处理状态' },
+  { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录' },
+  { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录' },
+  { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量' },
+  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果' },
+  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算' },
+  { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总' },
+  { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录' },
+  { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
+  { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算' },
   // #ifdef H5
-  { key: 'import', label: '文件导入', perm: 'work_order:import' },
+  { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import' },
   // #endif
   // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
-  { key: 'imageParse', label: '图片解析', perm: 'work_order:import' },
+  { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
 ]
 
 // 按权限过滤可见 Tab
@@ -83,6 +94,49 @@ watch(visibleTabs, (list) => {
     activeTab.value = list[0].key
   }
 })
+
+// ===== 导航（豆包式）=====
+// 页面主体不再放 Tab 条：全部导航收进左侧抽屉，正文直接铺满。
+// 切换入口是顶部栏左上角的菜单按钮。
+const menuVisible = ref(false)
+
+function openMenu() {
+  menuVisible.value = true
+}
+
+// 当前面板的元数据。顶部栏与抽屉菜单共用 tabs 这一份数据源，
+// 所以新增 Tab 只要往 tabs 里加一条，两处自动同步。
+const activeTabMeta = computed(
+  () =>
+    visibleTabs.value.find((tab) => tab.key === activeTab.value) || {
+      label: '工单汇总',
+      hint: '查看当前所有生产工单及处理状态',
+    },
+)
+
+function handleTabChange(key) {
+  if (key === activeTab.value) return
+
+  activeTab.value = key
+  // 换 Tab 等价于换页：回到顶部，避免停在上一页的滚动位置
+  uni.pageScrollTo({ scrollTop: 0, duration: 260 })
+}
+
+// 抽屉里点某一项：先收起抽屉再切面板 —— 抽屉的收起动画与面板入场动画重叠，观感更顺
+function selectTabFromMenu(key) {
+  menuVisible.value = false
+  handleTabChange(key)
+}
+
+function logoutFromMenu() {
+  menuVisible.value = false
+  handleLogout()
+}
+
+function loginFromMenu() {
+  menuVisible.value = false
+  goLogin()
+}
 
 function goLogin() {
   // 原来是 vue-router 的 router.push('/login')。
@@ -108,11 +162,11 @@ async function handleLogout() {
 
 // 工单报工表格列
 const reportColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'orderType', label: '工单类型', width: 'w-40' },
-  { key: 'materialDesc', label: '产成品', width: 'w-[200px]' },
-  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
-  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'orderType', label: '工单类型', width: 'w-20' },
+  { key: 'materialDesc', label: '产成品', width: 'w-40' },
+  { key: 'orderQty', label: '订单数量', width: 'w-20', align: 'right' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-20', align: 'right' },
 ]
 
 const activeTab = ref('workOrder')
@@ -219,6 +273,9 @@ const imageDialogVisible = ref(false)
 const imageUploading = ref(false)
 const imageDeleting = ref(false)
 
+// 工单原图给内嵌查看器用的地址数组（与下面的 imageList 同源）
+const workOrderViewerUrls = computed(() => imageList.value.map((item) => resolveAssetUrl(item.url)))
+
 // 工单号可选项（当前日期范围内的工单号，倒序）
 // 工单报工数据：取工单汇总页当前查出的数据，按 工单类型 + 产成品 分组，数量与产量按组求和
 const reportRows = computed(() => {
@@ -260,15 +317,15 @@ const reportRows = computed(() => {
 })
 
 const columns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'planStartDate', label: '基本开始日期', width: 'w-36' },
-  { key: 'orderNo', label: '工单号', width: 'w-40' },
-  { key: 'orderType', label: '工单类型', width: 'w-32' },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'materialDesc', label: '产成品', width: 'w-[180px]' },
-  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
-  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
-  { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'planStartDate', label: '基本开始日期', width: 'w-24' },
+  { key: 'orderNo', label: '工单号', width: 'w-28' },
+  { key: 'orderType', label: '工单类型', width: 'w-24' },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
+  { key: 'materialDesc', label: '产成品', width: 'w-40' },
+  { key: 'orderQty', label: '订单数量', width: 'w-20', align: 'right' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-20', align: 'right' },
+  { key: 'deliveredQty', label: '已交货数量', width: 'w-20', align: 'right' },
 ]
 
 
@@ -445,22 +502,30 @@ async function deleteImage(image) {
 
 // ===== 领料汇总 =====
 const pickColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'pickDate', label: '领料时间', width: 'w-36' },
-  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'pickQty', label: '领料数量', width: 'w-28', align: 'right' },
-  { key: 'unit', label: '单位', width: 'w-24' },
-  { key: 'imageUrl', label: '线下单据', width: 'w-24' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'pickDate', label: '领料时间', width: 'w-24' },
+  { key: 'materialName', label: '物料名称', width: 'w-40', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
+  { key: 'pickQty', label: '领料数量', width: 'w-20', align: 'right' },
+  { key: 'unit', label: '单位', width: 'w-16' },
+  { key: 'imageUrl', label: '线下单据', width: 'w-16' },
 ]
 
-const pickImageDialogVisible = ref(false)
-const currentPickImage = ref('')
+// 单据大图的查看器状态（领料 / 入库共用一套 —— 同一时刻只可能打开一个）。
+// 地址必须过 resolveAssetUrl：后端返回的是 /files、/thumbs 这类相对路径，
+// 小程序与 App 端没有「同源」这个概念。
+const imageViewerVisible = ref(false)
+const imageViewerUrls = ref([])
+
+function openImageViewer(url) {
+  if (!url) return
+  imageViewerUrls.value = [resolveAssetUrl(url)]
+  imageViewerVisible.value = true
+}
 
 function openPickImageDialog(record) {
   if (!record?.imageUrl) return
-  currentPickImage.value = record.imageUrl
-  pickImageDialogVisible.value = true
+  openImageViewer(record.imageUrl)
 }
 
 /**
@@ -505,33 +570,30 @@ function handleImgError(event, record) {
 
 // ===== 入库汇总 =====
 const inboundColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'inboundDate', label: '入库时间', width: 'w-36' },
-  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'inboundQty', label: '领料数量', width: 'w-28', align: 'right' },
-  { key: 'unit', label: '单位', width: 'w-24' },
-  { key: 'imageUrl', label: '线下单据', width: 'w-24' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'inboundDate', label: '入库时间', width: 'w-24' },
+  { key: 'materialName', label: '物料名称', width: 'w-40', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
+  { key: 'inboundQty', label: '领料数量', width: 'w-20', align: 'right' },
+  { key: 'unit', label: '单位', width: 'w-16' },
+  { key: 'imageUrl', label: '线下单据', width: 'w-16' },
 ]
 
-const inboundImageDialogVisible = ref(false)
-const currentInboundImage = ref('')
-
+// 入库单据大图：与领料共用同一个全屏查看器实例（同一时刻只可能打开一个），
+// 这里只负责把地址塞进去并打开，见 openImageViewer。
 function openInboundImageDialog(record) {
   if (!record?.imageUrl) return
-  currentInboundImage.value = record.imageUrl
-  inboundImageDialogVisible.value = true
+  openImageViewer(record.imageUrl)
 }
-
 
 // ===== 工单核算 =====
 const costingColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'materialName', label: '已入库产成品', width: 'w-[240px]', wrap: true },
-  { key: 'materialCode', label: '产成品编码', width: 'w-36' },
-  { key: 'inboundQty', label: '入库数', width: 'w-32', align: 'right' },
-  { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
-  { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'materialName', label: '已入库产成品', width: 'w-40', wrap: true },
+  { key: 'materialCode', label: '产成品编码', width: 'w-28' },
+  { key: 'inboundQty', label: '入库数', width: 'w-20', align: 'right' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-20', align: 'right' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-20', align: 'right' },
 ]
 
 // 已报工数量：按归一化产成品名称汇总工单的确认产量
@@ -588,12 +650,12 @@ const costingRows = computed(() => {
 // ===== 原辅料核算 =====
 // 暂照搬工单核算的列与计算逻辑，后续按原辅料规则单独调整（不影响工单核算）
 const materialCostingColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'materialName', label: '已领物料名称', width: 'w-[240px]', wrap: true },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'pickQty', label: '领料数', width: 'w-32', align: 'right' },
-  { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
-  { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right' },
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'materialName', label: '已领物料名称', width: 'w-40', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
+  { key: 'pickQty', label: '领料数', width: 'w-20', align: 'right' },
+  { key: 'reportedQty', label: '已报工数', width: 'w-20', align: 'right' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-20', align: 'right' },
 ]
 
 // 领料数换算系数（按物料编码，如 HND-V150_辅料包 ×3.2）
@@ -703,11 +765,11 @@ const materialCostingRows = computed(() => {
 // width 是改造时补的：原来由 <colgroup> 里的 <col class="w-*"> 提供列宽，
 // 改成 flex 后列宽必须落到单元格上，表头与数据行共用这里的一份定义。
 const weeklyColumns = [
-  { key: 'name', label: '名称', width: 'w-[220px]' },
-  { key: 'pickQty', label: '原料领用', width: 'w-32', align: 'right' },
-  { key: 'remainingQty', label: '车间剩余', width: 'w-32', align: 'right' },
-  { key: 'actualQty', label: '实际使用', width: 'w-32', align: 'right' },
-  { key: 'unitConsumption', label: '单耗', width: 'w-32' },
+  { key: 'name', label: '名称', width: 'w-40' },
+  { key: 'pickQty', label: '原料领用', width: 'w-20', align: 'right' },
+  { key: 'remainingQty', label: '车间剩余', width: 'w-24', align: 'right' },
+  { key: 'actualQty', label: '实际使用', width: 'w-20', align: 'right' },
+  { key: 'unitConsumption', label: '单耗', width: 'w-24' },
 ]
 
 // 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示）
@@ -816,6 +878,9 @@ const weeklyCurrentOrderNo = ref('')
 const weeklyImageDialogVisible = ref(false)
 const weeklyImageUploading = ref(false)
 const weeklyImageDeleting = ref(false)
+
+// 周统计原图给内嵌查看器用的地址数组（与上面的 weeklyImageList 同源）
+const weeklyViewerUrls = computed(() => weeklyImageList.value.map((item) => resolveAssetUrl(item.url)))
 const weeklyProductDialogVisible = ref(false)
 const weeklyProductFilter = ref('')
 
@@ -1124,10 +1189,12 @@ const VESSELS = [
     cylinderLength: 5500, // 筒体长度 l=5.5m
     straightFlange: 40, // 封头直边 0.04m
     headDepth: 700, // 封头曲面内高度 hi=0.7m
-    // 底图改用 /static 下的绝对路径。
-    // 原因是 canvas 画图拿到的是路径字符串（不是 import 出来的模块 URL），
-    // 三端里只有 /static 的路径是各端都认的（App 端由打包进 www 的资源解析）。
+    // 底图放 /static：三端里只有 /static 的路径是各端都认的（App 端由打包进 www 的资源解析），
+    // 而且 <image> 的 src 要的就是「资源路径字符串」，不是 import 出来的模块 URL。
     image: '/static/vessel.png',
+    // 深色主题用的同尺寸亮线版（透明底 + 亮色线稿，见 resources/compress-vessel-images.py）。
+    // 两张图尺寸必须一致，否则切主题时液位线会跳 —— 脚本里有校验。
+    imageDark: '/static/vessel-dark.png',
     // 坐标已按压缩后的底图（1075x530 = 原图 1/2）等比缩放。
     // ⚠️ 底图一换尺寸，这组数字必须同步重算，否则液位线会与图纸错位 ——
     //    用 resources/compress-vessel-images.py 重新生成，它会把新值打印出来。
@@ -1146,6 +1213,8 @@ const VESSELS = [
     cylinderHeight: 4800, // 筒体高度 4.8m
     headDepth: 900, // 顶部封头曲面内高度 0.9m
     image: '/static/vessel-product150.png',
+    // 深色主题用的同尺寸亮线版（理由同上一台罐）
+    imageDark: '/static/vessel-product150-dark.png',
     // 坐标已按压缩后的底图（880x969 = 原图 1/2）等比缩放，同见上方说明
     imageBounds: { width: 880, height: 969, left: 65.5, right: 675.5, top: 31.5, tangent: 155, bottom: 965 },
     displayWidth: 470,
@@ -1157,14 +1226,34 @@ const VESSELS = [
 ]
 
 const vesselKey = ref(VESSELS[0].key)
+
+// 储罐下拉的浮层开关。⚠️ 必须绑给 DropdownMenu 的 v-model —— 它的遮罩与面板都是
+// v-if="modelValue"，漏绑就只 emit 一个没人监听的事件，点击毫无反应（这行别删）。
+const vesselMenuOpen = ref(false)
 const selectedVessel = computed(
   () => VESSELS.find((item) => item.key === vesselKey.value) ?? VESSELS[0],
 )
 
-// wd-picker 的选项格式（默认 valueKey='value'、labelKey='label'）
-const vesselColumns = computed(() =>
-  VESSELS.map((vessel) => ({ value: vessel.key, label: vessel.label })),
+// 储罐下拉的选项（企微式浮层，见 components/DropdownMenu.vue）。
+// hint 用「罐型 + 主尺寸 + 密度」把两个罐一眼分开：浮层里只有 2 项，而罐名长得很像
+//（都带「储罐…示意图」），光看名字容易点错。
+// icon 两行都用 chart-bubble（本面板自己的图标）：图标字体里没有卧式/立式罐的图形，
+// 硬凑一个别的语义反而更误导，罐型交给 hint 表达。
+const vesselOptions = computed(() =>
+  VESSELS.map((vessel) => ({
+    value: vessel.key,
+    label: vessel.label,
+    hint: vessel.type === 'vertical'
+      ? `立式 · φ${vessel.diameter / 1000}m × H${vessel.cylinderHeight / 1000}m · ρ${vessel.density}`
+      : `卧式 · φ${vessel.diameter / 1000}m × L${vessel.cylinderLength / 1000}m · ρ${vessel.density}`,
+    icon: 'chart-bubble',
+  })),
 )
+
+// 浮层选中后写回唯一的罐标识；下游（selectedVessel / vesselGeometry）一行不动
+function handleVesselSelect(key) {
+  vesselKey.value = key
+}
 
 // 当前储罐的几何参数（统一两种罐型的字段）
 const vesselGeometry = computed(() => {
@@ -1214,32 +1303,245 @@ const vesselStartDisplay = ref(1400) // 动画中的起始液位
 const vesselEndDisplay = ref(1400) // 动画中的终止液位
 const vesselSwitching = ref(false) // 切换储罐时淡出/淡入
 
-// 储罐画布：改造前直接用 DOM canvas（canvas.getContext('2d') + Path2D + devicePixelRatio），
-// 这些东西在小程序/App 端都不存在。改用 uni.createCanvasContext —— 老版画布 API，
-// 三端（H5 / App / 小程序）都有实现，是唯一一条能三端通用的路径。
+// 储罐示意图：纯 CSS/DOM 图层（改造前是 uni 老版 canvas：createCanvasContext + 手写路径 + ctx.draw()）。
 //
-// 它相对标准 Canvas2D 缺了三样东西，下面各有替代实现：
-//   1. 没有 Path2D 对象（且 clip()/fill()/stroke() 不吃参数）→ createPath() 记录 + 回放
-//   2. 没有 ellipse()                                      → ellipseTo() 用贝塞尔逼近
-//   3. 不自动上屏                                          → 每次绘制结尾必须 ctx.draw()
-const VESSEL_CANVAS_ID = 'vesselCanvas'
-let vesselCtx = null
-let vesselCanvasSize = null // { width, height } 画布实际显示的 CSS 尺寸
-let vesselImagePath = '' // 底图路径（老版 drawImage 直接吃路径字符串）
+// 留 canvas 的唯一理由是「小程序 / App 端没有标准 Canvas2D」，代价是：
+//   · 每帧一次 draw() 把整幅图重新交给渲染层，罐型切换还要重跑整套路径；
+//   · 不量尺寸就没法画（createSelectorQuery 异步量宽度 + 最多 10 次重试），量到之前是空白；
+//   · 水波得 JS 自己算相位，再插值成一条 140 段的折线。
+// 现在几何全部落到 CSS 上：定位一律用百分比，盒子多宽图纸就多宽 ——
+// 「随屏宽等比缩放」交给渲染引擎，JS 不再量任何尺寸；水波交给 CSS animation，
+// 也就不再有「每帧重绘」。JS 只剩液位缓动一件事（见 vesselFrame），缓动跑完即停帧。
+//
+// 用到的 CSS 能力都挑了本项目里已有先例的：radial-gradient 平铺 + background-size、
+// linear-gradient 斜纹；border-radius 斜杠语法在本项目里没有先例，见 UNIAPP迁移说明.md 5.3。
+const VESSEL_IMAGE_WIDTH = 1075 // 底图逻辑宽（= static 下压缩后底图的实际像素宽）
+const VESSEL_LABEL_COLUMN = 300 // 右侧引线标注栏宽度（逻辑像素）
 
 // 立式罐：图形与信息区并排布局（横卧罐图形较宽，保持上下堆叠）
 const isVerticalVessel = computed(() => vesselGeometry.value.type === 'vertical')
 
-// 画布尺寸：底图宽度 + 右侧引线标注栏
-const VESSEL_CANVAS_WIDTH = 1075
-const VESSEL_LABEL_COLUMN = 300
+// 底图是否开始渲染。底图约 645 KB，切到压力容器 Tab 才真的去加载（见 watch(activeTab)）；
+// 用变量锁存而不是每次重新 v-if，是为了来回切 Tab 时不重复加载同一张底图。
+const vesselImageReady = ref(false)
 
-// 画布宽高比（用于 CSS 平滑过渡罐型切换时的高度变化）
-const vesselCanvasAspect = computed(() => {
-  const bounds = vesselGeometry.value.imageBounds
-  const height = Math.round((VESSEL_CANVAS_WIDTH * bounds.height) / bounds.width)
-  return (VESSEL_CANVAS_WIDTH + VESSEL_LABEL_COLUMN) / height
+// 水波纹参数（与改造前 canvas 同一组观感参数）
+const VESSEL_WAVE = {
+  amplitude: 3.5, // 波幅（逻辑像素）
+  wavelength: 120, // 波长（逻辑像素）
+  periodMs: 2620, // 相位推进一个波长所用的时间
+}
+
+// 波速（逻辑像素 / 秒）：波长 ÷ 周期。改造前是每帧推进 0.04 rad（约 2.6 s 一个周期），
+// 换算成线速度后交给 CSS 动画匀速平移，观感一致。
+const VESSEL_WAVE_SPEED = VESSEL_WAVE.wavelength / (VESSEL_WAVE.periodMs / 1000)
+
+// #rrggbb → rgba(...)：波峰带用介质线色做半透明拱带。
+// 改造前是沿波形的 2px 实线，而 DOM 单元素画不出「拱形填充 + 等粗描边」这套组合，
+// 改用同色 0.85 半透明拱带近似（屏幕上差 1~2 个设备像素，见 UNIAPP迁移说明.md 5.3）。
+function vesselRgba(hex, alpha) {
+  const value = parseInt(hex.slice(1), 16)
+  return `rgba(${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`
+}
+// 波峰带的图案（拱形 + 颜色）：图纸里的液面（vesselDiagram.waveStyle）与液位控件前的
+// 图例小标（vesselWaveSwatch）必须一模一样，所以只写这一份 —— 瓦片宽度由 backgroundSize
+// 给，这里只出「一个拱」的图案。参数与改造前 canvas 的水波同一组。
+function vesselWavePattern(line) {
+  return `radial-gradient(ellipse 50% 100% at 50% 100%, ${vesselRgba(line, 0.85)} 0 99.5%, transparent 100%)`
+}
+
+// 液位（mm）→ 液面在罐体盒子内的高度百分比（0 = 罐底，100 = 罐顶）。
+// 改造前是在逻辑坐标系里算 Y 再乘缩放比换成画布像素，这里直接出百分比 ——
+// 百分比跟着盒子缩放，所以「屏幕上多大」不需要 JS 知道。
+//   卧式：液面高度随半径线性变化；
+//   立式：筒体段与封头段分开映射（底图里的封头画得比真实椭球略扁，
+//         分段映射才能让液面始终贴合图纸上的结构线）。
+function levelBottomPercent(level, geometry, bounds, scale) {
+  const bottom = bounds.bottom * scale
+
+  if (geometry.type === 'vertical') {
+    const tangent = bounds.tangent * scale
+    const apex = bounds.top * scale
+    const y =
+      level <= geometry.cylinderHeight
+        ? bottom - (level / geometry.cylinderHeight) * (bottom - tangent)
+        : tangent -
+          (Math.min(geometry.headDepth, level - geometry.cylinderHeight) / geometry.headDepth) *
+            (tangent - apex)
+    return ((bottom - y) / (bottom - apex)) * 100
+  }
+
+  return (level / geometry.diameter) * 100
+}
+
+// 水波瓦片数：一格「拱」≈ 半个波长，取整是为了让平铺到罐宽正好是整数格
+//（非整数会在右端留下半截拱，动画循环处也会跳一下）。
+function vesselWaveTiles(tankWidth) {
+  return Math.max(4, Math.round(tankWidth / (VESSEL_WAVE.wavelength / 2)))
+}
+
+// 储罐示意图的全部几何与图层样式。
+//
+// 坐标系与改造前 canvas 完全一致：逻辑宽 = 底图宽 1075 + 标注栏 300 = 1375，
+// 逻辑高 = 1075 × 底图高 / 底图宽（底图尺寸见 VESSELS 的 imageBounds ——
+// 那组边界由图像分析 + 轮廓叠加验证得出，横纵比例尺一致：0.28567 px/mm）。
+// 底图上的像素边界乘同一个比例尺 scale 得到逻辑坐标，再换算成「占盒子的百分比」；
+// 盒子按 1375 : 逻辑高 定宽高比，于是整幅图随屏宽等比缩放这件事由渲染引擎负责，
+// JS 不需要量任何尺寸。
+//
+// 层级（自下而上）：底图 → 罐体裁剪层（液体 / 波峰带 / 差值带 / 起始虚线）→ 引线标注。
+const vesselDiagram = computed(() => {
+  const geometry = vesselGeometry.value
+  const bounds = geometry.imageBounds
+  const scale = VESSEL_IMAGE_WIDTH / bounds.width
+  const W = VESSEL_IMAGE_WIDTH + VESSEL_LABEL_COLUMN
+  const H = Math.round((VESSEL_IMAGE_WIDTH * bounds.height) / bounds.width)
+
+  // 逻辑坐标 → 百分比（横向相对逻辑宽，纵向相对逻辑高）
+  const toLeft = (value) => `${(((value * scale) / W) * 100).toFixed(4)}%`
+  const toTop = (value) => `${(((value * scale) / H) * 100).toFixed(4)}%`
+
+  const left = bounds.left * scale
+  const right = bounds.right * scale
+  const top = bounds.top * scale
+  const bottom = bounds.bottom * scale
+  const tankWidth = right - left
+  const tankHeight = bottom - top
+
+  // ===== 罐体轮廓 =====
+  // 卧式：矩形挖掉两个椭圆角就是椭圆封头（rx = 封头曲面深度、ry = 半径）。
+  //       改造前那条路径里还有一段直边（flange），但它落在上下轮廓线的延长线上，
+  //       对轮廓没有任何影响 —— 所以「矩形 + 斜杠圆角」与改造前的路径等价。
+  //       封头曲面深度与 canvas 同一式子：hiPx = headDepth / diameter × 2R。
+  // 立式：上半是半椭圆封头、下半是等径筒体 → 上两角 rx 50% / ry 封头深占比，下两角直角。
+  let tankStyle
+  if (geometry.type === 'vertical') {
+    const ry = ((bounds.tangent - bounds.top) / (bounds.bottom - bounds.top)) * 100
+    tankStyle = {
+      left: toLeft(bounds.left),
+      top: toTop(bounds.top),
+      width: `${((tankWidth / W) * 100).toFixed(4)}%`,
+      height: `${((tankHeight / H) * 100).toFixed(4)}%`,
+      borderRadius: `50% 50% 0 0 / ${ry.toFixed(4)}% ${ry.toFixed(4)}% 0 0`,
+    }
+  } else {
+    const headPx = (geometry.headDepth / geometry.diameter) * tankHeight
+    tankStyle = {
+      left: toLeft(bounds.left),
+      top: toTop(bounds.top),
+      width: `${((tankWidth / W) * 100).toFixed(4)}%`,
+      height: `${((tankHeight / H) * 100).toFixed(4)}%`,
+      borderRadius: `${((headPx / tankWidth) * 100).toFixed(4)}% / 50%`,
+    }
+  }
+
+  // ===== 液位 =====
+  // 波幅换算成罐体高度的百分比。波峰带高度 = 2 × 波幅：带子下沿正好落在液面上、
+  // 上沿落在「液面 + 一个波幅」处 —— 与下方液体块严丝合缝，不会叠出双倍透明度。
+  const amp = (VESSEL_WAVE.amplitude / tankHeight) * 100
+  const endPct = levelBottomPercent(vesselEndDisplay.value, geometry, bounds, scale)
+  const startPct = levelBottomPercent(vesselStartDisplay.value, geometry, bounds, scale)
+  const hasLiquid = vesselEndDisplay.value > 0
+  const hasStart = vesselStartDisplay.value > 0
+  const levelDelta = vesselStartDisplay.value - vesselEndDisplay.value
+  const hasDelta = Math.abs(levelDelta) > 1 // 与改造前同一阈值
+  const tone = levelDelta > 0 ? 'is-decrease' : 'is-increase'
+
+  // ===== 水波 =====
+  // 单个「拱」用 radial-gradient 画：椭圆（rx = 半个瓦片宽、ry = 整条带高）贴着瓦片
+  // 下边中点，拱内填色、拱外透明；瓦片按 background-size 横向平铺，格数取整保证右端
+  // 不出现半截拱。动画把「两倍宽的自层」整体 translateX(-50%)，位移恰好等于整数格
+  //（图案周期）—— 循环处没有跳变；时长按罐宽 ÷ 波速算，与改造前同速。
+  const tiles = vesselWaveTiles(tankWidth)
+  const waveDuration = tankWidth / VESSEL_WAVE_SPEED
+
+  // 起始液位虚线：墨色由 .vessel-diagram__start 的 $ui-text 令牌给（深色主题自动变亮），
+  // 线型 2px 高、5px 实 / 4px 空。
+  // 改造前的 setLineDash([9, 6]) 是逻辑像素，随图缩放后在手机上只剩 1~2 个设备像素、
+  // 糊成一片，这里刻意改成固定屏幕像素（见 UNIAPP迁移说明.md 5.3）。
+  const startStyle = {
+    display: hasStart ? 'block' : 'none',
+    bottom: `calc(${startPct.toFixed(4)}% - 1px)`,
+  }
+
+  // ===== 引线标注 =====
+  // 锚点取起止两条液位线的中点、横向离罐体右端 30 逻辑像素（与改造前一致）。
+  // 文字位置：改造前是「文字块中心在锚点上方 3.2 个字号处，再夹在画布内」；
+  // DOM 版字号固定 13px 屏幕像素，锚点落在图纸上方 40% 以内时改成放在引线下方，
+  // 保证标注不越出面板上沿（面板已不再画底色，但标注仍要留在图区内；见 UNIAPP迁移说明.md 5.3）。
+  const anchorPct = (startPct + endPct) / 2
+  const calloutBelow = anchorPct > 60
+
+  return {
+    width: W,
+    height: H,
+    // 宽高比：与改造前 canvas 的 aspectRatio 同一套（CSS 过渡才能平滑切高度）
+    aspectRatio: `${W} / ${H}`,
+    // 底图占整幅图的宽度比例：1075 / 1375
+    paperStyle: { width: `${((VESSEL_IMAGE_WIDTH / W) * 100).toFixed(4)}%` },
+    tankStyle,
+    liquidStyle: {
+      display: hasLiquid ? 'block' : 'none',
+      height: `${(endPct + amp).toFixed(4)}%`,
+      backgroundColor: geometry.liquid.fill,
+    },
+    waveStyle: {
+      display: hasLiquid ? 'block' : 'none',
+      bottom: `${(endPct - amp).toFixed(4)}%`,
+      height: `${(amp * 2).toFixed(4)}%`,
+      backgroundImage: vesselWavePattern(geometry.liquid.line),
+      // 自层是两倍宽，所以瓦片宽 = 罐宽的 1/tiles，即自层宽的 0.5/tiles
+      backgroundSize: `${(50 / tiles).toFixed(4)}% 100%`,
+      animationDuration: `${waveDuration.toFixed(2)}s`,
+    },
+    deltaStyle: {
+      bottom: `${Math.min(startPct, endPct).toFixed(4)}%`,
+      height: `${Math.abs(startPct - endPct).toFixed(4)}%`,
+    },
+    startStyle,
+    hasDelta,
+    hasStart,
+    calloutTone: tone,
+    calloutBelow,
+    calloutStyle: {
+      left: toLeft(bounds.right - 30),
+      top: `${(100 - anchorPct).toFixed(4)}%`,
+    },
+    // 三行标注拆成「前缀 / 数值 / 单位」三格，数值进定宽槽（见 .vessel-num）。
+    // 正负号留在数值里：拆成三格后 flex 的 gap 会把独立的「−」与数字隔开成「− 14.59」。
+    lines: [
+      {
+        prefix: levelDelta > 0 ? '消耗' : '增加',
+        value: `${Math.abs(levelDelta).toFixed(0)}`,
+        unit: 'mm',
+        slot: 'vessel-num--level',
+        key: 'level',
+      },
+      {
+        prefix: '',
+        value: `${levelDelta > 0 ? '−' : '+'}${Math.abs(vesselVolumeDelta.value).toFixed(2)}`,
+        unit: 'm³',
+        slot: 'vessel-num--signed',
+        key: 'volume',
+      },
+      ...(vesselMassDelta.value === null
+        ? []
+        : [{
+            prefix: '',
+            value: `${levelDelta > 0 ? '−' : '+'}${Math.abs(vesselMassDelta.value).toFixed(2)}`,
+            unit: 't',
+            slot: 'vessel-num--signed',
+            key: 'mass',
+          }]),
+    ],
+  }
 })
+
+// 液位控件那几个图例小标里，「终止液位」那个画的是图纸里的波峰液面 —— 图案与图纸
+// 同一份声明（vesselWavePattern），所以两边永远一致。
+const vesselWaveSwatch = computed(() => ({
+  backgroundImage: vesselWavePattern(vesselGeometry.value.liquid.line),
+}))
 
 // 液体体积（mm³）—— 闭式解，依据工艺核算公式：
 //   V(h) = L[ πr²/2 − (r−h)√(2rh−h²) − r²·arcsin((r−h)/r) ]
@@ -1300,33 +1602,42 @@ const vesselCapacity = computed(
   () => liquidVolumeMm3(vesselGeometry.value.maxLevel, vesselGeometry.value) / 1e9,
 )
 
-// 规格说明（随所选储罐变化）
-const vesselDescription = computed(() => {
+// 储罐规格（随所选储罐变化）：拆成「标签 / 数值」条目数组，交给模板用网格排版。
+//
+// ⚠️ 改造前这里拼的是**一整句话**（"筒体 l=5.5m，φ2.8m，直边 0.04m，封头内高度
+//    hi=0.7m，总容积 40.1 m³"），而这句 60+ 字的话与右侧固定 224px 的储罐选择器
+//    同处一个 flex 行：360px 的小屏上，行内可用宽度只有约 274px（页面 16px 内边距
+//    + 卡片 px-6），选择器吃掉 224px + 27px 间距后只剩约 23px —— 一个汉字一行，
+//    整段塌成竖排碎字（小程序端实测如此；H5 桌面够宽所以看不出来）。
+//    现在改成结构化条目：模板里两列起步的网格，多窄都不会再挤出单字一行。
+const vesselSpecs = computed(() => {
   const g = vesselGeometry.value
-  const m = (value) => (value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
-  const capacity = vesselCapacity.value.toFixed(1)
+  // 毫米 → 米。保留两位后去掉多余的 0（0.04m 而不是 0.040m）
+  const m = (value) => `${(value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} m`
 
-  const medium = g.medium && g.density
-    ? `介质 ${g.medium}（ρ=${g.density} g/cm³，20°C、101.325 kPa）｜`
-    : ''
+  const items = []
 
   if (g.type === 'vertical') {
-    return `${medium}筒体 φ${m(g.diameter)}m，筒体高度 ${m(g.cylinderHeight)}m，封头内高度 ${m(g.headDepth)}m，总容积 ${capacity} m³`
+    items.push({ label: '筒体内径', value: `φ${m(g.diameter)}` })
+    items.push({ label: '筒体高度', value: m(g.cylinderHeight) })
+  } else {
+    items.push({ label: '筒体内径', value: `φ${m(g.diameter)}` })
+    items.push({ label: '筒体长度', value: `l = ${m(g.cylinderLength)}` })
+    items.push({ label: '封头直边', value: m(g.straightFlange) })
   }
 
-  return `筒体 l=${m(g.cylinderLength)}m，φ${m(g.diameter)}m，直边 ${m(g.straightFlange)}m，封头内高度 hi=${m(g.headDepth)}m，总容积 ${capacity} m³`
+  items.push({ label: '封头曲面', value: `hi = ${m(g.headDepth)}` })
+  items.push({ label: '总容积', value: `${vesselCapacity.value.toFixed(1)} m³` })
+  items.push({ label: '液位量程', value: `0 ~ ${g.maxLevel} mm` })
+
+  // 介质与密度：质量换算用的就是这两个数，单列出来比埋在长句里好找
+  if (g.medium) items.push({ label: '介质', value: g.medium })
+  if (g.density) items.push({ label: '密度', value: `${g.density} g/cm³` })
+
+  return items
 })
 
-// 水波纹参数
-const VESSEL_WAVE = {
-  amplitude: 3.5, // 波幅（画布像素）
-  wavelength: 120, // 波长（画布像素）
-  speed: 0.04, // 相位推进速度（弧度 / 60fps 帧），约 2.6 秒一个周期
-}
-
-let vesselFrameId = null
-let vesselWavePhase = 0
-let vesselLastFrameTime = 0
+let vesselFrameId = null // 缓动帧循环句柄（null = 已停帧）
 let vesselTransitions = { start: null, end: null } // 起始/终止液位的缓动过渡状态
 
 // ===== 画布移植 helper =====
@@ -1350,153 +1661,18 @@ const vesselRaf =
 const vesselCaf =
   typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout
 
-/**
- * Path2D 的替代品：记录路径指令，用的时候回放到 ctx 上。
- *
- * 老版画布的 clip() / fill() / stroke() 都不接受参数，只能消费「当前路径」；
- * 而罐体轮廓这条路径在代码里要反复使用（先 clip，再做差值带，再画虚线液位），
- * 所以必须能把同一条路径回放多次。
- */
-function createPath() {
-  const ops = []
-  const push = (name) => (...args) => ops.push([name, ...args])
-
-  return {
-    moveTo: push('moveTo'),
-    lineTo: push('lineTo'),
-    closePath: push('closePath'),
-    ellipse: push('ellipse'),
-    replay(ctx) {
-      ctx.beginPath()
-      for (const [name, ...args] of ops) {
-        if (name === 'ellipse') ellipseTo(ctx, ...args)
-        else if (name === 'closePath') ctx.closePath()
-        else ctx[name](...args)
-      }
-      return ctx
-    },
-  }
-}
-
-/**
- * 椭圆弧 → 三次贝塞尔。
- * 老版 CanvasContext 没有 ellipse()，而两种罐型的封头都必须画椭圆弧。
- * 按 ≤90° 分段，每段用一条贝塞尔逼近（标准 kappa 构造，误差远小于一个像素）。
- */
-function ellipseTo(ctx, cx, cy, rx, ry, rotation, startAngle, endAngle) {
-  const segments = Math.ceil(Math.abs(endAngle - startAngle) / (Math.PI / 2)) || 1
-  const step = (endAngle - startAngle) / segments
-  const cosR = Math.cos(rotation)
-  const sinR = Math.sin(rotation)
-
-  // 椭圆上一点（含旋转）
-  const pointAt = (angle) => {
-    const x = rx * Math.cos(angle)
-    const y = ry * Math.sin(angle)
-    return [cx + x * cosR - y * sinR, cy + x * sinR + y * cosR]
-  }
-
-  // 椭圆在 angle 处的切线方向（未旋转）
-  const tangentAt = (angle) => [-rx * Math.sin(angle), ry * Math.cos(angle)]
-
-  for (let i = 0; i < segments; i += 1) {
-    const a1 = startAngle + step * i
-    const a2 = a1 + step
-    const k = (4 / 3) * Math.tan((a2 - a1) / 4)
-
-    const [x1, y1] = pointAt(a1)
-    const [x2, y2] = pointAt(a2)
-    const [dx1, dy1] = tangentAt(a1)
-    const [dx2, dy2] = tangentAt(a2)
-
-    ctx.bezierCurveTo(
-      x1 + k * (dx1 * cosR - dy1 * sinR),
-      y1 + k * (dx1 * sinR + dy1 * cosR),
-      x2 - k * (dx2 * cosR - dy2 * sinR),
-      y2 - k * (dx2 * sinR + dy2 * cosR),
-      x2,
-      y2,
-    )
-  }
-}
-
-/** 等底图加载好（老版 drawImage 内部会自行加载，这里只需把路径记下来） */
-function loadVesselImage() {
-  const url = selectedVessel.value.image
-  if (vesselImagePath === url) {
-    renderVessel()
-    return
-  }
-
-  vesselImagePath = url
-  // 切换罐型时给画布一个淡出 → 淡入的过渡
-  vesselSwitching.value = true
-  ensureCanvasContext().then(() => {
-    renderVessel()
-    // 等淡出动画基本结束再淡入，避免闪烁
-    setTimeout(() => {
-      vesselSwitching.value = false
-    }, 330)
-  })
-}
-
-/**
- * 取画布上下文与它实际显示的尺寸。
- *
- * 老版画布的坐标就是元素实际渲染的 CSS 像素，而绘制逻辑是按逻辑坐标系
- * (W × H) 写的，所以必须知道真实尺寸才能把逻辑坐标缩放上去 ——
- * 这等价于改造前的「canvas.width = W * dpr + setTransform(dpr, ...)」，
- * 只是缩放比现在由布局决定，而不是 devicePixelRatio。
- *
- * 两个坑导致这里要重试：
- *   1. 压力容器 Tab 用 v-show 隐藏，元素为 display:none 时量出来是 0×0；
- *   2. 切 Tab 的 watch 默认在 DOM 更新前触发。
- * 所以先等一拍，量不到就再等一帧，最多试 10 次后放弃（避免死循环）。
- */
-function ensureCanvasContext(attempt = 0) {
-  return nextTick().then(
-    () =>
-      new Promise((resolve) => {
-        const measure = () =>
-          uni
-            .createSelectorQuery()
-            .select(`#${VESSEL_CANVAS_ID}`)
-            .boundingClientRect((rect) => {
-              vesselCtx = uni.createCanvasContext(VESSEL_CANVAS_ID)
-
-              if (rect && rect.width && rect.height) {
-                vesselCanvasSize = { width: rect.width, height: rect.height }
-                resolve()
-                return
-              }
-
-              if (attempt >= 10) {
-                resolve()
-                return
-              }
-
-              setTimeout(() => resolve(ensureCanvasContext(attempt + 1)), 32)
-            })
-            .exec()
-
-        measure()
-      }),
-  )
-}
-
 function stopVesselLoop() {
   if (vesselFrameId !== null) {
     vesselCaf(vesselFrameId)
     vesselFrameId = null
   }
-  vesselLastFrameTime = 0
 }
 
-// 单帧：推进液位缓动 + 波纹相位，然后重绘
+// 单帧：推进液位缓动。
+// 改造前这一帧还要重算 140 段波浪折线并 ctx.draw() 上屏；现在波形由 CSS 动画自己跑，
+// 这里只改那几个被 :style 绑定的数值 —— 没有缓动要推进时就停帧（不再常驻 60fps）。
 function vesselFrame(now) {
-  // 按真实时间推进，避免不同刷新率下速度不一致
-  const deltaMs = vesselLastFrameTime ? Math.min(50, now - vesselLastFrameTime) : 16.7
-  vesselLastFrameTime = now
+  let busy = false
 
   for (const which of ['start', 'end']) {
     const transition = vesselTransitions[which]
@@ -1510,18 +1686,13 @@ function vesselFrame(now) {
     if (progress >= 1) {
       levelDisplayRef(which).value = transition.from + transition.delta
       vesselTransitions[which] = null
+    } else {
+      busy = true
     }
   }
 
-  vesselWavePhase += VESSEL_WAVE.speed * (deltaMs / 16.7)
-  renderVessel()
-
-  // 切到其他 Tab 时自动停帧，不浪费性能
-  if (activeTab.value === 'vessel') {
-    vesselFrameId = vesselRaf(vesselFrame)
-  } else {
-    vesselFrameId = null
-  }
+  // 切到其他 Tab、或所有缓动都跑完时停帧，不浪费性能
+  vesselFrameId = busy && activeTab.value === 'vessel' ? vesselRaf(vesselFrame) : null
 }
 
 function startVesselLoop() {
@@ -1545,9 +1716,9 @@ function animateVesselTo(which, target) {
   const delta = target - from
 
   if (Math.abs(delta) < 0.5) {
+    // 液位就是 :style 的数据源，赋值即渲染，不需要像改造前那样手动重绘
     displayRef.value = target
     vesselTransitions[which] = null
-    renderVessel()
     return
   }
 
@@ -1559,274 +1730,6 @@ function animateVesselTo(which, target) {
   }
 
   startVesselLoop()
-}
-
-// 底图：卧式椭圆封头储罐图纸
-// 罐体在底图中的像素边界（由图像分析 + 轮廓叠加验证得出，横纵比例尺一致：0.28567 px/mm）
-
-// 绘制罐体底图与液位填充
-function renderVessel() {
-  const ctx = vesselCtx
-  if (!ctx || !vesselImagePath) return
-
-  const geometry = vesselGeometry.value
-  const bounds = geometry.imageBounds
-
-  // 画布尺寸按底图比例自适应
-  const IMAGE_W = VESSEL_CANVAS_WIDTH
-  const LABEL_COLUMN = VESSEL_LABEL_COLUMN
-  const W = IMAGE_W + LABEL_COLUMN
-  const H = Math.round((IMAGE_W * bounds.height) / bounds.width)
-
-  // 逻辑坐标系 (W × H) → 画布实际 CSS 尺寸。
-  // 首帧可能还没量到尺寸（boundingClientRect 是异步的），此时跳过这一帧，
-  // 等 ensureCanvasContext 的 promise 回来会再触发一次绘制。
-  const size = vesselCanvasSize
-  if (!size) return
-
-  ctx.save()
-  // 取 min 而不是只按宽度缩放：万一某端不支持 CSS aspect-ratio、
-  // 画布高度被平台默认值顶掉，按宽度缩放会把底部裁掉。取 min 的代价只是留白，
-  // 不会丢内容。尺寸正确时（绝大多数情况）两者相等。
-  const scale = Math.min(size.width / W, size.height / H)
-  ctx.scale(scale, scale)
-
-  ctx.clearRect(0, 0, W, H)
-  ctx.drawImage(vesselImagePath, 0, 0, IMAGE_W, H)
-
-  const s = IMAGE_W / bounds.width
-  const vesselPath = createPath()
-  let tankLeft
-  let tankRight
-  let bottomY
-  let levelToY
-
-  if (geometry.type === 'vertical') {
-    // 立式罐：顶部半椭球封头 + 等径筒体
-    const left = bounds.left * s
-    const right = bounds.right * s
-    const tangentY = bounds.tangent * s
-    const bottom = bounds.bottom * s
-    const cx = (left + right) / 2
-    const rx = (right - left) / 2
-    const ry = tangentY - bounds.top * s
-    const apexY = bounds.top * s
-
-    vesselPath.moveTo(left, tangentY)
-    vesselPath.ellipse(cx, tangentY, rx, ry, 0, Math.PI, Math.PI * 2)
-    vesselPath.lineTo(right, bottom)
-    vesselPath.lineTo(left, bottom)
-    vesselPath.closePath()
-
-    tankLeft = left
-    tankRight = right
-    bottomY = bottom
-
-    // 液位映射：筒体段、封头段分别对应底图中各自的高度
-    // （底图封头绘制得比实际略扁，分段映射可保证液面始终贴合图纸结构）
-    levelToY = (level) => {
-      if (level <= geometry.cylinderHeight) {
-        return bottom - (level / geometry.cylinderHeight) * (bottom - tangentY)
-      }
-      const t = Math.min(geometry.headDepth, level - geometry.cylinderHeight)
-      return tangentY - (t / geometry.headDepth) * (tangentY - apexY)
-    }
-  } else {
-    // 卧式罐：椭圆封头曲面 + 直边 + 圆筒
-    const R = ((bounds.bottom - bounds.top) / 2) * s
-    const cy = ((bounds.top + bounds.bottom) / 2) * s
-    const hiPx = (geometry.headDepth / geometry.diameter) * 2 * R // 曲面深度
-    const flangePx = (geometry.straightFlange / geometry.diameter) * 2 * R // 直边
-    const xEllipseLeft = bounds.left * s + hiPx
-    const xEllipseRight = bounds.right * s - hiPx
-    const xCylLeft = xEllipseLeft + flangePx
-    const bottom = bounds.bottom * s
-
-    vesselPath.moveTo(xCylLeft, cy - R)
-    vesselPath.lineTo(xEllipseRight, cy - R)
-    vesselPath.ellipse(xEllipseRight, cy, hiPx, R, 0, -Math.PI / 2, Math.PI / 2)
-    vesselPath.lineTo(xEllipseLeft, cy + R)
-    vesselPath.ellipse(xEllipseLeft, cy, hiPx, R, 0, Math.PI / 2, Math.PI * 1.5)
-    vesselPath.closePath()
-
-    tankLeft = bounds.left * s
-    tankRight = bounds.right * s
-    bottomY = bottom
-    levelToY = (level) => bottom - (level / geometry.diameter) * 2 * R
-  }
-
-  const levelY = levelToY(vesselEndDisplay.value)
-  const startLevelY = levelToY(vesselStartDisplay.value)
-
-  // 液位绘制：终止液位（实线 + 填充）与起始液位（黑色粗虚线），均为波浪形
-  if (vesselEndDisplay.value > 0 || vesselStartDisplay.value > 0) {
-    const span = tankRight - tankLeft
-    const steps = 140
-
-    // 生成指定基准高度上的波浪路径点（与液面同一波形、同相位）
-    const buildWave = (baseY) => {
-      const points = []
-      for (let i = 0; i <= steps; i += 1) {
-        const x = tankLeft + (span * i) / steps
-        const phase = ((x - tankLeft) / VESSEL_WAVE.wavelength) * Math.PI * 2 + vesselWavePhase
-        points.push([x, baseY + Math.sin(phase) * VESSEL_WAVE.amplitude])
-      }
-      return points
-    }
-
-    const toPath = (points, closeToBottom) => {
-      const path = createPath()
-      points.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)))
-      if (closeToBottom) {
-        path.lineTo(tankRight, bottomY + 6)
-        path.lineTo(tankLeft, bottomY + 6)
-        path.closePath()
-      }
-      return path
-    }
-
-    ctx.save()
-    vesselPath.replay(ctx)
-    ctx.clip()
-    ctx.lineJoin = 'round'
-
-    // 终止液位：填充 + 实线液面
-    if (vesselEndDisplay.value > 0) {
-      const wavePoints = buildWave(levelY)
-      ctx.fillStyle = geometry.liquid.fill
-      toPath(wavePoints, true).replay(ctx)
-      ctx.fill()
-
-      ctx.strokeStyle = geometry.liquid.line
-      ctx.lineWidth = 2
-      toPath(wavePoints, false).replay(ctx)
-      ctx.stroke()
-    }
-
-    // 起止液位之间的差值区：斜线剖面填充，直观展示消耗量/增加量
-    const levelDelta = vesselStartDisplay.value - vesselEndDisplay.value
-
-    if (Math.abs(levelDelta) > 1) {
-      const isDecrease = levelDelta > 0 // 终止低于起始 → 消耗
-      const upperY = Math.min(startLevelY, levelY)
-      const lowerY = Math.max(startLevelY, levelY)
-
-      // 差值带：上边界波浪 + 下边界波浪（同相位，等厚）
-      const upperWave = buildWave(upperY)
-      const lowerWave = buildWave(lowerY)
-      const bandPath = createPath()
-      upperWave.forEach(([x, y], i) => (i === 0 ? bandPath.moveTo(x, y) : bandPath.lineTo(x, y)))
-      for (let i = lowerWave.length - 1; i >= 0; i -= 1) {
-        bandPath.lineTo(lowerWave[i][0], lowerWave[i][1])
-      }
-      bandPath.closePath()
-
-      ctx.save()
-      bandPath.replay(ctx)
-      ctx.clip()
-
-      const bandTop = upperY - VESSEL_WAVE.amplitude - 4
-      const bandHeight = lowerY - upperY + VESSEL_WAVE.amplitude * 2 + 8
-      const bandWidth = tankRight - tankLeft
-
-      // 底色
-      ctx.fillStyle = isDecrease ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.12)'
-      ctx.fillRect(tankLeft, bandTop, bandWidth, bandHeight)
-
-      // 斜线剖面线
-      ctx.globalAlpha = 0.4
-      ctx.strokeStyle = isDecrease ? '#e11d48' : '#059669'
-      ctx.lineWidth = 1.4
-      ctx.beginPath()
-      for (let offset = -bandHeight; offset < bandWidth; offset += 11) {
-        ctx.moveTo(tankLeft + offset, bandTop + bandHeight)
-        ctx.lineTo(tankLeft + offset + bandHeight, bandTop)
-      }
-      ctx.stroke()
-      ctx.globalAlpha = 1
-      ctx.restore()
-    }
-
-    // 起始液位：黑色偏粗波浪虚线，用于对比起止液位
-    if (vesselStartDisplay.value > 0) {
-      ctx.strokeStyle = '#0f172a'
-      ctx.lineWidth = 3
-      // 老版 setLineDash 签名是 (pattern, offset)，只传 pattern 在部分端上会报错
-      ctx.setLineDash([9, 6], 0)
-      toPath(buildWave(startLevelY), false).replay(ctx)
-      ctx.stroke()
-      ctx.setLineDash([], 0)
-    }
-
-    ctx.restore()
-
-    // 差值区引线标注（绘制在裁剪区之外）
-    if (Math.abs(levelDelta) > 1) {
-      const isDecrease = levelDelta > 0
-      const color = isDecrease ? '#e11d48' : '#059669'
-
-      // 画布会被 CSS 缩放显示，字号按缩放比例反向补偿，保证屏幕上大小恒定。
-      // 这里原来读的是 canvas.clientWidth（改造前直接持有 DOM 元素），
-      // 改用 uni.createCanvasContext 后没有元素可读了 —— 用上面实测的布局宽度，
-      // 两者含义相同（都是画布的 CSS 像素宽度）。
-      const displayWidth = size.width || IMAGE_W
-      const uiScale = Math.min(4, W / displayWidth)
-      const fs = 13 * uiScale
-
-      const sign = isDecrease ? '−' : '+'
-      const lines = [
-        `${isDecrease ? '消耗' : '增加'} ${Math.abs(levelDelta).toFixed(0)} mm`,
-        `${sign}${Math.abs(vesselVolumeDelta.value).toFixed(2)} m³`,
-      ]
-
-      // 配置了密度时，追加质量变化
-      const massDelta = vesselMassDelta.value
-      if (massDelta !== null) {
-        lines.push(`${sign}${Math.abs(massDelta).toFixed(2)} t`)
-      }
-
-      ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif`
-      // 老版画布没有 textAlign / textBaseline 属性，只有 setter 方法
-      ctx.setTextAlign('right')
-      ctx.setTextBaseline('middle')
-
-      const textRight = W - fs * 0.7
-      const textWidth = Math.max(...lines.map((text) => ctx.measureText(text).width))
-      const textLeft = textRight - textWidth
-
-      const anchorX = tankRight - 30
-      const anchorY = (Math.min(startLevelY, levelY) + Math.max(startLevelY, levelY)) / 2
-      const labelY = Math.max(fs * 1.9, Math.min(H - fs * 1.9, anchorY - fs * 3.2))
-
-      // 引线：罐体 → 水平出线 → 折角指向文字
-      ctx.strokeStyle = color
-      ctx.lineWidth = Math.max(1.2, fs * 0.12)
-      ctx.beginPath()
-      ctx.moveTo(anchorX, anchorY)
-      ctx.lineTo(textLeft - fs * 1.5, anchorY)
-      ctx.lineTo(textLeft - fs * 0.45, labelY)
-      ctx.stroke()
-
-      // 起点圆点
-      ctx.fillStyle = color
-      ctx.beginPath()
-      ctx.arc(anchorX, anchorY, fs * 0.26, 0, Math.PI * 2)
-      ctx.fill()
-
-      // 文字：整体相对 labelY 垂直居中
-      const lineGap = fs * 1.25
-      const startOffset = -((lines.length - 1) / 2) * lineGap
-      lines.forEach((text, i) => {
-        ctx.fillText(text, textRight, labelY + startOffset + i * lineGap)
-      })
-    }
-  }
-
-  ctx.restore()
-
-  // 老版画布不会自动上屏：前面所有绘制都只是入队，必须显式 draw() 才真正画出来。
-  // 少了这一句，画布永远是空白的。
-  ctx.draw()
 }
 
 // 步进调节液位（配合软拟态按钮）
@@ -1894,9 +1797,9 @@ function clampAndAnimateLevel(which, value) {
 watch(vesselStartLevel, (value) => clampAndAnimateLevel('start', value))
 watch(vesselEndLevel, (value) => clampAndAnimateLevel('end', value))
 
-// 切换储罐：液位按新罐径钳制、底图按需重载
-// （loadVesselImage 的定义在画布 helper 那一段 —— 老版画布不需要 Image 对象，
-//   底图路径直接交给 drawImage，所以实现比改造前短很多）
+// 切换储罐：液位按新罐径钳制、底图按需切换
+// （底图交给 <image> 自己加载 —— src 一换就重新取图；这里只负责让面板淡出淡入，
+//   把换图那一瞬的空档盖住）
 watch(vesselKey, () => {
   const maxLevel = vesselGeometry.value.maxLevel
 
@@ -1911,7 +1814,10 @@ watch(vesselKey, () => {
     }
   }
 
-  loadVesselImage()
+  vesselSwitching.value = true
+  setTimeout(() => {
+    vesselSwitching.value = false
+  }, 330)
 })
 
 // 离开页面时的清理。
@@ -1933,11 +1839,13 @@ onMounted(() => {
 onUnmounted(cleanupVessel)
 onUnload(cleanupVessel)
 
-// 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
+// 切到压力容器 Tab 时才渲染底图（首次约 645 KB），离开时停帧
 watch(activeTab, (tab, prevTab) => {
   if (tab === 'vessel') {
-    loadVesselImage()
-    startVesselLoop()
+    // 锁存后一直渲染，来回切 Tab 不会重新加载
+    vesselImageReady.value = true
+    // 切回来时若还有没跑完的缓动，接上帧循环
+    if (vesselTransitions.start || vesselTransitions.end) startVesselLoop()
   } else {
     stopVesselLoop()
   }
@@ -1955,62 +1863,45 @@ watch(activeTab, (tab, prevTab) => {
        中文 locale。wot-design-uni 默认就是中文，不需要这层包裹，直接去掉。
        原来写死在这层的 Tailwind 布局类（min-h-screen / px-4 py-8 …）
        挪到 .page 里 —— 顶部还要叠加状态栏高度，Tailwind 表达不了 calc(var())。 -->
-  <view class="page">
-    <view class="mx-auto max-w-7xl">
-      <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
-          <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">工单汇总</h1>
-          <p class="mt-2 text-sm text-slate-500">查看当前所有生产工单及处理状态</p>
-        </div>
-        <div class="flex items-center gap-3 text-sm text-slate-500">
-          <span>共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单</span>
-          <span class="text-slate-300">|</span>
+  <view class="page" :class="themeClass">
+    <!-- 主题统一交给 wot-design-uni 的 config-provider：
+         日期选择器、弹层、Toast、MessageBox 这些组件不用逐个改色。
+         theme 跟随 useTheme()（wot-theme-light 无样式 = 它自己的浅色默认值）。
+         原来这里还有一层 <view class="mx-auto max-w-7xl">，
+         现在把这层类名挂到 provider 上，少一层无意义的嵌套。 -->
+    <wd-config-provider
+      :theme="wotTheme"
+      :theme-vars="themeVars"
+      custom-class="page__shell mx-auto max-w-7xl"
+    >
+      <!-- 顶部栏（豆包式）：左上角菜单按钮 → 左侧抽屉导航；
+           中间只显示"当前面板 + 一句话说明"；右侧主题切换 + 账户入口。
+           原来的横向胶囊 Tab 条已移除 —— 12 个标签在手机上横滑仍然局促，
+           导航全部收进抽屉后正文也能铺满整屏。 -->
+      <header class="topbar">
+        <button class="topbar__btn" aria-label="打开菜单" @click="openMenu">
+          <view class="burger">
+            <view class="burger__bar"></view>
+            <view class="burger__bar is-short"></view>
+            <view class="burger__bar"></view>
+          </view>
+        </button>
 
-          <!-- 未登录即可只读浏览；写入类功能按权限隐藏，登录入口放这里 -->
-          <template v-if="loggedIn">
-            <span>{{ roleName }}</span>
-            <button
-             
-              class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-              @click="handleLogout"
-            >
-              退出
-            </button>
-          </template>
-          <template v-else>
-            <span class="text-slate-400">只读浏览</span>
-            <button
-             
-              class="rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
-              @click="goLogin"
-            >
-              登录
-            </button>
-          </template>
-        </div>
+        <view class="topbar__meta">
+          <text class="topbar__name">{{ activeTabMeta.label }}</text>
+          <text class="topbar__hint">{{ activeTabMeta.hint }}</text>
+        </view>
+
+        <!-- 深色 / 浅色切换：按钮与图标见 components/ThemeToggle.vue -->
+        <ThemeToggle />
+
+        <button class="topbar__btn" aria-label="账户与功能菜单" @click="openMenu">
+          <wd-icon name="user" size="20px" />
+        </button>
       </header>
 
-      <nav class="mb-6 flex gap-8 border-b border-slate-200" aria-label="页面切换">
-        <button
-          v-for="tab in visibleTabs"
-          :key="tab.key"
-         
-          class="relative pb-3 pt-1 text-sm font-medium transition focus:outline-none"
-          :class="activeTab === tab.key ? 'text-sky-600' : 'text-slate-500 hover:text-slate-700'"
-          @click="activeTab = tab.key"
-        >
-          {{ tab.label }}
-          <span
-            v-if="activeTab === tab.key"
-            class="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-sky-600"
-            aria-hidden="true"
-          ></span>
-        </button>
-      </nav>
-
       <div v-show="activeTab === 'workOrder'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
             <DateField v-model="startDate" placeholder="起始日期" @change="filterWorkOrders" />
             <span class="text-sm text-slate-500">至</span>
@@ -2037,22 +1928,22 @@ watch(activeTab, (tab, prevTab) => {
 
         <div v-else>
           <div class="overflow-x-auto">
-            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+            <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
               <view class="dt__head bg-slate-50">
                 <view class="dt__row">
                   <view
                     v-for="column in columns"
                     :key="column.key"
                     scope="col"
-                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                    class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                   >
                     <template v-if="column.key === 'orderNo'">
                       <FilterHeaderCell
                         :label="column.label"
                         :selected="orderNoFilter"
                         hint="工单号"
-                        max-width-class="max-w-[130px]"
+                        :max-width="130"
                         @open="openOrderNoDialog"
                         @clear="clearOrderNoFilter"
                       />
@@ -2063,7 +1954,7 @@ watch(activeTab, (tab, prevTab) => {
                         :label="column.label"
                         :selected="orderTypeFilter"
                         hint="工单类型"
-                        max-width-class="max-w-[110px]"
+                        :max-width="110"
                         @open="openOrderTypeDialog"
                         @clear="clearOrderTypeFilter"
                       />
@@ -2074,7 +1965,7 @@ watch(activeTab, (tab, prevTab) => {
                         :label="column.label"
                         :selected="productFilter"
                         hint="产成品"
-                        max-width-class="max-w-[110px]"
+                        :max-width="110"
                         @open="openProductDialog"
                         @clear="clearProductFilter"
                       />
@@ -2091,29 +1982,35 @@ watch(activeTab, (tab, prevTab) => {
                   </view>
                 </view>
                 <view v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="dt__row transition hover:bg-slate-50">
-                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</view>
-                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.planStartDate }}</view>
-                  <view class="dt__cell w-40 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.orderNo }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</view>
-                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.materialCode }}</view>
-                  <view class="dt__cell w-[180px] max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</view>
+                  <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ order.planStartDate }}</view>
+                  <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ order.orderNo }}</view>
+                  <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</view>
+                  <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ order.materialCode }}</view>
+                  <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                     {{ order.materialDesc }}
                   </view>
-                  <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ order.orderQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ order.confirmedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ order.deliveredQty }}</view>
                 </view>
               </view>
             </view>
           </div>
 
-          <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+          <!-- 居中而不是 justify-end：wd-pagination 的 .wd-pager 是行内块，宽度只等于
+               show-message 那段文字，而它内部的 __content 又是 justify-content: flex-start；
+               靠右排时按钮组会贴着这个窄块的右缘，看着像"往右冒出来一截"。
+               容器居中 + 给组件限宽（见下面 wd-pagination 上的 custom-style）之后，
+               按钮组在两处筛选行里都稳定居中；限宽还顺手挡掉 H5 桌面端把按钮摊开的问题。 -->
+          <div class="flex justify-center border-t border-slate-100 px-6 py-4">
             <!-- wd-pagination 的 change 事件传的是 `{ value: N }` 对象，不是页码本身
                  （el-pagination 传的是数字，迁移时直接绑函数会拿到对象）。
                  而 change 又在 update:modelValue 之前触发，此时 pageNum 还是旧值，
                  所以必须把新的页码显式取出来传进去，不能靠 v-model 已更新。 -->
             <wd-pagination
               v-model="pageNum"
+              custom-style="max-width: 340px;"
               :total="total"
               :page-size="pageSize"
               show-message
@@ -2133,7 +2030,7 @@ watch(activeTab, (tab, prevTab) => {
       <wd-popup
         v-model="imageDialogVisible"
         position="center"
-        custom-style="width: 92vw; max-height: 88vh; border-radius: 16px; background-color: #fff; display: flex; flex-direction: column; overflow: hidden;"
+        custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-surface); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
       >
         <view class="viewer-head">
           <text>物料描述：{{ currentMaterialDesc }}</text>
@@ -2153,13 +2050,12 @@ watch(activeTab, (tab, prevTab) => {
 
             <!-- <img> 要换成 <image>：uni 的 image 组件用 mode 控制填充方式，
                  没有 object-contain 那套 CSS；且必须给显式高度才撑得开。 -->
-            <image
-              class="viewer-stage__img"
-              :src="resolveAssetUrl(imageList[currentIndex].url)"
-              mode="aspectFit"
-              alt="物料原图"
+            <!-- 图片区换成带手势缩放的内嵌查看器（替代写死高度的 <image>） -->
+            <ImageViewer
+              mode="inline"
+              :urls="workOrderViewerUrls"
+              :current="currentIndex"
             />
-
             <view
               v-if="imageList.length > 1"
               class="viewer-nav viewer-nav--next"
@@ -2205,6 +2101,7 @@ watch(activeTab, (tab, prevTab) => {
         v-model="productDialogVisible"
         :options="productOptions"
         :selected="productFilter"
+        icon="shop"
         @select="handleProductSelected"
       />
 
@@ -2213,6 +2110,7 @@ watch(activeTab, (tab, prevTab) => {
         :options="orderTypeOptions"
         :selected="orderTypeFilter"
         label="工单类型"
+        icon="list"
         @select="handleOrderTypeSelected"
       />
 
@@ -2221,12 +2119,13 @@ watch(activeTab, (tab, prevTab) => {
         :options="orderNoOptions"
         :selected="orderNoFilter"
         label="工单号"
+        icon="file"
         @select="handleOrderNoSelected"
       />
       </div>
 
       <div v-show="activeTab === 'material'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <DateField v-model="pickStartDate" placeholder="起始日期" @change="filterPickRecords" />
             <span class="text-sm text-slate-500">至</span>
@@ -2256,22 +2155,22 @@ watch(activeTab, (tab, prevTab) => {
 
             <div v-else>
               <div class="overflow-x-auto">
-                <view class="dt min-w-full divide-y divide-slate-200 text-left">
+                <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
                   <view class="dt__head bg-slate-50">
                     <view class="dt__row">
                       <view
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="dt__cell whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                        class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                       >
                         <template v-if="column.key === 'materialName'">
                           <FilterHeaderCell
                             :label="column.label"
                             :selected="pickMaterialFilter"
                             hint="物料名称"
-                            max-width-class="max-w-[130px]"
+                            :max-width="130"
                             @open="openPickMaterialDialog"
                             @clear="clearPickMaterialFilter"
                           />
@@ -2287,15 +2186,15 @@ watch(activeTab, (tab, prevTab) => {
                       :key="`${record.materialCode}-${record.pickDate}-${index}`"
                       class="dt__row transition hover:bg-slate-50"
                     >
-                      <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</view>
-                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.pickDate }}</view>
-                      <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.pickDate }}</view>
+                      <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
                       </view>
-                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
-                      <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</view>
-                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</view>
-                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                      <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
+                      <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ record.pickQty }}</view>
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.unit }}</view>
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">
                         <view
                           class="thumb"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
@@ -2322,10 +2221,12 @@ watch(activeTab, (tab, prevTab) => {
                 </view>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+              <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
+              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
                 <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="pickPageNum"
+              custom-style="max-width: 340px;"
               :total="pickTotal"
               :page-size="pickPageSize"
               show-message
@@ -2337,31 +2238,21 @@ watch(activeTab, (tab, prevTab) => {
           </div>
         </section>
 
-        <wd-popup
-          v-model="pickImageDialogVisible"
-          position="center"
-          custom-style="width: 90vw; border-radius: 16px; padding: 16px; background-color: #f8fafc;"
-        >
-          <image
-            v-if="currentPickImage"
-            class="simple-viewer__img"
-            :src="resolveAssetUrl(currentPickImage)"
-            mode="aspectFit"
-            alt="领料单据大图"
-          />
-        </wd-popup>
-
+        <!-- 领料单据大图：同上 —— 原来的居中卡片弹窗（.simple-viewer__img 没有任何样式，
+             图片按 uni 默认的 320×240 渲染，也不能缩放）已下线，
+             统一改成页面根部的 <ImageViewer /> 全屏查看器，见 openPickImageDialog。 -->
         <ProductSelectDialog
           v-model="pickMaterialDialogVisible"
           :options="pickMaterialOptions"
           :selected="pickMaterialFilter"
           label="物料名称"
+          icon="cart"
           @select="handlePickMaterialSelected"
         />
       </div>
 
       <div v-show="activeTab === 'inbound'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <DateField v-model="inboundStartDate" placeholder="起始日期" @change="filterInboundRecords" />
             <span class="text-sm text-slate-500">至</span>
@@ -2391,22 +2282,22 @@ watch(activeTab, (tab, prevTab) => {
 
             <div v-else>
               <div class="overflow-x-auto">
-                <view class="dt min-w-full divide-y divide-slate-200 text-left">
+                <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
                   <view class="dt__head bg-slate-50">
                     <view class="dt__row">
                       <view
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="dt__cell whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                        class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                       >
                         <template v-if="column.key === 'materialName'">
                           <FilterHeaderCell
                             :label="column.label"
                             :selected="inboundMaterialFilter"
                             hint="物料名称"
-                            max-width-class="max-w-[130px]"
+                            :max-width="130"
                             @open="openInboundMaterialDialog"
                             @clear="clearInboundMaterialFilter"
                           />
@@ -2422,15 +2313,15 @@ watch(activeTab, (tab, prevTab) => {
                       :key="`${record.materialCode}-${record.inboundDate}-${index}`"
                       class="dt__row transition hover:bg-slate-50"
                     >
-                      <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</view>
-                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.inboundDate }}</view>
-                      <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.inboundDate }}</view>
+                      <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                         {{ record.materialName }}
                       </view>
-                      <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
-                      <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</view>
-                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</view>
-                      <view class="dt__cell w-24 whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                      <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.materialCode }}</view>
+                      <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ record.inboundQty }}</view>
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ record.unit }}</view>
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">
                         <view
                           class="thumb"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
@@ -2457,10 +2348,12 @@ watch(activeTab, (tab, prevTab) => {
                 </view>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+              <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
+              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
                 <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="inboundPageNum"
+              custom-style="max-width: 340px;"
               :total="inboundTotal"
               :page-size="inboundPageSize"
               show-message
@@ -2472,41 +2365,31 @@ watch(activeTab, (tab, prevTab) => {
           </div>
         </section>
 
-        <wd-popup
-          v-model="inboundImageDialogVisible"
-          position="center"
-          custom-style="width: 90vw; border-radius: 16px; padding: 16px; background-color: #f8fafc;"
-        >
-          <image
-            v-if="currentInboundImage"
-            class="simple-viewer__img"
-            :src="resolveAssetUrl(currentInboundImage)"
-            mode="aspectFit"
-            alt="入库单据大图"
-          />
-        </wd-popup>
-
+        <!-- 入库单据大图：原来的居中卡片弹窗（图片走 uni <image> 默认的 320×240、
+             没有任何样式也放不大）已下线，统一改成页面根部的 <ImageViewer /> 全屏查看器，
+             见 openInboundImageDialog。 -->
         <ProductSelectDialog
           v-model="inboundMaterialDialogVisible"
           :options="inboundMaterialOptions"
           :selected="inboundMaterialFilter"
           label="物料名称"
+          icon="download"
           @select="handleInboundMaterialSelected"
         />
       </div>
 
       <div v-show="activeTab === 'report'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+            <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
               <view class="dt__head bg-slate-50">
                 <view class="dt__row">
                   <view
                     v-for="column in reportColumns"
                     :key="column.key"
                     scope="col"
-                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                    class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                   >
                     {{ column.label }}
                   </view>
@@ -2523,13 +2406,13 @@ watch(activeTab, (tab, prevTab) => {
                   :key="`${item.orderType}-${item.materialDesc}-${index}`"
                   class="dt__row transition hover:bg-slate-50"
                 >
-                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
-                  <view class="dt__cell w-40 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.orderType }}</view>
-                  <view class="dt__cell w-[200px] max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ item.orderType }}</view>
+                  <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                     {{ item.materialDesc }}
                   </view>
-                  <view class="dt__cell w-28 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.orderQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.confirmedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.orderQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.confirmedQty }}</view>
                 </view>
               </view>
             </view>
@@ -2538,17 +2421,17 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'costing'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+            <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
               <view class="dt__head bg-slate-50">
                 <view class="dt__row">
                   <view
                     v-for="column in costingColumns"
                     :key="column.key"
                     scope="col"
-                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                    class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                   >
                     {{ column.label }}
                   </view>
@@ -2565,14 +2448,14 @@ watch(activeTab, (tab, prevTab) => {
                   :key="`${item.materialName}-${index}`"
                   class="dt__row transition hover:bg-slate-50"
                 >
-                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
-                  <view class="dt__cell w-[240px] max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
                   </view>
-                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.inboundQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                  <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.inboundQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
                 </view>
               </view>
             </view>
@@ -2581,17 +2464,17 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'materialCosting'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="overflow-x-auto">
-            <view class="dt min-w-full divide-y divide-slate-200 text-left">
+            <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
               <view class="dt__head bg-slate-50">
                 <view class="dt__row">
                   <view
                     v-for="column in materialCostingColumns"
                     :key="column.key"
                     scope="col"
-                    class="dt__cell whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                    class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                   >
                     {{ column.label }}
                   </view>
@@ -2608,14 +2491,14 @@ watch(activeTab, (tab, prevTab) => {
                   :key="`${item.materialName}-${index}`"
                   class="dt__row transition hover:bg-slate-50"
                 >
-                  <view class="dt__cell w-16 whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
-                  <view class="dt__cell w-[240px] max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ index + 1 }}</view>
+                  <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">
                     {{ item.materialName }}
                   </view>
-                  <view class="dt__cell w-36 whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.pickQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
-                  <view class="dt__cell w-32 whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                  <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.pickQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
                 </view>
               </view>
             </view>
@@ -2624,7 +2507,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'weekly'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
             <DateField v-model="weeklyStartDate" placeholder="起始日期" @change="filterWeeklyOrders" />
             <span class="text-sm text-slate-500">至</span>
@@ -2639,7 +2522,7 @@ watch(activeTab, (tab, prevTab) => {
               <view class="dt weekly-grid w-full text-center">
                 <view class="dt__body">
                   <view class="dt__row">
-                    <view class="dt__grow border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
+                    <view class="dt__grow border border-slate-300 px-2 py-2 text-base font-bold tracking-wide text-slate-800">
                       {{ weeklyTitle }}
                     </view>
                   </view>
@@ -2649,7 +2532,7 @@ watch(activeTab, (tab, prevTab) => {
                       v-for="column in weeklyColumns"
                       :key="column.key"
                       class="dt__cell border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
-                      :class="[column.width, column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3']"
+                      :class="[column.width, column.align === 'right' ? 'pl-2 pr-3 text-right' : column.align === 'center' ? 'px-2 text-center' : 'px-2']"
                     >
                       {{ column.label }}
                     </view>
@@ -2658,9 +2541,9 @@ watch(activeTab, (tab, prevTab) => {
 
                 <view class="dt__body">
                   <view v-for="row in weeklyRows" :key="row.name" class="dt__row">
-                    <view class="dt__cell w-[220px] border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</view>
-                    <view class="dt__cell w-32 border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</view>
-                    <view class="dt__cell w-32 border border-slate-300 p-0">
+                    <view class="dt__cell w-40 border border-slate-300 px-2 py-2 text-sm text-slate-700">{{ row.name }}</view>
+                    <view class="dt__cell w-20 border border-slate-300 py-2 pl-2 pr-3 text-right text-sm text-slate-700">{{ row.pickQty }}</view>
+                    <view class="dt__cell w-24 border border-slate-300 p-0">
                       <input
                         v-model="weeklyRemaining[row.materialCode]"
                         type="text"
@@ -2669,13 +2552,13 @@ watch(activeTab, (tab, prevTab) => {
                         class="weekly-input"
                       />
                     </view>
-                    <view class="dt__cell w-32 border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</view>
-                    <view class="dt__cell w-32 border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</view>
+                    <view class="dt__cell w-20 border border-slate-300 py-2 pl-2 pr-3 text-right text-sm text-slate-700">{{ row.actualQty }}</view>
+                    <view class="dt__cell w-24 border border-slate-300 px-2 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</view>
                   </view>
 
                   <view class="dt__row">
-                    <view class="dt__cell w-[220px] border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</view>
-                    <view class="dt__grow border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
+                    <view class="dt__cell w-40 border border-slate-300 px-2 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</view>
+                    <view class="dt__grow border border-slate-300 px-2 py-2 text-sm font-semibold text-slate-800">
                       {{ weeklyInboundRow.value }}
                     </view>
                   </view>
@@ -2692,7 +2575,7 @@ watch(activeTab, (tab, prevTab) => {
         <wd-popup
           v-model="weeklyImageDialogVisible"
           position="center"
-          custom-style="width: 92vw; max-height: 88vh; border-radius: 16px; background-color: #fff; display: flex; flex-direction: column; overflow: hidden;"
+          custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-surface); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
         >
           <view class="viewer-head">
             <text>物料描述：{{ weeklyCurrentMaterialDesc }}</text>
@@ -2710,13 +2593,12 @@ watch(activeTab, (tab, prevTab) => {
                 <text>‹</text>
               </view>
 
-              <image
-                class="viewer-stage__img"
-                :src="resolveAssetUrl(weeklyImageList[weeklyCurrentIndex].url)"
-                mode="aspectFit"
-                alt="物料原图"
+              <!-- 图片区换成带手势缩放的内嵌查看器（替代写死高度的 <image>） -->
+              <ImageViewer
+                mode="inline"
+                :urls="weeklyViewerUrls"
+                :current="weeklyCurrentIndex"
               />
-
               <view
                 v-if="weeklyImageList.length > 1"
                 class="viewer-nav viewer-nav--next"
@@ -2760,12 +2642,13 @@ watch(activeTab, (tab, prevTab) => {
           v-model="weeklyProductDialogVisible"
           :options="weeklyProductOptions"
           :selected="weeklyProductFilter"
+          icon="chart-bar"
           @select="handleWeeklyProductSelected"
         />
       </div>
 
       <div v-show="activeTab === 'daily'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <PanelState
               title="日报表记录"
               description="功能建设中，敬请期待"
@@ -2774,42 +2657,106 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'vessel'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
-          <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-3.5">
-            <div class="min-w-0 flex-1">
-              <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
-              <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
-                {{ vesselGeometry.note }}
-              </p>
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
+          <!-- 储罐信息区：只剩罐型选择这一行。
+               规格网格与介质条件备注已挪到卡片末尾、液体体积计算公式正上方。
+               改造前选择器与规格说明挤在一个 flex 行里：固定 224px 的选择器在 360px 小屏上
+               只给文字留下约 23px，整段规格说明塌成每行一两个字的竖排碎字。
+               现在规格走网格，窄屏两列、宽屏四列，任何宽度下都不会再碎成竖排。 -->
+          <div class="border-b border-slate-100 px-6 py-4">
+            <!-- 第 1 行：储罐选择。DropdownMenu 的默认插槽就是触发器，
+                 沿用原来那个胶囊样式，不去用它默认的「标签 + 值」表单行。
+                 改造前这里是 wd-picker（滚轮弹层）—— 两个罐用滚轮选太笨重，
+                 换成企微式浮层（见 components/DropdownMenu.vue）。 -->
+            <div class="flex justify-end">
+              <DropdownMenu
+                v-model="vesselMenuOpen"
+                :options="vesselOptions"
+                :selected="vesselKey"
+                aria-label="选择储罐"
+                @select="handleVesselSelect"
+              >
+                <view class="vessel-select" :class="{ 'is-open': vesselMenuOpen }">
+                  <text class="vessel-select__label">{{ selectedVessel.label }}</text>
+                  <view class="vessel-select__caret">
+                    <wd-icon name="arrow-down" size="14px" />
+                  </view>
+                </view>
+              </DropdownMenu>
             </div>
-            <!-- 储罐选择：el-select 换成 wd-picker。
-                 wd-picker 支持默认插槽做触发器，这里沿用原来那个紧凑的行内样式，
-                 而不是它默认的「标签 + 值」表单行 —— 位置在两种罐型下要保持一致。 -->
-            <wd-picker v-model="vesselKey" :columns="vesselColumns">
-              <view class="vessel-select" aria-label="选择储罐">
-                <text>{{ selectedVessel.label }}</text>
-                <wd-icon name="arrow-down" size="14px" />
-              </view>
-            </wd-picker>
           </div>
 
           <div class="flex flex-wrap items-stretch" :class="isVerticalVessel ? 'gap-x-6 p-6' : ''">
-            <div class="flex justify-center" :class="isVerticalVessel ? 'shrink-0' : 'w-full p-6'">
-              <!-- 储罐画布（老版画布 API）：
-                   canvas-id 是 uni.createCanvasContext 的取用键；
-                   id 供 createSelectorQuery 量尺寸 —— 量到的实际宽高决定
-                   逻辑坐标系 (W × H) 的缩放比，所以两者都不能省。 -->
-              <canvas
-                id="vesselCanvas"
-                canvas-id="vesselCanvas"
-                class="vessel-canvas mx-auto block w-full"
+            <!-- 竖版（立式罐）时图形与信息并排：`shrink-0` 让图形保持 470px 的下限，
+                 但在 360px 小屏上这 470px 是挤不进去的（整块横向溢出卡片）。
+                 所以窄屏改成 w-full 让它单独占一行，≥640px 再恢复原来的并排。 -->
+            <div class="flex justify-center" :class="isVerticalVessel ? 'w-full sm:w-auto sm:shrink-0' : 'w-full p-6'">
+              <!-- 储罐示意图：纯 CSS/DOM 图层（改造前是 uni 老版 canvas）。
+                   尺寸与改造前 canvas 完全一致：宽 = displayWidth（maxWidth 100% 兜住小屏）、
+                   宽高比 = 1375 : 逻辑高；各图层都用百分比定位，所以「随屏宽等比缩放」由渲染引擎负责。
+                   宽度必须写成「确定的 px 值 + max-width: 100%」而不是 w-full：立式罐那一行是
+                   sm:w-auto（收缩包裹）的父容器，子元素只写百分比宽度会算不出基准、整块塌成 0。
+                   ⚠️ 也别给 .vessel-diagram 加 overflow:hidden —— 标注文字允许溢出一点，裁掉就看不全。 -->
+              <view
+                class="vessel-diagram mx-auto"
                 :class="{ 'is-switching': vesselSwitching }"
                 :style="{
-                  maxWidth: `${vesselGeometry.displayWidth}px`,
-                  aspectRatio: String(vesselCanvasAspect),
+                  width: `${vesselGeometry.displayWidth}px`,
+                  maxWidth: '100%',
+                  aspectRatio: vesselDiagram.aspectRatio,
                 }"
-              ></canvas>
+              >
+                <!-- 底图按需渲染：切到本 Tab 才真的去加载（vesselImageReady 锁存，来回切 Tab 不重复加载）。
+                     深浅两版是两个资源（浅色白纸版 / 深色亮线版），按主题换 src；两图同尺寸，几何一律不动。 -->
+                <template v-if="vesselImageReady">
+                  <image
+                    class="vessel-diagram__paper"
+                    :src="isLight ? selectedVessel.image : selectedVessel.imageDark"
+                    :style="vesselDiagram.paperStyle"
+                    mode="scaleToFill"
+                  />
+                  <!-- 罐体裁剪层：液体、波峰带、差值带、起始虚线全部裁在罐体轮廓内 -->
+                  <view class="vessel-diagram__tank" :style="vesselDiagram.tankStyle">
+                    <view class="vessel-diagram__liquid" :style="vesselDiagram.liquidStyle"></view>
+                    <view class="vessel-diagram__wave" :style="vesselDiagram.waveStyle">
+                      <view class="vessel-diagram__wave-shift"></view>
+                    </view>
+                    <view
+                      v-if="vesselDiagram.hasDelta"
+                      class="vessel-diagram__delta"
+                      :class="vesselDiagram.calloutTone"
+                      :style="vesselDiagram.deltaStyle"
+                    ></view>
+                    <view
+                      v-if="vesselDiagram.hasStart"
+                      class="vessel-diagram__start"
+                      :style="vesselDiagram.startStyle"
+                    ></view>
+                  </view>
+                  <!-- 差值引线标注（在裁剪层之外，所以不会被罐体切掉） -->
+                  <view
+                    v-if="vesselDiagram.hasDelta"
+                    class="vessel-diagram__callout"
+                    :class="[vesselDiagram.calloutTone, vesselDiagram.calloutBelow ? 'is-below' : '']"
+                    :style="vesselDiagram.calloutStyle"
+                  >
+                    <view class="vessel-diagram__callout-dot"></view>
+                    <view class="vessel-diagram__callout-text">
+                      <!-- 每行 = 前缀 + 定宽数值槽 + 单位。key 用每行自带的稳定标识
+                           （line.key），不能拿内容当 key：数值每帧都在变，那样每帧都要销毁重建。 -->
+                      <view
+                        v-for="line in vesselDiagram.lines"
+                        :key="line.key"
+                        class="vessel-diagram__callout-line"
+                      >
+                        <text v-if="line.prefix">{{ line.prefix }}</text>
+                        <text class="vessel-num" :class="line.slot">{{ line.value }}</text>
+                        <text>{{ line.unit }}</text>
+                      </view>
+                    </view>
+                  </view>
+                </template>
+              </view>
             </div>
 
             <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
@@ -2820,14 +2767,17 @@ watch(activeTab, (tab, prevTab) => {
             >
             <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
             <div class="flex justify-center" :class="isVerticalVessel ? 'w-full' : 'flex-1'">
-            <!-- 体积变化：居中作为视觉焦点 -->
+            <!-- 体积变化：居中作为视觉焦点。
+                     数值来自实时计算，位数一变多，原来那套 flex-wrap 会把「m³」与
+                     「（t）」甩到第二行 —— 所以这里不换行（flex-nowrap + whitespace-nowrap），
+                     盒子也把左右内边距收窄（px-6 → px-4）把宽度让给数字。 -->
             <div
-                class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
-                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-xl border border-slate-200 bg-slate-50 px-6 py-4'"
+                class="flex flex-nowrap items-baseline justify-center gap-x-1.5 whitespace-nowrap"
+                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-xl border border-slate-200 bg-slate-50 px-4 py-4'"
             >
               <span class="text-sm text-slate-500">体积变化</span>
               <span
-                class="text-2xl font-bold tracking-tight"
+                class="vessel-num vessel-num--signed text-2xl font-bold tracking-tight"
                 :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
               >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span>
               <span class="text-sm text-slate-500">m³</span>
@@ -2835,23 +2785,26 @@ watch(activeTab, (tab, prevTab) => {
                 v-if="vesselMassDelta !== null"
                 class="text-base font-semibold"
                 :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
-              >（{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }} t）</span>
+              >（<span class="vessel-num vessel-num--signed">{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }}</span> t）</span>
             </div>
             </div>
 
+            <!-- 液位控件列：竖版罐原来是写死的两列，小屏上每列只有 ~125px，
+                 而一个液位控件（标签 + 两个 38px 圆钮 + 80px 输入框）本身就要 ~240px，
+                 必然横向溢出卡片。改成窄屏一列、≥640px 两列。 -->
             <div
                 class="gap-x-6 gap-y-5"
                 :class="
                   isVerticalVessel
-                    ? 'grid w-full grid-cols-2 px-0'
+                    ? 'grid w-full grid-cols-1 px-0 sm:grid-cols-2'
                     : 'flex flex-wrap gap-x-6'
                 "
               >
               <!-- 起始液位：控件与其数据同列 -->
               <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
+                <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
                   <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                    <span class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>
+                    <span class="vessel-legend vessel-legend--start" aria-hidden="true"></span>
                     起始液位
                   </span>
                   <div class="flex items-center gap-3">
@@ -2893,21 +2846,21 @@ watch(activeTab, (tab, prevTab) => {
 
                 <div class="space-y-1 pl-1 text-sm text-slate-500">
                   <div>
-                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
+                    液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="vessel-num vessel-num--volume font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselStartMass.toFixed(2) }}</span> t）</span></template>
                   </div>
                 </div>
               </div>
 
               <!-- 终止液位：控件与其数据同列 -->
               <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
+                <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
                   <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
                     <span
-                      class="inline-block h-0 w-5 border-t-2"
-                      :style="{ borderColor: vesselGeometry.liquid.line }"
+                      class="vessel-legend vessel-legend--end"
+                      :style="vesselWaveSwatch"
                       aria-hidden="true"
                     ></span>
                     终止液位
@@ -2950,10 +2903,10 @@ watch(activeTab, (tab, prevTab) => {
 
                 <div class="space-y-1 pl-1 text-sm text-slate-500">
                   <div>
-                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
+                    液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="vessel-num vessel-num--volume font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselEndMass.toFixed(2) }}</span> t）</span></template>
                   </div>
                 </div>
               </div>
@@ -2962,7 +2915,27 @@ watch(activeTab, (tab, prevTab) => {
             </div>
           </div>
 
-          <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+          <div class="border-t border-slate-100 px-6 py-4">
+            <!-- 规格网格（从卡片头部挪下来：紧邻下方就是液体体积计算公式）。标签在上、数值在下 —— 不用「一行标签 + 一行数值」
+                 是因为窄屏两列时那两种文字加起来正好会顶出格子。 -->
+            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+              <div
+                v-for="spec in vesselSpecs"
+                :key="spec.label"
+                class="rounded-lg bg-slate-50 px-3 py-2"
+              >
+                <div class="text-xs text-slate-500">{{ spec.label }}</div>
+                <div class="mt-0.5 text-sm font-semibold text-slate-900">{{ spec.value }}</div>
+              </div>
+            </div>
+
+            <!-- 介质基准条件（原文照旧，单独成段后能正常折行） -->
+            <p v-if="vesselGeometry.note" class="mt-3 text-xs font-medium leading-relaxed text-amber-700">
+              {{ vesselGeometry.note }}
+            </p>
+          </div>
+
+          <div class="border-t border-slate-100 bg-slate-50 px-6 py-4">
             <div class="mx-auto max-w-[900px] overflow-x-auto">
               <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
                 液体体积计算公式
@@ -3007,9 +2980,9 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'electricity'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <!-- 电价档位备注 -->
-          <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
+          <div class="border-b border-slate-100 bg-amber-50 px-6 py-4">
             <div class="flex items-start gap-3">
               <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-600">
                 !
@@ -3017,19 +2990,19 @@ watch(activeTab, (tab, prevTab) => {
               <div class="min-w-0 flex-1">
                 <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
                 <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">10 万度以内</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                     </p>
                   </div>
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">20 万度以内</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                     </p>
                   </div>
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">20 万度以上</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
@@ -3060,14 +3033,96 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'imageParse'">
         <ImageParse />
       </div>
-    </view>
+      <!-- 左侧抽屉菜单（豆包式）：全部导航 + 账户操作都收在这里。
+           wd-popup position="left" 自带遮罩点击关闭；宽度/高度用 custom-style 指定。
+           wd-popup 会把 customStyle 接到弹层本体（.wd-popup）上，并自动拼在前缀
+           "z-index:..; padding-bottom:<安全区>px;" 之后，所以这里必须补 box-sizing: border-box，
+           让安全区的高度从 100vh 里扣掉 —— 否则安全区变成"屏幕外的一截"，
+           底部按钮在白线附近没有留白。（列表必须是 scroll-view：小程序的 <view> 写
+           overflow-y 不会滚动；高度给确定的 52vh，三端都能滚，底部账户区也留在屏内。） -->
+      <wd-popup
+        v-model="menuVisible"
+        position="left"
+        safe-area-inset-bottom
+        custom-style="box-sizing: border-box; width: 78vw; max-width: 620rpx; height: 100vh; background-color: var(--ui-surface); display: flex; flex-direction: column; overflow: hidden;"
+      >
+        <view class="drawer">
+          <view class="drawer__brand">
+            <view class="drawer__mark">
+              <text>HND</text>
+            </view>
+            <view class="drawer__meta">
+              <text class="drawer__eyebrow">Factory Operations</text>
+              <text class="drawer__title">工单汇总</text>
+            </view>
+          </view>
 
-    <!-- 提示与确认框的宿主组件。
-         wot-design-uni 的 useToast()/useMessage() 走 provide/inject：
-         本页 setup 里调用它们会 provide 出选项 ref，这两个组件再 inject 回来。
-         挂在页面根部，本页与所有子组件（ImageParse 等）的提示都走同一对实例。 -->
-    <wd-toast />
-    <wd-message-box />
+          <view class="drawer__stats">
+            <view class="chip">
+              <text class="chip__text">共 <text class="chip__strong">{{ total }}</text> 条工单</text>
+            </view>
+            <view v-if="loggedIn" class="chip chip--live">
+              <view class="chip__dot"></view>
+              <text class="chip__text">{{ roleName }}</text>
+            </view>
+            <view v-else class="chip">
+              <text class="chip__text">只读浏览</text>
+            </view>
+          </view>
+
+          <text class="drawer__group">全部功能</text>
+
+          <scroll-view class="drawer__list" scroll-y>
+            <view
+              v-for="tab in visibleTabs"
+              :key="tab.key"
+              class="menu-item"
+              :class="{ 'is-active': activeTab === tab.key }"
+              @click="selectTabFromMenu(tab.key)"
+            >
+              <view class="menu-item__icon">
+                <wd-icon :name="tab.icon" size="18px" />
+              </view>
+              <view class="menu-item__text">
+                <text class="menu-item__label">{{ tab.label }}</text>
+                <text class="menu-item__hint">{{ tab.hint }}</text>
+              </view>
+              <wd-icon v-if="activeTab === tab.key" name="check" size="16px" />
+            </view>
+          </scroll-view>
+
+          <view class="drawer__foot">
+            <button
+              v-if="loggedIn"
+              class="drawer__action pill-btn pill-btn--danger"
+              @click="logoutFromMenu"
+            >
+              退出登录
+            </button>
+            <button
+              v-else
+              class="drawer__action pill-btn pill-btn--primary"
+              @click="loginFromMenu"
+            >
+              登录
+            </button>
+            <text class="drawer__tip">未登录也可以只读浏览工单数据</text>
+          </view>
+        </view>
+      </wd-popup>
+
+      <!-- 提示与确认框的宿主组件。
+           wot-design-uni 的 useToast()/useMessage() 走 provide/inject：
+           本页 setup 里调用它们会 provide 出选项 ref，这两个组件再 inject 回来。
+           挂在页面根部；必须放在 config-provider 内部才会继承深色主题，
+           本页与所有子组件（ImageParse 等）的提示都走同一对实例。 -->
+      <!-- 单据大图查看器（领料 / 入库共用）：全屏黑底 + 手势缩放。
+           挂在页面根部而不是各自的 Tab 面板里：它要 position: fixed 铺满视口，
+           前提是「从页面根到这里没有 transform 祖先」（说明 4.2）。 -->
+      <ImageViewer v-model="imageViewerVisible" :urls="imageViewerUrls" />
+      <wd-toast />
+      <wd-message-box />
+    </wd-config-provider>
   </view>
 </template>
 
@@ -3079,8 +3134,315 @@ watch(activeTab, (tab, prevTab) => {
 .page {
   box-sizing: border-box;
   min-height: 100vh;
-  padding: calc(var(--status-bar-height, 0px) + 32px) 16px 32px;
-  background-color: $slate-50;
+  padding: calc(var(--status-bar-height, 0px) + 28px) 16px 40px;
+  // 深色主题的"氛围"：纯黑底 + 顶部一层蓝紫光晕，纯 CSS，不引图片资源。
+  // 拆成 background-color / background-image 两条而不是 background 简写，
+  // 避免简写把颜色一起重置掉。
+  background-color: $ui-bg;
+  background-image: radial-gradient(120% 46% at 50% 0%, $ui-glow 0%, transparent 62%);
+  color: $ui-text;
+}
+
+/* config-provider 的根节点：它替代了原来的 <view class="mx-auto max-w-7xl">，
+   宽度约束由挂在同一节点上的 Tailwind 类（mx-auto / max-w-7xl）负责。 */
+.page__shell {
+  width: 100%;
+}
+
+/* 每个 Tab 面板（section）在显示时轻推入场。
+   v-show 会把 display 从 none 切回 block，CSS 动画因此会重放 ——
+   这是"切 Tab 有反馈"的主要来源，也是本次改版里性价比最高的一处丝滑加成。 */
+.panel {
+  /* ⚠️ mixin 里的 position: relative 只为让动效的 top 生效，位移绝不能用 transform 实现：
+     面板里嵌着 DateField 的日期弹层与 ProductSelectDialog（都是 position: fixed），
+     面板上一旦残留 transform 就会成为它们的包含块 —— 弹层与遮罩只铺满面板、
+     弹层底边跟着面板底边跑，两条关闭路径同时失效（周统计的日期弹层踩过，
+     详见 UNIAPP迁移说明.md 第 4.2 节）。 */
+  @include panel-in;
+}
+
+/* ===== 顶部栏（豆包式）=====
+   左：菜单按钮。三条横线用 CSS 画（不依赖图标字体，长短略有差异更有"手感"）；
+   中：当前面板标题 + 一句话说明；右：账户入口，点开同一个抽屉。 */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 8rpx 0 28rpx;
+}
+
+.topbar__btn {
+  display: flex;
+  width: 84rpx;
+  height: 84rpx;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $ui-border;
+  border-radius: 26rpx;
+  background-color: $ui-raise;
+  color: $ui-text-2;
+  transition: background-color $ui-dur $ui-ease, transform 160ms $ui-ease;
+
+  &::after {
+    border: 0;
+  }
+
+  &:active {
+    transform: scale(0.94);
+    background-color: $ui-surface-3;
+  }
+}
+
+.burger {
+  display: flex;
+  flex-direction: column;
+  gap: 7rpx;
+}
+
+.burger__bar {
+  width: 32rpx;
+  height: 3rpx;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-text;
+
+  &.is-short {
+    width: 20rpx;
+  }
+}
+
+.topbar__meta {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.topbar__name {
+  color: $ui-text;
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.topbar__hint {
+  margin-top: 6rpx;
+  overflow: hidden;
+  color: $ui-text-3;
+  font-size: 24rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 信息胶囊：条数、当前身份等只读信息 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 14rpx 28rpx;
+  border: 1px solid $ui-border;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-raise;
+  color: $ui-text-2;
+  font-size: 25rpx;
+  line-height: 1.2;
+}
+
+.chip__text {
+  color: $ui-text-2;
+  font-size: 25rpx;
+}
+
+.chip__strong {
+  color: $ui-text;
+  font-weight: 600;
+}
+
+/* 已登录：绿色小圆点，一眼看出"当前是可写入身份" */
+.chip--live {
+  border-color: $ui-success-line;
+  background-color: $ui-success-soft;
+
+  .chip__text {
+    color: $ui-success;
+  }
+}
+
+.chip__dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background-color: $ui-success;
+  box-shadow: 0 0 0 6rpx $ui-success-soft;
+}
+
+/* 胶囊按钮：登录 = 白底黑字的主操作；退出 = 低饱和危险色 */
+.pill-btn {
+  @include pill-button;
+}
+
+.pill-btn--primary {
+  background-color: $ui-text;
+  color: $ui-on-light;
+}
+
+.pill-btn--danger {
+  border: 1px solid $ui-danger-line;
+  background-color: $ui-danger-soft;
+  color: $ui-danger;
+}
+
+/* ===== 抽屉菜单（左侧滑出）=====
+   wd-popup 负责滑入与遮罩，这里只管抽屉内部排版：
+   品牌区 → 状态胶囊 → 分组标题 → 功能列表 → 底部账户区（margin-top: auto 顶到底部）。 */
+.drawer {
+  display: flex;
+  flex: 1;
+  box-sizing: border-box;
+  flex-direction: column;
+  padding: calc(var(--status-bar-height, 0px) + 36rpx) 28rpx 32rpx;
+}
+
+.drawer__brand {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 0 8rpx;
+}
+
+.drawer__mark {
+  display: flex;
+  width: 84rpx;
+  height: 84rpx;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 26rpx;
+  background: linear-gradient(135deg, $ui-accent, $ui-accent-2);
+  color: $ui-on-accent;
+  font-size: 24rpx;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  box-shadow: 0 18rpx 36rpx -20rpx $ui-accent-glow;
+}
+
+.drawer__meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.drawer__eyebrow {
+  color: $ui-accent-text;
+  font-size: 20rpx;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.drawer__title {
+  margin-top: 6rpx;
+  color: $ui-text;
+  font-size: 36rpx;
+  font-weight: 700;
+}
+
+.drawer__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin: 28rpx 0 4rpx;
+  padding: 0 8rpx;
+}
+
+.drawer__group {
+  padding: 28rpx 12rpx 12rpx;
+  color: $ui-text-3;
+  font-size: 22rpx;
+  letter-spacing: 0.16em;
+}
+
+/* 必须是确定高度，scroll-view 才会滚动（三端一致的做法） */
+.drawer__list {
+  height: 52vh;
+  flex-shrink: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-bottom: 8rpx;
+  padding: 20rpx;
+  border-radius: $ui-radius-md;
+  color: $ui-text-2;
+  transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+
+  &.is-active {
+    background-color: $ui-accent-soft;
+    color: $ui-accent-text;
+  }
+
+  &:active {
+    background-color: $ui-surface-3;
+  }
+
+  &__icon {
+    display: flex;
+    width: 60rpx;
+    height: 60rpx;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 18rpx;
+    background-color: $ui-raise-2;
+  }
+
+  &__text {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  &__label {
+    color: inherit;
+    font-size: 28rpx;
+    font-weight: 500;
+  }
+
+  &__hint {
+    margin-top: 4rpx;
+    overflow: hidden;
+    color: $ui-text-3;
+    font-size: 22rpx;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.drawer__foot {
+  margin-top: auto;
+  padding: 24rpx 8rpx 0;
+  border-top: 1px solid $ui-hairline;
+}
+
+/* 尺寸交给这里；配色仍由 pill-btn / 修饰类决定，别在本块里写 background-color ，
+   否则会盖掉 .pill-btn--danger / --primary 的配色（同权重、后写的胜出）。 */
+.drawer__action {
+  display: flex;
+  width: 100%;
+  height: 84rpx;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawer__tip {
+  display: block;
+  margin-top: 18rpx;
+  color: $ui-text-3;
+  font-size: 22rpx;
+  text-align: center;
 }
 
 /* ===== 数据表格 =====
@@ -3090,11 +3452,71 @@ watch(activeTab, (tab, prevTab) => {
    因此改成 flex 行：
      - .dt__row 是 flex 容器，.dt__cell 为不收缩的定宽项；
      - 列宽沿用原先 columns[].width 的那批 Tailwind w-* 类，语义不变；
+       **表头行与每个数据行都必须把 column.width 绑到单元格上**：flex 下没有
+       <colgroup> 统一分配列宽，只靠内容宽撑开 —— 哪一列的某一行漏绑，表头与
+       数据行就会错位（表头少绑时最明显：表头跟着文字宽度收窄、数据行仍是定宽）。
+     - 列宽按**手机屏**收紧过一轮：桌面端的 64/144/160px 在手机上每列都留一大片
+       空白，现改成按内容长度取的标准刻度（序号 w-10、日期 w-24、工单号/编码 w-28、
+       类型 w-20、数量 w-20、需要换行的名称列 w-40），内边距 px-3 → px-2、右对齐列
+       pr-5 → pr-3、表头 py-4 → py-3。刻意不再用 w-[NNpx] 这类方括号类名：
+       小程序端要靠构建期转义才生效（同 FilterHeaderCell 的 max-width 处理）。
+     - **序号列一律居中**（表头与数据格都居中）：列定义里给序号列写 align: 'center'，
+       表头与数据格的 :class 据此补 text-center。主页面这 6 张表与导入页原本是左对齐，
+       只有图片解析页的序号列写了 align: 'center'；现在三处统一成同一套规则。
      - 跨列单元格（原 colspan）改用 .dt__grow 占满剩余宽度；
      - 外层 overflow-x-auto 保留，列多时横向滚动，与改造前行为一致。
    注：本块所在的 <style> 已声明 lang="scss"（用于 // 注释与 uni.scss 变量）。 */
 .dt {
   min-width: 100%;
+}
+
+/* 横向滚动的 6 张表（工单汇总 / 领料汇总 / 入库汇总 / 工单报工 / 工单核算 /
+   原辅料核算）在模板上加了 .dt--scroll。
+   原因：改造后行内的单元格是 flex-shrink: 0 的定宽项，列多时会「溢出」行盒子，
+   而 .dt / .dt__head / .dt__body / .dt__row 这几个盒子的宽度默认只等于**滚动容器的
+   可视宽**（.dt 是块级盒子，width: auto 就等于父容器宽的 100%）。底色与分隔线原本都画在
+   这些盒子上，于是只能覆盖前一段 —— 横向滚过之后右侧那几列落到盒外，露出没有底色的底，
+   表现为「表头灰底只到中间某一列，后面几列变白」「hover 过的那一行同理半截」，
+   连 divide-y 画在 .dt__body 上的分隔线也一起半截。
+   这里做两件事：
+     1) 底色与分隔线改画到**单元格**上（.dt--scroll 里的表头行 + 所有 .dt__row 的直接子
+        view）。单元格就是被溢出走的那些格子本身，画在它们身上与盒子宽度无关，各端必然
+        整行铺满 —— 只靠把盒子撑宽，App 端真机实测并不可靠；
+     2) 因此要把 Tailwind 在盒子上画的 divide-y 中和掉，否则会和单元格上的线叠成 2px。
+   同时保留 .dt 的 width: max-content（H5 上更"正统"，横向滚动范围也更准）；
+   内容比容器窄时仍由 .dt 上的 min-width: 100% 兜底（空表提示行也在其中）。
+   -webkit- 前缀是给老 WKWebView（iOS 小程序）的。 */
+.dt--scroll {
+  width: -webkit-max-content;
+  width: max-content;
+}
+
+/* 底色改画到单元格上。表头行先 inherit 到 .dt__head 的底色，再由单元格继承；
+   数据行则让单元格继承行自己的底色 —— 行上的 hover:bg-slate-50 也就跟着铺满整行了。 */
+.dt--scroll .dt__head > .dt__row,
+.dt--scroll .dt__row > view {
+  background-color: inherit;
+}
+
+/* 中和 Tailwind 画在盒子上的 divide-y（.dt > 第 2 个孩子 = 表头与表体之间、
+   .dt__body > 相邻行），否则会和下面画在单元格上的线叠成 2px。
+   这里用 .dt.dt--scroll 双类名把权重提到 (0,4,2)，保证压得住 weapp-tailwindcss 改写出的
+   `.divide-y>view+view` 与 H5 版的 `.divide-y > :not([hidden]) ~ :not([hidden])`。 */
+.dt.dt--scroll > .dt__body,
+.dt.dt--scroll .dt__body > .dt__row + .dt__row {
+  border-top-width: 0;
+  border-bottom-width: 0;
+}
+
+/* 表头与数据行之间那条线（原来由根节点上的 divide-slate-200 画在 .dt__body 上）。
+   单元格已经是 border-box，加 1px 边框不会改动列宽几何。 */
+.dt--scroll .dt__head > .dt__row > view {
+  border-bottom: 1px solid $slate-200;
+}
+
+/* 数据行之间的分隔线（原来由 .dt__body 上的 divide-slate-100 画在行盒子上）。 */
+.dt--scroll .dt__body > .dt__row + .dt__row > view {
+  border-top: 1px solid $slate-100;
 }
 
 .dt__head {
@@ -3107,13 +3529,20 @@ watch(activeTab, (tab, prevTab) => {
   align-items: stretch;
 }
 
-/* flex 子项默认会被压缩，不关掉的话列宽对不齐 */
+/* flex 子项默认会被压缩，不关掉的话列宽对不齐；
+   而且必须显式声明 border-box —— 本项目的 tailwind preflight 是关掉的
+   （见 tailwind.config.js 的 corePlugins.preflight），uni-view 默认按
+   content-box 算：写了 w-16 的列实际占 64px + 左右内边距，整张表比设计宽一圈，
+   看上去就是「列与列之间间距很大」。声明 border-box 后列宽 = 类名写的那个值，
+   与改造前桌面端（preflight 生效时）的几何一致。 */
 .dt__row > view {
+  box-sizing: border-box;
   flex-shrink: 0;
 }
 
 /* 表格为空时的整行提示 */
 .dt__empty {
+  box-sizing: border-box;
   width: 100%;
   padding: 64px 12px;
   color: $slate-400;
@@ -3178,9 +3607,9 @@ watch(activeTab, (tab, prevTab) => {
   left: 0;
   width: 20px;
   height: 20px;
-  border: 1px solid $slate-200;
+  border: 1px solid $ui-border;
   border-radius: 4px;
-  background-color: #fff;
+  background-color: $ui-surface-2;
 }
 
 /* ===== 图片查看器（工单汇总与周统计各一份，共用这套类名）=====
@@ -3205,18 +3634,17 @@ watch(activeTab, (tab, prevTab) => {
   background-color: $slate-50;
 }
 
+// 图片区高度给在这一层：内嵌的 ImageViewer（inline 形态）是 100%，
+// uni 的 <image> 也不会自己撑开 —— 改造前这段高度写在 .viewer-stage__img 上。
+// overflow 必须裁掉：放大后的图不能画到卡片外面。
 .viewer-stage {
   position: relative;
   display: flex;
   width: 100%;
+  height: 56vh;
   align-items: center;
   justify-content: center;
-}
-
-/* uni 的 image 组件不会自己撑开，必须给显式高度 */
-.viewer-stage__img {
-  width: 100%;
-  height: 56vh;
+  overflow: hidden;
 }
 
 .viewer-nav {
@@ -3230,9 +3658,10 @@ watch(activeTab, (tab, prevTab) => {
   justify-content: center;
   /* 用负 margin 做垂直居中，省掉 translateY，两端表现更稳 */
   margin-top: -18px;
+  border: 1px solid $ui-border-contrast;
   border-radius: 50%;
-  background-color: rgba(15, 23, 42, 0.45);
-  color: #fff;
+  background-color: $ui-raise-3;
+  color: $ui-text;
   font-size: 20px;
   line-height: 1;
 
@@ -3272,73 +3701,305 @@ watch(activeTab, (tab, prevTab) => {
   border-top: 1px solid $slate-100;
 }
 
-/* 储罐图：切换罐型时淡出淡入 + 高度平滑过渡 */
-.vessel-canvas {
+/* 储罐示意图（纯 CSS/DOM 图层，取代改造前的 .vessel-canvas）。
+   三层结构：① __paper 底图；② __tank 罐体裁剪层（overflow + 斜杠圆角，液体/波峰带/
+   差值带/起始虚线都在里面）；③ __callout 引线标注（在裁剪层之外，所以不会被罐体切掉）。
+   切换罐型时高度平滑过渡 + 淡出淡入 —— 与改造前一致。 */
+/* 面板本身不画底色、也不描边：底图是「按主题二选一」的两张同尺寸资源
+   （浅色 = 白纸版，深色 = 透明底亮线版，见 resources/compress-vessel-images.py），
+   于是图纸背景天然就是它所在卡片的底色 —— 深浅主题都不需要对任何色值。
+   改造前 canvas 版在深色下是一整块白纸，见 UNIAPP迁移说明.md 5.3。 */
+.vessel-diagram {
+  position: relative;
   transition: aspect-ratio 320ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
 }
 
-.vessel-canvas.is-switching {
+.vessel-diagram.is-switching {
   opacity: 0;
 }
 
-/* 软拟态（Soft UI）步进按钮：降低/升高液位 */
+/* 底图：宽 = 1075 / 1375（右侧 300 是引线标注栏，改造前 canvas 也是这么留的） */
+.vessel-diagram__paper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+}
+
+/* 罐体裁剪层：轮廓 = 矩形 + 斜杠圆角（圆角值由 vesselDiagram 按罐型算好内联） */
+.vessel-diagram__tank {
+  position: absolute;
+  overflow: hidden;
+}
+
+/* 液体主体：顶边落在「液面 − 一个波幅」处，向上正好接住波峰带 */
+.vessel-diagram__liquid {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+}
+
+/* 波峰带：只占液面上下一格波幅；拱形瓦片、瓦片宽、动画时长都内联给定（随介质与罐宽变）。
+   自层两倍宽 + translateX(-50%)：位移恰好 = 整数格 = 图案周期，循环处不跳变。 */
+.vessel-diagram__wave {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.vessel-diagram__wave-shift {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  background-repeat: repeat;
+  animation-name: vessel-wave;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes vessel-wave {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* 起止液位差值带：底色 + 45° 斜纹。
+   斜纹间距改成了固定屏幕像素（改造前是 1.4px / 11 逻辑像素，随图缩放后在手机上
+   只剩 2~3 个设备像素、糊成一片）—— 这是刻意的偏差，见 UNIAPP迁移说明.md 5.3。 */
+.vessel-diagram__delta {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background-image: linear-gradient(
+    45deg,
+    transparent 0 5.8px,
+    currentColor 5.8px 6.8px,
+    transparent 6.8px 100%
+  );
+  background-size: 9px 9px;
+}
+
+/* 颜色与改造前一致；斜纹用 currentColor 的 0.4 透明度（等效于原来的 globalAlpha = 0.4） */
+.vessel-diagram__delta.is-decrease {
+  color: rgba(225, 29, 72, 0.4);
+  background-color: rgba(244, 63, 94, 0.1);
+}
+
+.vessel-diagram__delta.is-increase {
+  color: rgba(5, 150, 105, 0.4);
+  background-color: rgba(16, 185, 129, 0.12);
+}
+
+/* 起始液位虚线的画法：图纸里那条（.vessel-diagram__start）与液位控件前的小标
+   （.vessel-legend--start）必须一模一样，所以只写这一份 @mixin。
+   墨色走 $ui-text（浅色 = #14161c，与改造前的 #0f172a 肉眼无差；
+   深色自动变亮 —— 深色底图是亮线，写死近黑会整条看不见）。
+   线型 2px 高、5px 实 / 4px 空（固定屏幕像素，理由同差值带斜纹） */
+@mixin vessel-start-line {
+  height: 2px;
+  background-image: linear-gradient(90deg, $ui-text 0 5px, transparent 5px 9px);
+}
+
+.vessel-diagram__start {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  @include vessel-start-line;
+}
+
+/* ===== 液位控件前的两个图例小标 =====
+   两个都按图纸里对应的那一层画，避免「小标是一套、图纸是另一套」：
+     起始 = 那条起始虚线（与 .vessel-diagram__start 共用 @mixin vessel-start-line）
+     终止 = 那片波峰液面（图案与图纸的 .__wave 同一份 vesselWavePattern，颜色由模板内联给） */
+.vessel-legend {
+  display: inline-block;
+  width: 20px;
+  flex-shrink: 0; // 窄屏下别被标签压扁
+}
+
+.vessel-legend--start {
+  @include vessel-start-line;
+}
+
+/* 终止：只画波峰那一格，不画液体填充（20px 宽的小标里 0.28 透明度的填充看不出来）。
+   拱的宽高比照图纸来（图纸里拱约 14.5 × 3.5 CSS px ≈ 4:1）：瓦片 14px、带高 4px，
+   小标里正好看到一个整拱加半个。 */
+.vessel-legend--end {
+  height: 4px;
+  background-repeat: repeat;
+  background-size: 14px 100%;
+}
+
+/* ===== 逐帧滚动的数值：定宽槽（液位读数 + 引线标注共用）=====
+   这几个数字绑定的是缓动值（vesselStartDisplay / vesselEndDisplay 等），缓动期间
+   每帧写一次；数字是行内文本，宽度一变就推动同一行的固定文字：
+     · 体积变化那行是 justify-center —— 组内一变宽，整组重新居中，两端的
+       「体积变化」「m³」跟着一起挪；
+     · 引线标注是右对齐 —— 行左边界 = 内容宽度，「消耗 / 增加」跟着左右跑。
+   给每个滚动数字一个定宽、右对齐的槽，槽宽恒定，槽外一个像素都不动。
+
+   宽度用 ch（= 字体里「0」的宽度）：开了等宽数字时 1ch 就是一位数字宽，没开时
+   ch 不小于其他数字，天然不溢出。先写 em 回退再写 ch —— 同一选择器后写者胜出，
+   不支持 ch 的解析器会丢掉第二行。
+   槽要留余量：宽度不够时溢出方向是右侧，会压到后面的单位上。
+   font-variant-numeric: tabular-nums：平台字体默认可能是比例数字（iOS 的 SF Pro
+   尤其明显），同一位数每帧都在改字宽 —— 那是 60fps 的连续抖动；小程序端若忽略
+   这个属性，槽宽仍固定，只是数字在槽内微动。 */
+.vessel-num {
+  display: inline-block;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-feature-settings: 'tnum';
+  font-feature-settings: 'tnum';
+}
+
+/* 液位读数：不超过 4 位整数（量程：卧式 = 直径 2800，立式 = 筒体 4800 + 封头 900） */
+.vessel-num--level {
+  width: 2.6em;
+  width: calc(4ch + 0.1em);
+}
+
+/* 体积 / 质量：XX.XX（一个小数点） */
+.vessel-num--volume {
+  width: 2.7em;
+  width: calc(4ch + 0.5em);
+}
+
+/* 带符号：正负号 + 4 位 + 小数点；数字右对齐，多出的空档留在左侧、
+   紧贴「体积变化」那一侧，不影响观感 */
+.vessel-num--signed {
+  width: 3.3em;
+  width: calc(4ch + 0.8em);
+}
+
+/* 引线标注：1px 高的定位容器本身就是那条水平引线（罐体 → 文字一侧），
+   颜色由 is-decrease / is-increase 给，圆点与文字都用 currentColor 继承 */
+.vessel-diagram__callout {
+  position: absolute;
+  right: 0;
+  height: 1px;
+  background-color: currentColor;
+}
+
+.vessel-diagram__callout.is-decrease {
+  color: #e11d48;
+}
+
+.vessel-diagram__callout.is-increase {
+  color: #059669;
+}
+
+/* 起点圆点：直径 7px（改造前是 fs × 0.26 的半径，屏幕上约 6.8px），圆心落在锚点上 */
+.vessel-diagram__callout-dot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+/* 文字：右对齐贴面板右边缘（改造前文字右边界 = W − fs × 0.7 ≈ 屏幕上 9px），
+   底边抬到引线上方 20px —— 改造前文字块中心在引线上方 41.6 屏幕像素 */
+.vessel-diagram__callout-text {
+  position: absolute;
+  right: 9px;
+  bottom: calc(50% + 20px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: currentColor;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+/* 锚点落在图纸上方 40% 以内时，文字改放引线下方，避免越出白纸面板 */
+.vessel-diagram__callout.is-below .vessel-diagram__callout-text {
+  bottom: auto;
+  top: calc(50% + 6px);
+}
+
+/* 标注每行：前缀 + 定宽数值槽 + 单位。整块右对齐（align-items: flex-end），
+   行宽由槽宽决定 —— 槽定宽，所以缓动期间前缀与单位一个像素都不动。
+   改造前每行是一整条字符串，「消耗 / 增加」的左边界 = 内容宽度，数值一变宽就左右跑。 */
+.vessel-diagram__callout-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* 软拟态（Soft UI）步进按钮：降低/升高液位。
+   深色下是「暗面 + 亮边」，浅色下是「白面 + 灰影」—— 两种形态都靠
+   --ui-soft-a/b + --ui-soft-shadow/light 这组变量切换（见 App.vue 的 .theme-light）。 */
 .vessel-step {
   display: inline-flex;
   width: 38px;
   height: 38px;
   align-items: center;
   justify-content: center;
-  border: none;
+  border: 1px solid $ui-hairline;
   border-radius: 50%;
-  background: linear-gradient(145deg, #ffffff, #e8ecf1);
-  color: #475569;
+  background: linear-gradient(145deg, $ui-soft-a, $ui-soft-b);
+  color: $ui-text-2;
   font-size: 19px;
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
   user-select: none;
   box-shadow:
-    4px 4px 8px rgba(163, 177, 198, 0.45),
-    -3px -3px 8px rgba(255, 255, 255, 0.9),
-    inset 0 -2px 3px -1px rgba(0, 0, 0, 0.06),
-    inset 0 2px 3px -1px rgba(255, 255, 255, 0.9);
+    6px 6px 14px $ui-soft-shadow,
+    -3px -3px 10px $ui-soft-light;
   transition: all 260ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .vessel-step:hover {
-  color: #0f172a;
+  color: $ui-text;
 }
 
 .vessel-step:active {
   filter: blur(0.4px);
-  background: linear-gradient(145deg, #e8ecf1, #ffffff);
+  background: linear-gradient(145deg, $ui-soft-b, $ui-soft-a);
   box-shadow:
-    inset 4px 4px 8px rgba(163, 177, 198, 0.5),
-    inset -3px -3px 8px rgba(255, 255, 255, 0.95);
+    inset 5px 5px 10px $ui-soft-shadow,
+    inset -3px -3px 10px $ui-soft-light;
 }
 
 /* 液位输入框：软拟态外观 + 隐藏原生上下箭头 */
 .vessel-level-input {
-  border: none;
+  border: 1px solid $ui-hairline;
   border-radius: 12px;
   padding: 9px 14px;
-  background-color: #eef1f5;
-  color: #0f172a;
+  background-color: $ui-surface-2;
+  color: $ui-text;
   font-size: 14px;
   font-weight: 600;
   outline: none;
   box-shadow:
-    4px 4px 8px rgba(163, 177, 198, 0.45),
-    -3px -3px 8px rgba(255, 255, 255, 0.9);
+    6px 6px 14px $ui-soft-shadow,
+    -3px -3px 10px $ui-soft-light;
   transition: box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* 聚焦时呈"按入"质感的凹陷效果 */
 .vessel-level-input:focus {
-  background-color: #f5f8fb;
+  background-color: $ui-surface-3;
   box-shadow:
-    inset 3px 3px 6px rgba(163, 177, 198, 0.4),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+    inset 4px 4px 10px $ui-soft-shadow,
+    inset -3px -3px 8px $ui-soft-light;
 }
 
 .vessel-level-input::-webkit-outer-spin-button,
@@ -3357,20 +4018,60 @@ watch(activeTab, (tab, prevTab) => {
    改造前这些样式挂在 :deep(.el-select__wrapper) 上 —— 覆写的是 Element Plus 的
    内部结构。现在触发器就是我们自己的 view，样式直接写在它身上，不再需要 :deep()；
    同时去掉了 hover / is-focused 两条 —— 触屏没有 hover，
-   而 :deep(.is-focused) 那个类名也是 Element Plus 专属的。 */
+   而 :deep(.is-focused) 那个类名也是 Element Plus 专属的。
+   弹层从 wd-picker 的滚轮换成了自绘浮层，但触发器这一层完全没动 ——
+   样式挂在我们自己的 view 上，换承载它的弹层不需要改这里。
+
+   ⚠️ 这里原来是 `width: 224px`（"固定宽度，避免被拉伸到整行"）。那个固定宽度是
+      小程序端整块排版塌掉的元凶：选择器与规格说明同处一个 flex 行时，224px 是
+      **不可压缩**的，360px 小屏上留给文字的就只剩约 23px，一个汉字一行。
+      模板里已把选择器挪到独立行，这里再把宽度改成按内容自适应 ——
+      width: auto + 罐名省略号，罐名再长也只是截断，不会撑破卡片。 */
 .vessel-select {
-  display: inline-flex;
-  width: 224px; /* 固定宽度，避免被拉伸到整行 */
+  display: flex;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 12px;
-  border-radius: 10px;
-  box-shadow: 0 0 0 1px rgb(203 213 225) inset;
-  color: rgb(15 23 42);
+  padding: 9px 16px;
+  border-radius: 999px;
+  background-color: $ui-surface-2;
+  box-shadow: 0 0 0 1px $ui-border inset;
+  color: $ui-text;
   font-size: 15px;
   font-weight: 600;
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow $ui-dur $ui-ease, background-color $ui-dur $ui-ease;
+}
+
+/* 罐名（"三氯氢硅储罐A/B示意图" 13 个字）：flex:1 撑开胶囊并给省略号一个可压缩的盒子。
+   <text> 在小程序里默认是行内元素，overflow / text-overflow 对行内盒无效，
+   所以必须显式改成块级。 */
+.vessel-select__label {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+/* 开态箭头翻转（参考图里「与我相关 ⌃」）：收起是下箭头，展开翻 180°。
+   给图标套一层我们自己的节点，才能在不写 :deep() 的前提下加 transform ——
+   覆写第三方结构是本项目明令避免的写法（UNIAPP迁移说明.md 第 4 节）。
+   ⚠️ transform 只落在这个叶子节点上：DropdownMenu 的遮罩是 position: fixed，
+      祖先里出现 transform 会让它认错包含块（说明 4.2）。 */
+.vessel-select__caret {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: transform $ui-dur $ui-ease;
+}
+
+.vessel-select.is-open .vessel-select__caret {
+  transform: rotate(180deg);
 }
 
 /* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */

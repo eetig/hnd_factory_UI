@@ -41,7 +41,7 @@ const importSummary = ref({ addCount: 0, updateCount: 0, skipCount: 0 })
 
 // 各识别类型对应的表头定义（含列宽与换行样式）
 const WORK_ORDER_COLUMNS = [
-  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'index', label: '序号', width: 'w-16', align: 'center' },
   { key: 'orderNo', label: '工单号', width: 'w-40' },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
   { key: 'materialDesc', label: '产成品', width: 'w-[180px]', wrap: true },
@@ -51,7 +51,7 @@ const WORK_ORDER_COLUMNS = [
 ]
 
 const GOODS_MOVE_COLUMNS = [
-  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'index', label: '序号', width: 'w-16', align: 'center' },
   { key: 'orderNo', label: '工单号', width: 'w-40' },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
   { key: 'materialDesc', label: '物料描述', width: 'w-[180px]', wrap: true },
@@ -491,7 +491,7 @@ function handleBackToList() {
                 :key="column.key"
                 scope="col"
                 class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : column.align === 'center' ? 'px-3 text-center' : 'px-3'"
               >
                 {{ column.label }}
               </th>
@@ -506,7 +506,9 @@ function handleBackToList() {
                   ? 'max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700'
                   : (column.align === 'right'
                     ? `whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`
-                    : `whitespace-nowrap px-3 py-2 text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`)"
+                    : column.align === 'center'
+                      ? `whitespace-nowrap px-3 py-2 text-center text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`
+                      : `whitespace-nowrap px-3 py-2 text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`)"
               >
                 {{ getCellValue(item, column.key, index) }}
               </td>
@@ -515,12 +517,15 @@ function handleBackToList() {
         </table>
       </div>
 
-      <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+      <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明）：wd-pagination 的
+           .wd-pager 宽度只等于 show-message 那段文字，靠右排时按钮组会贴着它的右缘。 -->
+      <div class="flex justify-center border-t border-slate-100 px-6 py-4">
         <!-- wd-pagination 的 change 传的是 `{ value: N }` 对象而非页码，
              且它在 update:modelValue 之前触发（此时 pageNum 还是旧值），
              所以必须显式取出新页码传进去，不能直接绑 getPageData。 -->
         <wd-pagination
           v-model="pageNum"
+          custom-style="max-width: 340px;"
           :page-size="pageSize"
           :total="total"
           show-message
@@ -584,29 +589,34 @@ function handleBackToList() {
 </template>
 
 <style scoped>
+/* H5 专用的导入面板：加载态与 LoadingMask 用同一套深色语言，
+   避免 H5 端出现"唯一一处黑字白条"的割裂感。 */
 .loader {
   display: flex;
   width: min(360px, 80%);
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
 }
 
 .loader-text {
   align-self: center;
-  margin-bottom: 20px;
-  color: rgb(0, 0, 0);
-  font-size: 24px;
+  /* 这个组件是 H5 专用且样式块是普通 CSS（没有 lang="scss"），
+     所以直接引用 CSS 变量而不是 SCSS 令牌 —— 变量本身是按主题定义的 */
+  color: var(--ui-text-2);
+  font-size: 15px;
+  letter-spacing: 0.04em;
 }
 
 .loader-bar {
   width: 30%;
   min-width: 110px;
-  height: 10px;
+  height: 6px;
   overflow: hidden;
-  border-radius: 5px;
-  background-color: rgb(0, 0, 0);
-  animation: loader-bar-animation 2s ease-in-out infinite;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ui-accent), var(--ui-accent-2));
+  animation: loader-bar-animation 1.6s ease-in-out infinite;
 }
 
 @keyframes loader-bar-animation {

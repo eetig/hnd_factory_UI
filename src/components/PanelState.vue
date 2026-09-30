@@ -26,7 +26,8 @@ const emit = defineEmits(['action'])
 </template>
 
 <style lang="scss" scoped>
-// min-h-72（18rem）这类任意值类名在小程序端要构建期转义，这里直接写死尺寸更稳
+// 深色主题下的空/错状态：圆形徽标 + 居中标题 + 白胶囊动作按钮。
+// min-h-72（18rem）这类任意值类名在小程序端要构建期转义，这里直接写死尺寸更稳。
 .panel-state {
   display: flex;
   min-height: 288px;
@@ -38,51 +39,45 @@ const emit = defineEmits(['action'])
 
   &__badge {
     display: flex;
-    width: 96rpx;
-    height: 96rpx;
+    width: 112rpx;
+    height: 112rpx;
     align-items: center;
     justify-content: center;
     margin-bottom: 32rpx;
+    border: 1px solid transparent;
     border-radius: 50%;
-    font-size: 36rpx;
+    font-size: 40rpx;
+    font-weight: 600;
 
     &.is-error {
-      background-color: $rose-50;
-      color: $rose-500;
+      border-color: $ui-danger-line;
+      background-color: $ui-danger-soft;
+      color: $ui-danger;
     }
 
     &.is-empty {
-      background-color: $sky-50;
-      color: $sky-600;
+      border-color: $ui-accent-strong;
+      background-color: $ui-accent-soft;
+      color: $ui-accent-text;
     }
   }
 
   &__title {
-    color: $slate-900;
+    color: $ui-text;
     font-size: 32rpx;
     font-weight: 600;
   }
 
   &__desc {
     margin-top: 16rpx;
-    color: $slate-500;
-    font-size: 28rpx;
+    color: $ui-text-3;
+    font-size: 26rpx;
+    line-height: 1.6;
   }
 
   &__action {
     margin-top: 40rpx;
-    padding: 16rpx 32rpx;
-    border: 0;
-    border-radius: 16rpx;
-    background-color: $slate-900;
-    color: #fff;
-    font-size: 28rpx;
-    font-weight: 500;
-    line-height: 1.4;
-
-    &::after {
-      border: 0;
-    }
+    @include pill-button;
   }
 }
 </style>

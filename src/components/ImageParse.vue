@@ -443,6 +443,8 @@ const PICK_COLUMNS = [
   { key: 'quantity', label: '领料数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
   { key: 'image', label: '线下单据', align: 'center' },
+  // 操作列：逐行删除。列定义里只占一个 key，具体渲染见表格模板的 actions 分支
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const INBOUND_COLUMNS = [
@@ -454,6 +456,7 @@ const INBOUND_COLUMNS = [
   { key: 'quantity', label: '入库数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
   { key: 'image', label: '线下单据', align: 'center' },
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const UNKNOWN_COLUMNS = [
@@ -463,6 +466,7 @@ const UNKNOWN_COLUMNS = [
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '数量', align: 'right' },
+  { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN_COLUMNS }
@@ -482,21 +486,19 @@ const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN
 function buildTable(result) {
   const kind = resolveDocKind(result?.documentType)
 
-  const rows = (result?.items || []).map((item, index) => ({
-    index: index + 1,
+  const rows = (result?.items || []).map((item) => ({
+    // 行的公共字段（key / 序号 / 物料编码 / 单位 / 候选）统一由 blankRow 造，
+    // 这里只覆盖识别出来的两个字段
+    ...blankRow(),
     materialName: fieldText(item.materialName),
-    // 物料编码【不取识别值】，一律从空开始，等主数据按名称反查填入。
+    // 物料编码【不取识别值】，一律从空开始，等主数据按名称反查填入（见 blankRow）。
     // 理由：纸质单该列本就空白，模型对空白列会吐占位值或误取相邻的「规格」列
     // （实测出现过 materialCode="不存在"、"2.260813"）。留着它只会让人误以为是真编码。
     // 识别原值仍保留在 image.result 里，需要追溯时看得到。
-    materialCode: '',
     quantity: fieldText(item.quantity),
-    unit: '',
-    // 该行的物料候选（由 enrichMaterials 填充），供「查不到时人工选」
-    candidates: [],
   }))
 
-  return {
+  const table = {
     kind,
     columns: COLUMNS[kind],
     doc: {
@@ -505,6 +507,72 @@ function buildTable(result) {
     },
     rows,
   }
+  renumber(table)
+  return table
+}
+
+// ------------------------------------------------------------------
+// 行增删（识别结果需要人工校准行数）
+//
+// 移植自旧库 hnd_factory_UI 的 a52c457（原路径 src/views/ImageParse.vue）：
+// 识别会漏行（字迹潦草）也会多行（串到相邻单据），行数只能靠人眼对着原图数，
+// 所以给一对增删入口，而不是让流程中断。
+// ------------------------------------------------------------------
+
+/**
+ * 行的稳定标识，与「序号」刻意分开。
+ *
+ * <p>{@code index} 是给人看的行号，删掉中间一行后其余行都要往前挪，所以它会变；
+ * 拿它当 {@code :key} 会让 Vue 在重排时复用错组件，表现为输入框内容/焦点串行。
+ */
+let rowUid = 0
+
+/** 一张空白行。物料编码与单位照旧留空 —— 只能靠名称反查带出，不允许手填 */
+function blankRow() {
+  return {
+    key: ++rowUid,
+    index: 0, // 由 renumber 统一编
+    materialName: '',
+    materialCode: '',
+    quantity: '',
+    unit: '',
+    // 该行的物料候选（由 enrichMaterials 填充），供「查不到时人工选」
+    candidates: [],
+  }
+}
+
+/**
+ * 序号对齐数组下标：它是对外展示的行号，删掉中间一行后不能留空洞。
+ *
+ * <p>落库时 mergeRowsByMaterialCode 会拿 index 当 seqNo，所以更不能有洞。
+ */
+function renumber(table) {
+  table.rows.forEach((row, i) => {
+    row.index = i + 1
+  })
+}
+
+/**
+ * 识别漏行时手工补一行。
+ *
+ * <p>新行为空，因此会立刻让「确认入库」变成不可点（缺物料编码）——
+ * 这是预期的：补的行必须填完才能入库。
+ */
+function addRow(image) {
+  clearConfirm(image)
+  image.table.rows.push(blankRow())
+  renumber(image.table)
+}
+
+/** 识别多出幽灵行 / 重复行时删掉该行 */
+function removeRow(image, row) {
+  clearConfirm(image)
+  const rows = image.table.rows
+  const at = rows.indexOf(row)
+  if (at >= 0) {
+    rows.splice(at, 1)
+  }
+  renumber(image.table)
 }
 
 /** 可编辑单元格：静默时不显边框，悬停/聚焦才提示可改，避免整表看起来像表单控件 */
@@ -559,6 +627,11 @@ function confirmBlockReason(image) {
   }
   if (!String(image.table.doc.documentNo || '').trim()) {
     return '单据号为空，无法入库'
+  }
+
+  // 行可以删到 0（增删入口允许这么做），但 0 行的单据没有意义，别让它提交上去
+  if (!image.table.rows.length) {
+    return '没有可入库的明细行，请至少保留一行'
   }
 
   const bad = image.table.rows.filter(
@@ -704,7 +777,7 @@ onUnmounted(() => {
 
           <button
             type="button"
-            class="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/60 text-sm text-white opacity-0 transition hover:bg-rose-600 focus:opacity-100 group-hover:opacity-100"
+            class="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-sm text-[#fff] opacity-0 transition hover:bg-rose-600 focus:opacity-100 group-hover:opacity-100"
             :aria-label="`移除 ${image.name}`"
             :disabled="submitting"
             @click="removeImage(image.id)"
@@ -718,7 +791,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -750,7 +823,7 @@ onUnmounted(() => {
           :key="image.id"
           class="overflow-hidden rounded-lg border border-slate-200"
         >
-          <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+          <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
             <img
               :src="image.url"
               :alt="image.name"
@@ -776,106 +849,147 @@ onUnmounted(() => {
             </p>
 
             <div class="px-4 pb-4">
-              <table v-if="image.table?.rows.length" class="w-full border-collapse text-sm">
-                <thead>
-                  <tr class="bg-slate-50 text-slate-600">
-                    <th
-                      v-for="col in image.table.columns"
-                      :key="col.key"
-                      class="border border-slate-200 px-3 py-2 font-medium"
-                      :class="alignClass(col)"
-                    >
-                      {{ col.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in image.table.rows" :key="row.index">
-                    <td
-                      v-for="col in image.table.columns"
-                      :key="col.key"
-                      class="border border-slate-200 px-1.5 py-1 align-middle"
-                    >
-                      <!-- 线下单据：原图缩略图，点开可放大 -->
-                      <div v-if="col.key === 'image'" class="flex justify-center">
-                        <!-- el-image 的自带预览（preview-src-list）在 uni 里没有对应物，
-                             改用 uni.previewImage 这个原生大图预览能力 -->
-                        <image
-                          class="picker-thumb"
-                          :src="image.url"
-                          mode="aspectFill"
-                          @click="previewImage(image.url)"
-                        />
-                      </div>
+              <!-- 9 列在手机屏宽下必然溢出（375px 实测超出 47px）：缺这一层 overflow-x-auto 时，
+                   外层 article 的 overflow-hidden 会直接把右侧「线下单据」「操作」两列裁掉，
+                   而且滚不过去 —— 「操作」列的删行按钮整颗都落在可视区外，手机上永远点不到。
+                   结构与 WorkOrderImport 等其它单据表保持一致：padding 在外、滚动容器在内。 -->
+              <div v-if="image.table?.rows.length" class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm">
+                  <thead>
+                    <tr class="bg-slate-50 text-slate-600">
+                      <th
+                        v-for="col in image.table.columns"
+                        :key="col.key"
+                        class="border border-slate-200 px-3 py-2 font-medium"
+                        :class="alignClass(col)"
+                      >
+                        {{ col.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <!-- :key 用 row.key（稳定标识）而不是 row.index：
+                         序号删行后会重排，拿它当 key 会让 Vue 复用错行组件，输入框内容串行 -->
+                    <tr v-for="row in image.table.rows" :key="row.key">
+                      <td
+                        v-for="col in image.table.columns"
+                        :key="col.key"
+                        class="border border-slate-200 px-1.5 py-1 align-middle"
+                      >
+                        <!-- 线下单据：原图缩略图，点开可放大 -->
+                        <div v-if="col.key === 'image'" class="flex justify-center">
+                          <!-- el-image 的自带预览（preview-src-list）在 uni 里没有对应物，
+                               改用 uni.previewImage 这个原生大图预览能力 -->
+                          <image
+                            class="picker-thumb"
+                            :src="image.url"
+                            mode="aspectFill"
+                            @click="previewImage(image.url)"
+                          />
+                        </div>
 
-                      <!-- 序号：识别顺序，不参与校正 -->
-                      <span v-else-if="col.key === 'index'" class="block text-center text-slate-500">
-                        {{ row.index }}
-                      </span>
+                        <!-- 序号：识别顺序，不参与校正 -->
+                        <span
+                          v-else-if="col.key === 'index'"
+                          class="block text-center text-slate-500"
+                        >
+                          {{ row.index }}
+                        </span>
 
-                      <!-- 单据号 / 日期：整张单据共用一个值，改一处即全表同步 -->
-                      <input
-                        v-else-if="col.key === 'documentNo'"
-                        v-model="image.table.doc.documentNo"
-                        type="text"
-                        placeholder="—"
-                        :class="inputClass(col)"
-                      />
-                      <input
-                        v-else-if="col.key === 'date'"
-                        v-model="image.table.doc.date"
-                        type="text"
-                        placeholder="—"
-                        :class="inputClass(col)"
-                      />
-
-                      <!-- 物料名称：改完重查一次编码；右侧搜索图标可手工挑物料（选中后名称与编码一起回填） -->
-                      <div v-else-if="col.key === 'materialName'" class="relative">
+                        <!-- 单据号 / 日期：整张单据共用一个值，改一处即全表同步 -->
                         <input
-                          v-model="row.materialName"
+                          v-else-if="col.key === 'documentNo'"
+                          v-model="image.table.doc.documentNo"
                           type="text"
                           placeholder="—"
-                          class="pr-6"
                           :class="inputClass(col)"
-                          @change="handleNameChange(row, image)"
                         />
-                        <button
-                          type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
-                          title="搜索物料（选中后自动填名称与编码）"
-                          @click="openMaterialPicker(row, image)"
+                        <input
+                          v-else-if="col.key === 'date'"
+                          v-model="image.table.doc.date"
+                          type="text"
+                          placeholder="—"
+                          :class="inputClass(col)"
+                        />
+
+                        <!-- 物料名称：改完重查一次编码；右侧搜索图标可手工挑物料（选中后名称与编码一起回填） -->
+                        <div v-else-if="col.key === 'materialName'" class="relative">
+                          <input
+                            v-model="row.materialName"
+                            type="text"
+                            placeholder="—"
+                            class="pr-6"
+                            :class="inputClass(col)"
+                            @change="handleNameChange(row, image)"
+                          />
+                          <button
+                            type="button"
+                            class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
+                            title="搜索物料（选中后自动填名称与编码）"
+                            @click="openMaterialPicker(row, image)"
+                          >
+                            <wd-icon name="search" size="14px" />
+                          </button>
+                        </div>
+
+                        <!-- 物料编码：只读 —— 只能由主数据按名称带出，不允许手填。
+                             手填的编码格式合法、能一路混到落库，是错码的主要来源；
+                             要改编码请走「物料名称」右侧的搜索入口，名称与编码一起换。 -->
+                        <span
+                          v-else-if="col.key === 'materialCode'"
+                          class="block px-1.5 py-1 text-sm"
+                          :class="row.materialCode ? 'text-slate-900' : 'text-slate-300'"
                         >
-                          <wd-icon name="search" size="14px" />
-                        </button>
-                      </div>
+                          {{ row.materialCode || '—' }}
+                        </span>
 
-                      <!-- 物料编码：只读 —— 只能由主数据按名称带出，不允许手填。
-                           手填的编码格式合法、能一路混到落库，是错码的主要来源；
-                           要改编码请走「物料名称」右侧的搜索入口，名称与编码一起换。 -->
-                      <span
-                        v-else-if="col.key === 'materialCode'"
-                        class="block px-1.5 py-1 text-sm"
-                        :class="row.materialCode ? 'text-slate-900' : 'text-slate-300'"
-                      >
-                        {{ row.materialCode || '—' }}
-                      </span>
+                        <!-- 操作：删除该行（识别多出幽灵行 / 重复行时用）。
+                             原来用内联 <svg> 画的减号，小程序不支持 svg 标签，换组件库图标字体；
+                             decrease 与 wd-input-number 的减号同一个字形，和下面提示里的「−」对得上。 -->
+                        <div v-else-if="col.key === 'actions'" class="flex justify-center">
+                          <button
+                            type="button"
+                            class="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                            title="删除该行"
+                            @click="removeRow(image, row)"
+                          >
+                            <wd-icon name="decrease" size="14px" />
+                          </button>
+                        </div>
 
-                      <!-- 其余字段：逐行独立编辑 -->
-                      <input
-                        v-else
-                        v-model="row[col.key]"
-                        type="text"
-                        placeholder="—"
-                        :class="inputClass(col)"
-                      />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                        <!-- 其余字段：逐行独立编辑 -->
+                        <input
+                          v-else
+                          v-model="row[col.key]"
+                          type="text"
+                          placeholder="—"
+                          :class="inputClass(col)"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
 
               <p v-else class="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
-                未识别到行项目。
+                暂无行项目，可点下方「增加一行」手工补充。
               </p>
+
+              <!-- 行数校准：识别会漏行（字迹潦草）也会多行（串到相邻单据），
+                   两者都只能靠人眼对着原图数，所以给一对增删入口而不是让流程中断 -->
+              <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+                  @click="addRow(image)"
+                >
+                  <wd-icon name="add" size="14px" />
+                  增加一行
+                </button>
+                <p class="text-xs text-slate-400">
+                  对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
+                </p>
+              </div>
 
               <p class="mt-2 text-xs text-slate-400">
                 识别引擎 {{ image.result.engine || '—' }} · 耗时
@@ -900,7 +1014,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -999,45 +1113,46 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin: 0 20px 12px;
-  padding: 0 12px;
-  border: 1px solid $slate-300;
-  border-radius: 8px;
-  color: $slate-400;
+  padding: 0 18px;
+  border: 1px solid $ui-border;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-surface-2;
+  color: $ui-text-3;
 
   &__input {
     flex: 1;
-    min-height: 40px;
-    color: $slate-900;
+    min-height: 44px;
+    color: $ui-text;
     font-size: 14px;
   }
 
   &__ph {
-    color: $slate-400;
+    color: $ui-text-3;
   }
 }
 
 .picker-list {
   /* scroll-view 必须有确定高度才会滚动 */
   height: 56vh;
-  margin: 0 20px 20px;
-  border: 1px solid $slate-200;
-  border-radius: 8px;
+  margin: 0 16px 20px;
+  border: 1px solid $ui-hairline;
+  border-radius: $ui-radius-md;
 }
 
 .picker-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 12px 16px;
 
   &:not(:first-child) {
-    border-top: 1px solid $slate-100;
+    border-top: 1px solid $ui-hairline;
   }
 
   &__code {
     flex-shrink: 0;
     width: 112px;
-    color: $slate-900;
+    color: $ui-text;
     font-family: ui-monospace, monospace;
     font-size: 14px;
   }
@@ -1046,7 +1161,7 @@ onUnmounted(() => {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    color: $slate-700;
+    color: $ui-text-2;
     font-size: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1054,7 +1169,7 @@ onUnmounted(() => {
 
   &__unit {
     flex-shrink: 0;
-    color: $slate-400;
+    color: $ui-text-3;
     font-size: 12px;
   }
 }
@@ -1063,7 +1178,7 @@ onUnmounted(() => {
 .picker-thumb {
   width: 32px;
   height: 32px;
-  border: 1px solid $slate-200;
-  border-radius: 4px;
+  border: 1px solid $ui-border;
+  border-radius: 6px;
 }
 </style>

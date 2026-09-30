@@ -21,9 +21,11 @@
     }
   ],
   "globalStyle": {
-    "navigationBarTextStyle": "black",
+    "navigationBarTextStyle": "white",
     "navigationBarTitleText": "工单汇总",
-    "navigationBarBackgroundColor": "#F8F8F8",
-    "backgroundColor": "#F8F8F8"
+    "navigationBarBackgroundColor": "#0B0B0E",
+    "backgroundColor": "#0B0B0E",
+    "backgroundColorTop": "#0B0B0E",
+    "backgroundColorBottom": "#0B0B0E"
   }
 }
