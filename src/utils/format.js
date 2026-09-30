@@ -17,6 +17,12 @@ export function getFirstDayOfCurrentMonth() {
   return formatDate(date)
 }
 
+// 当年 1 月 1 日（月底类台账的默认查询起点）
+export function getFirstDayOfCurrentYear() {
+  const date = new Date()
+  return `${date.getFullYear()}-01-01`
+}
+
 // 上周一（周统计默认起始）
 export function getLastWeekMonday() {
   const date = new Date()

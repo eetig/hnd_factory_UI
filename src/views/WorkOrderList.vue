@@ -16,6 +16,7 @@ import { useInboundData } from '../composables/useInboundData'
 import { useGoodsMoveData } from '../composables/useGoodsMoveData'
 import { useOrderImages } from '../composables/useOrderImages'
 import { useStatsData } from '../composables/useStatsData'
+import { TANK_LEVEL_CATEGORIES, useTankLevelData } from '../composables/useTankLevelData'
 import WorkOrderImport from './WorkOrderImport.vue'
 import ImageParse from './ImageParse.vue'
 import vesselImageUrl from '../assets/vessel.png'
@@ -33,6 +34,7 @@ import {
   ElConfigProvider,
   ElDatePicker,
   ElDialog,
+  ElInput,
   ElOption,
   ElPagination,
   ElSelect,
@@ -53,6 +55,7 @@ const tabs = [
   { key: 'materialCosting', label: '原辅料核算' },
   { key: 'weekly', label: '周统计' },
   { key: 'daily', label: '日报表记录' },
+  { key: 'tankLevel', label: '月底储罐液位记录' },
   { key: 'vessel', label: '压力容器体积计算' },
   { key: 'electricity', label: '电费预提' },
   { key: 'import', label: '文件导入', perm: 'work_order:import' },
@@ -191,6 +194,31 @@ const { fetchGoodsMoveRecords } = useGoodsMoveData()
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
 
+// 月底储罐液位记录（变更-004）：数据来自 /api/tank-level/list（库表 tank_level_record）
+const {
+  tankLevelTableData,
+  tankLevelPageNum,
+  tankLevelPageSize,
+  tankLevelTotal,
+  tankLevelLoading,
+  tankLevelError,
+  tankLevelStartDate,
+  tankLevelEndDate,
+  tankLevelLocation,
+  tankLevelCategory,
+  tankLevelKeyword,
+  tankLevelLocationOptions,
+  getTankLevelPageData,
+  fetchTankLevelRecords,
+  ensureTankLevelLoaded,
+  resetTankLevelFilters,
+} = useTankLevelData()
+
+// 是否处于筛选状态：决定空表提示语是「没查到」还是「本来就没数据」
+const tankLevelHasFilter = computed(() =>
+  Boolean(tankLevelLocation.value || tankLevelCategory.value || tankLevelKeyword.value),
+)
+
 // 工单号可选项（当前日期范围内的工单号，倒序）
 // 三张汇总表（工单报工 / 工单核算 / 原辅料核算）的行数据来自 useStatsData，
 // 其纯函数部分有单测覆盖；本页只提供列配置
@@ -292,6 +320,41 @@ function openInboundImageDialog(record) {
   if (!record?.imageUrl) return
   currentInboundImage.value = record.imageUrl
   inboundImageDialogVisible.value = true
+}
+
+
+// ===== 月底储罐液位记录 =====
+// 列与线下台账（月底车间各储罐液位记录表）逐列对应；「序号」由前端按分页渲染
+// 数值列的表头直接带单位（容器液位 mm / 理论质量 kg）：线下台账没标单位，
+// 页面上标清楚，免得与「压力容器体积计算」里的 m³ 混读
+const tankLevelColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'recordDate', label: '记录日期', width: 'w-32' },
+  { key: 'location', label: '属地', width: 'w-28' },
+  { key: 'category', label: '所属(产品/原料)', width: 'w-36' },
+  { key: 'materialName', label: '物料', width: 'w-[200px]' },
+  { key: 'tankName', label: '容器名称', width: 'w-32' },
+  // 容器编号（设备位号）：台账的唯一键之一（记录日期 + 容器编号），线下台账里单独一栏
+  { key: 'tankCode', label: '容器编号', width: 'w-28' },
+  { key: 'levelValue', label: '容器液位 (mm)', width: 'w-32', align: 'right' },
+  { key: 'theoreticalWeight', label: '理论质量 (kg)', width: 'w-32', align: 'right' },
+  { key: 'imageUrl', label: '图据', width: 'w-24' },
+]
+
+// 行 key：台账唯一键是「记录日期 + 容器编号」，仍拼上序号兜底（补录的历史行可能没填编号）
+const tankLevelRowKey = (record, index) =>
+  `${record.recordDate}-${record.tankCode}-${record.location}-${record.tankName}-${index}`
+
+const tankLevelImageDialogVisible = ref(false)
+const currentTankLevelImage = ref('')
+
+function openTankLevelImageDialog(record) {
+  // 弹窗看原图；只有缩略图时退而显示缩略图，总比点开一片空白好
+  const imageUrl = record?.imageUrl || record?.thumbnailUrl
+  if (!imageUrl) return
+
+  currentTankLevelImage.value = imageUrl
+  tankLevelImageDialogVisible.value = true
 }
 
 
@@ -1049,6 +1112,11 @@ watch(activeTab, (tab, prevTab) => {
     stopVesselLoop()
   }
 
+  // 月底储罐液位记录：首次进入 Tab 才请求（按月的台账，没必要拖慢首屏）
+  if (tab === 'tankLevel') {
+    ensureTankLevelLoaded()
+  }
+
   // 离开导入页且期间导入成功 → 刷新各数据集
   if (prevTab === 'import' && importDirty.value) {
     importDirty.value = false
@@ -1701,6 +1769,236 @@ watch(activeTab, (tab, prevTab) => {
               description="功能建设中，敬请期待"
             />
         </section>
+      </div>
+
+      <div v-show="activeTab === 'tankLevel'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
+            <h2 class="text-base font-semibold text-slate-900">月底车间各储罐液位记录</h2>
+            <span class="text-xs text-slate-500">数据来源：hnd_factory /api/tank-level/list</span>
+          </div>
+
+          <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+            <el-date-picker
+              v-model="tankLevelStartDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="起始日期"
+              :first-day-of-week="1"
+              @change="fetchTankLevelRecords"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <el-date-picker
+              v-model="tankLevelEndDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :first-day-of-week="1"
+              @change="fetchTankLevelRecords"
+            />
+            <el-select
+              v-model="tankLevelLocation"
+              style="width: 9.5rem"
+              placeholder="属地"
+              clearable
+              aria-label="属地"
+              @change="fetchTankLevelRecords"
+            >
+              <el-option
+                v-for="location in tankLevelLocationOptions"
+                :key="location"
+                :label="location"
+                :value="location"
+              />
+            </el-select>
+            <el-select
+              v-model="tankLevelCategory"
+              style="width: 9.5rem"
+              placeholder="所属(产品/原料)"
+              clearable
+              aria-label="所属"
+              @change="fetchTankLevelRecords"
+            >
+              <el-option
+                v-for="category in TANK_LEVEL_CATEGORIES"
+                :key="category"
+                :label="category"
+                :value="category"
+              />
+            </el-select>
+            <el-input
+              v-model="tankLevelKeyword"
+              style="width: 13rem"
+              placeholder="物料 / 容器名称 / 容器编号"
+              clearable
+              @keyup.enter="fetchTankLevelRecords"
+              @clear="fetchTankLevelRecords"
+            />
+            <button
+              type="button"
+              class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+              @click="fetchTankLevelRecords"
+            >
+              查询
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              @click="resetTankLevelFilters"
+            >
+              重置
+            </button>
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <LoadingMask v-if="tankLevelLoading" />
+
+            <PanelState
+              v-else-if="tankLevelError"
+              type="error"
+              title="暂时无法获取储罐液位记录"
+              :description="tankLevelError"
+              action-text="重新加载"
+              @action="fetchTankLevelRecords"
+            />
+
+            <PanelState
+              v-else-if="tankLevelTableData.length === 0"
+              :title="tankLevelHasFilter ? '没有符合筛选条件的记录' : '暂无储罐液位记录'"
+              :description="
+                tankLevelHasFilter
+                  ? '可放宽筛选条件，或点「重置」回到默认区间'
+                  : '月底抄录后由接口返回数据'
+              "
+            />
+
+            <div v-else>
+              <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                  <colgroup>
+                    <col v-for="column in tankLevelColumns" :key="column.key" :class="column.width" />
+                  </colgroup>
+                  <thead class="bg-slate-50">
+                    <tr>
+                      <th
+                        v-for="column in tankLevelColumns"
+                        :key="column.key"
+                        scope="col"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr
+                      v-for="(record, index) in tankLevelTableData"
+                      :key="tankLevelRowKey(record, index)"
+                      class="transition hover:bg-slate-50"
+                    >
+                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">
+                        {{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        {{ record.recordDate }}
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        {{ record.location }}
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        {{ record.category }}
+                      </td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                        {{ record.materialName }}
+                        <span v-if="record.materialCode" class="mt-0.5 block text-xs text-slate-400">
+                          {{ record.materialCode }}
+                        </span>
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        {{ record.tankName }}
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        {{ record.tankCode }}
+                      </td>
+                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">
+                        {{ record.levelValue }}
+                      </td>
+                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">
+                        {{ record.theoreticalWeight }}
+                      </td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                        <span
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                          :aria-label="
+                            record.imageUrl || record.thumbnailUrl ? '查看储罐液位图据' : '暂无图据'
+                          "
+                          @click="openTankLevelImageDialog(record)"
+                        >
+                          <svg
+                            class="h-3 w-3"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            aria-hidden="true"
+                          >
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="m21 15-5-5L5 21" />
+                          </svg>
+                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
+                          <img
+                            v-if="record.thumbnailUrl || record.imageUrl"
+                            :src="record.thumbnailUrl || record.imageUrl"
+                            alt="储罐液位图据"
+                            loading="lazy"
+                            decoding="async"
+                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                            @error="handleImgError($event, record)"
+                          />
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+                <el-pagination
+                  v-model:current-page="tankLevelPageNum"
+                  :page-size="tankLevelPageSize"
+                  :total="tankLevelTotal"
+                  layout="total, prev, pager, next"
+                  background
+                  @current-change="getTankLevelPageData"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- 记录说明：与线下台账表尾的说明一字不差，避免两处口径不同 -->
+          <div class="border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
+            <p>记录说明：</p>
+            <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
+            <p>2. 记录时间为每月月底下午2点</p>
+          </div>
+        </section>
+
+        <el-dialog v-model="tankLevelImageDialogVisible" width="70vw" align-center>
+          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
+            <img
+              v-if="currentTankLevelImage"
+              :src="currentTankLevelImage"
+              alt="储罐液位图据"
+              class="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          </div>
+        </el-dialog>
       </div>
 
       <div v-show="activeTab === 'vessel'">

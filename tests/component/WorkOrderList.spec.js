@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 
 // API 层打桩：挂载时组件会并发拉工单/领料/入库/货物移动四份数据，测试里不发真实请求
@@ -16,6 +16,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
+import request from '../../src/api/request'
 import WorkOrderList from '../../src/views/WorkOrderList.vue'
 import OrderImageDialog from '../../src/components/OrderImageDialog.vue'
 import StatsTable from '../../src/components/StatsTable.vue'
@@ -29,12 +30,32 @@ const TAB_LABELS = [
   '原辅料核算',
   '周统计',
   '日报表记录',
+  '月底储罐液位记录',
   '压力容器体积计算',
   '电费预提',
 ]
 
 /**
- * 冒烟测试：WorkOrderList.vue 是大页面（11 个 Tab），
+ * 月底储罐液位记录（变更-004）的一行样例：字段与后端 TankLevelVO 对齐。
+ * 用它验证「接口返回数据 → 表格渲染」这一段是通的（列、数值格式、图据列）。
+ */
+const TANK_LEVEL_ROW = {
+  id: 1,
+  recordDate: '2026-08-31',
+  location: '一车间',
+  category: '产品',
+  materialCode: '114001897',
+  materialName: 'HND-V150',
+  tankName: 'V150储罐A',
+  tankCode: 'V150-A',
+  levelValue: 1250,
+  theoreticalWeight: 1500,
+  imageUrl: null,
+  thumbnailUrl: null,
+}
+
+/**
+ * 冒烟测试：WorkOrderList.vue 是大页面（12 个 Tab），
  * 拆组件之后最怕的就是「模板里引用了已经删掉的东西」这类低级错误 ——
  * 构建能过、但一打开页面就白屏。这里把整页挂起来跑一遍兜住这种情况。
  */
@@ -101,6 +122,55 @@ describe('WorkOrderList 页面冒烟', () => {
 
   it('图片弹窗挂在页面里（工单汇总行点击的入口组件）', () => {
     expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(true)
+  })
+
+  it('月底储罐液位记录：进入 Tab 走接口，表格按台账列渲染返回行', async () => {
+    // 只让 /api/tank-level/list 返回一行样例，其余接口维持空数据
+    request.get.mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === '/api/tank-level/list'
+            ? { success: true, dataList: [TANK_LEVEL_ROW], data: [] }
+            : { success: true, dataList: [], data: [] },
+      }),
+    )
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    expect(tab).toBeTruthy()
+    await tab.trigger('click')
+    await flushPromises()
+
+    expect(request.get).toHaveBeenCalledWith('/api/tank-level/list', expect.any(Object))
+
+    const text = wrapper.text()
+    // 台账标题与表头逐列对应
+    expect(text).toContain('月底车间各储罐液位记录')
+    for (const label of [
+      '记录日期',
+      '属地',
+      '所属(产品/原料)',
+      '物料',
+      '容器名称',
+      '容器编号',
+      // 数值列表头带单位（表头优化）：单位写进列标签，避免与体积单位混读
+      '容器液位 (mm)',
+      '理论质量 (kg)',
+      '图据',
+    ]) {
+      expect(text).toContain(label)
+    }
+
+    // 接口返回的行已渲染，数值按展示格式（1250.0000 → 1250）
+    expect(text).toContain('2026-08-31')
+    expect(text).toContain('V150储罐A')
+    expect(text).toContain('V150-A')
+    expect(text).toContain('HND-V150')
+    expect(text).toContain('1250')
+    expect(text).toContain('1500')
+
+    // 表尾记录说明与线下台账一致
+    expect(text).toContain('实际重量与理论计算可能存在差异，以实际测量为准')
+    expect(text).toContain('记录时间为每月月底下午2点')
   })
 
   it('切换 Tab 会切换对应面板的显示（v-show）', async () => {
