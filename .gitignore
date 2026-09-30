@@ -39,3 +39,7 @@ minio同步手册.md
 
 # 部署产物压缩包（构建产物，dist/ 已被忽略，这个包同理）
 hnd-ui-dist.zip
+
+# 微信开发者工具的本机私有设置与 HBuilderX 本机运行配置（各机器不同，不应入库）
+project.private.config.json
+.hbuilderx/
