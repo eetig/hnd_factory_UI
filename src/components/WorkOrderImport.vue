@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useToast } from 'wot-design-uni'
 import request from '../api/request'
+import { uploadFile } from '../api/upload'
 import { formatFileSize } from '../utils/format'
 
 // 本组件只在 H5 端启用（见 pages/index/index.vue 里对「文件导入」Tab 的条件编译）。
@@ -77,6 +78,20 @@ const PICK_COLUMNS = [
   { key: 'unit', label: '单位', width: 'w-24' },
 ]
 
+// 库存汇总（SAP 库存导出）：同一物料的多行在后端已按「工厂+物料+存储地点」相加，
+// 所以这里看到的就是最终入库的行（硅粉会是一条 49,482）
+const STOCK_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-16', align: 'center' },
+  { key: 'plantCode', label: '工厂', width: 'w-20' },
+  { key: 'materialCode', label: '物料', width: 'w-32' },
+  { key: 'materialDesc', label: '物料描述', width: 'w-[180px]', wrap: true },
+  { key: 'spec', label: '规格型号', width: 'w-[140px]', wrap: true },
+  { key: 'storageLocation', label: '存储地点', width: 'w-24' },
+  { key: 'unit', label: '基本计量单位', width: 'w-28' },
+  { key: 'stockQty', label: '非限制使用的库存', width: 'w-36', align: 'right' },
+  { key: 'storageDesc', label: '存储地点描述', width: 'w-[160px]', wrap: true },
+]
+
 // 货物移动字段别名容错（后端字段名有出入时自动适配）
 const GOODS_MOVE_FIELD_MAP = {
   orderNo: ['orderNo', 'workOrderNo', 'orderCode'],
@@ -106,10 +121,23 @@ const PICK_FIELD_MAP = {
   unit: ['unit'],
 }
 
+// 库存汇总字段别名容错
+const STOCK_FIELD_MAP = {
+  plantCode: ['plantCode', 'plant', 'factoryCode'],
+  materialCode: ['materialCode', 'materialNo'],
+  materialDesc: ['materialDesc', 'materialName'],
+  spec: ['spec', 'specModel'],
+  storageLocation: ['storageLocation', 'storagePlace'],
+  unit: ['unit'],
+  stockQty: ['stockQty', 'stockQuantity', 'qty'],
+  storageDesc: ['storageDesc', 'storageLocationDesc'],
+}
+
 // 识别类型 → 表格配置（未命中的类型回落到工单汇总表头）
 const TABLE_CONFIGS = [
   { type: '生产入库单', columns: INBOUND_COLUMNS, fieldMap: INBOUND_FIELD_MAP },
   { type: '领料汇总', columns: PICK_COLUMNS, fieldMap: PICK_FIELD_MAP },
+  { type: '库存汇总', columns: STOCK_COLUMNS, fieldMap: STOCK_FIELD_MAP },
   { type: '货物移动', columns: GOODS_MOVE_COLUMNS, fieldMap: GOODS_MOVE_FIELD_MAP },
 ]
 
@@ -256,15 +284,20 @@ async function fetchPreview(file) {
       uploadBlob = file
     }
 
-    const formData = new FormData()
-    // 必须带原文件名：后端按 .xlsx 后缀决定是否清洗，并以文件名兜底识别单据类型
-    formData.append('file', uploadBlob, file.name)
-
-    const res = await request.post('/api/work-order/import/preview', formData, {
+    // ⚠️ 这里原来是 `new FormData()` + `request.post`，发不出去：
+    //    本接口后端是 `consumes = MULTIPART_FORM_DATA_VALUE`，而 uni.request 在任何端
+    //    都发不出 multipart 请求体（H5 也一样，实测服务端实收 Content-Type: application/json、
+    //    body 为 {}），必须走 uni.uploadFile。
+    //    文件名必须一起带：后端按 `.xlsx` 后缀决定是否清洗内嵌图，并以文件名兜底识别单据类型
+    //    （剥图后的 Blob 没有名字，故显式传 fileName）。
+    const res = await uploadFile({
+      url: '/api/work-order/import/preview',
+      file: uploadBlob,
+      fileName: file.name,
+      name: 'file',
       // 剥图后文件很小，进度条通常一闪而过；保留以应对剥离回退的大文件场景
-      onUploadProgress: (e) => {
-        if (!e.total) return
-        const percent = Math.round((e.loaded / e.total) * 100)
+      onProgress: (event) => {
+        const percent = Math.round(event?.progress || 0)
         uploadPercent.value = Math.min(100, percent)
         if (percent >= 100) uploadPhase.value = 'parsing'
       },
@@ -305,21 +338,28 @@ async function handleImport() {
 
   try {
     const ids = needImageIds.value
-    let res
 
-    if (ids.length > 0 && originalFile.value) {
-      // 有新增/变更行 → 只上传这些行需要的图片（已去重）
-      // 文件名 = dispimgId，后端去掉扩展名后按此匹配
-      const { extractImages } = await import('../utils/xlsxStrip')
-      const images = await extractImages(originalFile.value, ids)
-      const formData = new FormData()
-      formData.append('taskId', taskId.value)
-      images.forEach((image) => formData.append('files', image))
-      res = await request.post('/api/work-order/import/save', formData)
-    } else {
-      // 全部重复（needImageIds 为空）→ 0 图片传输，走 JSON 路径
-      res = await request.post('/api/work-order/import/save', { taskId: taskId.value })
-    }
+    // 有新增/变更行 → 只提取这些行需要的图片（已去重）；全部重复（needImageIds 为空）→ 没有图
+    // 文件名 = dispimgId，后端去掉扩展名后按此匹配
+    const images =
+      ids.length > 0 && originalFile.value
+        ? await (await import('../utils/xlsxStrip')).extractImages(originalFile.value, ids)
+        : []
+
+    // ⚠️ 有图必须走 multipart：本接口后端是 `@RequestPart("files") MultipartFile[]`，
+    //    而 uni.request 在任何端都发不出 multipart 请求体（H5 也一样，实测服务端实收
+    //    Content-Type: application/json、body 为 {}），只能走 uni.uploadFile。
+    //    并且要**一次请求带全部图片** —— 拆成多次单文件请求会让后端把入库重跑 N 遍。
+    //    H5 端 uni.uploadFile 的 files 数组原生支持同名多文件，见 api/upload.js。
+    // ⚠️ 没有图时不能走 uploadFile（它必须带文件，否则直接以 file error 失败），
+    //    回到 JSON 路径 —— 这个接口同时挂了 APPLICATION_JSON 与 MULTIPART 两个映射。
+    const res = images.length
+      ? await uploadFile({
+          url: '/api/work-order/import/save',
+          files: images.map((image) => ({ name: 'files', file: image })),
+          formData: { taskId: taskId.value },
+        })
+      : await request.post('/api/work-order/import/save', { taskId: taskId.value })
 
     const data = res.data?.data || {}
 

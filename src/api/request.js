@@ -25,10 +25,39 @@ import {
  * （uni.request 发不了 multipart，H5 端也一样 —— axios 那套 FormData 用法在 uni 里不成立）。
  */
 
+/**
+ * 把 axios 形状的 `config.params` 拼进 URL。
+ *
+ * ⚠️ 这一步是必须的，别删：uni.request 只认 `data`（GET 时它会把 data 拼到 query 上），
+ *    axios 那套 `request.get(url, { params })` 在 uni 里**没有任何人解析**。
+ *    改造时漏了这一段，表现是「接口能通、但参数一个都没带上」：
+ *      · /api/material/match?name=电石 不带 name → Tomcat 直接 400
+ *        （页面上就是那条「请求失败（HTTP 400）（物料编码将全部留空）」）；
+ *      · /api/material/search 不带 keyword → 后端当成空关键词，返回 data: []
+ *        （选物料弹窗里就是「没有匹配的物料」，可物料明明存在）。
+ *    全项目 7 处 GET/DELETE 带 params 的调用点都受这一段影响。
+ *
+ * 取值口径与 axios 一致：跳过 undefined / null，**保留空字符串**（拼成 `key=`）。
+ * 键值都手工 encodeURIComponent：非 ASCII 必须编码后再进 URL —— 中文字符直接出现在
+ * 请求行里，Tomcat 会按 RFC 7230 判为非法字符并回 400（且各端对「谁来编码」并不一致，
+ * 自己编码才可控）。
+ */
+function withParams(url, params) {
+  if (!params) return url
+
+  const query = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&')
+
+  if (!query) return url
+  return url.includes('?') ? `${url}&${query}` : `${url}?${query}`
+}
+
 function send(method, url, data, config = {}) {
   return new Promise((resolve, reject) => {
     uni.request({
-      url: buildUrl(url),
+      url: buildUrl(withParams(url, config.params)),
       method,
       data,
       header: buildHeaders(config.headers),
