@@ -319,22 +319,46 @@ H5：
 
 ## 5. 功能层面的平台差异
 
-### 5.1 Excel 文件导入 —— **仅 H5 保留**
+### 5.1 Excel 文件导入 —— **H5 与 App 保留，小程序端排除**
 
-App 与小程序端**整块排除**（条件编译 `#ifdef H5`，含组件导入、顶部 Tab、渲染块），
-已验证小程序/App 产物里不含相关代码。
+条件编译用 `#ifdef H5 || APP-PLUS`（含组件导入、Tab 项、渲染块）；
+小程序端仍整块排除，产物里不含相关代码（已复验）。
 
-原因：
+**三端选文件的机制不同**（这是本节的重点）：
 
-- 小程序端只能 `uni.chooseMessageFile` —— 用户必须先把 xlsx 发到微信会话里才能选，
-  流程别扭；
-- **App 端 uni-app 根本没有内置的 xlsx 文件选择器**（`uni.chooseFile` 仅 H5 支持），
-  要做需要引入原生插件；
-- 导入保存接口是「一次传 N 张图」的 multipart，落到单文件上传后语义需要重新设计。
+| 端 | 怎么选 | 选完拿到什么 | 备注 |
+|---|---|---|---|
+| H5 | 模板里隐藏的 `<input type="file">` | `File` 对象 | 可以先用 jszip 剥掉内嵌图再传（16MB → 0.13MB） |
+| App | Android 系统的文档选择器（SAF），见 `utils/appFilePicker.js` | `_doc/` 下的**本地路径** | 没有 File 就没有剥图那一步，直接传原文件，内嵌图由后端从缓存里抽 |
+| 小程序 | 无 | — | `uni.chooseMessageFile` 要求先把文件发进微信会话，流程别扭，暂不做 |
 
-如果后续要在 App/小程序端补上，见 `前后端改动统筹.md` 的接口契约流程。
+⚠️ **`uni.chooseFile` 在 App / 小程序端根本没有实现** —— 这不是文档说法，是在
+`node_modules/@dcloudio` 里查实的：只有 `uni-h5` 有 `chooseFile`，`uni-app-plus` 与
+`uni-mp-weixin` 里都没有这个 API。所以 App 端只能自己起系统选择器。
 
-> 依赖这一能力的只有「文件导入」Tab；App/小程序端保留「图片解析」作为录入入口。
+App 端这一路的实现要点（都在 `utils/appFilePicker.js` 里）：
+
+- `Intent.ACTION_OPEN_DOCUMENT` + `startActivityForResult` 起选择器；
+- 拿到的是 `content://` **授权凭据**而不是路径，必须用 ContentResolver 把内容
+  拷进 App 私有目录才有本地路径 —— `uni.uploadFile` 在 App 端只认路径，
+  喂 Blob / `blob:` URL 是 H5 的玩法，一定失败；
+- 拷贝走「64KB 缓冲区分块读写」，不用 `android.os.FileUtils.copy`（那个要 API 29+）；
+  桥接里创建 Java 数组必须 `Array.newInstance`，不能写 `new byte[]`；
+- uni 自己也挂在 `main.onActivityResult` 上（chooseImage / previewImage 都走它），
+  所以要**存下原处理器并在非本次请求时转交回去**，否则会把 uni 自己的回调顶掉；
+- 每一步失败都带「第①/②/③步」前缀 —— 这层桥接代码在电脑上没法验证，
+  真机上错误信息就是唯一的调试手段。
+
+⚠️ **App 端这条路只在 Android 上接通了**（用的 `plus.android`）；iOS 要另写
+`UIDocumentPicker`（`plus.ios`），当前调过去会给出明确提示而不是静默失败。
+
+⚠️ **另一个坑（构建期）**：App 打的是 iife 单包，**包里出现 `import()` 就会报
+「UMD and IIFE output formats are not supported for code-splitting builds」**。
+本组件原有的两处动态导入（jszip 剥图 / 抽图）因此必须收进 `#ifdef H5` 里 ——
+App 端本来也用不到它们。
+
+> 依赖这一能力的只有「文件导入」Tab；小程序端保留「图片解析」作为录入入口。
+> 导入保存接口的「一次传 N 张图」已改成 `uni.uploadFile`（见第 3 节），三端语义一致。
 
 ### 5.2 图片上传与选择
 

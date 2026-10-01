@@ -27,7 +27,7 @@ import { useMaterialStockData } from '../../composables/useMaterialStockData'
 //（uni.chooseFile 仅 H5 支持，小程序只能用 chooseMessageFile 从微信会话里选），
 // 且「一次传 N 张图」的 multipart 也需要另做设计。
 // 用条件编译整块排除，避免这笔代码进不了任何一端的包。
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 import WorkOrderImport from '../../components/WorkOrderImport.vue'
 // #endif
 import ImageParse from '../../components/ImageParse.vue'
@@ -85,7 +85,7 @@ const tabs = [
   { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录' },
   { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
   { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算' },
-  // #ifdef H5
+  // #ifdef H5 || APP-PLUS
   { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import' },
   // #endif
 ]
@@ -258,10 +258,10 @@ const {
 } = useMaterialStockData()
 
 // 库存为空的提示。
-// ⚠️ 「文件导入」是 H5-only 的 Tab（见三处 #ifdef H5 与 UNIAPP迁移说明 §5.1），
-//    手机端根本没有那个入口，提示里不能指过去 —— 否则用户找半天找不到。
+// ⚠️ 「文件导入」只在 H5 与 App 端存在（小程序端没有文件选择器，见 UNIAPP迁移说明 §5.1），
+//    小程序端不能把提示指向一个不存在的入口 —— 否则用户找半天找不到。
 let stockImportHint = '还没有导入过库存汇总，请在电脑端（网页版）导入库存表'
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 stockImportHint = '还没有导入过库存汇总，可在「文件导入」里上传库存表'
 // #endif
 
@@ -3203,7 +3203,7 @@ watch(activeTab, (tab, prevTab) => {
         </section>
       </div>
 
-      <!-- #ifdef H5 -->
+      <!-- #ifdef H5 || APP-PLUS -->
       <div v-show="activeTab === 'import'">
         <WorkOrderImport
           @cancel="handleImportCancel"

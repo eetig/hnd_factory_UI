@@ -3,11 +3,20 @@ import { computed, ref } from 'vue'
 import { useToast } from 'wot-design-uni'
 import request from '../api/request'
 import { uploadFile } from '../api/upload'
+// #ifdef APP-PLUS
+import { pickFileOnApp } from '../utils/appFilePicker'
+// #endif
 import { formatFileSize } from '../utils/format'
 
-// 本组件只在 H5 端启用（见 pages/index/index.vue 里对「文件导入」Tab 的条件编译）。
-// 原因：Excel 导入依赖 <input type="file"> 与 File/Blob/DOMParser，
-// 而 App / 小程序端没有 DOM，uni-app 也没有内置的 xlsx 选择器（uni.chooseFile 仅 H5）。
+// 本组件在 H5 与 App 端启用（见 pages/index/index.vue 里对「文件导入」Tab 的条件编译）；
+// 小程序端没有文件选择器，整块排除。
+//
+// 两端选文件的机制不同：
+//   · H5：模板里隐藏的 <input type="file">（DOM 能力），选完是 File 对象，可以先用
+//     jszip 剥掉内嵌图再上传（16MB → 0.13MB）；
+//   · App：uni.chooseFile 在 App 端没有实现，走 Android 系统的文档选择器（SAF），
+//     见 utils/appFilePicker.js，选完是 _doc 下的本地路径 —— 没有 File 就剥不了图，
+//     直接传原文件，内嵌图由后端从缓存里抽。
 //
 // toast 由页面 provide（useToast 走 provide/inject），所以这里是直接复用页面的实例。
 const toast = useToast()
@@ -208,8 +217,28 @@ function getPageData(page = pageNum.value) {
   tableData.value = previewList.value.slice(startIndex, endIndex)
 }
 
-function openFilePicker() {
+/**
+ * 打开文件选择。
+ *
+ * H5：模板里那个隐藏的 <input type="file">（DOM 能力）。
+ * App：没有 DOM 文件选择器（uni.chooseFile 只在 H5 实现），走 Android 系统选择器 ——
+ *      见 utils/appFilePicker.js，选完拿到的是 _doc 下的**本地路径**（不是 File）。
+ */
+async function openFilePicker() {
+  // #ifdef APP-PLUS
+  try {
+    const picked = await pickFileOnApp(['xlsx', 'xls'])
+    // App 端拿到的是路径，直接进预览；没有 File 对象，也就没有客户端剥图那一步
+    // （后端会用缓存的原文件自己抽内嵌图，见 WorkOrderImportController 的 excelImageProvider）
+    await fetchPreview({ path: picked.path, name: picked.name, size: picked.size })
+  } catch (error) {
+    toast.error(error?.message || '选择文件失败')
+  }
+  // #endif
+
+  // #ifdef H5
   fileInputRef.value?.click()
+  // #endif
 }
 
 function handleDrop(event) {
@@ -265,24 +294,55 @@ const requiresOrderNo = computed(() => {
 async function fetchPreview(file) {
   resetState()
   currentFile.value = file
-  // 保留原始文件：确认导入时要从中按需提取图片
+  // 保留原始文件：确认导入时要从中按需提取图片（H5 才有 File 对象，App 端拿到的是路径）
   originalFile.value = file
   uploading.value = true
   uploadPercent.value = 0
   uploadPhase.value = 'uploading'
+
+  // App 端传来的是 { path, name, size }（见 appFilePicker）：没有 File/Blob，
+  // 也就没有「先剥图再上传」这一步 —— 直接把路径交给 uni.uploadFile 传原文件，
+  // 内嵌图片由后端从缓存的原文件里抽（excelImageProvider）。
+  const localPath = file?.path || ''
+  if (localPath) {
+    try {
+      const res = await uploadFile({
+        url: '/api/work-order/import/preview',
+        filePath: localPath,
+        name: 'file',
+        formData: { fileName: file.name },
+        onProgress: (event) => {
+          const percent = Math.round(event?.progress || 0)
+          uploadPercent.value = Math.min(100, percent)
+          if (percent >= 100) uploadPhase.value = 'parsing'
+        },
+      })
+      applyPreview(res)
+    } catch (error) {
+      failPreview(error)
+    } finally {
+      uploading.value = false
+    }
+    return
+  }
 
   try {
     // 剥离内嵌单据图片后再上传 —— 预览只读单元格里的 DISPIMG("ID_xxx") 文本，
     // 不需要图片二进制。实测 16.58MB → 约 0.13MB，传输量降 99%。
     // 注：.xls 是二进制格式不是 zip，剥离会失败 —— 此时回退上传原文件
     let uploadBlob = file
+    // #ifdef H5
+    // 动态导入：jszip 约 100KB，只在导入时加载，不进主包。
+    // ⚠️ 必须留在 H5 分支里：App 端打的是 iife 单包，出现 import() 会要求代码分割，
+    //    构建直接报「UMD and IIFE output formats are not supported for code-splitting builds」。
+    //    App 端本来也不需要剥图（没有 File 对象，见上面的 localPath 分支）。
     try {
-      // 动态导入：jszip 约 100KB，只在导入时加载，不进主包
       const { stripImages } = await import('../utils/xlsxStrip')
       uploadBlob = await stripImages(file)
     } catch {
       uploadBlob = file
     }
+    // #endif
 
     // ⚠️ 这里原来是 `new FormData()` + `request.post`，发不出去：
     //    本接口后端是 `consumes = MULTIPART_FORM_DATA_VALUE`，而 uni.request 在任何端
@@ -302,33 +362,42 @@ async function fetchPreview(file) {
         if (percent >= 100) uploadPhase.value = 'parsing'
       },
     })
-    const data = res.data?.data || {}
-
-    if (res.data?.success === false) {
-      throw new Error(res.data.msg || '文件解析失败，请检查文件内容后重试。')
-    }
-
-    previewList.value = Array.isArray(data.list) ? data.list : []
-    total.value = Number(data.total) || previewList.value.length
-    workOrderType.value = data.workOrderType || ''
-    taskId.value = data.taskId || ''
-    needImageIds.value = Array.isArray(data.needImageIds) ? data.needImageIds : []
-    errorRows.value = Array.isArray(data.errorRows) ? data.errorRows : []
-    localErrors.value = requiresOrderNo.value ? collectEmptyOrderNoErrors(previewList.value) : []
-    pageNum.value = 1
-    getPageData()
-
-    if (!workOrderType.value) {
-      toast.warning('文件解析完成，但未能识别出工单类型。')
-    } else {
-      toast.success(`文件解析完成，识别为${workOrderType.value}`)
-    }
+    applyPreview(res)
   } catch (error) {
-    previewError.value = getErrorMessage(error, '文件解析失败，请稍后重试。')
-    toast.error(previewError.value)
+    failPreview(error)
   } finally {
     uploading.value = false
   }
+}
+
+/** 统一处理预览响应（H5 与 App 两条上传路径共用；业务失败要抛，交由调用方走 failPreview） */
+function applyPreview(res) {
+  const data = res.data?.data || {}
+
+  if (res.data?.success === false) {
+    throw new Error(res.data.msg || '文件解析失败，请检查文件内容后重试。')
+  }
+
+  previewList.value = Array.isArray(data.list) ? data.list : []
+  total.value = Number(data.total) || previewList.value.length
+  workOrderType.value = data.workOrderType || ''
+  taskId.value = data.taskId || ''
+  needImageIds.value = Array.isArray(data.needImageIds) ? data.needImageIds : []
+  errorRows.value = Array.isArray(data.errorRows) ? data.errorRows : []
+  localErrors.value = requiresOrderNo.value ? collectEmptyOrderNoErrors(previewList.value) : []
+  pageNum.value = 1
+  getPageData()
+
+  if (!workOrderType.value) {
+    toast.warning('文件解析完成，但未能识别出工单类型。')
+  } else {
+    toast.success(`文件解析完成，识别为${workOrderType.value}`)
+  }
+}
+
+function failPreview(error) {
+  previewError.value = getErrorMessage(error, '文件解析失败，请稍后重试。')
+  toast.error(previewError.value)
 }
 
 async function handleImport() {
@@ -340,11 +409,17 @@ async function handleImport() {
     const ids = needImageIds.value
 
     // 有新增/变更行 → 只提取这些行需要的图片（已去重）；全部重复（needImageIds 为空）→ 没有图
-    // 文件名 = dispimgId，后端去掉扩展名后按此匹配
-    const images =
-      ids.length > 0 && originalFile.value
-        ? await (await import('../utils/xlsxStrip')).extractImages(originalFile.value, ids)
-        : []
+    // 文件名 = dispimgId，后端去掉扩展名后按此匹配。
+    // ⚠️ App 端选完文件拿到的是路径、没有 File 对象，剥不了图 —— 这时传空数组走 JSON 路径，
+    //    由后端从缓存的原文件里抽（见 WorkOrderImportController 的 excelImageProvider）。
+    let images = []
+    // #ifdef H5
+    const canExtractImages =
+      ids.length > 0 && originalFile.value && !originalFile.value?.path
+    if (canExtractImages) {
+      images = await (await import('../utils/xlsxStrip')).extractImages(originalFile.value, ids)
+    }
+    // #endif
 
     // ⚠️ 有图必须走 multipart：本接口后端是 `@RequestPart("files") MultipartFile[]`，
     //    而 uni.request 在任何端都发不出 multipart 请求体（H5 也一样，实测服务端实收
