@@ -7,6 +7,7 @@ import request from '../../api/request'
 import { uploadFiles } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
 import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../../api/auth'
+import { APP_ENV, ACTIVE_ENV } from '../../api/env'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import DateField from '../../components/DateField.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
@@ -20,6 +21,7 @@ import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { usePickData } from '../../composables/usePickData'
 import { useInboundData } from '../../composables/useInboundData'
 import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
+import { useMaterialStockData } from '../../composables/useMaterialStockData'
 // Excel 导入只在 H5 端保留。
 // 原因（已确认）：App 与小程序没有 DOM，uni-app 也没有内置的 xlsx 文件选择器
 //（uni.chooseFile 仅 H5 支持，小程序只能用 chooseMessageFile 从微信会话里选），
@@ -48,6 +50,13 @@ dayjs.extend(updateLocale)
 dayjs.updateLocale('zh-cn', { weekStart: 1 })
 dayjs.locale('zh-cn')
 
+// 抽屉底部要显示当前后端环境。
+// 后端地址（ACTIVE_ENV.apiOrigin）是**构建期内联的常量**，包里连的是哪套后端
+// 在打包那一刻就定了 —— 写出来是为了现场自查：装上手机扫一眼就能确认，
+// 而不是等「连不上后端」了再回头猜（复盘见 UNIAPP迁移说明.md 第 10.5 节）。
+const ENV_TIP = APP_ENV === 'remote' ? '线上' : '本机联调'
+const envTip = `${ENV_TIP} · ${ACTIVE_ENV.apiOrigin || '同源入口'}`
+
 // 提示与确认框：wot-design-uni 用 provide/inject 在组件树里共享实例。
 // 本页调用 useToast()/useMessage() 会 provide 出选项 ref，
 // 模板里的 <wd-toast/>、<wd-message-box/> 以及子组件（ImageParse 等）
@@ -69,6 +78,9 @@ const tabs = [
   { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量' },
   { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果' },
   { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算' },
+  { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存' },
+  // 图片解析：单据图片识别辅助录入（变更-003）。权限位与文件导入相同（work_order:import）
+  { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
   { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总' },
   { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录' },
   { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
@@ -76,8 +88,6 @@ const tabs = [
   // #ifdef H5
   { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import' },
   // #endif
-  // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
-  { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
 ]
 
 // 按权限过滤可见 Tab
@@ -229,6 +239,29 @@ const {
   handlePickMaterialSelected,
   clearPickMaterialFilter,
 } = usePickData()
+
+// 物料库存（「物料查询」面板）
+const {
+  stockTableData,
+  stockPageNum,
+  stockPageSize,
+  stockTotal,
+  stockLoading,
+  stockError,
+  stockKeyword,
+  stockOnlyInStock,
+  fetchStockRecords,
+  applyStockFilter,
+  getStockPageData,
+  formatStockQty,
+  displayText,
+} = useMaterialStockData()
+
+/** 「只看有库存」开关：改完立刻重过滤 */
+function toggleStockOnlyInStock() {
+  stockOnlyInStock.value = !stockOnlyInStock.value
+  applyStockFilter()
+}
 
 // 入库汇总数据（与工单核算、周统计面板共享）
 const {
@@ -402,6 +435,8 @@ function refreshAllData() {
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+  // 库存汇总也可能在这次导入里被更新
+  fetchStockRecords()
 }
 
 function handleImportBack() {
@@ -656,6 +691,20 @@ const materialCostingColumns = [
   { key: 'pickQty', label: '领料数', width: 'w-20', align: 'right' },
   { key: 'reportedQty', label: '已报工数', width: 'w-20', align: 'right' },
   { key: 'unreportedQty', label: '未报工数', width: 'w-20', align: 'right' },
+]
+
+// 物料库存列（页面按 物料编码 / 物料名称 / 规格 查物料信息；
+// 名称与规格是后端联查 material_master 的结果，主数据没有则回退库存表那份）
+// 工厂（列里恒为 1503）按使用方要求不展示
+const STOCK_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
+  { key: 'materialName', label: '物料名称', width: 'w-40', wrap: true },
+  { key: 'spec', label: '规格', width: 'w-28', wrap: true },
+  { key: 'storageLocation', label: '存储地点', width: 'w-16' },
+  { key: 'unit', label: '基本计量单位', width: 'w-24' },
+  { key: 'stockQty', label: '非限制使用的库存', width: 'w-32', align: 'right' },
+  { key: 'storageDesc', label: '存储地点描述', width: 'w-28', wrap: true },
 ]
 
 // 领料数换算系数（按物料编码，如 HND-V150_辅料包 ×3.2）
@@ -1833,6 +1882,7 @@ onMounted(() => {
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+  fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
 
@@ -2506,6 +2556,131 @@ watch(activeTab, (tab, prevTab) => {
         </section>
       </div>
 
+      <div v-show="activeTab === 'stock'">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+            <view class="stock-search">
+              <wd-icon name="search" size="14px" />
+              <input
+                v-model="stockKeyword"
+                class="stock-search__input"
+                type="text"
+                placeholder="物料编码 / 物料描述"
+                placeholder-class="ui-placeholder"
+                confirm-type="search"
+                @input="applyStockFilter"
+                @confirm="applyStockFilter"
+              />
+            </view>
+
+            <!-- 库存快照语义下会留下一批数量为 0 的物料行（信息保留供查询），
+                 默认把它们收起来，需要时点开看 -->
+            <view
+              class="stock-filter"
+              :class="stockOnlyInStock ? 'is-on' : ''"
+              @click="toggleStockOnlyInStock"
+            >
+              <wd-icon :name="stockOnlyInStock ? 'check' : 'goods'" size="14px" />
+              只看有库存
+            </view>
+
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <LoadingMask v-if="stockLoading" />
+
+            <PanelState
+              v-else-if="stockError"
+              type="error"
+              title="暂时无法获取物料库存"
+              :description="stockError"
+              action-text="重新加载"
+              @action="fetchStockRecords"
+            />
+
+            <!-- 「只看有库存」默认关着（这一页是查物料信息，不是看有多少货），
+                 所以空态只在「有关键词 / 开了筛选」时才说筛选的事 -->
+            <PanelState
+              v-else-if="stockTableData.length === 0"
+              :title="stockKeyword || stockOnlyInStock ? '没有符合筛选条件的记录' : '暂无库存数据'"
+              :description="
+                stockKeyword || stockOnlyInStock
+                  ? '换个关键词，或取消「只看有库存」看看'
+                  : '还没有导入过库存汇总，可在「文件导入」里上传库存表'
+              "
+            />
+
+            <div v-else>
+              <!-- 9 列在手机宽度下必然溢出：外层 overflow-x-auto + .dt--scroll，
+                   与其它 6 张表一致（见样式区 .dt--scroll 的说明） -->
+              <div class="overflow-x-auto">
+                <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
+                  <view class="dt__head bg-slate-50">
+                    <view class="dt__row">
+                      <view
+                        v-for="column in STOCK_COLUMNS"
+                        :key="column.key"
+                        class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="[
+                          column.width,
+                          column.align === 'right'
+                            ? 'pl-2 pr-3 text-right'
+                            : column.align === 'center'
+                              ? 'px-2 text-center'
+                              : 'px-2',
+                        ]"
+                      >
+                        {{ column.label }}
+                      </view>
+                    </view>
+                  </view>
+                  <view class="dt__body divide-y divide-slate-100 bg-white">
+                    <view
+                      v-for="(record, index) in stockTableData"
+                      :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
+                      class="dt__row transition hover:bg-slate-50"
+                    >
+                      <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ (stockPageNum - 1) * stockPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ displayText(record.materialCode) }}</view>
+                      <view class="dt__cell w-40 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">{{ displayText(record.materialName) }}</view>
+                      <view class="dt__cell w-28 whitespace-normal break-words px-2 py-2 text-sm text-slate-600">{{ displayText(record.spec) }}</view>
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ displayText(record.storageLocation) }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ displayText(record.unit) }}</view>
+                      <view
+                        class="dt__cell w-32 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold"
+                        :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-400'"
+                      >
+                        {{ displayText(formatStockQty(record.stockQty)) }}
+                      </view>
+                      <view class="dt__cell w-28 whitespace-normal break-words px-2 py-2 text-sm text-slate-600">{{ displayText(record.storageDesc) }}</view>
+                    </view>
+                  </view>
+                </view>
+              </div>
+
+              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+                <wd-pagination
+                  v-model="stockPageNum"
+                  custom-style="max-width: 340px;"
+                  :total="stockTotal"
+                  :page-size="stockPageSize"
+                  show-message
+                  :hide-if-one-page="false"
+                  @change="(event) => getStockPageData(event.value)"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div v-show="activeTab === 'imageParse'">
+        <ImageParse />
+      </div>
+
       <div v-show="activeTab === 'weekly'">
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
@@ -3030,9 +3205,6 @@ watch(activeTab, (tab, prevTab) => {
       </div>
       <!-- #endif -->
 
-      <div v-show="activeTab === 'imageParse'">
-        <ImageParse />
-      </div>
       <!-- 左侧抽屉菜单（豆包式）：全部导航 + 账户操作都收在这里。
            wd-popup position="left" 自带遮罩点击关闭；宽度/高度用 custom-style 指定。
            wd-popup 会把 customStyle 接到弹层本体（.wd-popup）上，并自动拼在前缀
@@ -3107,6 +3279,7 @@ watch(activeTab, (tab, prevTab) => {
               登录
             </button>
             <text class="drawer__tip">未登录也可以只读浏览工单数据</text>
+            <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>
       </wd-popup>
@@ -3445,6 +3618,17 @@ watch(activeTab, (tab, prevTab) => {
   text-align: center;
 }
 
+/* 后端地址是构建期内联的常量（切环境只改 src/api/env.js 的 APP_ENV）。
+   放这一行是为了自查：万一手机上装的是旧包，扫一眼就知道它连的是哪套后端。
+   事故复盘见 UNIAPP迁移说明.md 第 10.5 节。 */
+.drawer__env {
+  display: block;
+  margin-top: 4rpx;
+  color: $ui-text-3;
+  font-size: 20rpx;
+  text-align: center;
+}
+
 /* ===== 数据表格 =====
    改造前用的是原生 <table> + <colgroup> + table-fixed。
    小程序端没有表格布局（WXSS 也不支持 display: table），<table>/<tr>/<td>
@@ -3566,6 +3750,51 @@ watch(activeTab, (tab, prevTab) => {
 
 .weekly-grid .dt__row + .dt__row {
   margin-top: -1px;
+}
+
+/* ===== 「物料查询」筛选行 ===== */
+.stock-search {
+  display: flex;
+  min-width: 200px;
+  min-height: 36px;
+  flex: 1 1 200px;
+  max-width: 320px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-surface-2;
+  color: $ui-text-3;
+}
+
+.stock-search__input {
+  /* min-width: 0 不能省：flex 子项默认按内容宽当最小宽度，
+     输入框的固有宽度会把整行顶出容器（物料选择器踩过同一个坑） */
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  color: $ui-text;
+  font-size: 14px;
+}
+
+/* 「只看有库存」开关：一颗胶囊，开=强调色淡底 */
+.stock-filter {
+  display: flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 0 14px;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-raise-2;
+  color: $ui-text-2;
+  font-size: 13px;
+  transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+}
+
+.stock-filter.is-on {
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
 }
 
 /* 表格内的输入框。
