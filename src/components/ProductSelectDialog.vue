@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useKeyboardLift } from '../composables/useKeyboardLift'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -21,10 +22,38 @@ const filteredOptions = computed(() => {
   return props.options.filter((item) => item.toLowerCase().includes(query))
 })
 
+// 弹层里的搜索框会被软键盘盖住（弹层是 fixed 的，uni 的 adjust-position 管不着），
+// 拿到键盘高度后垫成 padding-bottom，把内容顶到键盘上沿之上，见 useKeyboardLift
+const {
+  keyboardHeight: liftHeight,
+  start: startKeyboardLift,
+  stop: stopKeyboardLift,
+} = useKeyboardLift()
+
+const popupStyle = computed(() => {
+  const base =
+    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;'
+  const kb = liftHeight.value
+  if (!kb) return base
+
+  // 键盘弹起时用「底边上移 + 高度写成确定值」，不用 padding —— 理由见 ImageParse 的
+  // pickerCustomStyle：本项目没有全局 box-sizing 重置，.wd-popup 是 content-box，
+  // padding 不占 max-height 额度，会把弹层整体顶出屏幕上沿。
+  // 高度必须是 height 而不是 max-height：键盘高度是系统报的、实测会偏大，
+  // 只给上限的话内容矮时弹层就按内容撑，`bottom` 一偏大整块就被顶出屏幕。
+  return `${base} bottom: ${kb}px; padding-bottom: 0; height: min(80vh, calc(100vh - ${kb}px - 12px));`
+})
+
 watch(
   () => props.modelValue,
   (visible) => {
-    if (visible) keyword.value = ''
+    if (visible) {
+      keyword.value = ''
+      // 只在弹层开着的时候听键盘高度（监听是全局的，挂久了会和别的弹层互相覆盖）
+      startKeyboardLift()
+    } else {
+      stopKeyboardLift()
+    }
   },
 )
 
@@ -47,7 +76,7 @@ function handleSelect(item) {
     position="bottom"
     round
     safe-area-inset-bottom
-    custom-style="max-height: 80vh; display: flex; flex-direction: column;"
+    :custom-style="popupStyle"
     @update:model-value="emit('update:modelValue', $event)"
   >
     <view class="picker">
@@ -144,6 +173,13 @@ function handleSelect(item) {
   &__list {
     // scroll-view 必须有确定高度才会滚动
     height: 60vh;
+    // 键盘弹起后弹层高度是确定的，列表靠 flex 把剩余空间吃掉 / 在不够时缩
+    min-height: 0;
+    flex-grow: 1;
+    // 滑到头不要把滚动传给下层页面，否则弹层会跟着页面一起滚
+    overscroll-behavior: contain;
+    // uni 的 uni-scroll-view 带 width:100%，而 100% 不扣边框 —— 会平白溢出 2px
+    width: auto;
     border-top: 1px solid $ui-hairline;
     padding: 10rpx 0 20rpx;
   }

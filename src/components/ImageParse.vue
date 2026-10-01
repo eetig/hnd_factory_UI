@@ -4,6 +4,7 @@ import request from '../api/request'
 import { uploadFile } from '../api/upload'
 import { formatFileSize } from '../utils/format'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
+import { useKeyboardLift } from '../composables/useKeyboardLift'
 import {
   BILL_TYPE_INBOUND,
   BILL_TYPE_PICK,
@@ -38,16 +39,39 @@ const dropZoneClass = computed(() => {
   return 'border-slate-300 hover:border-sky-400'
 })
 
+/** 图片来源弹层（App / 小程序）：替掉平台自带的那个 ActionSheet，见 openFilePicker */
+const sourceSheetVisible = ref(false)
+
 // 从相册 / 相机选图。
 // 改造前是隐藏的 <input type="file" multiple> + .click()；App 与小程序端没有 DOM，
 // 改用 uni.chooseImage —— 三端统一，App/小程序端还能直接调相机。
+//
+// ⚠️ 这里刻意**一次只给一个 sourceType**，是为了躲开平台自带的
+//    「拍摄 / 从相册选择 / 取消」ActionSheet：那是系统 UI，样式改不了，
+//    各机型还不一样（深色主题下尤其突兀）。两端各让一步：
+//      · H5：本来就没有相机/相册之分（底层是 <input type="file">），直接开选择器；
+//      · App / 小程序：自己画一个底部弹层（见模板 .source-sheet），
+//        选完再带着**单个** sourceType 调 chooseImage —— 只有一个来源时平台不再弹自己的框。
 function openFilePicker() {
   if (isFull.value) return
+
+  // #ifdef H5
+  pickImages('album')
+  // #endif
+
+  // #ifndef H5
+  sourceSheetVisible.value = true
+  // #endif
+}
+
+/** 弹层里选定来源后真正调起选择器。source 只取一个值，理由见 openFilePicker */
+function pickImages(source) {
+  sourceSheetVisible.value = false
 
   uni.chooseImage({
     count: remaining.value,
     sizeType: ['original', 'compressed'],
-    sourceType: ['camera', 'album'],
+    sourceType: [source],
     success: (res) => {
       const paths = res.tempFilePaths || []
       const tempFiles = res.tempFiles || []
@@ -344,6 +368,43 @@ const pickerKeyword = ref('')
 const pickerResults = ref([])
 const pickerLoading = ref(false)
 
+// 弹层里的搜索框会被软键盘盖住（弹层是 fixed 的，uni 的 adjust-position 管不着），
+// 拿到键盘高度后垫成 padding-bottom，把内容顶到键盘上沿之上，见 useKeyboardLift
+const {
+  keyboardHeight: pickerKeyboardHeight,
+  start: startKeyboardLift,
+  stop: stopKeyboardLift,
+} = useKeyboardLift()
+
+const pickerCustomStyle = computed(() => {
+  const base =
+    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;'
+  const kb = pickerKeyboardHeight.value
+  if (!kb) return base
+
+  // ⚠️ 键盘弹起时**不能用 padding 把内容顶上去**：本项目没有全局 box-sizing 重置
+  //    （preflight 关着，uni.css 只给 uni-button / uni-page-* 少数几个元素设了 border-box），
+  //    .wd-popup 是 content-box —— padding 不占 max-height 的额度，弹层会被撑得比
+  //    max-height 还高，整个顶出屏幕上沿（真机实测：搜索框跑到状态栏里去了）。
+  //
+  // ⚠️ 高度要写成**确定值 height**，不能只给 max-height：键盘高度是系统报的，
+  //    实测不可靠（同一台机器上换个输入法就报得偏大）。只给 max-height 时，弹层高度
+  //    由内容决定 —— 内容比上限矮时它就按内容来，`bottom: 键盘高` 一偏大，整块就被顶到
+  //    屏幕外（真机现象：列表从一个被截断的行开始，输入框跑到屏幕上方）。
+  //    写成 height 后顶边恒等于下面这个 12px：height + bottom 是联动算出来的，
+  //    键盘报多少都只会让弹层变矮，不会溢出屏幕。
+  //    padding-bottom 显式清零，是因为 wd-popup 会自动追加一条安全区的 padding-bottom
+  //    （同样是 content-box，留着就白白多出 30 多像素）。
+  return `${base} bottom: ${kb}px; padding-bottom: 0; height: min(80vh, calc(100vh - ${kb}px - 12px));`
+})
+
+/** 列表空状态文案。三种情况轮着出现，但列表区高度始终是 56vh（见模板里的说明） */
+const pickerEmptyText = computed(() => {
+  if (pickerLoading.value && !pickerResults.value.length) return '检索中…'
+  if (!pickerKeyword.value.trim()) return '输入名称、编码或规格开始搜索'
+  return '没有匹配的物料，请换个关键词。'
+})
+
 /** 输入防抖：输入停下 300ms 才发请求，避免每敲一个字都打一次接口 */
 const PICKER_DEBOUNCE_MS = 300
 let pickerSearchTimer = null
@@ -378,6 +439,8 @@ async function openMaterialPicker(row, image) {
   // 先用自动匹配时已取到的候选，打开即有内容；为空再立刻查一次（不必等防抖）
   pickerResults.value = row.candidates?.length ? [...row.candidates] : []
   pickerVisible.value = true
+  // 只在这个弹层开着的时候听键盘高度（监听是全局的，挂久了会和别的弹层互相覆盖）
+  startKeyboardLift()
 
   if (!pickerResults.value.length) {
     await runPickerSearch()
@@ -395,16 +458,16 @@ function selectMaterial(material) {
     // 内容变了，上一次的入库结果不再代表当前数据
     clearConfirm(pickerImage.value)
   }
-  pickerVisible.value = false
-  pickerRow.value = null
-  pickerImage.value = null
+  closeMaterialPicker()
 }
 
 function closeMaterialPicker() {
   // 取消待发的防抖请求，避免弹窗已关还在打接口
   clearTimeout(pickerSearchTimer)
+  stopKeyboardLift()
   pickerVisible.value = false
   pickerRow.value = null
+  pickerImage.value = null
 }
 
 // ------------------------------------------------------------------
@@ -432,37 +495,35 @@ function resolveDocKind(documentType) {
   return 'unknown'
 }
 
-// 各口径的列定义，对齐列表页的领料汇总 / 入库汇总；
-// 差异只有时间与数量两列的标题，以及未知类型退化为通用列
+// 各口径的列定义，对齐列表页的领料汇总 / 入库汇总。
+//
+// ⚠️ 这里只列「明细行」自己的列。单据号与时间属于整张单据，已经上提到卡片顶部的
+//    单据信息区（见模板 .doc）—— 改造前它们各占一列、逐行重复渲染，同一个单号在
+//    N 行里出现 N 次：既占地方，手机上那点宽度还要被它们吃掉两列，读起来也像是
+//    「每行各有一个单号」。线下单据缩略图同理（整张单据同一张图），
+//    现在只留卡片头部那张可点开大图的缩略图。
 const PICK_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '领料时间' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '领料数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
-  { key: 'image', label: '线下单据', align: 'center' },
-  // 操作列：逐行删除。列定义里只占一个 key，具体渲染见表格模板的 actions 分支
+  // 操作列：逐行删除。列定义里只占一个 key，具体渲染见模板的 actions 分支
   { key: 'actions', label: '操作', align: 'center' },
 ]
 
 const INBOUND_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '入库时间' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '入库数量', align: 'right' },
   { key: 'unit', label: '单位', align: 'center' },
-  { key: 'image', label: '线下单据', align: 'center' },
   { key: 'actions', label: '操作', align: 'center' },
 ]
 
+// 未知单据类型：没有单位这一列（识别不出类型时不敢假定它有单位栏）
 const UNKNOWN_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '日期' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '数量', align: 'right' },
@@ -471,14 +532,21 @@ const UNKNOWN_COLUMNS = [
 
 const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN_COLUMNS }
 
+/** 单据信息区里那一项的标题，跟着单据口径走 */
+function dateLabel(kind) {
+  if (kind === 'pick') return '领料时间'
+  if (kind === 'inbound') return '入库时间'
+  return '日期'
+}
+
 /**
- * 把识别结果摊成表格：单据头字段（单据号 / 日期）下放到每一行。
+ * 把识别结果摊成表格：单据头字段（单据号 / 日期）单独存一份，行里只有行项目。
  *
  * <p>行项目来自识别结果，所以「一行」= 识别出的一条物料。
  * 单位不识别（见变更-003 字段范围：单位由业务方按物料编码查主数据带出），故留空待人工补。
  *
  * <p>单据号与日期单独放在 {@code doc} 而不是每行各存一份：它们属于整张单据，
- * 逐行存会让同一张单出现两个单号。表格里仍按列渲染，但改一处全表同步。
+ * 逐行存会让同一张单出现两个单号。模板里它们只在卡片顶部的单据信息区渲染一次。
  *
  * <p>返回的是<b>可编辑副本</b>，{@code image.result} 保留识别原始值不动 ——
  * 人工校准后仍需能对照「模型原本给了什么」。
@@ -575,19 +643,16 @@ function removeRow(image, row) {
   renumber(image.table)
 }
 
-/** 可编辑单元格：静默时不显边框，悬停/聚焦才提示可改，避免整表看起来像表单控件 */
-function inputClass(col) {
-  return [
-    'w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
-    col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
-  ]
-}
-
+/**
+ * 列的对齐口径 → 类名。
+ *
+ * <p>只在桌面端生效（见样式里的 @media）：手机端每行是一张「标签 + 值」的卡片，
+ * 每个字段都靠左，右对齐的数字反而会跟自己的标签对不上。
+ */
 function alignClass(col) {
-  if (col.align === 'right') return 'text-right'
-  if (col.align === 'center') return 'text-center'
-  return 'text-left'
+  if (col.align === 'right') return 'is-right'
+  if (col.align === 'center') return 'is-center'
+  return ''
 }
 
 function statusText(image) {
@@ -666,7 +731,10 @@ async function submitConfirm(image) {
         qty: String(row.qty),
         unit: row.unit,
       })),
-      file: image.file,
+      // 单据图随 payload 一起 multipart 提交（后端存进 file_name，
+      // 汇总列表的「线下单据」列靠它回溯）。走 uni.uploadFile，见 useOcrConfirm。
+      // 注意是 filePath 而不是 File 对象 —— 图片列表里存的一直是各端的本地路径。
+      filePath: image.filePath,
     })
     image.confirm = { status: 'done', message: buildConfirmMessage(data, merges) }
   } catch (error) {
@@ -746,12 +814,7 @@ onUnmounted(() => {
           已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
         </p>
-        <button
-          type="button"
-          class="text-sm text-slate-500 transition hover:text-rose-600 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-300"
-          :disabled="submitting"
-          @click="clearAll"
-        >
+        <button type="button" class="clear-btn" :disabled="submitting" @click="clearAll">
           清空
         </button>
       </div>
@@ -807,7 +870,7 @@ onUnmounted(() => {
     </p>
 
     <section v-if="submitted.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
+      <div class="result__head">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
           <span class="font-semibold text-emerald-600">{{ successCount }}</span>
@@ -817,17 +880,20 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <div class="space-y-5 p-6">
+      <div class="result__body">
         <article
           v-for="image in submitted"
           :key="image.id"
           class="overflow-hidden rounded-lg border border-slate-200"
         >
           <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <!-- 缩略图本身就是「看原图」的入口：整张单据只有这一张图，
+                 点开进平台原生的图片查看器（可缩放可保存） -->
             <img
               :src="image.url"
               :alt="image.name"
               class="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover"
+              @click="previewImage(image.url)"
             />
             <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
               {{ image.name }}
@@ -841,180 +907,174 @@ onUnmounted(() => {
           </header>
 
           <template v-if="image.status === 'success'">
-            <p class="px-4 pb-3 pt-4 text-sm text-slate-600">
-              单据类型
-              <span class="ml-1 font-medium text-slate-900">
-                {{ fieldText(image.result.documentType) || '未识别' }}
-              </span>
-            </p>
-
-            <div class="px-4 pb-4">
-              <!-- 9 列在手机屏宽下必然溢出（375px 实测超出 47px）：缺这一层 overflow-x-auto 时，
-                   外层 article 的 overflow-hidden 会直接把右侧「线下单据」「操作」两列裁掉，
-                   而且滚不过去 —— 「操作」列的删行按钮整颗都落在可视区外，手机上永远点不到。
-                   结构与 WorkOrderImport 等其它单据表保持一致：padding 在外、滚动容器在内。 -->
-              <div v-if="image.table?.rows.length" class="overflow-x-auto">
-                <table class="w-full border-collapse text-sm">
-                  <thead>
-                    <tr class="bg-slate-50 text-slate-600">
-                      <th
-                        v-for="col in image.table.columns"
-                        :key="col.key"
-                        class="border border-slate-200 px-3 py-2 font-medium"
-                        :class="alignClass(col)"
-                      >
-                        {{ col.label }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <!-- :key 用 row.key（稳定标识）而不是 row.index：
-                         序号删行后会重排，拿它当 key 会让 Vue 复用错行组件，输入框内容串行 -->
-                    <tr v-for="row in image.table.rows" :key="row.key">
-                      <td
-                        v-for="col in image.table.columns"
-                        :key="col.key"
-                        class="border border-slate-200 px-1.5 py-1 align-middle"
-                      >
-                        <!-- 线下单据：原图缩略图，点开可放大 -->
-                        <div v-if="col.key === 'image'" class="flex justify-center">
-                          <!-- el-image 的自带预览（preview-src-list）在 uni 里没有对应物，
-                               改用 uni.previewImage 这个原生大图预览能力 -->
-                          <image
-                            class="picker-thumb"
-                            :src="image.url"
-                            mode="aspectFill"
-                            @click="previewImage(image.url)"
-                          />
-                        </div>
-
-                        <!-- 序号：识别顺序，不参与校正 -->
-                        <span
-                          v-else-if="col.key === 'index'"
-                          class="block text-center text-slate-500"
-                        >
-                          {{ row.index }}
-                        </span>
-
-                        <!-- 单据号 / 日期：整张单据共用一个值，改一处即全表同步 -->
-                        <input
-                          v-else-if="col.key === 'documentNo'"
-                          v-model="image.table.doc.documentNo"
-                          type="text"
-                          placeholder="—"
-                          :class="inputClass(col)"
-                        />
-                        <input
-                          v-else-if="col.key === 'date'"
-                          v-model="image.table.doc.date"
-                          type="text"
-                          placeholder="—"
-                          :class="inputClass(col)"
-                        />
-
-                        <!-- 物料名称：改完重查一次编码；右侧搜索图标可手工挑物料（选中后名称与编码一起回填） -->
-                        <div v-else-if="col.key === 'materialName'" class="relative">
-                          <input
-                            v-model="row.materialName"
-                            type="text"
-                            placeholder="—"
-                            class="pr-6"
-                            :class="inputClass(col)"
-                            @change="handleNameChange(row, image)"
-                          />
-                          <button
-                            type="button"
-                            class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
-                            title="搜索物料（选中后自动填名称与编码）"
-                            @click="openMaterialPicker(row, image)"
-                          >
-                            <wd-icon name="search" size="14px" />
-                          </button>
-                        </div>
-
-                        <!-- 物料编码：只读 —— 只能由主数据按名称带出，不允许手填。
-                             手填的编码格式合法、能一路混到落库，是错码的主要来源；
-                             要改编码请走「物料名称」右侧的搜索入口，名称与编码一起换。 -->
-                        <span
-                          v-else-if="col.key === 'materialCode'"
-                          class="block px-1.5 py-1 text-sm"
-                          :class="row.materialCode ? 'text-slate-900' : 'text-slate-300'"
-                        >
-                          {{ row.materialCode || '—' }}
-                        </span>
-
-                        <!-- 操作：删除该行（识别多出幽灵行 / 重复行时用）。
-                             原来用内联 <svg> 画的减号，小程序不支持 svg 标签，换组件库图标字体；
-                             decrease 与 wd-input-number 的减号同一个字形，和下面提示里的「−」对得上。 -->
-                        <div v-else-if="col.key === 'actions'" class="flex justify-center">
-                          <button
-                            type="button"
-                            class="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-                            title="删除该行"
-                            @click="removeRow(image, row)"
-                          >
-                            <wd-icon name="decrease" size="14px" />
-                          </button>
-                        </div>
-
-                        <!-- 其余字段：逐行独立编辑 -->
-                        <input
-                          v-else
-                          v-model="row[col.key]"
-                          type="text"
-                          placeholder="—"
-                          :class="inputClass(col)"
-                        />
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <!-- 单据信息：整张单据一份。单据号 / 时间 / 类型都属于单据本身，
+                 放在这里是唯一一份，改一处全表同步（改造前它们是逐行重复的表格列） -->
+            <div class="doc">
+              <div class="doc__row">
+                <span class="doc__label">单据类型</span>
+                <span class="doc__type">{{ fieldText(image.result.documentType) || '未识别' }}</span>
+                <button type="button" class="doc__preview" @click="previewImage(image.url)">
+                  查看原图
+                </button>
               </div>
 
-              <p v-else class="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+              <div class="doc__fields">
+                <div class="field">
+                  <span class="field__label">单据号</span>
+                  <input
+                    v-model="image.table.doc.documentNo"
+                    class="field__input"
+                    type="text"
+                    placeholder-class="ui-placeholder" placeholder="—"
+                  />
+                </div>
+                <div class="field">
+                  <span class="field__label">{{ dateLabel(image.table.kind) }}</span>
+                  <input
+                    v-model="image.table.doc.date"
+                    class="field__input"
+                    type="text"
+                    placeholder-class="ui-placeholder" placeholder="—"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <!-- 明细行。
+                   桌面端：表头 + 网格行，像一张表；
+                   手机端：表头藏起来，每行变成一张卡片，字段各自带标签 —— 改造前是
+                   9 列硬塞进手机宽度，列宽被压到只剩一两个汉字，表头直接竖排成单字，
+                   横向滚动也救不回来（表格一滚动，行首的序号就看不见了）。 -->
+              <div :class="`rows rows--${image.table.kind}`">
+                <div v-if="image.table.rows.length" class="rows__head">
+                  <span
+                    v-for="col in image.table.columns"
+                    :key="col.key"
+                    class="rows__th"
+                    :class="alignClass(col)"
+                  >
+                    {{ col.label }}
+                  </span>
+                </div>
+
+                <!-- :key 用 row.key（稳定标识）而不是 row.index：
+                     序号删行后会重排，拿它当 key 会让 Vue 复用错行组件，输入框内容串行 -->
+                <div v-for="row in image.table.rows" :key="row.key" class="row">
+                  <!-- 手机端行首：序号 + 删除。桌面端这两项各自占一列，这条不显示 -->
+                  <div class="row__bar">
+                    <span class="row__seq">第 {{ row.index }} 行</span>
+                    <button type="button" class="row__del" @click="removeRow(image, row)">
+                      <wd-icon name="decrease" size="14px" />
+                      删除
+                    </button>
+                  </div>
+
+                  <div
+                    v-for="col in image.table.columns"
+                    :key="col.key"
+                    class="cell"
+                    :class="[`cell--${col.key}`, alignClass(col)]"
+                  >
+                    <!-- 字段名：手机端每个字段自己的标签，桌面端由表头承担 -->
+                    <span class="cell__label">{{ col.label }}</span>
+
+                    <!-- 序号：识别顺序，不参与校正（手机端挪到行首的 bar 上） -->
+                    <span v-if="col.key === 'index'" class="cell__text">{{ row.index }}</span>
+
+                    <!-- 物料名称：改完重查一次编码；右侧搜索图标可手工挑物料
+                         （选中后名称与编码一起回填） -->
+                    <template v-else-if="col.key === 'materialName'">
+                      <input
+                        v-model="row.materialName"
+                        class="cell__input"
+                        type="text"
+                        placeholder-class="ui-placeholder" placeholder="—"
+                        @change="handleNameChange(row, image)"
+                      />
+                      <button
+                        type="button"
+                        class="cell__search"
+                        title="搜索物料（选中后自动填名称与编码）"
+                        @click="openMaterialPicker(row, image)"
+                      >
+                        <wd-icon name="search" size="14px" />
+                      </button>
+                    </template>
+
+                    <!-- 物料编码：只读 —— 只能由主数据按名称带出，不允许手填。
+                         手填的编码格式合法、能一路混到落库，是错码的主要来源；
+                         要改编码请走「物料名称」右侧的搜索入口，名称与编码一起换。 -->
+                    <span
+                      v-else-if="col.key === 'materialCode'"
+                      class="cell__code"
+                      :class="{ 'is-empty': !row.materialCode }"
+                    >
+                      {{ row.materialCode || '—' }}
+                    </span>
+
+                    <!-- 操作：删除该行（识别多出幽灵行 / 重复行时用）。
+                         decrease 与 wd-input-number 的减号同一个字形，和提示里的「−」对得上。 -->
+                    <button
+                      v-else-if="col.key === 'actions'"
+                      type="button"
+                      class="cell__del"
+                      title="删除该行"
+                      @click="removeRow(image, row)"
+                    >
+                      <wd-icon name="decrease" size="14px" />
+                    </button>
+
+                    <!-- 其余字段（数量 / 单位）：逐行独立编辑 -->
+                    <input
+                      v-else
+                      v-model="row[col.key]"
+                      class="cell__input"
+                      type="text"
+                      placeholder-class="ui-placeholder" placeholder="—"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <p v-if="!image.table.rows.length" class="empty">
                 暂无行项目，可点下方「增加一行」手工补充。
               </p>
 
               <!-- 行数校准：识别会漏行（字迹潦草）也会多行（串到相邻单据），
                    两者都只能靠人眼对着原图数，所以给一对增删入口而不是让流程中断 -->
-              <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                <button
-                  type="button"
-                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
-                  @click="addRow(image)"
-                >
+              <div class="rows-actions">
+                <button type="button" class="row-add" @click="addRow(image)">
                   <wd-icon name="add" size="14px" />
                   增加一行
                 </button>
-                <p class="text-xs text-slate-400">
+                <p class="rows-hint">
                   对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
                 </p>
               </div>
 
-              <p class="mt-2 text-xs text-slate-400">
+              <p class="engine-line">
                 识别引擎 {{ image.result.engine || '—' }} · 耗时
                 {{ image.result.costMillis != null ? `${image.result.costMillis} ms` : '—' }}
               </p>
             </div>
 
             <!-- 确认入库：按单据类型分流（领料单→领料汇总，入库单→入库汇总），落库复用文件导入那条管线 -->
-            <div
-              class="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-slate-100 px-4 py-3"
-            >
+            <div class="confirm">
               <p
                 v-if="image.confirm?.message"
-                class="mr-auto text-xs"
-                :class="image.confirm.status === 'error' ? 'text-rose-600' : 'text-emerald-700'"
+                class="confirm__msg"
+                :class="image.confirm.status === 'error' ? 'is-error' : 'is-done'"
               >
                 {{ image.confirm.message }}
               </p>
-              <p v-else-if="confirmBlockReason(image)" class="mr-auto text-xs text-amber-700">
+              <p v-else-if="confirmBlockReason(image)" class="confirm__msg is-warn">
                 {{ confirmBlockReason(image) }}
               </p>
 
               <button
                 type="button"
-                class="shrink-0 rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                class="confirm__btn shrink-0 rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1032,17 +1092,53 @@ onUnmounted(() => {
       </div>
     </section>
 
+    <!-- 图片来源选择（App / 小程序）。
+         替掉 uni.chooseImage 自带的那个系统 ActionSheet —— 它是系统 UI，样式不可控，
+         深色主题下是一块突兀的白板。H5 端不会打开它（没有相机这一说），见 openFilePicker。 -->
+    <wd-popup
+      v-model="sourceSheetVisible"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      custom-style="background-color: var(--ui-surface);"
+      @close="sourceSheetVisible = false"
+    >
+      <view class="source-sheet">
+        <text class="source-sheet__title">添加单据图片</text>
+
+        <view class="source-sheet__item" @click="pickImages('camera')">
+          <view class="source-sheet__icon">
+            <wd-icon name="camera" size="20px" />
+          </view>
+          <text class="source-sheet__label">拍摄</text>
+        </view>
+
+        <view class="source-sheet__item" @click="pickImages('album')">
+          <view class="source-sheet__icon">
+            <wd-icon name="picture" size="20px" />
+          </view>
+          <text class="source-sheet__label">从相册选择</text>
+        </view>
+
+        <view class="source-sheet__cancel" @click="sourceSheetVisible = false">取消</view>
+      </view>
+    </wd-popup>
+
     <!-- 物料候选：识别出的名称查不到唯一主数据时，给人一个挑选的入口。
          用对话框而不是下拉，是因为表格单元格里放弹层容易被裁切、也不好定位。 -->
     <!-- 物料选择器。原为 el-dialog（width="640px" 居中弹窗）。
          移动端改成底部弹层 + scroll-view —— 注意小程序的 <view> 上写
          overflow-y: auto 是不会滚的，必须用 scroll-view 才滚得起来。 -->
+    <!-- ⚠️ custom-style 里的 background-color 不能省：wd-popup 给 .wd-popup 写死了
+         `background: #fff`，只有挂 .wot-theme-dark 时才变（本项目用的是自己那套
+         .theme-light / CSS 变量主题，没有这个类）——不覆盖的话，深色主题下整个弹层是块白板，
+         里面的文字反而是 $ui-text 的浅色，等于白底白字。 -->
     <wd-popup
       v-model="pickerVisible"
       position="bottom"
       round
       safe-area-inset-bottom
-      custom-style="max-height: 80vh; display: flex; flex-direction: column;"
+      :custom-style="pickerCustomStyle"
       @close="closeMaterialPicker"
     >
       <view class="picker-head">
@@ -1063,37 +1159,130 @@ onUnmounted(() => {
         />
       </view>
 
-      <!-- 已有结果时不清空：边打字边刷新，结果列表不闪 -->
-      <p
-        v-if="pickerLoading && !pickerResults.length"
-        class="py-6 text-center text-sm text-slate-500"
-      >
-        检索中…
-      </p>
-
-      <p v-else-if="!pickerKeyword.trim()" class="py-6 text-center text-sm text-slate-500">
-        输入名称、编码或规格开始搜索
-      </p>
-
-      <scroll-view v-else-if="pickerResults.length" class="picker-list" scroll-y>
-        <view
-          v-for="item in pickerResults"
-          :key="`${item.code}|${item.name}`"
-          class="picker-item"
-          @click="selectMaterial(item)"
-        >
-          <text class="picker-item__code">{{ item.code }}</text>
-          <text class="picker-item__name">{{ item.name }}</text>
-          <text class="picker-item__unit">{{ item.unit || '' }}</text>
+      <!-- ⚠️ 列表区**始终**占着固定高度（56vh），空状态放在它里面，不要用 v-if 把整个
+           scroll-view 换掉。换掉的话弹层高度会随结果条数变：2 条结果时弹层只有一百多像素，
+           搜索框贴着键盘；结果一多弹层长到 56vh，搜索框又跑到屏幕上半截 ——
+           人正在打字，位置一直在动。固定住高度，搜索框的位置就与结果条数无关了。
+           （ProductSelectDialog 本来就是这么写的，两边保持一致。） -->
+      <scroll-view class="picker-list" scroll-y>
+        <view v-if="!pickerResults.length" class="picker-state">
+          <text>{{ pickerEmptyText }}</text>
         </view>
-      </scroll-view>
 
-      <p v-else class="py-6 text-center text-sm text-slate-500">没有匹配的物料，请换个关键词。</p>
+        <template v-else>
+          <view
+            v-for="item in pickerResults"
+            :key="`${item.code}|${item.name}`"
+            class="picker-item"
+            @click="selectMaterial(item)"
+          >
+            <text class="picker-item__code">{{ item.code }}</text>
+            <text class="picker-item__name">{{ item.name }}</text>
+          </view>
+        </template>
+      </scroll-view>
     </wd-popup>
   </div>
 </template>
 
 <style scoped lang="scss">
+/* ===== 按钮基线复位 =====
+   uni 给每个 <button> 都预置了一套外观（见 uni.css 的 uni-button）：
+   18px 字号、line-height 2.55（≈47px 的行高）、#f8f8f8 灰底、margin: auto（按钮被推到中间），
+   外加一个用 ::after 画的边框（1px rgba(0,0,0,.2)，再缩放 0.5 描出来的细线）。
+   凡是自己写样式的按钮都得先清掉这套 —— 否则高度、位置、边框全都不受控，
+   两个按钮摆在一起就是一个大一个小、底色描边对不上。
+   （走 Tailwind 那几个类名的按钮不受影响：它们每条属性都写在类里，且类选择器优先级更高。）
+
+   ⚠️ 这一块必须放在**所有按钮样式之前**：同样是单类选择器，靠后的那条胜出。
+   起初放在文件中间，结果后面的复位把前面已写好的 .clear-btn 底色/字色全清了，
+   按钮在页面上变成一行几乎看不见的浅灰字。 */
+.doc__preview,
+.row__del,
+.row-add,
+.cell__del,
+.cell__search,
+.clear-btn {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  color: inherit;
+  font-size: inherit;
+  line-height: 1;
+  overflow: visible;
+
+  &::after {
+    border: 0;
+  }
+}
+/* ===== 图片来源选择弹层 =====
+   替掉 uni.chooseImage 自带的系统 ActionSheet。沿用物料弹层那套观感：
+   大圆角、条目是带底色的卡片、底部一颗整宽的胶囊取消键。 */
+.source-sheet {
+  padding: 20px 16px 12px;
+}
+
+.source-sheet__title {
+  display: block;
+  padding: 0 4px 14px;
+  color: $ui-text-3;
+  font-size: 13px;
+}
+
+.source-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: $ui-radius-md;
+  background-color: $ui-surface-2;
+  color: $ui-text;
+  font-size: 15px;
+  transition: background-color $ui-dur $ui-ease;
+}
+
+.source-sheet__item + .source-sheet__item {
+  margin-top: 8px;
+}
+
+.source-sheet__item:active {
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.source-sheet__icon {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: $ui-radius-sm;
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.source-sheet__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-sheet__cancel {
+  margin-top: 18px;
+  padding: 15px;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-raise-2;
+  color: $ui-text-2;
+  font-size: 15px;
+  text-align: center;
+  transition: background-color $ui-dur $ui-ease;
+}
+
+.source-sheet__cancel:active {
+  background-color: $ui-raise-3;
+}
+
 /* ===== 物料选择器 =====
    原来这里是 Element Plus 的 el-dialog，内部样式全靠 Tailwind 工具类撑着。
    改成 wd-popup 之后，弹层结构变了，且滚动必须由 scroll-view 承担
@@ -1132,16 +1321,65 @@ onUnmounted(() => {
 }
 
 .picker-list {
-  /* scroll-view 必须有确定高度才会滚动 */
+  /* 高度的「基准」是 56vh（键盘收起时弹层按内容撑，就是它顶着）；
+     键盘弹起后弹层有了确定高度，这里靠 flex-grow 把剩余空间吃掉、
+     靠 flex-shrink 在空间不够时缩 —— 内容正好等于弹层高，弹层自己就不会溢出滚动，
+     也就不会把滚动链甩给下层页面。min-height: 0 是缩的前提（flex 子项默认 auto 不肯缩）。 */
   height: 56vh;
+  min-height: 0;
+  flex-grow: 1;
+  /* 列表滑到头之后**不要**把滚动继续传给页面（真机现象：继续上滑会把下层
+     「图片解析」整页一起带着滚，弹层跟着页面跑）。 */
+  overscroll-behavior: contain;
+  /* ⚠️ width: auto 不能省：uni.css 里 `uni-scroll-view { width: 100% }`，
+     而 **width: 100% 是不扣 margin 的** —— 光写 margin 0 16px 的话，盒子仍是整屏宽、
+     再往右溢出 16px，整个弹层因此可以左右滑（真机实测：列表能横向拖走）。
+     写成 auto，块级元素才会按「父宽 - margin」算宽。 */
+  width: auto;
   margin: 0 16px 20px;
   border: 1px solid $ui-hairline;
   border-radius: $ui-radius-md;
 }
 
+/* 「清空」：与结果区那族胶囊同一套尺寸与配色。
+   它是唯一一个没写底色的按钮 —— uni 给 <button> 预置的 #f8f8f8 灰底 + ::after 描边
+   在没有底色覆盖时就会露出来，页面上看就是「一个小灰方块」，很扎眼。 */
+.clear-btn {
+  display: flex;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: $ui-radius-pill;
+  padding: 0 16px;
+  background-color: $ui-raise-2;
+  color: $ui-text-2;
+  font-size: 13px;
+  line-height: 1;
+  transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+}
+
+.clear-btn:active {
+  background-color: $ui-danger-soft;
+  color: $ui-danger;
+}
+
+.clear-btn:disabled {
+  opacity: 0.5;
+}
+
+/* 列表区的空状态：与 ProductSelectDialog 的 .picker__empty 同款（靠上留白），
+   它占的是列表区里的一行，不改变弹层高度 */
+.picker-state {
+  padding: 40px 16px;
+  color: $ui-text-3;
+  font-size: 14px;
+  text-align: center;
+}
+
 .picker-item {
   display: flex;
-  align-items: center;
+  /* 名称可能换行，编码跟第一行齐（居中的话多行名称会把编码吊在中间） */
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
 
@@ -1157,28 +1395,489 @@ onUnmounted(() => {
     font-size: 14px;
   }
 
+  /* 名称不截断：主数据里的名字普遍二三十个字（HND-D150_200KG_塑料桶…），
+     单行省略号下根本认不出是哪个。让它换行，行高跟着内容走。
+     单位不再单独占一列 —— 选中物料时本来就会按编码带出单位（见 selectMaterial），
+     列在这里只是白占宽度、把名称挤没。 */
   &__name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
     color: $ui-text-2;
     font-size: 14px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__unit {
-    flex-shrink: 0;
-    color: $ui-text-3;
-    font-size: 12px;
+    line-height: 1.45;
+    word-break: break-all;
+    white-space: normal;
   }
 }
 
-/* 识别结果里的物料缩略图（替代 el-image 的 fit="cover"） */
-.picker-thumb {
-  width: 32px;
-  height: 32px;
+/* ===== 解析结果 =====
+   两套排版共用一份 DOM，靠下面这个断点切换（不用两套模板 —— 两套模板意味着
+   以后加一列要改两处，迟早会漂移）：
+     · < 768px（手机/竖屏）：每行一张卡片，字段竖排、各自带标签，不横向滚动；
+     · ≥ 768px（桌面 H5）：表头 + 网格行，回到表格观感。
+   断点用 px 而不是 rpx：这里判断的是「屏幕有多宽」，不是「设计稿缩放比」。 */
+$parse-breakpoint: 768px;
+
+.result__head {
+  padding: 14px 16px;
+  border-bottom: 1px solid $ui-hairline;
+}
+
+.result__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+/* ---- 单据信息：整张单据一份 ---- */
+.doc {
+  padding: 14px 16px;
+  border-bottom: 1px solid $ui-hairline;
+}
+
+.doc__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标签列宽固定，让「单据号 / 领料时间 / 物料名称…」这些字段的输入框左边缘对齐 */
+.doc__label,
+.field__label,
+.cell__label {
+  flex: 0 0 68px;
+  color: $ui-text-3;
+  font-size: 13px;
+}
+
+.doc__type {
+  min-width: 0;
+  overflow: hidden;
+  color: $ui-text;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc__preview {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-items: center;
+  border: 0;
+  padding: 4px 0 4px 8px;
+  background-color: transparent;
+  color: $ui-accent-text;
+  font-size: 13px;
+}
+
+.doc__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 12px;
+}
+
+/* 手机端一行放不下两个字段（flex-basis 220 放不进 ~300px 的卡片），会自动各占一行 */
+.field {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ---- 输入框 ----
+   手机端常显底色与描边：触屏没有 hover，静默无边框的话根本看不出这里能改；
+   桌面端仍回到「静默无边框、hover / focus 才显形」，免得整张表看起来像一屏表单控件。 */
+.field__input,
+.cell__input {
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 36px;
   border: 1px solid $ui-border;
-  border-radius: 6px;
+  border-radius: $ui-radius-sm;
+  padding: 0 10px;
+  background-color: $ui-surface;
+  color: $ui-text;
+  font-size: 14px;
+  outline: none;
+  transition: border-color $ui-dur $ui-ease, background-color $ui-dur $ui-ease;
+}
+
+/* 占位符走 placeholder-class（uni 各端的写法，和登录页一致）；
+   下面那条 ::placeholder 是给 H5 原生 input 兜底的 —— 两边都留着，
+   哪一端认得哪一个都行，认不得的那条就是个空规则 */
+.ui-placeholder {
+  color: $ui-text-3;
+}
+
+.field__input::placeholder,
+.cell__input::placeholder {
+  color: $ui-text-3;
+}
+
+.body {
+  padding: 14px 16px;
+}
+
+/* ---- 明细行 ---- */
+/* 列宽：序号给够「序号」两个字的宽度（40px 会把表头挤成两行）；
+   物料名称封顶在 340px —— 让它跟着 fr 一路撑开的话，名称右侧的搜索图标会被推到
+   几百像素之外，跟它要搜的那一格对不上；
+   富余的宽度留给物料编码（纯文本，右边空着最不碍事）；数量列定宽，保证小数点对齐 */
+.rows--pick,
+.rows--inbound {
+  --row-cols: 56px minmax(160px, 340px) minmax(130px, 1fr) 104px 64px 56px;
+}
+
+.rows--unknown {
+  --row-cols: 56px minmax(160px, 340px) minmax(130px, 1fr) 104px 56px;
+}
+
+.rows__head {
+  // 手机端不给表头留位置：几百像素宽塞 6 列，表头只会被挤成竖排单字
+  display: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  border-radius: $ui-radius-md;
+  padding: 12px;
+  background-color: $ui-surface-2;
+}
+
+.row:not(:first-child) {
+  margin-top: 10px;
+}
+
+.row__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.row__seq {
+  color: $ui-text-3;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 「删除该行」与「增加一行」是同一族控件：胶囊、同高同底色同字色，
+   只有按下时的语义色不同（删=危险色、增=强调色）。
+   高度写死而不是靠内容撑 —— 行首那颗和列表底部那颗必须一样高，
+   否则一行一个字号的差异就会让它们看着不像一套东西。 */
+.row__del,
+.row-add {
+  display: flex;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: $ui-radius-pill;
+  padding: 0 14px;
+  background-color: $ui-raise-2;
+  color: $ui-text-2;
+  font-size: 13px;
+  line-height: 1;
+  transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+}
+
+.row-add:active {
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.row__del:active {
+  background-color: $ui-danger-soft;
+  color: $ui-danger;
+}
+
+.cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 序号与删除在手机端挪到了行首的操作条上，不占字段位 */
+.cell--index,
+.cell--actions {
+  display: none;
+}
+
+.cell__text {
+  color: $ui-text-3;
+  font-size: 13px;
+}
+
+.cell__code {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+  color: $ui-text;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 编码为空 = 这行还不能入库，用警示色让它在一片「—」里显出来 */
+.cell__code.is-empty {
+  color: $ui-warning;
+}
+
+.cell__search {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid $ui-border;
+  border-radius: $ui-radius-sm;
+  background-color: $ui-surface;
+  color: $ui-text-2;
+}
+
+.cell__search:active {
+  border-color: $ui-accent-strong;
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.cell__del {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: $ui-radius-sm;
+  background-color: transparent;
+  color: $ui-text-3;
+}
+
+.cell__del:active {
+  background-color: $ui-danger-soft;
+  color: $ui-danger;
+}
+
+.empty {
+  border-radius: $ui-radius-md;
+  padding: 12px;
+  background-color: $ui-surface-2;
+  color: $ui-text-2;
+  font-size: 13px;
+}
+
+.rows-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.rows-hint {
+  color: $ui-text-3;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.engine-line {
+  margin-top: 8px;
+  color: $ui-text-3;
+  font-size: 12px;
+}
+
+/* ---- 确认入库 ---- */
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  border-top: 1px solid $ui-hairline;
+  padding: 14px 16px;
+}
+
+/* 手机端：提示在上、按钮整宽在下（挤在一行里按钮会被压成小半条） */
+.confirm__msg {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.confirm__msg.is-warn {
+  color: $ui-warning;
+}
+
+.confirm__msg.is-error {
+  color: $ui-danger;
+}
+
+.confirm__msg.is-done {
+  color: $ui-success;
+}
+
+.confirm__btn {
+  width: 100%;
+}
+
+/* ===== 桌面端（≥ 768px）：回到表格观感 ===== */
+@media (min-width: $parse-breakpoint) {
+  .result__head {
+    padding: 14px 24px;
+  }
+
+  .result__body {
+    gap: 20px;
+    padding: 24px;
+  }
+
+  .doc,
+  .body {
+    padding: 16px 20px;
+  }
+
+  /* 表头行与数据行共享 --row-cols，列宽逐列对齐 */
+  .rows__head,
+  .row {
+    display: grid;
+    grid-template-columns: var(--row-cols);
+    align-items: center;
+  }
+
+  .rows {
+    overflow: hidden;
+    border: 1px solid $ui-hairline;
+    border-radius: $ui-radius-md;
+  }
+
+  .rows__head {
+    border-bottom: 1px solid $ui-hairline;
+  }
+
+  .rows__th {
+    padding: 8px 10px;
+    color: $ui-text-3;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  /* 表头行与数据行共享 --row-cols，列宽逐列对齐 */
+  .row {
+    gap: 0;
+    border-radius: 0;
+    padding: 0;
+    background-color: transparent;
+  }
+
+  .row:not(:first-child) {
+    margin-top: 0;
+    border-top: 1px solid $ui-hairline;
+  }
+
+  /* 序号 / 删除回到各自的列里 */
+  .row__bar {
+    display: none;
+  }
+
+  .cell {
+    padding: 4px 10px;
+    gap: 6px;
+  }
+
+  .cell__label {
+    display: none;
+  }
+
+  .cell--index,
+  .cell--actions {
+    display: flex;
+  }
+
+  .cell--actions {
+    justify-content: center;
+  }
+
+  .cell.is-center {
+    justify-content: center;
+  }
+
+  .cell.is-center .cell__input {
+    text-align: center;
+  }
+
+  .cell.is-right .cell__input {
+    text-align: right;
+  }
+
+  .rows__th.is-center {
+    text-align: center;
+  }
+
+  .rows__th.is-right {
+    text-align: right;
+  }
+
+  .field__input,
+  .cell__input,
+  .cell__search {
+    border-color: transparent;
+    background-color: transparent;
+  }
+
+  .field__input:hover,
+  .cell__input:hover {
+    border-color: $ui-border;
+  }
+
+  .field__input:focus,
+  .cell__input:focus {
+    border-color: $ui-accent;
+    background-color: $ui-surface;
+  }
+
+  .cell__search:hover {
+    background-color: $ui-raise-2;
+    color: $ui-text;
+  }
+
+  .rows-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+  }
+
+  .row-add:hover {
+    background-color: $ui-accent-soft;
+    color: $ui-accent-text;
+  }
+
+  .row__del:hover,
+  .cell__del:hover,
+  .clear-btn:hover {
+    background-color: $ui-danger-soft;
+    color: $ui-danger;
+  }
+
+  /* 按钮与提示可以同处一行了：提示左、按钮右 */
+  .confirm__msg {
+    width: auto;
+    flex: 1 1 auto;
+    margin-right: auto;
+  }
+
+  .confirm__btn {
+    width: auto;
+    flex: 0 0 auto;
+  }
 }
 </style>

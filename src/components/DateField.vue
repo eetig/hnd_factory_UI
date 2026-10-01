@@ -181,7 +181,7 @@ function confirm() {
       v-model="sheetVisible"
       position="bottom"
       safe-area-inset-bottom
-      custom-style="max-height: 82vh; border-radius: 32rpx 32rpx 0 0; overflow: hidden;"
+      custom-style="max-height: 82vh; border-radius: 32rpx 32rpx 0 0; overflow: hidden; background-color: var(--ui-surface);"
     >
       <view class="date-sheet">
         <view class="date-sheet__head">
