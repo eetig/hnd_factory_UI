@@ -60,12 +60,29 @@ src/
 
 全项目有 20 多处调用点、6 个 composable，以及散落各处的
 `error.response.data.msg` / `error.response.status === 404` 错误分支。
-`src/api/request.js` 用 `uni.request` 复刻了 axios 的三个语义，使这些地方**一行都不用改**：
+`src/api/request.js` 用 `uni.request` 复刻了 axios 的四个语义，使这些地方**一行都不用改**：
 
 1. **非 2xx 走 reject** —— `uni.request` 对 404/500 也走 `success`，不补这条，
    所有 catch 分支和错误提示都会变成哑的；
 2. 成功结果包成 `{ data }`；
-3. 失败结果带 `error.response = { status, data }`。
+3. 失败结果带 `error.response = { status, data }`；
+4. **`config.params` 拼进 URL**（`withParams`）。
+
+> ⚠️ **第 4 条是 2026-10-01 补的，漏了整整一轮**：`uni.request` 只认 `data`，
+> axios 那套 `request.get(url, { params })` 在 uni 里没有任何人解析 —— 接口能通，
+> 但**参数一个都没带上**，而且不报错，看起来像「后端没这条数据」。
+> 实测症状（全部来自这一条）：
+>   · `/api/material/match`（补物料编码）不带 `name` → **HTTP 400**，
+>     页面上是那条「请求失败（HTTP 400）（物料编码将全部留空，可手工填写）」；
+>   · `/api/material/search`（选物料弹窗）不带 `keyword` → 后端按空关键词处理、
+>     返回 `data: []`，弹窗里就是「没有匹配的物料」——**物料明明存在**；
+>   · `/api/work-order/image/list` 不带 `orderNo` → HTTP 400（工单汇总 / 周统计的图片列表）；
+>   · `/api/goods-move/list` 不带日期 → 不报错，但把**全量**记录当成区间数据返回。
+> 拼 URL 时**自己 `encodeURIComponent`**：中文直接出现在请求行里，Tomcat 会按
+> RFC 7230 判非法字符回 400，且各端「谁来编码」并不一致，自己编码才可控。
+> 取值口径与 axios 一致：跳过 `undefined` / `null`，保留空字符串。
+> ⚠️ 修好之后 `/api/goods-move/list` 会真的按「当月初～今天」过滤，
+> **原辅料核算里的「已报工数」会随之从全量变成当月量** —— 这是它本来该有的口径。
 
 **multipart 上传是特例**：`uni.request` 在任何端都发不了 FormData（H5 端也一样），
 必须走 `uni.uploadFile`，而它**一次只能带一个文件**。因此：
@@ -74,22 +91,57 @@ src/
 |---|---|
 | `/api/ocr/recognize` | 本来就是单文件，直接用 `uploadFile` |
 | `/api/work-order/image/upload`（工单图片、周统计图片） | **循环单文件**请求同一接口（`uploadFiles`） |
-| `/api/work-order/ocr/confirm`（确认入库） | ⚠️ **漏了没改**，仍走 `uni.request` + `FormData`，见下 |
+| `/api/work-order/ocr/confirm`（确认入库） | 单文件 + 一个 `payload` 字段，走 `uploadFile`（2026-10-01 补，见下） |
+| `/api/work-order/import/preview`（Excel 预览） | 单文件，走 `uploadFile`（2026-10-01 补，见下）。**文件名必须带** |
+| `/api/work-order/import/save`（Excel 保存） | 有图时**一次请求多个文件**（后端是 `MultipartFile[]`），走 `uploadFile` 的 `files` |
 
 > ⚠️ **需要后端确认**：上述循环调用要求 `/api/work-order/image/upload` 接受
 > **单元素**的 `files` 数组。若后端声明的是 Spring 的 `MultipartFile[]`，天然合法；
 > 若有「至少 N 张」之类的校验，需同步调整。
 
-> ⚠️ **已知未修复：`/api/work-order/ocr/confirm` 现在发不出 body（三端一致）。**
-> `src/composables/useOcrConfirm.js` 仍在用 `uni.request` + `FormData`（`payload` + 可选 `file`），
-> 正是上面这条规则禁止的写法 —— 迁移时漏改了这个文件。
+> ✅ **已修复（2026-10-01）：`/api/work-order/ocr/confirm` 改走 `uni.uploadFile`。**
+> 此前 `src/composables/useOcrConfirm.js` 用的是 `uni.request` + `FormData`
+> （`payload` + 可选 `file`），正是上面这条规则禁止的写法 —— 迁移时漏改了这个文件。
 > H5 实测（拦截请求看服务端实收）：`Content-Type: application/json`、body 为 `{}`，
-> **payload 与文件被静默丢弃**，而前端拿到的是成功响应、不报错。
-> 结果是「确认入库」在页面上必然表现为「提示保存成功、库里没有数据」。
+> **payload 与文件被静默丢弃**，而前端拿到的是成功响应、不报错；
+> 页面上表现为「提示保存成功、库里没有数据」。
 >
-> 修法有两条，都涉及接口契约，按约定需先与后端确认再动，故先挂起：
-> 前端改走 `uni.uploadFile`（`file` 是可选参数，需用占位空文件凑数），
-> 或后端加一个纯 JSON 的入口。相关记录见 `前后端改动统筹.md` 变更-003 §8.8。
+> 两条候选路里选了「前端改走 `uni.uploadFile`」，**接口契约不变，后端一行没动**
+> （后端 `consumes = MULTIPART_FORM_DATA_VALUE`，实测 JSON body 直接被 **415** 拒掉，
+> 所以本来也只有这一条路）。2026-10-01 线上实测：
+> multipart + 文件 → **401**（映射匹配、内容类型通过，只差 token）；JSON → 415。
+>
+> 实现要点：
+>   · `payload` 走 `uploadFile` 的 `formData`（后端是 `@RequestParam String`，一个字符串）；
+>   · 图片走 `filePath`、字段名固定 `file`（后端按 `@RequestPart("file")` 取）；
+>   · ⚠️ `uni.uploadFile` **必须带文件**，发不出「只有 payload」的请求，
+>     所以 `filePath` 改成**必填**（缺了直接抛错），**不要**退化成塞一个空文件 ——
+>     那会在库里落一张假图，`file_name` 还让汇总列表的「线下单据」列显示成打不开的图。
+>
+> 相关记录见 `前后端改动统筹.md` 变更-003 §8.8。
+
+> ✅ **Excel 导入那两处同类问题也已修（2026-10-01）**。
+> `src/components/WorkOrderImport.vue` 原先也是 `new FormData()` + `request.post`，
+> 而后端这两个入口同样是 multipart-only：
+>   · `/api/work-order/import/preview` —— `consumes = MULTIPART_FORM_DATA_VALUE`，
+>     发 JSON body 直接 **415**；
+>   · `/api/work-order/import/save` —— 有 JSON / multipart 两个映射，
+>     「有图要传」那一支走的是 multipart，同样发不出去（JSON 那一支本来就是通的）。
+>
+> 顺手把 `onUploadProgress` 空转也一并解决了：`uni.uploadFile` 原生有
+> `onProgressUpdate`，上传进度条这才真的是进度条。同时把接口壳
+> （baseUrl / 鉴权头 / 超时 / 401 / 错误整形）走 `api/upload.js`，不再各写一份。
+>
+> ⚠️ **两条容易踩的坑**（都写在 `api/upload.js` 里了）：
+>   1. **必须用 File 而不是 blob URL**。uni 的 H5 实现里，`filePath` 会被
+>      `urlToFile()` 取回一个**无名 Blob**，再由 `blobToFile()` 命名成
+>      `file-<时间戳>`（**连扩展名都没有**）。后端有两处认文件名：导入预览按
+>      `.xlsx` 后缀决定是否清洗内嵌图、并按文件名兜底识别单据类型；导入保存按
+>      `dispimgId` 匹配图片。所以 `uploadFile()` 加了 `file` / `files` / `fileName`
+>      三个 H5 专用入参，直接给 File（`file.name` 原样带过去）。
+>   2. **多次请求 ≠ 多文件**。`/import/save` 的签名是 `@RequestPart("files") MultipartFile[]`，
+>      拆成多次单文件请求会让后端把入库**重跑 N 遍**。H5 端 `uni.uploadFile` 的
+>      `files` 数组原生支持同名多文件，一次发完。
 
 ---
 
@@ -287,6 +339,19 @@ App 与小程序端**整块排除**（条件编译 `#ifdef H5`，含组件导入
 ### 5.2 图片上传与选择
 
 - 选图：隐藏的 `<input type="file">` → `uni.chooseImage`（三端统一，App/小程序端可调相机）
+- **选图的「拍摄 / 从相册选择」不再用平台自带的 ActionSheet（2026-10-01）。**
+  `uni.chooseImage` 一次给两个 `sourceType` 时，App / 小程序会弹出**系统自己的**选择框 ——
+  样式不可控、各机型还不一样，深色主题下是一块突兀的白板。改成两端各让一步：
+    · H5：直接开选择器（H5 没有相机/相册之分，底层就是 `<input type="file">`）；
+    · App / 小程序：先弹自绘的底部弹层（`ImageParse.vue` 的 `.source-sheet`），
+      选完再带**单个** `sourceType` 调 `chooseImage` —— 只有一个来源时平台不再弹自己的框。
+  ⚠️ 同一个道理：`wd-popup` 的 `.wd-popup` 写死了 `background: #fff`，只有挂
+  `.wot-theme-dark` 时才变（本项目用的是自己那套主题变量，没有这个类）——
+  **凡是 wd-popup 都要在 `custom-style` 里补 `background-color: var(--ui-surface)`**，
+  否则深色主题下它是一块白板、里面的字反而是浅色，等于白底白字。
+  2026-10-01 已逐个数过：全项目 8 处 `wd-popup` 全部补上（`DateField`、
+  `ProductSelectDialog`、`ImageViewer`、`ImageParse` ×2、`index.vue` ×3）。
+  新增弹层时照抄这一条。
 - 预览大图：`el-image` 的 `preview-src-list` → `uni.previewImage`（调起平台原生查看器）
 - 列表缩略图的**逐级降级**（变更-001：缩略图 → 原图 → 隐藏）改为**数据驱动**。
   原实现直接改 DOM（`el.dataset` / `el.src` / `el.style.display`），
@@ -339,6 +404,44 @@ JS 不再量尺寸、也不再每帧重绘 —— 只剩液位缓动一件事，
   避免一次操作走两格（`startStepHoldByTouch` / `startStepHoldByMouse`）。
 - **`<button>` 的 touch/mouse 不能只绑一组**：小程序与 App 真机只有 touch，
   H5 桌面只有 mouse，缺哪组哪端就是死键。凡「按下—抬起」型交互都要两组齐全。
+- **uni 给每个 `<button>` 都预置了一套外观，自己写样式的按钮必须先清掉**。
+  `uni.css` 的 `uni-button` 带着 `font-size: 18px`、`line-height: 2.5555`（≈47px 的行高）、
+  `background-color: #f8f8f8`、`margin-left/right: auto`（按钮会被推到容器正中），
+  外加一个用 `::after` 画的 1px 边框（`rgba(0,0,0,.2)` 再缩放 0.5 描出来的细线）。
+  症状就是「自己写的按钮一个高一个矮、没待在预期的那一侧、平白多出一圈描边」——
+  `ImageParse.vue` 的「删除本行」和「增加一行」两个胶囊原先就是这么对不上的
+  （删除被 uni 的 `margin:auto` 推到了行中央，而不是靠右）。
+  修法：把这几个类名圈起来统一 reset（`margin: 0; border: 0; line-height: 1;` 加
+  `&::after { border: 0 }`），高度**写死**（32px）而不是靠内容撑。
+  ⚠️ 别图省事写成裸 `button` 选择器：scoped 之后它是 `button[data-v-x]`，优先级 (0,1,1)
+  **高于** Tailwind 的单个类 (0,1,0)，会把页面上所有走 Tailwind 的按钮
+  （`bg-slate-900` 那类）一起打回透明底。
+  ⚠️ **忘记 reset 会是什么样**：`ImageParse.vue` 的「清空」是唯一一个没写底色的按钮 ——
+  uni 那层 `#f8f8f8` + `::after` 描边就直接露出来了，页面上是一个突兀的小灰方块。
+  ⚠️ **reset 那块必须放在组件样式的最前面**：同为单类选择器，靠后的胜出。起初放在
+  文件中间，结果它把前面已经写好的 `.clear-btn` 底色/字色一起清了，按钮变成一行
+  几乎看不见的浅灰字。
+- **`uni-scroll-view` 带 `width: 100%`，写横向 margin 要配 `width: auto`**。
+  这是 CSS 本身的规则，不是 uni 的 bug：`width: 100%` 的值是**包含块的宽度，不扣 margin**，
+  于是 `margin: 0 16px` 的 `scroll-view` 会比自己该占的位置宽出 32px、从父容器右侧挤出去。
+  连带的症状是**整个弹层可以左右滑** —— `wd-popup` 的 `overflow-y: auto` 会把
+  `overflow-x` 一并算成 auto，多出来的那截就成了可滚动区域（真机实测：物料选择器能横向拖走，
+  列表和搜索框跟着飘）。改法是把 `width` 显式写成 `auto`（`.picker-list`）。
+  项目里另外三个 `scroll-view`（`DateField` / `ProductSelectDialog` / 抽屉）都是用 padding
+  而不是 margin 定位的，没这个问题。
+- **图片解析的「解析结果」：一套 DOM、两种排版**（`src/components/ImageParse.vue`）。
+  改造前是一张 9 列表格，手机屏宽下列宽被压到只剩一两个汉字 —— 表头直接竖排成单字，
+  一屏之内既有信息又没法核对。现在用 CSS grid：`@media (min-width: 768px)` 走
+  「表头 + 网格行」的表格观感（桌面 H5 与改造前基本一致），更窄则每行变成一张卡片、
+  每个字段自带标签，完全不横向滚动。
+  ⚠️ **一套 DOM 是刻意的**：两套模板意味着以后加一列要改两处，迟早漂移。
+  ⚠️ 同时把**单据号 / 时间 / 线下单据缩略图**从「列」上提到了卡片顶部的单据信息区：
+  这三项整张单据只有一个值，做成列就是逐行重复渲染（同一个单号出现 N 次，还白占两列宽）。
+  `image.table.doc` 的数据结构没动，改一处全表同步的行为也没变；缩略图改由卡片头部
+  那张（点开走 `uni.previewImage`）承担。
+  ⚠️ 断点用 px 不用 rpx（判断的是「屏幕有多宽」，不是「设计稿缩放比」），
+  且**必须写在组件自己的 `<style scoped>` 里**：它跟 `uni.scss` 的变量无关，
+  不受「改完 uni.scss 要重启 dev」那条约束。
 - **`wd-pagination` 的 `change` 载荷是 `{ value: N }` 对象，不是页码**，且它
   **先于 `update:modelValue` 触发**（此时 v-model 还是旧值）。`el-pagination` 传的是数字，
   照旧写法直接绑处理函数会让页码被赋成对象 → `slice(NaN, NaN)` → **列表静默变空、不报错**。
@@ -347,6 +450,39 @@ JS 不再量尺寸、也不再每帧重绘 —— 只剩液位缓动一件事，
   内部 `__content` 又是 `justify-content: flex-start` —— 容器用 `justify-end` 排时，按钮组会贴着
   这个窄块的右缘。现改成容器 `justify-center` + 组件上 `custom-style="max-width: 340px;"`
   （4 处），按钮组才在两处筛选行里稳定居中；限宽同时挡掉 H5 桌面端把按钮摊开的问题。
+- **底部弹层里的输入框必须自己躲软键盘**（2026-10-01）。弹层是 `position: fixed` 的，
+  uni `<input>` 的 `adjust-position`（默认开）只滚动**页面** —— 对 fixed 元素毫无作用，
+  于是键盘一弹就把「选择物料」弹层里的搜索框盖住，只露出标题那一行（真机实测）。
+  做法：`composables/useKeyboardLift.js` 听 `uni.onKeyboardHeightChange`，拿到键盘高度后改弹层的
+  `custom-style`：**`bottom: <键盘高>px`（底边上移到键盘上沿）+
+  `height: min(80vh, calc(100vh - <键盘高>px - 12px))`**。
+  ⚠️ **高度必须写成 `height`，不能只给 `max-height`**：键盘高度是系统报的、实测不可靠
+  （同一台机器换个输入法就报得偏大）。只给上限时弹层高度由内容决定 —— 内容比上限矮时
+  就按内容撑，`bottom` 一偏大整块被顶到屏幕外（真机现象：列表从一个被截断的行开始，
+  搜索框跑到屏幕上方）。写成 `height` 后顶边恒等于 12px（height 与 bottom 联动），
+  键盘报多少都只会让弹层变矮，不会溢出屏幕。实测：键盘高 0 / 291 / 575 三种取值下，
+  弹层顶边分别是 169 / 12 / 12。
+  ⚠️ 弹层里的列表要 `flex-grow: 1` + `min-height: 0`：弹层有了确定高度后由列表吃掉剩余空间，
+  内容正好等于弹层高，弹层自身就不会溢出滚动。
+  ⚠️ 列表还要 `overscroll-behavior: contain`：列表滑到头之后**不能**把滚动继续传给页面 ——
+  真机上继续上滑会把下层的「图片解析」整页带着滚，弹层跟着页面一起跑。
+  用它的两处：`ImageParse.vue` 的物料选择器、`ProductSelectDialog.vue`（工单汇总页 6 处）。
+  ⚠️ **别用 `padding-bottom: <键盘高>px` 顶上去**（第一版就是这么写的，真机上是错的）：
+  本项目**没有全局 box-sizing 重置**（preflight 关着，`uni.css` 只给 `uni-button`、
+  `uni-page-*` 等少数元素设了 border-box），`.wd-popup` 是 **content-box** ——
+  padding 不占 `max-height` 的额度，弹层会被撑得比 max-height 还高，整个顶出屏幕上沿，
+  搜索框跑到状态栏里去了。同一条 `content-box` 也意味着 `wd-popup` 自动追加的那条
+  「安全区 `padding-bottom`」会额外加高弹层，所以键盘态要显式写 `padding-bottom: 0`。
+  ⚠️ 监听是全局的，**弹层打开时 start、关闭时 stop**，一直挂着会和别的弹层互相覆盖；
+  H5 没有这个 API（浏览器自己会缩视口），composable 里已按不支持处理。
+- **弹层里的搜索框位置不能随结果条数变**（2026-10-01）。物料选择器原先用
+  `v-if / v-else` 在「空状态文案」和「结果列表」之间切换，而列表是 56vh 的
+  `scroll-view` —— 结果少时弹层只有一百多像素、搜索框贴着键盘，结果一多弹层长到
+  56vh、搜索框又跑到屏幕上半截。**人正在打字，位置一直在动**，真机上体验很差。
+  改法：列表区**始终**渲染（固定 56vh），空状态/加载中作为它内部的一个占位行，
+  不用 `v-if` 换掉整块。这样弹层高度只与「键盘在不在」有关，与结果条数无关
+  （实测：键盘弹起时 0 / 2 / 20 条结果，弹层都是 511px、搜索框都在 y=68）。
+  `ProductSelectDialog` 本来就是这个写法，两边现在一致。
 - **页面壳**：`pages/index/index` 声明了 `navigationStyle: custom`（页面自带标题栏，
   不再叠原生导航栏），代价是要自己用 `--status-bar-height` 给状态栏让位。
 - **登录跳转**：`route.query.redirect` 在 uni-app 无对应物，改成「有上一页就返回，否则回首页」。
@@ -560,9 +696,10 @@ JS 不再量尺寸、也不再每帧重绘 —— 只剩液位缓动一件事，
 ### 6.2 小程序 appid 与合法域名
 
 - `src/manifest.json` 的 `mp-weixin.appid` 目前为空，需填实际 appid；
-- `src/api/config.js` 的 `API_ORIGIN` / `IMG_ORIGIN` 目前是**开发期直连局域网地址**
-  （`http://172.26.20.69:8084` / `:8082`），上线前必须换成 Nginx 域名；
-- 换域名后需在微信后台配置三处合法域名：
+- 后端地址已收敛到 `src/api/env.js` 的两套预设（`local` / `remote`），
+  **打包前必须确认 `APP_ENV === 'remote'`**（值为 `https://hbhnd.cloud`）——
+  切换方式、服务清单与实测记录见第 10 节；
+- 小程序端需在微信后台配置三处合法域名（`remote` 预设下三处都是 `https://hbhnd.cloud`）：
   - `request` 合法域名（`/api/*`）
   - `uploadFile` 合法域名（图片上传、OCR 识别）
   - `downloadFile` 合法域名（`/files`、`/thumbs` 单据图片；**长按保存到相册也走这条通道**，见 5.8）
@@ -705,7 +842,7 @@ python resources/compress-vessel-images.py
 ## 9. 常用命令
 
 ```bash
-npm run dev:h5           # H5 开发（vite 代理仍指向本机 8084/8082/8085）
+npm run dev:h5           # H5 开发（代理指向哪套后端由 src/api/env.js 的 APP_ENV 决定）
 npm run dev:mp-weixin    # 小程序开发，产物导入微信开发者工具
 npm run dev:app          # App 开发，产物导入 HBuilderX 运行
 
@@ -718,3 +855,142 @@ npm run sync:app-icons -- dev   # 同步到 dist/dev/app
 ```
 
 各端产物输出到 `dist/build/<平台>/`。
+
+> 后端环境的切换方式、两套地址清单与打包前检查项见第 10 节。
+
+---
+
+## 10. 后端环境切换（local / remote）
+
+> 「装到手机上却发现连的是开发机」就是这里没切 —— **打正式包前先过一遍 10.2 的检查项**。
+
+### 10.1 两套配置与服务清单
+
+唯一开关是 `src/api/env.js` 的 `APP_ENV`（`'local'` | `'remote'`）。
+它同时被两处读取，所以不会出现「前端切了、代理没切」这种只在 H5 上暴露的错配：
+
+| 读取方 | 用途 |
+|---|---|
+| `src/api/config.js` | App / 小程序用的**绝对** origin（`API_ORIGIN` / `IMG_ORIGIN` / `OCR_ORIGIN`）|
+| `vite.config.js` | H5 开发代理的四条路由（`/api/ocr`、`/api`、`/files`、`/thumbs`）|
+
+服务清单（`172.26.20.69` 是开发机的局域网 IP，写在 `env.js` 的 `LAN_HOST`）：
+
+| 服务 | 前端用它做什么 | `local`（本机联调） | `remote`（线上部署） |
+|---|---|---|---|
+| `hnd_factory` | 业务接口 `/api/*` | `http://172.26.20.69:8084` | `https://hbhnd.cloud`（Nginx 反代；另有直连端口 `124.220.60.154:9091`（OpenResty）与 `:8084`（FRP），**三者是同一套后端同一份数据**）|
+| `img-service` | 单据图片 `/files`、`/thumbs` | `http://172.26.20.69:8082`，需重写成 `/api/img/file`、`/api/img/thumb` | `https://hbhnd.cloud/files`、`/thumbs`（Nginx 同源路由，不重写）|
+| `myocr` | 图片识别 `/api/ocr/*` | `http://172.26.20.69:8085` | `https://hbhnd.cloud/api/ocr`（Nginx 分流）|
+| `excel-import-service` | 导入解析，**前端不直连**（由 `hnd_factory` 调用）| 随本机 Nacos 注册 | 随远端 Nacos 注册 |
+| Nacos | 注册中心 / 配置，**前端不直连、不需要任何 Nacos 资料** | `http://127.0.0.1:8848`（实测 2.5.4 / standalone / 未开鉴权）| **不占公网端口**（FRP 以 `stcp` 暴露）；线上服务注册在 1Panel 的 Nacos 容器内。详见 `Nacos与FRP隧道说明.md` |
+| MinIO | 图片对象存储（`img-service` 的下游）| 本机 `9005` | 备份链路 `124.220.60.154:9025`（见 `minio同步手册.md`）|
+
+> `hbhnd.cloud` 解析到 `124.220.60.154`，与 `:9091` 同机 —— 但**前端必须走域名**：
+> `:9091` 只暴露了 `hnd_factory`，上面没有 `/files`、`/thumbs`、`/api/ocr`
+> 三条路由（见 10.3 实测）。`:9091` 适合用 curl / Postman 直连调后端接口。
+
+两套预设的差异只有三点，`env.js` 里逐项注明了原因：
+
+| 差异点 | `local` | `remote` |
+|---|---|---|
+| `/api/ocr/*` 归属 | 另一台服务（8085），非 H5 端由 `buildUrl` 单独指过去 | 与业务接口同源，`OCR_ORIGIN` 留空即跟随 `apiOrigin`，由 Nginx 分流 |
+| `/files`、`/thumbs` | 直连 `img-service`，手工重写为 `/api/img/*`（`IMG_REWRITE=true`）| Nginx 同源路由，原样透传（`IMG_REWRITE=false`）|
+| H5 开发代理 | 四条路由分别指 8084 / 8085 / 8082 并带 rewrite | 三条路由原样透传给域名 |
+
+### 10.2 怎么切 / 打包前检查
+
+```bash
+# 1) 改 src/api/env.js 一行：   export const APP_ENV = 'remote'
+# 2) 重新打包（H5 / 小程序 / App 各打一个包）
+npm run build:app        # 或 build:h5 / build:mp-weixin
+
+# 3) 自检产物（build:app 已自动执行；换过产物 / 手工复验时再跑一遍）
+npm run check:app-env
+```
+
+vite 每次启动 / 构建都会打印当前环境，打包前扫一眼终端即可确认：
+
+```
+[env] APP_ENV=remote → 线上部署（hbhnd.cloud 同源入口）（接口 base = https://hbhnd.cloud）
+```
+
+> ⚠️ origin 是**编译期**内联进产物的（`API_ORIGIN` 是常量，不是运行时配置），
+> 所以「装到手机上才发现连的是开发机」只能靠重新打包解决，改后端或改 hosts 都没用。
+>
+> **APK 是另一条路**：`npm run build:app` 只产出 `dist/build/app`，
+> APK 要回 HBuilderX 走「发行 → 原生App-云打包」；**打 APK 前必须先重新 build**，
+> 否则打出来的就是「新壳 + 旧 JS」，装到手机上照样连开发机（复盘见 10.5）。
+
+### 10.3 远程四路由实测（2026-10-01，开发机直连公网）
+
+| 请求 | 结果 |
+|---|---|
+| `GET https://hbhnd.cloud/api/work-order/list` | `200` + `application/json` ✓ |
+| `GET https://hbhnd.cloud/api/ocr/health` | `200` ✓ |
+| `GET https://hbhnd.cloud/files/<已存在的 fileName>` | `200` + `image/jpeg` ✓ |
+| `GET https://hbhnd.cloud/thumbs/<同一 fileName>` | `200` + `image/jpeg` ✓ |
+| `GET http://124.220.60.154:9091/api/work-order/list` | `200`（`hnd_factory` 直连端口）✓ |
+| 同上端口 + `/api/ocr/health`、`/files/*`、`/thumbs/*` | `404` ✗ —— **App 不能直连该端口** |
+
+### 10.4 远程入口的真实拓扑（FRP，2026-10-01 实测）
+
+`124.220.60.154` 上除 Nginx 之外还跑着 **frps**；`8082 / 8084 / 8085` 这些「服务端口」
+其实是 **FRP 隧道**（面板显示由一台 Windows 客户端发布，出口 IP 为家宽 / 办公网），
+不是云主机上的本机进程。Nacos 则以 **`stcp`** 方式暴露，**公网不开端口**。
+
+| 公网目标 | 实测 | 判定 |
+|---|---|---|
+| `:8084`（hnd_factory）| `200`，工单 **594** 条 | FRP 隧道 → 线上后端 |
+| `:8082`（img-service）| 通，非本服务路径返回 Spring `No static resource`（与本机行为一致）| FRP 隧道 |
+| `:8085`（myocr）| `/api/ocr/health` → `200`（`engine=tencent`）| FRP 隧道 |
+| `:9091`（OpenResty）| 仅 `/api/*` 通（其余 404），数据与 `:8084` 一致 | 另一种入口，同一后端 |
+| `:8848` / `:9848` / `:8080`（Nacos）| **全部不通** | 与面板一致：走 `stcp`，不对公网开放 |
+
+> ⚠️ **公网 `:8084` 与本机 `:8084` 不是同一套后端**：同一接口，公网 594 条、首条 id 941；
+> 本机 585 条、首条 id 940（各连测 3 次均稳定）。说明线上后端 + 线上库跑在**另一台机器**上，
+> 具体是哪台、谁维护、怎么备份，需运维书面确认（见 `Nacos与FRP隧道说明.md` 第 8 节）。
+
+**前端侧结论不变**：只认 `https://hbhnd.cloud` 一个域名入口，不连 Nacos、不直连这三个端口。
+
+> Nacos 的 stcp 要不要改成 TCP、上云还需要哪些 Nacos 资料 —— 完整结论见 `Nacos与FRP隧道说明.md`。
+
+---
+
+### 10.5 事故复盘：手机上装的还是旧包（2026-10-01）
+
+**现象**：`APP_ENV` 改成 `remote`、`npm run build:app` 也跑过了，但手机上那个 APK 仍然连 `172.26.20.69`（打开就报网络错误）。
+
+**时间线（全部有据可查）**：
+
+| 时刻 | 动作 | 产物里内联的地址 |
+|---|---|---|
+| 10:35 | HBuilderX 编译（app-plus + wgt）| `http://172.26.20.69:8082`（开发机）|
+| 10:36 | HBuilderX 云打包 → APK | 同上 —— **这个 APK 是错的**（文件名即证据：`__UNI__BE0BD40__20261001103510.apk` = 打包时刻 10:35:10，早于 11:00 才写入的 `APP_ENV = remote`）|
+| 10:55 | `config.js` / `vite.config.js` 改双环境（变更-004）| 源码还没改完，产物仍是旧的 |
+| 11:00 | `src/api/env.js` 写入 `APP_ENV = remote` | 源码从这里开始才是对的 |
+| 11:01 | `npm run build:app` | `dist/build/app` 干净了（IP × 0、域名 × 1）|
+| — | **没有再打 APK** | 📌 手机上装的仍是 10:36 那个包 |
+
+**根因（一句话）**：`API_ORIGIN` 是**构建期内联的常量** —— 改后端、改 hosts、重装 App 都无效；
+**只有重新编译 + 重新打包**才有效，而「编译」和「打 APK」是**两个**动作，那次只做了一半。
+
+**为什么旧的检查没拦住**：老检查只 grep `dist/build/app/app-service.js`，而那次它是干净的 ——
+**脏的是 `dist/cache/wgt`（热更新包）与 `dist/release/apk/*.apk`（真正装到手机上的）**。
+典型的「检查通过、错包照样发出去」。
+
+**闭环措施（已落地）**：
+
+| 措施 | 位置 |
+|---|---|
+| 自检同时扫 4 类产物：`dist/build/app`、`dist/build/app-plus`、`dist/cache/wgt`、`dist/release/apk/*.apk`（读 APK 内 `www/app-service.js`）| `resources/check-app-env.mjs`（新增）|
+| `remote` 下出现私网地址（RFC1918）或缺线上域名 → **退出码 1**，并在输出里直接给出修法 | 同上 |
+| 产物比 `dist/build/app/app-service.js` 旧 → 额外警告「它不是刚打出来的」 | 同上 |
+| 挂进构建链：`build:app` 之后自动跑；另开 `npm run check:app-env` 手工复验 | `package.json` |
+| 抽屉底部显示当前环境（`线上 · hbhnd.cloud` / `本机联调 · …`）| `src/pages/index/index.vue` |
+
+**留下的规矩**：装到手机之前先跑 `npm run check:app-env`；红了不要装。
+
+> 反向验证：把这次那个旧 APK 留在 `dist/release/apk/` 里跑自检，
+> 它会准确报出 `私网地址: 172.26.20.69 / 线上域名: 缺失` 并以退出码 1 结束 —— 这就是回归测试。
+
+> 实测（2026-10-01）：`npm run check:app-env` → **退出码 1**；涉及产物 = `dist/build/app-plus/app-service.js` / `dist/cache/wgt/__UNI__BE0BD40/app-service.js` / `dist/release/apk/__UNI__BE0BD40__20261001103510.apk`。
