@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus from 'element-plus'
 
@@ -17,9 +18,12 @@ vi.mock('vue-router', () => ({
 }))
 
 import request from '../../src/api/request'
+import { authState } from '../../src/api/auth'
 import WorkOrderList from '../../src/views/WorkOrderList.vue'
 import OrderImageDialog from '../../src/components/OrderImageDialog.vue'
 import StatsTable from '../../src/components/StatsTable.vue'
+import TankLevelPanel from '../../src/components/TankLevelPanel.vue'
+import TankLevelImageDialog from '../../src/components/TankLevelImageDialog.vue'
 
 const TAB_LABELS = [
   '工单汇总',
@@ -38,6 +42,7 @@ const TAB_LABELS = [
 /**
  * 月底储罐液位记录（变更-004）的一行样例：字段与后端 TankLevelVO 对齐。
  * 用它验证「接口返回数据 → 表格渲染」这一段是通的（列、数值格式、图据列）。
+ * 变更-011 起图据是数组（一条记录可多张）。
  */
 const TANK_LEVEL_ROW = {
   id: 1,
@@ -50,8 +55,7 @@ const TANK_LEVEL_ROW = {
   tankCode: 'V150-A',
   levelValue: 1250,
   theoreticalWeight: 1500,
-  imageUrl: null,
-  thumbnailUrl: null,
+  images: [],
 }
 
 /**
@@ -170,7 +174,99 @@ describe('WorkOrderList 页面冒烟', () => {
 
     // 表尾记录说明与线下台账一致
     expect(text).toContain('实际重量与理论计算可能存在差异，以实际测量为准')
-    expect(text).toContain('记录时间为每月月底下午2点')
+    expect(text).toContain('记录时间为每月月底下午3点')
+  })
+
+  it('月底储罐液位记录：默认（未登录只读）无编辑入口，数据照常可见', async () => {
+    request.get.mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === '/api/tank-level/list'
+            ? { success: true, dataList: [TANK_LEVEL_ROW], data: [] }
+            : { success: true, dataList: [], data: [] },
+      }),
+    )
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(TankLevelPanel)
+    expect(panel.exists()).toBe(true)
+    // 决策-002：未登录默认只读浏览 —— 数据看得见，写入口一律不渲染
+    expect(panel.text()).toContain('V150储罐A')
+    expect(panel.text()).not.toContain('新增一行')
+    expect(panel.text()).not.toContain('操作')
+  })
+
+  it('月底储罐液位记录：拿到 tank_level:* 权限后才出现增删改入口', async () => {
+    request.get.mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === '/api/tank-level/list'
+            ? { success: true, dataList: [TANK_LEVEL_ROW], data: [] }
+            : { success: true, dataList: [], data: [] },
+      }),
+    )
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(TankLevelPanel).text()).not.toContain('新增一行')
+
+    // 模拟登录后后端下发的权限集合（hasPerm 读的就是这份 reactive 镜像）
+    authState.permissions = ['tank_level:edit', 'tank_level:delete']
+    await nextTick()
+
+    const text = wrapper.findComponent(TankLevelPanel).text()
+    expect(text).toContain('新增一行')
+    expect(text).toContain('操作')
+    expect(text).toContain('编辑')
+    expect(text).toContain('删除')
+
+    // 复位：authState 是模块级单例，不还原会污染同文件里后面的用例
+    authState.permissions = []
+  })
+
+  it('月底储罐液位记录：图据多张时列上显示首张缩略图与数量角标', async () => {
+    const withImages = {
+      ...TANK_LEVEL_ROW,
+      images: [
+        { imageId: 11, url: '/files/a.png', thumbnailUrl: '/thumbs/a.png' },
+        { imageId: 12, url: '/files/b.png', thumbnailUrl: '/thumbs/b.png' },
+      ],
+    }
+    request.get.mockImplementation((url) =>
+      Promise.resolve({
+        data:
+          url === '/api/tank-level/list'
+            ? { success: true, dataList: [withImages], data: [] }
+            : { success: true, dataList: [], data: [] },
+      }),
+    )
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+
+    // tankLevelLoaded 是模块级单例、跨用例共享：本文件靠前的用例已经加载过，
+    // 切 Tab 不会再打接口。这里点「查询」显式重拉一次，拿到本用例自己那份数据
+    const searchButton = wrapper.findAll('button').find((node) => node.text().trim() === '查询')
+    expect(searchButton).toBeTruthy()
+    await searchButton.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(TankLevelPanel)
+    // 看图/加图/删图都在弹窗里（变更-011），所以它必须挂在面板上
+    expect(panel.findComponent(TankLevelImageDialog).exists()).toBe(true)
+
+    const thumb = panel.find('img[alt="图据缩略图"]')
+    expect(thumb.exists()).toBe(true)
+    // 画的是缩略图而不是原图
+    expect(thumb.attributes('src')).toBe('/thumbs/a.png')
+
+    // 角标写的是总张数（用 aria-label 断言，比在整页文本里找数字可靠）
+    expect(panel.html()).toContain('查看图据（共 2 张）')
   })
 
   it('切换 Tab 会切换对应面板的显示（v-show）', async () => {
@@ -186,5 +282,43 @@ describe('WorkOrderList 页面冒烟', () => {
 
   it('周统计面板按默认区间（上周一到上周日）生成标题', () => {
     expect(wrapper.text()).toMatch(/\d+月\d+日-\d+月\d+日周统计（截止\d+月\d+日晚8点）/)
+  })
+
+  it('Tab 条：装不下时横向滚动，滚轮可左右滑动，滚到头放行给页面', () => {
+    const nav = wrapper.find('nav[aria-label="页面切换"]')
+    expect(nav.exists()).toBe(true)
+    // 按钮不许折行（这就是「工单汇总」被压成两行的原因），装不下靠滚动解决
+    expect(nav.classes()).toContain('overflow-x-auto')
+    expect(nav.find('button').classes()).toContain('shrink-0')
+    expect(nav.find('button').classes()).toContain('whitespace-nowrap')
+
+    // jsdom 里 scrollWidth/clientWidth 恒为 0，手工造出「装不下」的几何
+    const el = nav.element
+    Object.defineProperty(el, 'scrollWidth', { value: 1200, configurable: true })
+    Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true })
+
+    // 滚到中间：拦截滚轮，把它转成左右滚动
+    el.scrollLeft = 200
+    const inner = new WheelEvent('wheel', { deltaY: 100, cancelable: true })
+    el.dispatchEvent(inner)
+    expect(el.scrollLeft).toBe(300)
+    expect(inner.defaultPrevented).toBe(true)
+
+    // 已经滚到最右：不拦截，页面还能继续往下滚（否则指针停在 Tab 条上整页都动不了）
+    el.scrollLeft = 800
+    const atEnd = new WheelEvent('wheel', { deltaY: 100, cancelable: true })
+    el.dispatchEvent(atEnd)
+    expect(atEnd.defaultPrevented).toBe(false)
+  })
+
+  it('Tab 条：本来就装得下时不拦截滚轮', () => {
+    const el = wrapper.find('nav[aria-label="页面切换"]').element
+    Object.defineProperty(el, 'scrollWidth', { value: 300, configurable: true })
+    Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true })
+
+    const event = new WheelEvent('wheel', { deltaY: 100, cancelable: true })
+    el.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(false)
   })
 })

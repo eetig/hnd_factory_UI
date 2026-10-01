@@ -32,8 +32,8 @@ import { useOrderImages } from '../../src/composables/useOrderImages'
 import { useWorkOrderData } from '../../src/composables/useWorkOrderData'
 
 const images = [
-  { imageId: '1', url: '/files/a.jpg' },
-  { imageId: '2', url: '/files/b.jpg' },
+  { imageId: '1', url: '/files/a.jpg', thumbnailUrl: '/thumbs/a.jpg' },
+  { imageId: '2', url: '/files/b.jpg', thumbnailUrl: '/thumbs/b.jpg' },
 ]
 
 describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用的一份实现）', () => {

@@ -1,11 +1,12 @@
 import { computed, ref } from 'vue'
 import request from '../api/request'
 import { getToday, getFirstDayOfCurrentYear, pickField } from '../utils/format'
+import { normalizeImageList } from '../utils/image'
 
 // ===== 月底储罐液位记录（模块级单例）=====
 // 数据来自 hnd_factory：GET /api/tank-level/list（库表 tank_level_record，变更-004）。
 //
-// 默认区间取「本年度」而不是「本月」：记录是按月产生的（每月月底下午 2 点抄录），
+// 默认区间取「本年度」而不是「本月」：记录是按月产生的（每月月底下午 3 点抄录），
 // 若默认本月，一个月里绝大多数时间打开都是空表，用户会以为功能坏了。
 const tankLevelRecords = ref([])
 const tankLevelTableData = ref([])
@@ -38,9 +39,9 @@ const TANK_LEVEL_FIELD_MAP = {
   tankCode: ['tankCode', 'containerCode', 'vesselCode', 'equipmentCode'],
   levelValue: ['levelValue', 'liquidLevel', 'level'],
   theoreticalWeight: ['theoreticalWeight', 'theoryWeight', 'theoreticalQty'],
-  // 列表缩略图（契约 2.3 双字段）：缺失时前端回退原图
-  thumbnailUrl: ['thumbnailUrl', 'thumbUrl'],
-  imageUrl: ['imageUrl', 'image', 'imagePath', 'fileUrl'],
+  // 图据（可多张，变更-011）：元素是 { imageId, url, thumbnailUrl }，
+  // 由 normalizeImageList 统一成前端内部结构（契约 2.3 的图片归一化）
+  images: ['images', 'imageList'],
 }
 
 /**
@@ -56,7 +57,7 @@ export function formatMeasure(value) {
   return String(Number(num.toFixed(3)))
 }
 
-/** 列表行归一化：日期截到 yyyy-MM-dd，数值与图片字段统一格式 */
+/** 列表行归一化：日期截到 yyyy-MM-dd，数值与图据统一格式 */
 export function normalizeTankLevelRecord(item) {
   if (!item) return null
 
@@ -68,6 +69,9 @@ export function normalizeTankLevelRecord(item) {
   record.recordDate = String(record.recordDate ?? '').slice(0, 10)
   record.levelValue = formatMeasure(record.levelValue)
   record.theoreticalWeight = formatMeasure(record.theoreticalWeight)
+  // 一定是数组（可能为空）：列表要读 images[0] 与 images.length，
+  // 留成 undefined 的话每处都得再判一次
+  record.images = normalizeImageList(record.images)
 
   return record
 }
@@ -85,6 +89,60 @@ export function buildTankLevelQuery({ startDate, endDate, location, category, ke
   if (trimmedKeyword) params.keyword = trimmedKeyword
 
   return params
+}
+
+/**
+ * 列表行 → 编辑草稿（行内编辑按这个结构存正在改的值）。
+ *
+ * <p>数值列沿用列表里的**展示字符串**直接喂输入框：`normalizeTankLevelRecord` 已经把
+ * `1250.0000` 规整成 `1250`，再转一次数字、等 input 回写成字符串，等于白转两趟。
+ */
+export function buildTankLevelDraft(record) {
+  return {
+    id: record?.id ?? null,
+    recordDate: record?.recordDate ?? '',
+    location: record?.location ?? '',
+    category: record?.category ?? '',
+    materialCode: record?.materialCode ?? '',
+    materialName: record?.materialName ?? '',
+    tankName: record?.tankName ?? '',
+    tankCode: record?.tankCode ?? '',
+    levelValue: record?.levelValue ?? '',
+    theoreticalWeight: record?.theoreticalWeight ?? '',
+  }
+}
+
+/**
+ * 草稿 → 提交给后端的 payload。
+ *
+ * <p>空串一律转 null：这些列在库里都可空，送空串等于「填了一个空值」，
+ * 与「没填」在语义上是两回事 —— 后端 BigDecimal 收到空串也只会解析失败。
+ *
+ * <p>`id` 保持 null 表示新增（后端按 id 有无分流的规则见 TankLevelSaveDTO）。
+ */
+export function buildTankLevelSavePayload(draft) {
+  const text = (value) => {
+    const trimmed = String(value ?? '').trim()
+    return trimmed === '' ? null : trimmed
+  }
+
+  // id 单独归一化：`??` 只挡 null / undefined，空串会漏过去，
+  // 而空串到后端会被当成「编辑一条不存在的记录」而不是「新增」
+  const rawId = draft?.id
+  const id = rawId === undefined || rawId === null || rawId === '' ? null : rawId
+
+  return {
+    id,
+    recordDate: text(draft?.recordDate),
+    location: text(draft?.location),
+    category: text(draft?.category),
+    materialCode: text(draft?.materialCode),
+    materialName: text(draft?.materialName),
+    tankName: text(draft?.tankName),
+    tankCode: text(draft?.tankCode),
+    levelValue: text(draft?.levelValue),
+    theoreticalWeight: text(draft?.theoreticalWeight),
+  }
 }
 
 // 属地下拉选项：以库中实际值为准，并把「当前已选但不在选项里」的值补进去，
@@ -108,7 +166,11 @@ function getTankLevelPageData(page = tankLevelPageNum.value) {
   )
 }
 
-async function fetchTankLevelRecords() {
+async function fetchTankLevelRecords(options) {
+  // 模板里 @click / @change 直接绑了这个函数，会把事件对象当第一个参数传进来 ——
+  // 所以只有显式传 { keepPage: true } 才保持当前页，传进来别的东西一律当没传
+  const keepPage = options?.keepPage === true
+
   tankLevelLoading.value = true
   tankLevelError.value = ''
 
@@ -131,7 +193,16 @@ async function fetchTankLevelRecords() {
     tankLevelRecords.value = dataList.map(normalizeTankLevelRecord).filter(Boolean)
     tankLevelTotal.value = tankLevelRecords.value.length
     tankLevelLoaded.value = true
-    getTankLevelPageData(1)
+
+    if (keepPage) {
+      // 保存/删除后停在当前页，用户不会因为改了一行就被弹回第 1 页。
+      // 但页码要防越界：删掉某页最后一条后当前页可能已超出总页数，
+      // 那样表格空着、分页器却停在第 5 页，看着像数据丢了
+      const maxPage = Math.max(1, Math.ceil(tankLevelTotal.value / tankLevelPageSize.value))
+      getTankLevelPageData(Math.min(tankLevelPageNum.value, maxPage))
+    } else {
+      getTankLevelPageData(1)
+    }
   } catch (error) {
     tankLevelRecords.value = []
     tankLevelTableData.value = []
@@ -179,6 +250,57 @@ function resetTankLevelFilters() {
   return fetchTankLevelRecords()
 }
 
+// ===== 写操作（需权限，仅管理员）=====
+//
+// 三个约定，改这里之前先看：
+//   1. 后端业务失败也是 HTTP 200 + `success:false`（README 约定 1），所以每个写方法
+//      都要自己判一次 `success`，只看状态码会把「保存失败」当成功弹提示；
+//   2. 统一**抛带可读消息的 Error**，由调用方 ElMessage 提示 —— 本文件不引 UI 库，
+//      与 useOrderImages.js 那种「composable 内部直接弹提示」的写法不同；
+//   3. 写成功后**重新拉全量**而不是就地改内存里那一行：列表是前端本地分页 + 后端按
+//      (日期, 属地, 编号) 排序，就地改会让「序号」和分页位置与库里对不上。
+//      带 keepPage 是为了不把用户从正在看的那一页弹走。
+
+/** 取后端给的业务错误消息；拿不到就用兜底文案 */
+function toWriteError(error, fallback) {
+  return new Error(error?.response?.data?.msg || error?.message || fallback)
+}
+
+/**
+ * 新增（draft.id 为空）或编辑一条记录。
+ *
+ * @returns 保存后的记录（含图据双字段），供调用方就地更新或做后续提示
+ */
+async function saveTankLevelRecord(draft) {
+  let saved
+  try {
+    const res = await request.post('/api/tank-level/save', buildTankLevelSavePayload(draft))
+    if (res.data?.success === false) {
+      throw new Error(res.data?.msg || '保存失败，请稍后重试。')
+    }
+    saved = res.data?.data ?? null
+  } catch (error) {
+    throw toWriteError(error, '保存失败，请稍后重试。')
+  }
+
+  // 刷新放在 try 之外：保存已经成功了，这里失败不该被报成「保存失败」。
+  // fetchTankLevelRecords 自己吞错误并落到 tankLevelError，面板会给出提示
+  await fetchTankLevelRecords({ keepPage: true })
+  return saved
+}
+
+async function deleteTankLevelRecord(id) {
+  try {
+    const res = await request.delete('/api/tank-level/delete', { params: { id } })
+    if (res.data?.success === false) {
+      throw new Error(res.data?.msg || '删除失败，请稍后重试。')
+    }
+  } catch (error) {
+    throw toWriteError(error, '删除失败，请稍后重试。')
+  }
+  await fetchTankLevelRecords({ keepPage: true })
+}
+
 export function useTankLevelData() {
   return {
     tankLevelRecords,
@@ -200,5 +322,7 @@ export function useTankLevelData() {
     fetchTankLevelLocations,
     ensureTankLevelLoaded,
     resetTankLevelFilters,
+    saveTankLevelRecord,
+    deleteTankLevelRecord,
   }
 }

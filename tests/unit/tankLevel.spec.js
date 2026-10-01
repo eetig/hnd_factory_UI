@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // API 层打桩：单测不真的发请求
 vi.mock('../../src/api/request', () => ({
-  default: { get: vi.fn() },
+  default: { get: vi.fn(), post: vi.fn(), delete: vi.fn() },
 }))
 
 import request from '../../src/api/request'
 import {
+  buildTankLevelDraft,
   buildTankLevelQuery,
+  buildTankLevelSavePayload,
   formatMeasure,
   normalizeTankLevelRecord,
   useTankLevelData,
@@ -45,17 +47,43 @@ describe('normalizeTankLevelRecord：接口行归一化', () => {
     expect(record.theoreticalWeight).toBe('1500')
   })
 
-  it('字段名有出入时按别名取值；图片缺失不报错', () => {
+  it('字段名有出入时按别名取值；没有图据时 images 是空数组而不是 undefined', () => {
     const record = normalizeTankLevelRecord({
       date: '2026-08-31',
       tankNo: 'V150储罐A',
-      fileUrl: '/files/tank.png',
     })
 
     expect(record.recordDate).toBe('2026-08-31')
     expect(record.tankName).toBe('V150储罐A')
-    expect(record.imageUrl).toBe('/files/tank.png')
-    expect(record.thumbnailUrl).toBe('')
+    // 列表要读 images[0] 与 images.length，留成 undefined 的话每处都得再判一次
+    expect(record.images).toEqual([])
+  })
+
+  it('图据归一化成数组（变更-011）：多张按原顺序，保留 imageId 与双字段', () => {
+    const record = normalizeTankLevelRecord({
+      images: [
+        { imageId: 3, url: '/files/a.png', thumbnailUrl: '/thumbs/a.png' },
+        { imageId: 4, url: '/files/b.png', thumbnailUrl: '/thumbs/b.png' },
+      ],
+    })
+
+    expect(record.images).toHaveLength(2)
+    expect(record.images[0]).toEqual({
+      imageId: 3,
+      url: '/files/a.png',
+      thumbnailUrl: '/thumbs/a.png',
+    })
+    expect(record.images[1].imageId).toBe(4)
+  })
+
+  it('图据字段名有出入时也认（url / imageUrl 两种写法）', () => {
+    const record = normalizeTankLevelRecord({
+      images: [{ id: 9, imageUrl: '/files/c.png' }],
+    })
+
+    expect(record.images).toHaveLength(1)
+    expect(record.images[0].imageId).toBe(9)
+    expect(record.images[0].url).toBe('/files/c.png')
   })
 
   it('容器编号按别名取值；缺失时留空，不从容器名称里猜', () => {
@@ -180,5 +208,183 @@ describe('fetchTankLevelRecords：接口查询与异常处理', () => {
 
     await expect(fetchTankLevelLocations()).resolves.toBeUndefined()
     expect(tankLevelLocations.value).toEqual([])
+  })
+})
+
+describe('buildTankLevelDraft：列表行 → 编辑草稿', () => {
+  it('带出可编辑字段，数值沿用列表里的展示字符串', () => {
+    const draft = buildTankLevelDraft({
+      id: 7,
+      recordDate: '2026-08-31',
+      location: '一车间',
+      category: '产品',
+      materialCode: '114001897',
+      materialName: 'HND-V150',
+      tankName: 'V150储罐A',
+      tankCode: 'V150-A',
+      levelValue: '1250',
+      theoreticalWeight: '1500',
+    })
+
+    expect(draft).toEqual({
+      id: 7,
+      recordDate: '2026-08-31',
+      location: '一车间',
+      category: '产品',
+      materialCode: '114001897',
+      materialName: 'HND-V150',
+      tankName: 'V150储罐A',
+      tankCode: 'V150-A',
+      levelValue: '1250',
+      theoreticalWeight: '1500',
+    })
+  })
+
+  it('新增行（传 null）得到一张 id 为空的空草稿，各字段是空串而不是 undefined', () => {
+    const draft = buildTankLevelDraft(null)
+
+    expect(draft.id).toBeNull()
+    // 空串而不是 undefined：这些值直接绑到 input 的 v-model 上，
+    // undefined 会让输入框从「非受控」变成「受控」，控制台会报 Vue 警告
+    expect(draft.recordDate).toBe('')
+    expect(draft.tankCode).toBe('')
+    expect(draft.levelValue).toBe('')
+  })
+})
+
+describe('buildTankLevelSavePayload：草稿 → 提交体', () => {
+  it('文本字段去掉首尾空格', () => {
+    const payload = buildTankLevelSavePayload({
+      recordDate: '2026-08-31',
+      tankCode: '  V150-A  ',
+      tankName: ' V150储罐A ',
+    })
+
+    expect(payload.tankCode).toBe('V150-A')
+    expect(payload.tankName).toBe('V150储罐A')
+  })
+
+  it('空串一律转 null：「没填」与「填了一个空值」在库里是两回事', () => {
+    const payload = buildTankLevelSavePayload({
+      recordDate: '2026-08-31',
+      materialCode: '',
+      materialName: '   ',
+      levelValue: '',
+      theoreticalWeight: undefined,
+    })
+
+    expect(payload.materialCode).toBeNull()
+    expect(payload.materialName).toBeNull()
+    expect(payload.levelValue).toBeNull()
+    expect(payload.theoreticalWeight).toBeNull()
+  })
+
+  it('id 为空表示新增，原样保持 null（后端按 id 有无分流）', () => {
+    expect(buildTankLevelSavePayload({ id: null }).id).toBeNull()
+    expect(buildTankLevelSavePayload({ id: 12 }).id).toBe(12)
+    // 空串 id 不能当成 0 之类的真值传下去，否则会被后端当成「编辑第 0 条」
+    expect(buildTankLevelSavePayload({ id: '' }).id).toBeNull()
+  })
+
+  it('数值以字符串提交，交给后端 BigDecimal 解析', () => {
+    const payload = buildTankLevelSavePayload({ levelValue: 1250, theoreticalWeight: '1500.5' })
+
+    expect(payload.levelValue).toBe('1250')
+    expect(payload.theoreticalWeight).toBe('1500.5')
+  })
+})
+
+describe('saveTankLevelRecord：新增 / 编辑', () => {
+  beforeEach(() => {
+    request.get.mockReset()
+    request.post.mockReset()
+    request.get.mockResolvedValue({ data: { success: true, dataList: [] } })
+  })
+
+  it('POST /api/tank-level/save，成功后重新拉列表', async () => {
+    request.post.mockResolvedValue({ data: { success: true, data: { id: 9 } } })
+
+    const { saveTankLevelRecord } = useTankLevelData()
+    const saved = await saveTankLevelRecord({ id: null, tankCode: 'V150-A' })
+
+    expect(request.post).toHaveBeenCalledWith('/api/tank-level/save', expect.objectContaining({ tankCode: 'V150-A' }))
+    expect(saved).toEqual({ id: 9 })
+    expect(request.get).toHaveBeenCalledWith('/api/tank-level/list', { params: expect.any(Object) })
+  })
+
+  it('业务失败（HTTP 200 + success=false）抛出后端消息，且不再刷新列表', async () => {
+    request.post.mockResolvedValue({
+      data: { success: false, msg: '同一天已存在容器编号为「V150-A」的记录，请改记录日期或容器编号。' },
+    })
+
+    const { saveTankLevelRecord } = useTankLevelData()
+
+    await expect(saveTankLevelRecord({ id: null })).rejects.toThrow('同一天已存在容器编号')
+    // 保存没成功就不该刷新：刷了会让用户以为改动生效了
+    expect(request.get).not.toHaveBeenCalled()
+  })
+
+  it('权限不足（403）时把后端的提示透出来，而不是吞成通用文案', async () => {
+    request.post.mockRejectedValue({
+      response: { status: 403, data: { msg: '无权限访问：tank_level:edit' } },
+    })
+
+    const { saveTankLevelRecord } = useTankLevelData()
+
+    await expect(saveTankLevelRecord({ id: null })).rejects.toThrow('无权限访问：tank_level:edit')
+  })
+
+  it('保存后停在当前页，不把用户弹回第 1 页', async () => {
+    const rows = Array.from({ length: 15 }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
+    request.get.mockResolvedValue({ data: { success: true, dataList: rows } })
+    request.post.mockResolvedValue({ data: { success: true, data: { id: 1 } } })
+
+    const { saveTankLevelRecord, getTankLevelPageData, tankLevelPageNum, tankLevelTableData } =
+      useTankLevelData()
+
+    await saveTankLevelRecord({ id: null })
+    getTankLevelPageData(2)
+    expect(tankLevelTableData.value).toHaveLength(5)
+
+    await saveTankLevelRecord({ id: 1 })
+    expect(tankLevelPageNum.value).toBe(2)
+  })
+
+  it('删除最后一条后页码不越界：停在新的末页而不是一张空表', async () => {
+    const rows = Array.from({ length: 11 }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
+    request.get.mockResolvedValue({ data: { success: true, dataList: rows } })
+    request.delete.mockResolvedValue({ data: { success: true } })
+
+    const { fetchTankLevelRecords, getTankLevelPageData, deleteTankLevelRecord, tankLevelPageNum, tankLevelTableData } =
+      useTankLevelData()
+
+    await fetchTankLevelRecords()
+    getTankLevelPageData(2) // 11 条 / 每页 10 → 第 2 页只有 1 条
+    expect(tankLevelPageNum.value).toBe(2)
+
+    // 删掉后只剩 10 条 → 只剩 1 页，页码必须跟着回到第 1 页
+    request.get.mockResolvedValue({ data: { success: true, dataList: rows.slice(0, 10) } })
+    await deleteTankLevelRecord(11)
+
+    expect(tankLevelPageNum.value).toBe(1)
+    expect(tankLevelTableData.value).toHaveLength(10)
+  })
+})
+
+describe('deleteTankLevelRecord', () => {
+  beforeEach(() => {
+    request.get.mockReset()
+    request.post.mockReset()
+    request.delete.mockReset()
+    request.get.mockResolvedValue({ data: { success: true, dataList: [] } })
+  })
+
+  it('删除走 DELETE /api/tank-level/delete，用 query 传 id', async () => {
+    request.delete.mockResolvedValue({ data: { success: true } })
+
+    const { deleteTankLevelRecord } = useTankLevelData()
+    await deleteTankLevelRecord(5)
+
+    expect(request.delete).toHaveBeenCalledWith('/api/tank-level/delete', { params: { id: 5 } })
   })
 })

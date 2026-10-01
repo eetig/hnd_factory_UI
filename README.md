@@ -55,13 +55,13 @@ npm run dev          # http://localhost:9091
 ```
 src/
 ├── api/            axios 实例与鉴权（satoken 头、401 全局登出、hasPerm）
-├── components/     通用组件（加载遮罩、面板态、筛选表头、图片弹窗、汇总表…）
+├── components/     通用组件（加载遮罩、面板态、筛选表头、图片弹窗、汇总表、储罐液位面板…）
 ├── composables/    数据层：既当 store 也当业务逻辑
 ├── constants/      工单类型等常量
 ├── utils/          纯函数（格式化、图片归一化、Excel 剥图）
 ├── views/          页面（WorkOrderList 承载 12 个 Tab，另有登录/导入/图片解析）
 ├── router/         路由（只有一个业务路由 `/`）
-└── main.js         入口（Element Plus 全量注册）
+└── main.js         入口（挂路由 + 恢复登录态）
 tests/
 ├── unit/           纯函数与 composable 单测
 └── component/      整页冒烟测试
@@ -80,6 +80,13 @@ tests/
 5. **图片地址是相对路径**（`/files/...`、`/thumbs/...`），字段名各接口不完全统一，
    统一用 `src/utils/image.js` 的 `normalizeImageList()` 归一化，不要自己拼字段。
 6. **未登录默认只读浏览**（决策-002）：读接口本就免登录，写入类 Tab 与按钮按权限隐藏。
+7. **Element Plus 组件要按需显式 import**：`main.js` 里**没有** `app.use(ElementPlus)`。
+   模板里写了 `<el-input>` 却没 `import { ElInput }` 时，Vue 不会白屏，而是把它当成
+   原生标签渲染成**空元素** + 控制台 `Failed to resolve component` —— 页面看着还在、
+   功能悄悄没了（搜索框不见了、复选框不见了），比白屏更难发现。
+   两道防线都拦不住它：ESLint 只在「import 了没用」时报警（这是反过来的一种），
+   组件测试又因为全局装了 `plugins: [ElementPlus]` 把它兜住。
+   排查办法：逐个 `.vue` 比对「模板里出现的 `el-*` 标签」与「从 element-plus import 的名字」。
 
 ## 工程现状与后续计划
 
@@ -93,25 +100,31 @@ tests/
   后端 hnd_factory 的 `/api/tank-level/*`，库表 `tank_level_record`（见后端 `docs/schema.sql`）
 - vite 手动拆包；`npm run verify` 一条命令做完整校验
 
-### 月底储罐液位记录（变更-004）
-
-数据全部来自接口，前端不落任何业务规则：
+### 月底储罐液位记录（变更-004 只读 / 变更-008 行内编辑 / 变更-011 图据多张）
 
 | 项 | 值 |
 |---|---|
-| 接口 | `GET /api/tank-level/list`（记录日期区间 / 属地 / 所属 / 关键字，参数全可选）、`GET /api/tank-level/locations`（属地下拉，取库中实际值）|
-| 库表 | `factory_db.tank_level_record`，唯一键 `(记录日期 + 容器编号 tank_code)`（原「记录日期+属地+容器名称」已于变更-004-1 废止）|
-| 数据层 | `src/composables/useTankLevelData.js`（业务失败判 `success`、404 提示、字段别名容错）|
+| 读接口 | `GET /api/tank-level/list`（记录日期区间 / 属地 / 所属 / 关键字，参数全可选）、`GET /api/tank-level/locations`（属地下拉，取库中实际值）、`GET /api/tank-level/image/list?recordId=`（某条记录的图据）。**均免登录** |
+| 写接口 | `POST /api/tank-level/save`（`id` 空即新增）、`DELETE /api/tank-level/delete?id=`、`POST /api/tank-level/image/upload`（multipart：`recordId` + `files[]`，一次可多张）、`DELETE /api/tank-level/image/delete?imageId=`。**均需 `tank_level:edit` / `tank_level:delete`，当前只授给 admin** |
+| 库表 | `tank_level_record`（唯一键 `记录日期 + 容器编号`）+ `tank_level_image`（图据子表，按 `record_id` 关联；原单列 `file_name` 已于变更-011 废弃）|
+| 数据层 | `useTankLevelData.js`（列表查询 + 记录增删改）、`useTankLevelImages.js`（图据弹窗的状态与请求）|
+| 组件 | `TankLevelPanel.vue`（面板，变更-008 从 WorkOrderList 拆出）、`TankLevelImageDialog.vue` + `ImageGalleryDialog.vue`（图据弹窗，与工单图片弹窗共用渲染）|
 
 几个刻意的选择，改动前先看一眼：
 
-- **默认查询区间是「本年度」而不是「本月」**：记录按月产生（每月月底下午 2 点抄录），默认本月的话一年里绝大多数时间打开都是空表。
+- **默认查询区间是「本年度」而不是「本月」**：记录按月产生（每月月底下午 3 点抄录），默认本月的话一年里绝大多数时间打开都是空表。
 - **首次进入该 Tab 才请求**（`ensureTankLevelLoaded`，由 `watch(activeTab)` 触发）：Tab 是 `v-show` 常驻的，不这样会每次切换都打接口。
 - **加载失败不置 `loaded`**：离开再回来会重试，比停在一张「空表」上好 —— 空表会被当成「没有数据」。
-- **图据列**沿用双字段回退（`thumbnailUrl || imageUrl`），与领料/入库两处的图片列一致；图据列**不做上传入口**，写入来源（导入或录入页）尚未确定。
+- **图据可多张**（变更-011）：列表画首张缩略图 + 右下角数量角标，点开弹窗看大图、加图、删图。图据**不随表单提交**（表单里的旧值会覆盖刚传上去的图），走独立接口；上传要求该行已保存（有 `id`）—— 新增行须先保存再传图。
+- **「图据」「操作」两列不跟着编辑态写两份**：图据在编辑态与只读态行为完全一致（都点开弹窗），行内编辑只管文字与数值，所以这两列放在两个状态分支之外。
+- **编辑行 key 用 `id`，不是「日期 + 编号」**：行内编辑时这两个字段正被用户改，拿它们做 key 会让 Vue 每次按键都重建 `<tr>`，输入框当场失焦。
+- **写成功后重新拉全量列表**（`fetchTankLevelRecords({ keepPage: true })`），不就地改内存那一行：列表是前端本地分页 + 后端按 (日期, 属地, 编号) 排序，就地改会让「序号」与分页位置和库里对不上。`keepPage` 是为了不把用户从正在看的那页弹走。
+- **「新增一行」渲染成独立草稿行**（`editingId === 'new'`），**不混进 `tankLevelTableData`** —— 那是个参与本地分页切片的数据源，混进去会把序号搅乱。
+- **后端业务失败的消息原样展示**（如「同一天已存在容器编号为 X 的记录」）：前端不重复实现一套校验规则，免得两处规则各自演化、口径不一致。
 - 表尾的「记录说明」与线下台账一字不差，**改一处要同步改另一处**。
-- **表头带单位**（2026-09-30 优化）：数值列写作 `容器液位 (mm)` / `理论质量 (kg)`。线下台账没标单位，标在表头上免得与「压力容器体积计算」里的 m³ 混读；单位口径若变，只改 `tankLevelColumns` 一处标签，列宽已放到 `w-32`（`w-28` 装不下带单位的表头）。
-- **容器编号列**（2026-09-30，变更-004-1）：表头第 7 列，插在「容器名称」与「容器液位」之间（`w-28`）。它是台账的业务键 —— 库表唯一键就是 `记录日期 + 容器编号`，因此行 key 也用 `recordDate + tankCode`（再拼序号兜底）。接口没给编号时这一格留空，**不拿容器名称兜底**，免得页面上出现一个看似真实、实则编造的编号。
+- **表头带单位**（2026-09-30 优化）：数值列写作 `容器液位 (mm)` / `理论质量 (kg)`。线下台账没标单位，标在表头上免得与「压力容器体积计算」里的 m³ 混读；单位口径若变，只改列标签一处，列宽已放到 `w-28`。
+- **容器编号列**（2026-09-30，变更-004-1）：插在「容器名称」与「容器液位」之间。它是台账的业务键 —— 库表唯一键就是 `记录日期 + 容器编号`。接口没给编号时这一格留空，**不拿容器名称兜底**，免得页面上出现一个看似真实、实则编造的编号。
+- **「理论质量」目前是手工录入**（变更-008 明确不做自动换算）：`tank_level_record.tank_code` 还是占位值，而 `equipment_ledger` 的 `equipment_code` 全是空串、`mass_per_mm`/`density` 全为 NULL，两张表一条也关联不上。等业务补齐位号与密度后另开变更。
 
 待继续（按收益从高到低）
 1. **压力容器体积计算面板**（现约 900 行：脚本 ~530 + 模板 ~218 + 样式 152）

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
@@ -14,9 +14,11 @@ import { useWorkOrderData } from '../composables/useWorkOrderData'
 import { usePickData } from '../composables/usePickData'
 import { useInboundData } from '../composables/useInboundData'
 import { useGoodsMoveData } from '../composables/useGoodsMoveData'
+import { useMaterialStockData } from '../composables/useMaterialStockData'
 import { useOrderImages } from '../composables/useOrderImages'
 import { useStatsData } from '../composables/useStatsData'
-import { TANK_LEVEL_CATEGORIES, useTankLevelData } from '../composables/useTankLevelData'
+import { useTankLevelData } from '../composables/useTankLevelData'
+import TankLevelPanel from '../components/TankLevelPanel.vue'
 import WorkOrderImport from './WorkOrderImport.vue'
 import ImageParse from './ImageParse.vue'
 import vesselImageUrl from '../assets/vessel.png'
@@ -31,6 +33,7 @@ import {
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 import {
+  ElCheckbox,
   ElConfigProvider,
   ElDatePicker,
   ElDialog,
@@ -53,6 +56,7 @@ const tabs = [
   { key: 'report', label: '工单报工' },
   { key: 'costing', label: '工单核算' },
   { key: 'materialCosting', label: '原辅料核算' },
+  { key: 'stock', label: '物料查询' },
   { key: 'weekly', label: '周统计' },
   { key: 'daily', label: '日报表记录' },
   { key: 'tankLevel', label: '月底储罐液位记录' },
@@ -77,6 +81,35 @@ watch(visibleTabs, (list) => {
     activeTab.value = list[0].key
   }
 })
+
+// ===== Tab 条横向滚动 =====
+// 14 个 Tab 一屏放不下：早先是让按钮里的文字自己折行（「工单汇总」变两行），
+// 既难看又让 Tab 条高度不一。现在按钮一律不折行，装不下就横向滚动。
+const tabNavRef = ref(null)
+
+/**
+ * 鼠标滚轮 → Tab 条左右滚动。
+ *
+ * 只在「这个方向确实还有内容」时才拦截，滚到头就放行给页面 ——
+ * 否则指针停在 Tab 条上时整页都滚不动，用户会以为页面卡住了。
+ */
+function handleTabWheel(event) {
+  const nav = tabNavRef.value
+  if (!nav) return
+
+  // 横向滚轮（触控板左右滑）交给浏览器默认行为，不掺和
+  if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
+
+  const maxScroll = nav.scrollWidth - nav.clientWidth
+  if (maxScroll <= 0) return // 本来就装得下，不拦截
+
+  const atStart = nav.scrollLeft <= 0 && event.deltaY < 0
+  const atEnd = nav.scrollLeft >= maxScroll && event.deltaY > 0
+  if (atStart || atEnd) return
+
+  event.preventDefault()
+  nav.scrollLeft = Math.max(0, Math.min(maxScroll, nav.scrollLeft + event.deltaY))
+}
 
 function goLogin() {
   router.push('/login')
@@ -106,6 +139,25 @@ const reportColumns = [
 
 const router = useRouter()
 const activeTab = ref('workOrder')
+
+// 切换 Tab 后把激活项滚进视野：登录/退出会让 visibleTabs 变化并自动切 Tab，
+// 切到的那个可能在可视区之外，用户会看不到自己现在在哪一页。
+// 这个 watch 必须放在 activeTab 声明之后 —— watch 的第一个参数是立即求值的，
+// 放前面会撞上 TDZ（Cannot access 'activeTab' before initialization）。
+watch(activeTab, async (key) => {
+  await nextTick()
+  const nav = tabNavRef.value
+  const button = nav?.querySelector(`[data-tab-key="${key}"]`)
+  if (!nav || !button) return
+
+  const left = button.offsetLeft
+  const right = left + button.offsetWidth
+  if (left < nav.scrollLeft) {
+    nav.scrollLeft = left
+  } else if (right > nav.scrollLeft + nav.clientWidth) {
+    nav.scrollLeft = right - nav.clientWidth
+  }
+})
 
 // 工单数据与筛选（与工单报工面板共享同一份数据）
 const {
@@ -163,6 +215,29 @@ const {
   clearPickMaterialFilter,
 } = usePickData()
 
+// 物料库存（「物料查询」面板）
+const {
+  stockTableData,
+  stockPageNum,
+  stockPageSize,
+  stockTotal,
+  stockLoading,
+  stockError,
+  stockKeyword,
+  stockOnlyInStock,
+  fetchStockRecords,
+  applyStockFilter,
+  getStockPageData,
+  formatStockQty,
+  displayText,
+} = useMaterialStockData()
+
+/** 「只看有库存」开关：改完立刻重过滤 */
+function toggleStockOnlyInStock(value) {
+  stockOnlyInStock.value = value
+  applyStockFilter()
+}
+
 // 入库汇总数据（与工单核算、周统计面板共享）
 const {
   allInboundRecords,
@@ -194,30 +269,10 @@ const { fetchGoodsMoveRecords } = useGoodsMoveData()
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
 
-// 月底储罐液位记录（变更-004）：数据来自 /api/tank-level/list（库表 tank_level_record）
-const {
-  tankLevelTableData,
-  tankLevelPageNum,
-  tankLevelPageSize,
-  tankLevelTotal,
-  tankLevelLoading,
-  tankLevelError,
-  tankLevelStartDate,
-  tankLevelEndDate,
-  tankLevelLocation,
-  tankLevelCategory,
-  tankLevelKeyword,
-  tankLevelLocationOptions,
-  getTankLevelPageData,
-  fetchTankLevelRecords,
-  ensureTankLevelLoaded,
-  resetTankLevelFilters,
-} = useTankLevelData()
-
-// 是否处于筛选状态：决定空表提示语是「没查到」还是「本来就没数据」
-const tankLevelHasFilter = computed(() =>
-  Boolean(tankLevelLocation.value || tankLevelCategory.value || tankLevelKeyword.value),
-)
+// 月底储罐液位记录（变更-004 / 变更-008）：整个面板在 <TankLevelPanel> 里，
+// 它自己从 useTankLevelData() 取数与渲染。这里只留「首次进 Tab 才加载」这一个钩子 ——
+// 面板是 v-show 常驻的，挂载时机与 Tab 切换不是一回事（见下方 watch(activeTab)）
+const { ensureTankLevelLoaded } = useTankLevelData()
 
 // 工单号可选项（当前日期范围内的工单号，倒序）
 // 三张汇总表（工单报工 / 工单核算 / 原辅料核算）的行数据来自 useStatsData，
@@ -258,6 +313,8 @@ function refreshAllData() {
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+  // 库存汇总也可能在这次导入里被更新
+  fetchStockRecords()
 }
 
 function handleImportBack() {
@@ -323,39 +380,8 @@ function openInboundImageDialog(record) {
 }
 
 
-// ===== 月底储罐液位记录 =====
-// 列与线下台账（月底车间各储罐液位记录表）逐列对应；「序号」由前端按分页渲染
-// 数值列的表头直接带单位（容器液位 mm / 理论质量 kg）：线下台账没标单位，
-// 页面上标清楚，免得与「压力容器体积计算」里的 m³ 混读
-const tankLevelColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'recordDate', label: '记录日期', width: 'w-32' },
-  { key: 'location', label: '属地', width: 'w-28' },
-  { key: 'category', label: '所属(产品/原料)', width: 'w-36' },
-  { key: 'materialName', label: '物料', width: 'w-[200px]' },
-  { key: 'tankName', label: '容器名称', width: 'w-32' },
-  // 容器编号（设备位号）：台账的唯一键之一（记录日期 + 容器编号），线下台账里单独一栏
-  { key: 'tankCode', label: '容器编号', width: 'w-28' },
-  { key: 'levelValue', label: '容器液位 (mm)', width: 'w-32', align: 'right' },
-  { key: 'theoreticalWeight', label: '理论质量 (kg)', width: 'w-32', align: 'right' },
-  { key: 'imageUrl', label: '图据', width: 'w-24' },
-]
-
-// 行 key：台账唯一键是「记录日期 + 容器编号」，仍拼上序号兜底（补录的历史行可能没填编号）
-const tankLevelRowKey = (record, index) =>
-  `${record.recordDate}-${record.tankCode}-${record.location}-${record.tankName}-${index}`
-
-const tankLevelImageDialogVisible = ref(false)
-const currentTankLevelImage = ref('')
-
-function openTankLevelImageDialog(record) {
-  // 弹窗看原图；只有缩略图时退而显示缩略图，总比点开一片空白好
-  const imageUrl = record?.imageUrl || record?.thumbnailUrl
-  if (!imageUrl) return
-
-  currentTankLevelImage.value = imageUrl
-  tankLevelImageDialogVisible.value = true
-}
+// 月底储罐液位记录的列配置、行 key、图据弹窗都随面板一起移到了
+// components/TankLevelPanel.vue（变更-008 加行内编辑后这块变长，留在本文件不合适）
 
 
 // ===== 工单核算 =====
@@ -377,6 +403,20 @@ const materialCostingColumns = [
   { key: 'pickQty', label: '领料数', width: 'w-32', align: 'right' },
   { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
   { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right', emphasis: true },
+]
+
+// 物料库存列（页面按 物料编码 / 物料名称 / 规格 查物料信息；
+// 名称与规格是后端联查 material_master 的结果，主数据没有则回退库存表那份）
+// 工厂（列里恒为 1503）按使用方要求不展示
+const stockColumns = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'materialCode', label: '物料编码', width: 'w-32' },
+  { key: 'materialName', label: '物料名称', width: 'w-[220px]', wrap: true },
+  { key: 'spec', label: '规格', width: 'w-[160px]', wrap: true },
+  { key: 'storageLocation', label: '存储地点', width: 'w-24' },
+  { key: 'unit', label: '基本计量单位', width: 'w-32' },
+  { key: 'stockQty', label: '非限制使用的库存', width: 'w-40', align: 'right' },
+  { key: 'storageDesc', label: '存储地点描述', width: 'w-[180px]', wrap: true },
 ]
 
 // ===== 周统计 =====
@@ -1095,6 +1135,7 @@ onMounted(() => {
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+  fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
 
@@ -1163,12 +1204,24 @@ watch(activeTab, (tab, prevTab) => {
         </div>
       </header>
 
-      <nav class="mb-6 flex gap-8 border-b border-slate-200" aria-label="页面切换">
+      <!--
+        Tab 条横向滚动（14 个 Tab 一屏装不下）。
+        · overflow-x-auto 会让 overflow-y 也算作 auto，`-bottom-px` 的下划线会掉到
+          padding box 外面被裁掉 —— 所以补一个 pb-px 把它兜回来；
+        · 隐藏滚动条：滚动靠滚轮/触控板，一条横杠横在 Tab 下面反而碍眼。
+      -->
+      <nav
+        ref="tabNavRef"
+        class="mb-6 flex gap-8 overflow-x-auto border-b border-slate-200 pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        aria-label="页面切换"
+        @wheel="handleTabWheel"
+      >
         <button
           v-for="tab in visibleTabs"
           :key="tab.key"
+          :data-tab-key="tab.key"
           type="button"
-          class="relative pb-3 pt-1 text-sm font-medium transition focus:outline-none"
+          class="relative shrink-0 whitespace-nowrap pb-3 pt-1 text-sm font-medium transition focus:outline-none"
           :class="activeTab === tab.key ? 'text-sky-600' : 'text-slate-500 hover:text-slate-700'"
           @click="activeTab = tab.key"
         >
@@ -1684,6 +1737,108 @@ watch(activeTab, (tab, prevTab) => {
         />
       </div>
 
+      <div v-show="activeTab === 'stock'">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+            <el-input
+              v-model="stockKeyword"
+              placeholder="物料编码 / 物料名称 / 规格"
+              clearable
+              class="w-72"
+              @input="applyStockFilter"
+              @clear="applyStockFilter"
+            />
+            <!-- 默认**不勾**：这一页是查物料信息，要把数量为 0 的物料也列出来 -->
+            <el-checkbox :model-value="stockOnlyInStock" @change="toggleStockOnlyInStock">
+              只看有库存
+            </el-checkbox>
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <LoadingMask v-if="stockLoading" />
+
+            <PanelState
+              v-else-if="stockError"
+              type="error"
+              title="暂时无法获取物料库存"
+              :description="stockError"
+              action-text="重新加载"
+              @action="fetchStockRecords"
+            />
+
+            <PanelState
+              v-else-if="stockTableData.length === 0"
+              :title="stockKeyword || stockOnlyInStock ? '没有符合筛选条件的记录' : '暂无库存数据'"
+              :description="
+                stockKeyword || stockOnlyInStock
+                  ? '换个关键词，或取消勾选「只看有库存」看看'
+                  : '还没有导入过库存汇总，可在「文件导入」里上传库存表'
+              "
+            />
+
+            <div v-else>
+              <!-- 9 列在窄窗口下会溢出：外层 overflow-x-auto + colgroup 定宽，
+                   与领料 / 入库汇总那两张表同一套写法 -->
+              <div class="overflow-x-auto">
+                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                  <colgroup>
+                    <col v-for="column in stockColumns" :key="column.key" :class="column.width" />
+                  </colgroup>
+                  <thead class="bg-slate-50">
+                    <tr>
+                      <th
+                        v-for="column in stockColumns"
+                        :key="column.key"
+                        scope="col"
+                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr
+                      v-for="(record, index) in stockTableData"
+                      :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
+                      class="transition hover:bg-slate-50"
+                    >
+                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (stockPageNum - 1) * stockPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.materialCode) }}</td>
+                      <td class="max-w-[220px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">{{ displayText(record.materialName) }}</td>
+                      <td class="max-w-[160px] whitespace-normal break-words px-3 py-2 text-sm text-slate-600">{{ displayText(record.spec) }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.storageLocation) }}</td>
+                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.unit) }}</td>
+                      <td
+                        class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold"
+                        :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-400'"
+                      >
+                        {{ displayText(formatStockQty(record.stockQty)) }}
+                      </td>
+                      <td class="max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-600">{{ displayText(record.storageDesc) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+                <el-pagination
+                  v-model:current-page="stockPageNum"
+                  :page-size="stockPageSize"
+                  :total="stockTotal"
+                  layout="total, prev, pager, next"
+                  background
+                  @current-change="getStockPageData"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <div v-show="activeTab === 'weekly'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
@@ -1772,233 +1927,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'tankLevel'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
-            <h2 class="text-base font-semibold text-slate-900">月底车间各储罐液位记录</h2>
-            <span class="text-xs text-slate-500">数据来源：hnd_factory /api/tank-level/list</span>
-          </div>
-
-          <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
-            <el-date-picker
-              v-model="tankLevelStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="起始日期"
-              :first-day-of-week="1"
-              @change="fetchTankLevelRecords"
-            />
-            <span class="text-sm text-slate-500">至</span>
-            <el-date-picker
-              v-model="tankLevelEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :first-day-of-week="1"
-              @change="fetchTankLevelRecords"
-            />
-            <el-select
-              v-model="tankLevelLocation"
-              style="width: 9.5rem"
-              placeholder="属地"
-              clearable
-              aria-label="属地"
-              @change="fetchTankLevelRecords"
-            >
-              <el-option
-                v-for="location in tankLevelLocationOptions"
-                :key="location"
-                :label="location"
-                :value="location"
-              />
-            </el-select>
-            <el-select
-              v-model="tankLevelCategory"
-              style="width: 9.5rem"
-              placeholder="所属(产品/原料)"
-              clearable
-              aria-label="所属"
-              @change="fetchTankLevelRecords"
-            >
-              <el-option
-                v-for="category in TANK_LEVEL_CATEGORIES"
-                :key="category"
-                :label="category"
-                :value="category"
-              />
-            </el-select>
-            <el-input
-              v-model="tankLevelKeyword"
-              style="width: 13rem"
-              placeholder="物料 / 容器名称 / 容器编号"
-              clearable
-              @keyup.enter="fetchTankLevelRecords"
-              @clear="fetchTankLevelRecords"
-            />
-            <button
-              type="button"
-              class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
-              @click="fetchTankLevelRecords"
-            >
-              查询
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-              @click="resetTankLevelFilters"
-            >
-              重置
-            </button>
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录
-            </span>
-          </div>
-
-          <div class="relative">
-            <LoadingMask v-if="tankLevelLoading" />
-
-            <PanelState
-              v-else-if="tankLevelError"
-              type="error"
-              title="暂时无法获取储罐液位记录"
-              :description="tankLevelError"
-              action-text="重新加载"
-              @action="fetchTankLevelRecords"
-            />
-
-            <PanelState
-              v-else-if="tankLevelTableData.length === 0"
-              :title="tankLevelHasFilter ? '没有符合筛选条件的记录' : '暂无储罐液位记录'"
-              :description="
-                tankLevelHasFilter
-                  ? '可放宽筛选条件，或点「重置」回到默认区间'
-                  : '月底抄录后由接口返回数据'
-              "
-            />
-
-            <div v-else>
-              <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in tankLevelColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
-                        v-for="column in tankLevelColumns"
-                        :key="column.key"
-                        scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                      >
-                        {{ column.label }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
-                      v-for="(record, index) in tankLevelTableData"
-                      :key="tankLevelRowKey(record, index)"
-                      class="transition hover:bg-slate-50"
-                    >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">
-                        {{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        {{ record.recordDate }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        {{ record.location }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        {{ record.category }}
-                      </td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
-                        {{ record.materialName }}
-                        <span v-if="record.materialCode" class="mt-0.5 block text-xs text-slate-400">
-                          {{ record.materialCode }}
-                        </span>
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        {{ record.tankName }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        {{ record.tankCode }}
-                      </td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">
-                        {{ record.levelValue }}
-                      </td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">
-                        {{ record.theoreticalWeight }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                        <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
-                          :aria-label="
-                            record.imageUrl || record.thumbnailUrl ? '查看储罐液位图据' : '暂无图据'
-                          "
-                          @click="openTankLevelImageDialog(record)"
-                        >
-                          <svg
-                            class="h-3 w-3"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="m21 15-5-5L5 21" />
-                          </svg>
-                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
-                          <img
-                            v-if="record.thumbnailUrl || record.imageUrl"
-                            :src="record.thumbnailUrl || record.imageUrl"
-                            alt="储罐液位图据"
-                            loading="lazy"
-                            decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
-                            @error="handleImgError($event, record)"
-                          />
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
-                <el-pagination
-                  v-model:current-page="tankLevelPageNum"
-                  :page-size="tankLevelPageSize"
-                  :total="tankLevelTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getTankLevelPageData"
-                />
-              </div>
-            </div>
-          </div>
-
-          <!-- 记录说明：与线下台账表尾的说明一字不差，避免两处口径不同 -->
-          <div class="border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
-            <p>记录说明：</p>
-            <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
-            <p>2. 记录时间为每月月底下午2点</p>
-          </div>
-        </section>
-
-        <el-dialog v-model="tankLevelImageDialogVisible" width="70vw" align-center>
-          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
-            <img
-              v-if="currentTankLevelImage"
-              :src="currentTankLevelImage"
-              alt="储罐液位图据"
-              class="max-h-[70vh] max-w-full rounded-lg object-contain"
-            />
-          </div>
-        </el-dialog>
+        <TankLevelPanel />
       </div>
 
       <div v-show="activeTab === 'vessel'">
