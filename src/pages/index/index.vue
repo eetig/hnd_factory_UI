@@ -257,6 +257,14 @@ const {
   displayText,
 } = useMaterialStockData()
 
+// 库存为空的提示。
+// ⚠️ 「文件导入」是 H5-only 的 Tab（见三处 #ifdef H5 与 UNIAPP迁移说明 §5.1），
+//    手机端根本没有那个入口，提示里不能指过去 —— 否则用户找半天找不到。
+let stockImportHint = '还没有导入过库存汇总，请在电脑端（网页版）导入库存表'
+// #ifdef H5
+stockImportHint = '还没有导入过库存汇总，可在「文件导入」里上传库存表'
+// #endif
+
 /** 「只看有库存」开关：改完立刻重过滤 */
 function toggleStockOnlyInStock() {
   stockOnlyInStock.value = !stockOnlyInStock.value
@@ -2609,7 +2617,7 @@ watch(activeTab, (tab, prevTab) => {
               :description="
                 stockKeyword || stockOnlyInStock
                   ? '换个关键词，或取消「只看有库存」看看'
-                  : '还没有导入过库存汇总，可在「文件导入」里上传库存表'
+                  : stockImportHint
               "
             />
 
