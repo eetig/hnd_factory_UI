@@ -135,8 +135,13 @@ function copyToPrivateDir(uri) {
   }
 
   const main = plus.android.runtimeMainActivity()
+  // ⚠️ 桥接返回的 Java 对象，方法不能当属性直接调（会报 xxx is not a function）——
+  //    要么先 importClass 把方法挂上去，要么一律用 plus.android.invoke。
+  //    这里统一用 invoke（真机实测：写成 resolver.openInputStream(uri) 直接报
+  //    「resolver.openInputStream is not a function」）。
+  plus.android.importClass('android.content.ContentResolver')
   const resolver = main.getContentResolver()
-  const input = resolver.openInputStream(uri)
+  const input = plus.android.invoke(resolver, 'openInputStream', uri)
   if (!input) {
     throw new Error('第③步 读不到文件内容（系统未授予读取权限）')
   }
@@ -149,8 +154,9 @@ function copyToPrivateDir(uri) {
   const output = new FileOutputStream(target)
 
   const Byte = plus.android.importClass('java.lang.Byte')
-  const Array = plus.android.importClass('java.lang.reflect.Array')
-  const buffer = plus.android.invoke(Array, 'newInstance', Byte.TYPE, COPY_BUFFER_SIZE)
+  // 静态方法用「类名字符串 + invoke」这种写法最稳（传 importClass 得到的类对象也可以，
+  // 但社区里翻车的基本都是那一种）；Byte.TYPE 是静态字段，读法同 Intent.ACTION_* 一致
+  const buffer = plus.android.invoke('java.lang.reflect.Array', 'newInstance', Byte.TYPE, COPY_BUFFER_SIZE)
 
   try {
     let read = plus.android.invoke(input, 'read', buffer)
@@ -166,13 +172,15 @@ function copyToPrivateDir(uri) {
     plus.android.invoke(output, 'close')
   }
 
-  return { path: target.getAbsolutePath(), name, size }
+  return { path: plus.android.invoke(target, 'getAbsolutePath'), name, size }
 }
 
 /** 尽量取出原始文件名（取不到就用时间戳兜底，后端主要看扩展名） */
 function resolveDisplayName(uri) {
   const main = plus.android.runtimeMainActivity()
-  const cursor = main.getContentResolver().query(uri, null, null, null, null)
+  plus.android.importClass('android.content.ContentResolver')
+  const resolver = main.getContentResolver()
+  const cursor = plus.android.invoke(resolver, 'query', uri, null, null, null, null)
   if (!cursor) {
     return ''
   }
