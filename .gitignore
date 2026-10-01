@@ -43,3 +43,7 @@ hnd-ui-dist.zip
 # 微信开发者工具的本机私有设置与 HBuilderX 本机运行配置（各机器不同，不应入库）
 project.private.config.json
 .hbuilderx/
+
+# App 签名密钥：私密文件，绝不入库（本仓库为公开仓库）
+test.keystore
+*.keystore

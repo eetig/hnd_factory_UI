@@ -1,31 +1,54 @@
 // 接口基地址与静态资源地址解析。
 //
+// 一套代码 / 两套后端：环境预设与开关统一放在 ./env.js，
+// 改那里的 APP_ENV 一处，H5 / App / 小程序的接口、图片、OCR 会一起切换
+// （vite.config.js 的 H5 开发代理也读同一份预设，不会出现「前端切了、代理没切」）。
+//
 // 改造前整个前端跑在浏览器里，所有请求都写相对路径（/api/xxx、/files/xxx），
 // 由 dev 代理或生产 Nginx 做同源路由。App 与小程序端没有「同源」这回事，
 // 相对路径无法解析，必须补上绝对 origin。
 
+import { ACTIVE_ENV } from './env'
+
 /**
  * 非 H5 端（App / 小程序）的接口 origin —— 后端 hnd_factory。
  *
- * 当前填的是开发期直连地址：手机与电脑同一局域网时可直接联调。
- * ⚠️ 上线前必须换成 Nginx 域名（形如 https://factory.example.com），并要求运维：
- *   1. 小程序端要把该域名加进微信后台的 request / uploadFile / downloadFile 合法域名，
- *      否则真机上所有请求都会被微信拦截（开发者工具可勾「不校验合法域名」临时绕过）。
- *   2. /files、/thumbs、/api/ocr 的路由要按 前后端改动统筹.md 配齐。
+ * 取值来自环境预设（src/api/env.js）：
+ *   remote → https://hbhnd.cloud        线上部署，Nginx 同源入口
+ *   local  → http://172.26.20.69:8084   本机/局域网联调（IP 见 env.js 的 LAN_HOST）
+ *
+ * ⚠️ 上线（打 APK / 小程序提审）前先确认 src/api/env.js 里 APP_ENV === 'remote'，
+ *    否则开发机 IP 会被内联进产物 —— App 装到手机上连的仍是开发机（本次要修的就是这个）。
+ *    另外小程序端要把该域名加进微信后台的 request / uploadFile / downloadFile 合法域名，
+ *    否则真机上所有请求都会被微信拦截（开发者工具可勾「不校验合法域名」临时绕过）。
  */
-export const API_ORIGIN = 'http://172.26.20.69:8084'
+export const API_ORIGIN = ACTIVE_ENV.apiOrigin
 
 /**
- * 单据图片服务（img-service）的直连地址。
+ * 单据图片服务（img-service）的 origin。
  *
  * H5 端由 vite 代理（开发）/ Nginx 同源路由（生产）把 /files、/thumbs
  * 重写成 img-service 的 /api/img/file、/api/img/thumb。直连后端时没有这层代理，
- * 所以在这里手工做同一套重写（见 resolveAssetUrl）。
- *
- * 上线后若改成「域名 + Nginx 同源路由」，把它留空即退化为跟随 API_ORIGIN，
- * 相对路径原样交给 Nginx 处理，与改造前行为一致。
+ * 所以按 IMG_REWRITE 决定是否手工做同一套重写（见 resolveAssetUrl）：
+ *   local  → 有值 + IMG_REWRITE=true（直连 8082，必须手工重写）
+ *   remote → 留空 + IMG_REWRITE=false，退化为跟随 API_ORIGIN，
+ *            相对路径原样交给域名侧 Nginx，与改造前行为一致
  */
-export const IMG_ORIGIN = 'http://172.26.20.69:8082'
+export const IMG_ORIGIN = ACTIVE_ENV.imgOrigin
+
+/** 是否按「直连 img-service」的规则手工重写图片路径（见 IMG_ORIGIN 注释） */
+export const IMG_REWRITE = ACTIVE_ENV.imgRewrite
+
+/**
+ * 图片识别服务（myocr）的 origin —— /api/ocr/* 走它。
+ *
+ * OCR 是本项目唯一一个「挂在 /api 前缀下、却不在 hnd_factory 上」的接口：
+ *   线上 → 由域名侧 Nginx 把 /api/ocr 分流给 myocr，与 apiOrigin 同源，留空即跟随；
+ *   本机 → myocr(8085) 与 hnd_factory(8084) 是两台独立服务，必须单独指向，
+ *          否则识别请求会打到 hnd_factory 上 404。
+ * H5 端不受影响（开发走 vite 代理、生产走 Nginx，都按相对路径分流）。
+ */
+export const OCR_ORIGIN = ACTIVE_ENV.ocrOrigin
 
 // H5 端保持相对路径：开发由 vite 代理，生产由 Nginx 同源路由，行为与改造前完全一致。
 // 用 uni-app 的条件编译区分，避免把 H5 的相对路径行为带到 App/小程序上。
@@ -40,7 +63,16 @@ export const ORIGIN = API_ORIGIN
 export function buildUrl(url) {
   if (!url) return url
   if (/^https?:\/\//i.test(url)) return url
-  return `${ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`
+  const path = url.startsWith('/') ? url : `/${url}`
+
+  // #ifndef H5
+  // /api/ocr/* 归属 myocr 而非 hnd_factory，本机联调时两者是不同主机:端口，
+  // 必须单独指过去（线上 OCR_ORIGIN 为空，直接跟随 ORIGIN，即域名侧 Nginx 分流）。
+  // H5 端不需要这段：开发期由 vite 代理分流，生产由 Nginx 分流。
+  if (OCR_ORIGIN && path.startsWith('/api/ocr')) return `${OCR_ORIGIN}${path}`
+  // #endif
+
+  return `${ORIGIN}${path}`
 }
 
 /**
@@ -53,14 +85,20 @@ export function resolveAssetUrl(url) {
     return url
   }
 
+  const path = url.startsWith('/') ? url : `/${url}`
+
   // #ifndef H5
-  // 直连场景：按 vite 代理同样的规则，把 /files、/thumbs 指到 img-service
   if (IMG_ORIGIN) {
-    if (url.startsWith('/files/')) return `${IMG_ORIGIN}/api/img/file/${url.slice(7)}`
-    if (url.startsWith('/thumbs/')) return `${IMG_ORIGIN}/api/img/thumb/${url.slice(8)}`
-    return `${IMG_ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`
+    if (IMG_REWRITE) {
+      // 直连 img-service：按 vite 代理同样的规则把 /files、/thumbs 重写成真实路径
+      if (path.startsWith('/files/')) return `${IMG_ORIGIN}/api/img/file/${path.slice(7)}`
+      if (path.startsWith('/thumbs/')) return `${IMG_ORIGIN}/api/img/thumb/${path.slice(8)}`
+    } else {
+      // 域名同源：Nginx 已把 /files、/thumbs 路由给 img-service，原样透传
+      return `${IMG_ORIGIN}${path}`
+    }
   }
   // #endif
 
-  return `${ORIGIN}${url.startsWith('/') ? '' : '/'}${url}`
+  return `${ORIGIN}${path}`
 }

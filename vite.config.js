@@ -3,6 +3,10 @@ import uni from '@dcloudio/vite-plugin-uni'
 import { UnifiedViteWeappTailwindcssPlugin as uvtw } from 'weapp-tailwindcss/vite'
 import tailwindcss from 'tailwindcss'
 import autoprefixer from 'autoprefixer'
+// 后端环境预设：与 src/api/config.js 共用同一份开关（改 src/api/env.js 的 APP_ENV）。
+// 这样「前端切环境」和「H5 代理切环境」不会各切一半 —— 那种错配只在 H5 上暴露，
+// App / 小程序端反而正常，很难第一时间发现。
+import { ACTIVE_ENV, APP_ENV } from './src/api/env.js'
 
 // 小程序端才有必要跑 weapp-tailwindcss：
 // 它负责把 Tailwind 生成的非法选择器改写成 WXSS 能接受的形态
@@ -11,6 +15,50 @@ import autoprefixer from 'autoprefixer'
 // App 端（app-vue 是 webview 渲染）与 H5 端是完整 CSS 环境，原样即可，
 // 跑这个插件反而会去改写本来合法的类名。
 const isMiniProgram = /^mp-/.test(process.env.UNI_PLATFORM || '')
+
+// 启动/构建时把当前后端环境打出来：打包前扫一眼终端，就能确认这个包连的是哪套后端
+console.log(
+  `[env] APP_ENV=${APP_ENV} → ${ACTIVE_ENV.label}（接口 base = ${ACTIVE_ENV.apiOrigin || '相对路径/Nginx 同源'}）`,
+)
+
+/**
+ * H5 开发代理（仅 dev 生效；App / 小程序不走 devServer，请求直发绝对地址）。
+ *
+ * 规则跟随 src/api/env.js 的预设，保证 H5 与 App 端指向同一套后端：
+ *   remote（域名同源）  → /api、/files、/thumbs 原样透传给 https://hbhnd.cloud，
+ *                        不做任何 rewrite，本地拓扑与生产完全一致
+ *                        （域名侧 Nginx 已配好 /api、/api/ocr、/files、/thumbs 四条路由）
+ *   local （直连三台）  → /api/ocr 单独指到 myocr(8085)；
+ *                        /files、/thumbs 重写成 img-service 的真实路径
+ *                        （/api/img/file、/api/img/thumb，本地没有 Nginx 做这层路由）
+ */
+function buildProxy() {
+  if (APP_ENV === 'local') {
+    return {
+      // ⚠️ '/api/ocr' 必须写在 '/api' 之前：vite 按书写顺序匹配，
+      //    写反了识别请求会被 '/api' 那条先吃掉，打到 hnd_factory 上 404
+      '/api/ocr': { target: ACTIVE_ENV.ocrOrigin, changeOrigin: true },
+      '/api': { target: ACTIVE_ENV.apiOrigin, changeOrigin: true },
+      '/files': {
+        target: ACTIVE_ENV.imgOrigin,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
+      },
+      '/thumbs': {
+        target: ACTIVE_ENV.imgOrigin,
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
+      },
+    }
+  }
+
+  const target = ACTIVE_ENV.apiOrigin
+  return {
+    '/api': { target, changeOrigin: true, secure: false },
+    '/files': { target, changeOrigin: true, secure: false },
+    '/thumbs': { target, changeOrigin: true, secure: false },
+  }
+}
 
 export default defineConfig({
   plugins: [uni(), ...(isMiniProgram ? [uvtw()] : [])],
@@ -28,38 +76,9 @@ export default defineConfig({
   server: {
     port: 9092,
     host: true,
-    // ⚠️ 以下代理仅 H5 端开发期有效。
-    //    App 端与小程序端不走 devServer，请求直发真实域名（见 src/api/request.js 的 BASE_URL）。
-    //
-    // 当前为「接入已部署线上后端」的联调配置：三组路由全部指向 https://hbhnd.cloud。
-    // hbhnd.cloud 的生产 Nginx 已把 /api(FastAPI hnd_factory)、/api/ocr(myocr 8085)、
-    // /files、/thumbs(img-service 8082) 同源配好，故这里【不做任何 rewrite】，
-    // 原样透传即可，本地拓扑与生产完全一致。
-    //   若要回切到本地后端（8084 / 8082 / 8085），把下面 target 换成本地地址，
-    //   并把 /files、/thumbs 各自带上注释掉的 rewrite 即可（本地 img-service 需手工重写）。
-    proxy: {
-      // 后端 hnd_factory 的 /api/*；/api/ocr/* 也由同一条规则吃掉，
-      // 交由 hbhnd.cloud 的 Nginx 分流到 myocr —— 无需再单独定义 '/api/ocr'。
-      '/api': {
-        target: 'https://hbhnd.cloud',
-        changeOrigin: true,
-        secure: false,
-      },
-      // 单据图片（整改-001）：生产由 Nginx 同源路由到 img-service。
-      '/files': {
-        target: 'https://hbhnd.cloud',
-        changeOrigin: true,
-        secure: false,
-        // 本地直连 img-service 时启用：
-        // rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
-      },
-      '/thumbs': {
-        target: 'https://hbhnd.cloud',
-        changeOrigin: true,
-        secure: false,
-        // 本地直连 img-service 时启用：
-        // rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
-      },
-    },
+    // ⚠️ 代理仅 H5 端开发期有效，规则见上方 buildProxy()。
+    //    切换后端环境请改 src/api/env.js 的 APP_ENV，不要在这里逐个改 target，
+    //    否则会与 src/api/config.js（App/小程序用的 origin）不一致。
+    proxy: buildProxy(),
   },
 })
