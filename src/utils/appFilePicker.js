@@ -121,13 +121,14 @@ function matchesExtension(name, extensions) {
 /**
  * 把 content:// 的内容拷进 App 私有目录，返回真实路径。
  *
- * <p>用「读一块写一块」的方式而不是 android.os.FileUtils.copy：
- * 后者要 API 29+，而缓冲区拷贝在各版本上都成立（跨桥调用按 64KB 一次，16MB 文件约 256 次，
- * 可以接受）。桥接里创建 Java 数组必须走 Array.newInstance，不能写 new byte[]。
+ * <p>拷贝优先用系统的 android.os.FileUtils.copy（API 29+，一次调用拷完）；
+ * 拿不到或没写出东西时，退回 64KB 缓冲区分块读写 —— 跨桥调用按 64KB 一次，
+ * 16MB 文件约 256 次，可以接受。桥接里创建 Java 数组只能走 Array.newInstance。
+ *
+ * <p>结束前用**文件系统里的真实长度**校验，0 字节直接抛错 —— 见下面的注释。
  */
 function copyToPrivateDir(uri) {
   let name
-  let size = 0
   try {
     name = resolveDisplayName(uri) || `import-${Date.now()}.xlsx`
   } catch {
@@ -153,29 +154,51 @@ function copyToPrivateDir(uri) {
   const target = new File(docDir, `import-${Date.now()}-${name}`)
   const output = new FileOutputStream(target)
 
-  const Byte = plus.android.importClass('java.lang.Byte')
-  // 静态方法用「类名字符串 + invoke」这种写法最稳（传 importClass 得到的类对象也可以，
-  // 但社区里翻车的基本都是那一种）；Byte.TYPE 是静态字段，读法同 Intent.ACTION_* 一致
-  const buffer = plus.android.invoke('java.lang.reflect.Array', 'newInstance', Byte.TYPE, COPY_BUFFER_SIZE)
-
+  // 拷贝：先试系统的 FileUtils.copy（API 29+ 一次调用把流拷完），
+  // 没写出东西再走缓冲区逐块拷贝兜底。
+  // ⚠️ 真机踩过：只手写循环时，拷出来是 0 字节却**不报错** ——
+  //    后端读了个空文件，返回「解析成功、0 条记录」，前端看着一切正常。
+  //    所以最后一定要用文件系统里的真实长度校验，0 字节直接报错。
   try {
-    let read = plus.android.invoke(input, 'read', buffer)
-    while (read > 0) {
-      plus.android.invoke(output, 'write', buffer, 0, read)
-      size += read
-      read = plus.android.invoke(input, 'read', buffer)
+    try {
+      plus.android.importClass('android.os.FileUtils')
+      plus.android.invoke('android.os.FileUtils', 'copy', input, output)
+    } catch {
+      // 低版本没有这个方法，交给下面的分块拷贝
     }
-  } catch (error) {
-    throw new Error(`第③步 拷贝文件失败：${error.message}`)
+
+    if (readLength(target) <= 0) {
+      const Byte = plus.android.importClass('java.lang.Byte')
+      // 静态方法用「类名字符串 + invoke」最稳；Byte.TYPE 是静态字段，读法同 Intent.ACTION_*
+      const buffer = plus.android.invoke('java.lang.reflect.Array', 'newInstance', Byte.TYPE, COPY_BUFFER_SIZE)
+      let read = plus.android.invoke(input, 'read', buffer)
+      while (read > 0) {
+        plus.android.invoke(output, 'write', buffer, 0, read)
+        read = plus.android.invoke(input, 'read', buffer)
+      }
+    }
   } finally {
+    // ⚠️ 必须先关流再量长度：FileOutputStream 不 close 不保证 flush，
+    //    没落盘的字节长度是 0，会被下面误判成「拷了个空文件」
     plus.android.invoke(input, 'close')
     plus.android.invoke(output, 'close')
+  }
+
+  const size = readLength(target)
+  if (size <= 0) {
+    throw new Error('第③步 拷出来的文件是 0 字节：可能选到的是云盘/在线文件，或系统没给读取权限')
   }
 
   return { path: plus.android.invoke(target, 'getAbsolutePath'), name, size }
 }
 
 /** 尽量取出原始文件名（取不到就用时间戳兜底，后端主要看扩展名） */
+/** 用文件系统里的真实长度做校验（不信自己数了多少字节） */
+function readLength(file) {
+  const value = Number(plus.android.invoke(file, 'length'))
+  return Number.isFinite(value) ? value : 0
+}
+
 function resolveDisplayName(uri) {
   const main = plus.android.runtimeMainActivity()
   plus.android.importClass('android.content.ContentResolver')
