@@ -75,6 +75,20 @@ const PICK_COLUMNS = [
   { key: 'unit', label: '单位', width: 'w-24' },
 ]
 
+// 库存汇总（SAP 库存导出）：同一物料的多行在**后端**已按「工厂+物料+存储地点」相加，
+// 所以这里看到的就是最终入库的行（硅粉会是一条 49,482）
+const STOCK_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-16' },
+  { key: 'plantCode', label: '工厂', width: 'w-20' },
+  { key: 'materialCode', label: '物料', width: 'w-32' },
+  { key: 'materialDesc', label: '物料描述', width: 'w-[180px]', wrap: true },
+  { key: 'spec', label: '规格型号', width: 'w-[140px]', wrap: true },
+  { key: 'storageLocation', label: '存储地点', width: 'w-24' },
+  { key: 'unit', label: '基本计量单位', width: 'w-32' },
+  { key: 'stockQty', label: '非限制使用的库存', width: 'w-40', align: 'right' },
+  { key: 'storageDesc', label: '存储地点描述', width: 'w-[160px]', wrap: true },
+]
+
 // 货物移动字段别名容错（后端字段名有出入时自动适配）
 const GOODS_MOVE_FIELD_MAP = {
   orderNo: ['orderNo', 'workOrderNo', 'orderCode'],
@@ -104,10 +118,23 @@ const PICK_FIELD_MAP = {
   unit: ['unit'],
 }
 
+// 库存汇总字段别名容错
+const STOCK_FIELD_MAP = {
+  plantCode: ['plantCode', 'plant', 'factoryCode'],
+  materialCode: ['materialCode', 'materialNo'],
+  materialDesc: ['materialDesc', 'materialName'],
+  spec: ['spec', 'specModel'],
+  storageLocation: ['storageLocation', 'storagePlace'],
+  unit: ['unit'],
+  stockQty: ['stockQty', 'stockQuantity', 'qty'],
+  storageDesc: ['storageDesc', 'storageLocationDesc'],
+}
+
 // 识别类型 → 表格配置（未命中的类型回落到工单汇总表头）
 const TABLE_CONFIGS = [
   { type: '生产入库单', columns: INBOUND_COLUMNS, fieldMap: INBOUND_FIELD_MAP },
   { type: '领料汇总', columns: PICK_COLUMNS, fieldMap: PICK_FIELD_MAP },
+  { type: '库存汇总', columns: STOCK_COLUMNS, fieldMap: STOCK_FIELD_MAP },
   { type: '货物移动', columns: GOODS_MOVE_COLUMNS, fieldMap: GOODS_MOVE_FIELD_MAP },
 ]
 
