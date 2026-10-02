@@ -27,6 +27,16 @@ const tankLevelLocations = ref([])
 /** 所属（产品/原料）：Excel 表头里就只有这两类，属固定字典，不做成接口 */
 export const TANK_LEVEL_CATEGORIES = ['产品', '原料']
 
+/**
+ * 属地（罐组）候选：录入时给的下拉项。
+ *
+ * <p>与查询区那个属地下拉**不是一回事**：查询区取的是「库里实际出现过的值」
+ * （用于筛已有数据），这里是「厂里已知的罐组」固定字典，两者用途不同，不必合并。
+ * 与 {@link TANK_LEVEL_CATEGORIES} 同一个理由不做成接口 —— 就这几个罐组，
+ * 为一个下拉单开接口不划算；界面上是「可选可填」，将来加了新罐组不必改代码也能录进去。
+ */
+export const TANK_LEVEL_LOCATIONS = ['1#', '2#', '4#', '1#罐组', '2#罐组']
+
 // 字段别名容错（后端字段名有出入时自动适配，与入库/领料两处的做法一致）
 const TANK_LEVEL_FIELD_MAP = {
   recordDate: ['recordDate', 'recordTime', 'date'],

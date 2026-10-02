@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElAutocomplete, ElSelect } from 'element-plus'
 
 // API 层打桩：挂载时组件会并发拉工单/领料/入库/货物移动四份数据，测试里不发真实请求
 vi.mock('../../src/api/request', () => ({
@@ -149,13 +149,12 @@ describe('WorkOrderList 页面冒烟', () => {
     const text = wrapper.text()
     // 台账标题与表头逐列对应
     expect(text).toContain('月底车间各储罐液位记录')
+    // 「所属(产品/原料)」「物料」「容器编号」三列已从界面撤掉（字段仍在数据层，
+    // 编辑老记录不会被清空），所以这里不再断言这三个表头，改为断言它们确实不出现
     for (const label of [
       '记录日期',
       '属地',
-      '所属(产品/原料)',
-      '物料',
       '容器名称',
-      '容器编号',
       // 数值列表头带单位（表头优化）：单位写进列标签，避免与体积单位混读
       '容器液位 (mm)',
       '理论质量 (kg)',
@@ -167,10 +166,12 @@ describe('WorkOrderList 页面冒烟', () => {
     // 接口返回的行已渲染，数值按展示格式（1250.0000 → 1250）
     expect(text).toContain('2026-08-31')
     expect(text).toContain('V150储罐A')
-    expect(text).toContain('V150-A')
-    expect(text).toContain('HND-V150')
     expect(text).toContain('1250')
     expect(text).toContain('1500')
+
+    // 撤掉的三列在页面上一个值都不该露出来（容器编号 / 物料）
+    expect(text).not.toContain('V150-A')
+    expect(text).not.toContain('HND-V150')
 
     // 表尾记录说明与线下台账一致
     expect(text).toContain('实际重量与理论计算可能存在差异，以实际测量为准')
@@ -267,6 +268,140 @@ describe('WorkOrderList 页面冒烟', () => {
 
     // 角标写的是总张数（用 aria-label 断言，比在整页文本里找数字可靠）
     expect(panel.html()).toContain('查看图据（共 2 张）')
+  })
+
+  it('月底储罐液位记录：库里一条都没有时，「新增一行」入口仍然在', async () => {
+    // 空列表：这正是「新库/清空后第一次使用」的样子
+    request.get.mockImplementation(() =>
+      Promise.resolve({ data: { success: true, dataList: [], data: [] } }),
+    )
+    authState.permissions = ['tank_level:edit', 'tank_level:delete']
+    await nextTick()
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+    // tankLevelLoaded 是模块级单例，前面的用例已经加载过，这里显式重拉
+    const searchButton = wrapper.findAll('button').find((node) => node.text().trim() === '查询')
+    await searchButton.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(TankLevelPanel)
+    expect(panel.text()).toContain('暂无储罐液位记录')
+
+    // 空态提示写的是「点下方『新增一行』开始录入」—— 那句话下面就必须真有这个按钮。
+    // 早先按钮和表格绑在同一个分支里，空表时两个都不渲染，提示就成了空指
+    const addButton = panel.findAll('button').find((node) => node.text().trim() === '新增一行')
+    expect(addButton).toBeTruthy()
+
+    // 点它能真的开出草稿行
+    await addButton.trigger('click')
+    await nextTick()
+    // 草稿行的图据格子是「选择图片」：选好的图随保存一起提交，
+    // 不再要求「先保存数据、再回来传图」两步
+    expect(panel.text()).toContain('选择图片')
+
+    authState.permissions = []
+  })
+
+  it('月底储罐液位记录：新增行可以先选好图，保存时数据与图据一次提交', async () => {
+    request.get.mockImplementation(() =>
+      Promise.resolve({ data: { success: true, dataList: [], data: [] } }),
+    )
+    request.post.mockImplementation((url) => {
+      if (url === '/api/tank-level/save') {
+        return Promise.resolve({ data: { success: true, data: { id: 77 } } })
+      }
+      if (url === '/api/tank-level/image/upload') {
+        return Promise.resolve({
+          data: { success: true, data: [{ imageId: 1, url: '/files/a.png' }] },
+        })
+      }
+      return Promise.resolve({ data: { success: true, data: [] } })
+    })
+
+    authState.permissions = ['tank_level:edit', 'tank_level:delete']
+    await nextTick()
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(TankLevelPanel)
+
+    // editingId 是组件内状态、跨用例不重置：上一个用例点开的那条草稿行还在，先收掉
+    const leftoverCancel = panel.findAll('button').find((node) => node.text().trim() === '取消')
+    if (leftoverCancel) {
+      await leftoverCancel.trigger('click')
+      await nextTick()
+    }
+
+    const addButton = panel.findAll('button').find((node) => node.text().trim() === '新增一行')
+    await addButton.trigger('click')
+    await nextTick()
+
+    // 此刻面板里只该有一个 file input（图据弹窗没打开，它里头那个还没渲染）
+    const fileInputs = panel.findAll('input[type="file"]')
+    expect(fileInputs).toHaveLength(1)
+
+    // 记录还没保存，先把两张图选好
+    Object.defineProperty(fileInputs[0].element, 'files', {
+      value: [new File(['a'], 'a.png', { type: 'image/png' }), new File(['b'], 'b.jpg', { type: 'image/jpeg' })],
+      configurable: true,
+    })
+    await fileInputs[0].trigger('change')
+    expect(panel.text()).toContain('再加一张')
+
+    const saveButton = panel.findAll('button').find((node) => node.text().trim() === '保存')
+    await saveButton.trigger('click')
+    await flushPromises()
+
+    // 顺序是关键：先存数据拿到 id，再拿这个 id 传图 —— 图据接口挂在 record id 上
+    expect(request.post.mock.calls.map((call) => call[0])).toEqual([
+      '/api/tank-level/save',
+      '/api/tank-level/image/upload',
+    ])
+
+    const uploadForm = request.post.mock.calls[1][1]
+    expect(uploadForm.get('recordId')).toBe('77')
+    expect(uploadForm.getAll('files')).toHaveLength(2)
+
+    authState.permissions = []
+  })
+
+  it('月底储罐液位记录：新增行的属地与容器名称给的是下拉/可搜候选，不是裸文本框', async () => {
+    request.get.mockImplementation(() =>
+      Promise.resolve({ data: { success: true, dataList: [], data: [] } }),
+    )
+
+    authState.permissions = ['tank_level:edit']
+    await nextTick()
+
+    const tab = findTabLabel(wrapper, '月底储罐液位记录')
+    await tab.trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.findComponent(TankLevelPanel)
+
+    // editingId 是组件内状态、跨用例不重置：先收掉前面用例留下的草稿行，计数才有意义
+    const leftoverCancel = panel.findAll('button').find((node) => node.text().trim() === '取消')
+    if (leftoverCancel) {
+      await leftoverCancel.trigger('click')
+      await nextTick()
+    }
+
+    // 查询区本来就有两个下拉（属地 / 所属），草稿行要再加一个属地下拉
+    const selectsBefore = panel.findAllComponents(ElSelect).length
+    const addButton = panel.findAll('button').find((node) => node.text().trim() === '新增一行')
+    await addButton.trigger('click')
+    await nextTick()
+
+    expect(panel.findAllComponents(ElSelect).length).toBe(selectsBefore + 1)
+    // 容器名称是「可自由输入 + 远程候选」：台账里没有的设备也录得进去，
+    // 用死的 select 会把「台账没有」变成「填不进去」
+    expect(panel.findAllComponents(ElAutocomplete)).toHaveLength(1)
+
+    authState.permissions = []
   })
 
   it('切换 Tab 会切换对应面板的显示（v-show）', async () => {

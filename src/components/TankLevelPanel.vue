@@ -1,6 +1,7 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import {
+  ElAutocomplete,
   ElDatePicker,
   ElInput,
   ElMessage,
@@ -13,8 +14,10 @@ import { hasPerm } from '../api/auth'
 import LoadingMask from './LoadingMask.vue'
 import PanelState from './PanelState.vue'
 import TankLevelImageDialog from './TankLevelImageDialog.vue'
+import { useEquipmentLedger } from '../composables/useEquipmentLedger'
 import {
   TANK_LEVEL_CATEGORIES,
+  TANK_LEVEL_LOCATIONS,
   buildTankLevelDraft,
   useTankLevelData,
 } from '../composables/useTankLevelData'
@@ -46,28 +49,37 @@ const {
 } = useTankLevelData()
 
 // 图据（可多张）的弹窗状态与请求都在这个 composable 里，本组件只负责触发与渲染
-const { openImageDialog } = useTankLevelImages()
+const { openImageDialog, uploadImagesForRecord } = useTankLevelImages()
+
+// 容器名称的候选来自设备台账（GET /api/equipment/search —— 变更-005 就有的接口）：
+// 台账里 91 台设备，靠关键字检索比手打全名可靠，名称长得像的太多了。
+// 变更-012 起接口允许空关键字（返回前 limit 条、按名称拼音排序），所以点开下拉就列出全部候选，
+// 顺带也就有了「首字母顺序」，见 trigger-on-focus。
+//
+// 防抖在这一层做（有单测），所以 el-autocomplete 那边要 :debounce="0" ——
+// 它自己默认也有 300ms，不关掉就是两道叠加、敲完字要等 600ms 才出候选。
+const { fetchEquipmentSuggestions, cancelEquipmentSearch } = useEquipmentLedger()
 
 // 行内编辑的权限：后端每个写接口各自鉴权，这里只管按钮显隐（不是安全边界）
 const canEdit = computed(() => hasPerm('tank_level:edit'))
 const canDelete = computed(() => hasPerm('tank_level:delete'))
 const canOperate = computed(() => canEdit.value || canDelete.value)
 
-// 列与线下台账（月底车间各储罐液位记录表）逐列对应；「序号」由前端按分页渲染
+// 列与线下台账（月底车间各储罐液位记录表）对应；「序号」由前端按分页渲染
 // 数值列的表头直接带单位（容器液位 mm / 理论质量 kg）：线下台账没标单位，
 // 页面上标清楚，免得与「压力容器体积计算」里的 m³ 混读
+//
+// 「所属(产品/原料)」「物料」「容器编号」三列已按使用方要求从界面撤掉。
+// 字段本身没删：draft / payload 仍原样带上（见 useTankLevelData），
+// 否则编辑一条老记录会把库里这三列清成 NULL —— 容器编号还是唯一键的一半。
 const baseColumns = [
   { key: 'index', label: '序号', width: 'w-14' },
   { key: 'recordDate', label: '记录日期', width: 'w-32' },
   { key: 'location', label: '属地', width: 'w-24' },
-  { key: 'category', label: '所属(产品/原料)', width: 'w-32' },
-  { key: 'materialName', label: '物料', width: 'w-[190px]' },
   { key: 'tankName', label: '容器名称', width: 'w-32' },
-  // 容器编号（设备位号）：台账的唯一键之一（记录日期 + 容器编号），线下台账里单独一栏
-  { key: 'tankCode', label: '容器编号', width: 'w-28' },
   { key: 'levelValue', label: '容器液位 (mm)', width: 'w-28', align: 'right' },
   { key: 'theoreticalWeight', label: '理论质量 (kg)', width: 'w-28', align: 'right' },
-  { key: 'imageUrl', label: '图据', width: 'w-24' },
+  { key: 'imageUrl', label: '图据', width: 'w-36' },
 ]
 
 const columns = computed(() =>
@@ -96,6 +108,80 @@ const saving = ref(false)
 const isCreating = computed(() => editingId.value === ROW_KEY_CREATING)
 const isEditing = (record) => editingId.value !== null && editingId.value === String(record.id)
 
+// ===== 新增行里先选好的图 =====
+// 记录还没保存就没有 id，而图据接口挂在 record id 上，所以图只能先攥在内存里，
+// 等保存拿到新 id 后立刻传上去 —— 用户只点一次「保存」，不用「先存数据再补图」两步。
+//
+// 编辑已有行不走这条路：那种行本来就有 id，图据弹窗直接可用，不必等保存。
+const pendingImages = ref([]) // [{ key, file, url }]
+const pendingImageInputRef = ref(null)
+let pendingImageKey = 0
+
+// 只收 PNG / JPG，与后端白名单一致（img-service 只认这两种，收了别的也会在那一步失败）
+const IMAGE_ACCEPT = 'image/png,image/jpeg'
+
+function isAllowedImage(file) {
+  return /^image\/(png|jpeg)$/.test(file.type || '') || /\.(png|jpe?g)$/i.test(file.name || '')
+}
+
+function handlePendingImageInput(event) {
+  const files = Array.from(event.target.files || [])
+  // 清空 value，否则连续两次选同一批文件不会再触发 change
+  event.target.value = ''
+
+  const accepted = files.filter(isAllowedImage)
+  if (accepted.length < files.length) {
+    ElMessage.warning('只收 PNG / JPG，其余文件已忽略。')
+  }
+
+  accepted.forEach((file) => {
+    // 预览用 objectURL：必须在移除 / 取消 / 保存后 revoke，
+    // 否则整个页面生命周期都在占内存（同图片解析页的做法）
+    pendingImages.value.push({
+      key: ++pendingImageKey,
+      file,
+      url: URL.createObjectURL(file),
+    })
+  })
+}
+
+function removePendingImage(key) {
+  const index = pendingImages.value.findIndex((item) => item.key === key)
+  if (index === -1) return
+
+  URL.revokeObjectURL(pendingImages.value[index].url)
+  pendingImages.value.splice(index, 1)
+}
+
+/** 丢掉所有待传的图（取消编辑、保存完成、离开页面时都要调） */
+function clearPendingImages() {
+  pendingImages.value.forEach((item) => URL.revokeObjectURL(item.url))
+  pendingImages.value = []
+}
+
+onUnmounted(() => {
+  clearPendingImages()
+  cancelEquipmentSearch()
+})
+
+/**
+ * 表格区有没有内容（含正在新增的草稿行）：决定显示表格还是空态，以及要不要分页器。
+ *
+ * <p>草稿行也算「有内容」—— 新增时即便库里一条都没有，表格也得出来，不然用户
+ * 填的那一行没地方显示。
+ */
+const tankLevelHasRows = computed(() => tankLevelTableData.value.length > 0 || isCreating.value)
+
+/**
+ * 「新增一行」入口是否出现：除了权限，加载中与加载失败时也不给。
+ *
+ * <p>它是**独立于表格**渲染的 —— 空态提示写着「点下方『新增一行』开始录入」，
+ * 早先按钮和表格绑在同一个分支里，于是库里清空后那句话下面什么都没有。
+ */
+const canCreate = computed(
+  () => canEdit.value && !tankLevelLoading.value && !tankLevelError.value,
+)
+
 /** 静默单元格：平时看不出是输入框，悬停/聚焦才显形（同图片解析页 inputClass）*/
 function inputClass(align) {
   return [
@@ -113,6 +199,8 @@ function startEdit(record) {
 function cancelEdit() {
   editingId.value = null
   draft.value = null
+  // 待传的图一起丢掉：留着会跟着下一次新增跑到别的记录上
+  clearPendingImages()
 }
 
 function startCreate() {
@@ -124,6 +212,7 @@ function startCreate() {
   // 单独用 editingId='new' 控制渲染，保存成功后由刷新带出真行
   editingId.value = ROW_KEY_CREATING
   draft.value = buildTankLevelDraft(null)
+  clearPendingImages()
 }
 
 async function saveRow() {
@@ -131,10 +220,30 @@ async function saveRow() {
 
   saving.value = true
   const creating = isCreating.value
+  // 图得等保存拿到 id 才能传。先把文件拷出来：保存成功后 cancelEdit 会把 pendingImages 清空
+  const filesToUpload = creating ? pendingImages.value.map((item) => item.file) : []
+
   try {
-    await saveTankLevelRecord(draft.value)
-    ElMessage.success(creating ? '新增成功' : '保存成功')
+    const saved = await saveTankLevelRecord(draft.value)
     cancelEdit()
+
+    if (!filesToUpload.length) {
+      ElMessage.success(creating ? '新增成功' : '保存成功')
+      return
+    }
+
+    // 图据这一段单独兜错：数据已经落库了，图没传上不能报成「保存失败」——
+    // 记录是好的，图还能在图据弹窗里补。含糊地报失败会让人以为整条没存进去，再存一次就撞唯一键
+    try {
+      await uploadImagesForRecord(saved?.id, filesToUpload)
+      // 保存时刷的那一次还没有图，这里要再刷一次：列表要画首张缩略图与张数角标
+      await fetchTankLevelRecords({ keepPage: true })
+      ElMessage.success(`新增成功，已上传 ${filesToUpload.length} 张图据`)
+    } catch (error) {
+      ElMessage.warning(
+        `数据已保存，但图据上传失败：${error?.message || '请稍后重试。'}可在该行的图据弹窗里补传。`,
+      )
+    }
   } catch (error) {
     // 后端校验/唯一键冲突的消息原样展示：它比前端兜底文案具体得多
     ElMessage.error(error?.message || '保存失败，请稍后重试。')
@@ -283,7 +392,7 @@ function handleThumbError(event, image) {
       />
 
       <PanelState
-        v-else-if="tankLevelTableData.length === 0 && !isCreating"
+        v-else-if="!tankLevelHasRows"
         :title="hasFilter ? '没有符合筛选条件的记录' : '暂无储罐液位记录'"
         :description="
           hasFilter
@@ -326,55 +435,47 @@ function handleThumbError(event, image) {
                   />
                 </td>
                 <td class="px-2 py-1.5">
-                  <input
+                  <!-- 属地就那几个罐组，给下拉省得手打；留 allow-create 是为了新罐组不必改代码 -->
+                  <el-select
                     v-model="draft.location"
-                    type="text"
+                    class="w-full"
+                    size="small"
                     placeholder="属地"
-                    :class="inputClass()"
+                    filterable
+                    allow-create
+                    default-first-option
                     aria-label="属地"
-                  />
+                  >
+                    <el-option
+                      v-for="location in TANK_LEVEL_LOCATIONS"
+                      :key="location"
+                      :label="location"
+                      :value="location"
+                    />
+                  </el-select>
                 </td>
                 <td class="px-2 py-1.5">
-                  <select v-model="draft.category" :class="inputClass()" aria-label="所属">
-                    <option value="">—</option>
-                    <option v-for="category in TANK_LEVEL_CATEGORIES" :key="category" :value="category">
-                      {{ category }}
-                    </option>
-                  </select>
-                </td>
-                <td class="px-2 py-1.5">
-                  <input
-                    v-model="draft.materialName"
-                    type="text"
-                    placeholder="物料名称"
-                    :class="inputClass()"
-                    aria-label="物料名称"
-                  />
-                  <input
-                    v-model="draft.materialCode"
-                    type="text"
-                    placeholder="物料编码"
-                    :class="inputClass()"
-                    aria-label="物料编码"
-                  />
-                </td>
-                <td class="px-2 py-1.5">
-                  <input
+                  <!-- 容器名称从设备台账里挑：点开就列出全部候选（后端按名称拼音排序），
+                       打字则远程检索。用可自由输入的 autocomplete 而不是 select：
+                       台账没有的设备也得能录，否则等于把「填不进去」当成了校验 -->
+                  <el-autocomplete
                     v-model="draft.tankName"
-                    type="text"
-                    placeholder="容器名称"
-                    :class="inputClass()"
+                    class="w-full"
+                    size="small"
+                    value-key="name"
+                    :fetch-suggestions="fetchEquipmentSuggestions"
+                    :trigger-on-focus="true"
+                    :debounce="0"
+                    placeholder="输入关键字搜设备台账"
                     aria-label="容器名称"
-                  />
-                </td>
-                <td class="px-2 py-1.5">
-                  <input
-                    v-model="draft.tankCode"
-                    type="text"
-                    placeholder="容器编号"
-                    :class="inputClass()"
-                    aria-label="容器编号"
-                  />
+                  >
+                    <template #default="{ item }">
+                      <span class="text-sm text-slate-800">{{ item.name }}</span>
+                      <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                        {{ item.spec }}
+                      </span>
+                    </template>
+                  </el-autocomplete>
                 </td>
                 <td class="px-2 py-1.5">
                   <input
@@ -396,7 +497,45 @@ function handleThumbError(event, image) {
                     aria-label="理论质量"
                   />
                 </td>
-                <td class="whitespace-nowrap px-3 py-2 text-xs text-slate-400">保存后可上传</td>
+                <td class="px-2 py-1.5">
+                  <!-- 图据随数据一起存：记录还没有 id，选好的图先存内存，保存成功后立刻传 -->
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <input
+                      ref="pendingImageInputRef"
+                      type="file"
+                      :accept="IMAGE_ACCEPT"
+                      multiple
+                      class="hidden"
+                      @change="handlePendingImageInput"
+                    />
+                    <button
+                      type="button"
+                      class="rounded border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-sky-400 hover:text-sky-700"
+                      @click="pendingImageInputRef?.click()"
+                    >
+                      {{ pendingImages.length ? '再加一张' : '选择图片' }}
+                    </button>
+                    <span
+                      v-for="item in pendingImages"
+                      :key="item.key"
+                      class="group relative h-5 w-5 shrink-0"
+                    >
+                      <img
+                        :src="item.url"
+                        :alt="item.file.name"
+                        class="h-5 w-5 rounded border border-slate-300 object-cover"
+                      />
+                      <button
+                        type="button"
+                        class="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-900/70 text-[10px] leading-none text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100"
+                        :aria-label="`移除 ${item.file.name}`"
+                        @click="removePendingImage(item.key)"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </div>
+                </td>
                 <td class="whitespace-nowrap px-3 py-2">
                   <div class="flex items-center gap-2">
                     <button
@@ -435,55 +574,43 @@ function handleThumbError(event, image) {
                     <input v-model="draft.recordDate" type="date" :class="inputClass()" aria-label="记录日期" />
                   </td>
                   <td class="px-2 py-1.5">
-                    <input
+                    <el-select
                       v-model="draft.location"
-                      type="text"
+                      class="w-full"
+                      size="small"
                       placeholder="属地"
-                      :class="inputClass()"
+                      filterable
+                      allow-create
+                      default-first-option
                       aria-label="属地"
-                    />
+                    >
+                      <el-option
+                        v-for="location in TANK_LEVEL_LOCATIONS"
+                        :key="location"
+                        :label="location"
+                        :value="location"
+                      />
+                    </el-select>
                   </td>
                   <td class="px-2 py-1.5">
-                    <select v-model="draft.category" :class="inputClass()" aria-label="所属">
-                      <option value="">—</option>
-                      <option v-for="category in TANK_LEVEL_CATEGORIES" :key="category" :value="category">
-                        {{ category }}
-                      </option>
-                    </select>
-                  </td>
-                  <td class="px-2 py-1.5">
-                    <input
-                      v-model="draft.materialName"
-                      type="text"
-                      placeholder="物料名称"
-                      :class="inputClass()"
-                      aria-label="物料名称"
-                    />
-                    <input
-                      v-model="draft.materialCode"
-                      type="text"
-                      placeholder="物料编码"
-                      :class="inputClass()"
-                      aria-label="物料编码"
-                    />
-                  </td>
-                  <td class="px-2 py-1.5">
-                    <input
+                    <el-autocomplete
                       v-model="draft.tankName"
-                      type="text"
-                      placeholder="容器名称"
-                      :class="inputClass()"
+                      class="w-full"
+                      size="small"
+                      value-key="name"
+                      :fetch-suggestions="fetchEquipmentSuggestions"
+                      :trigger-on-focus="true"
+                      :debounce="0"
+                      placeholder="输入关键字搜设备台账"
                       aria-label="容器名称"
-                    />
-                  </td>
-                  <td class="px-2 py-1.5">
-                    <input
-                      v-model="draft.tankCode"
-                      type="text"
-                      placeholder="容器编号"
-                      :class="inputClass()"
-                      aria-label="容器编号"
-                    />
+                    >
+                      <template #default="{ item }">
+                        <span class="text-sm text-slate-800">{{ item.name }}</span>
+                        <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                          {{ item.spec }}
+                        </span>
+                      </template>
+                    </el-autocomplete>
                   </td>
                   <td class="px-2 py-1.5">
                     <input
@@ -516,19 +643,7 @@ function handleThumbError(event, image) {
                     {{ record.location }}
                   </td>
                   <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                    {{ record.category }}
-                  </td>
-                  <td class="max-w-[190px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
-                    {{ record.materialName }}
-                    <span v-if="record.materialCode" class="mt-0.5 block text-xs text-slate-400">
-                      {{ record.materialCode }}
-                    </span>
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                     {{ record.tankName }}
-                  </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
-                    {{ record.tankCode }}
                   </td>
                   <td class="whitespace-nowrap py-2 pl-3 pr-4 text-right text-sm text-slate-600">
                     {{ record.levelValue }}
@@ -621,42 +736,43 @@ function handleThumbError(event, image) {
             </tbody>
           </table>
         </div>
+      </div>
 
-        <!-- 录入入口放在表下：与图片解析页的行数校准按钮同一个位置习惯 -->
-        <div v-if="canEdit" class="flex items-center gap-3 border-t border-slate-100 px-6 py-2.5">
-          <button
-            type="button"
-            class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
-            @click="startCreate"
+      <!-- 录入入口：放在状态分支之外 —— 空表时也要在，否则空态提示里那句
+           「点下方『新增一行』开始录入」下面什么都没有 -->
+      <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-2.5">
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+          @click="startCreate"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            aria-hidden="true"
           >
-            <svg
-              class="h-3.5 w-3.5"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2.2"
-              stroke-linecap="round"
-              aria-hidden="true"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            新增一行
-          </button>
-          <span class="text-xs text-slate-400">
-            记录日期 + 容器编号是唯一键，同一天同一容器只能有一条记录
-          </span>
-        </div>
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          新增一行
+        </button>
+        <span class="text-xs text-slate-400">
+          记录日期 + 容器编号是唯一键，同一天同一容器只能有一条记录
+        </span>
+      </div>
 
-        <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
-          <el-pagination
-            v-model:current-page="tankLevelPageNum"
-            :page-size="tankLevelPageSize"
-            :total="tankLevelTotal"
-            layout="total, prev, pager, next"
-            background
-            @current-change="getTankLevelPageData"
-          />
-        </div>
+      <div v-if="tankLevelHasRows" class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+        <el-pagination
+          v-model:current-page="tankLevelPageNum"
+          :page-size="tankLevelPageSize"
+          :total="tankLevelTotal"
+          layout="total, prev, pager, next"
+          background
+          @current-change="getTankLevelPageData"
+        />
       </div>
     </div>
 

@@ -75,6 +75,35 @@ export function useTankLevelImages() {
     currentIndex.value = (currentIndex.value + 1) % images.value.length
   }
 
+  /**
+   * 按记录 id 传图（不依赖弹窗状态）。
+   *
+   * <p>从 {@link uploadImages} 里抽出来：新增行要「数据与图据一次提交」，而那一刻记录刚存下、
+   * 弹窗从没打开过，`currentRecordId` 还是 null。这里只管发请求，
+   * 失败抛带消息的 Error —— 提示口径由调用方定：弹窗直接弹 toast，
+   * 保存流程要区分「数据已存、只是图没传上」。
+   *
+   * @returns {Promise<Array>} 上传成功后的图据（{ imageId, url, thumbnailUrl }）
+   */
+  async function uploadImagesForRecord(recordId, files) {
+    if (!files?.length) return []
+    if (recordId === null || recordId === undefined || recordId === '') {
+      throw new Error('缺少记录 id，图据无法上传。')
+    }
+
+    const formData = new FormData()
+    formData.append('recordId', recordId)
+    files.forEach((file) => formData.append('files', file))
+
+    const res = await request.post('/api/tank-level/image/upload', formData)
+    // 业务失败也是 HTTP 200，必须自己判断 success
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '图据上传失败，请稍后重试。')
+    }
+
+    return normalizeImageList(res.data?.data || [])
+  }
+
   /** 追加若干张图（不覆盖已有）。要求该记录已保存 —— 图据挂在记录 id 上 */
   async function uploadImages(files) {
     if (!files?.length || currentRecordId.value === null) return
@@ -82,17 +111,7 @@ export function useTankLevelImages() {
     uploading.value = true
 
     try {
-      const formData = new FormData()
-      formData.append('recordId', currentRecordId.value)
-      files.forEach((file) => formData.append('files', file))
-
-      const res = await request.post('/api/tank-level/image/upload', formData)
-      // 业务失败也是 HTTP 200，必须自己判断 success
-      if (res.data?.success === false) {
-        throw new Error(res.data.msg || '图据上传失败，请稍后重试。')
-      }
-
-      const uploaded = normalizeImageList(res.data?.data || [])
+      const uploaded = await uploadImagesForRecord(currentRecordId.value, files)
       if (uploaded.length) {
         images.value = [...images.value, ...uploaded]
         // 跳到刚传上去的那张：用户接着就能确认「传的是不是这张」
@@ -157,6 +176,7 @@ export function useTankLevelImages() {
     openImageDialog,
     showPreviousImage,
     showNextImage,
+    uploadImagesForRecord,
     uploadImages,
     deleteImage,
   }

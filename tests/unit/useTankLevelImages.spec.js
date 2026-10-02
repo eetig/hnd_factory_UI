@@ -128,6 +128,41 @@ describe('useTankLevelImages：储罐液位图据弹窗（可多张）', () => {
     expect(request.post).not.toHaveBeenCalled()
   })
 
+  it('按 id 直接传图（不进弹窗）：返回图据列表，但不动弹窗状态、也不弹提示', async () => {
+    request.post.mockResolvedValue({
+      data: { success: true, data: [{ imageId: 21, url: '/files/e.png' }] },
+    })
+
+    const uploaded = await api.uploadImagesForRecord(77, [
+      new File(['x'], 'e.png', { type: 'image/png' }),
+    ])
+
+    expect(request.post.mock.calls[0][0]).toBe('/api/tank-level/image/upload')
+    expect(request.post.mock.calls[0][1].get('recordId')).toBe('77')
+    expect(uploaded).toEqual([{ imageId: 21, url: '/files/e.png', thumbnailUrl: '' }])
+    // 新增行的保存流程自己编排提示（要区分「数据已存、图没传上」），这里不能抢着弹 toast，
+    // 也不能碰弹窗那份状态 —— 那时弹窗根本没打开过
+    expect(ElMessage.success).not.toHaveBeenCalled()
+    expect(api.images.value).toHaveLength(0)
+  })
+
+  it('按 id 传图：业务失败要抛出去，交给调用方决定怎么提示', async () => {
+    request.post.mockResolvedValue({
+      data: { success: false, msg: '图据只支持 PNG / JPG 格式：a.gif' },
+    })
+
+    await expect(
+      api.uploadImagesForRecord(77, [new File(['x'], 'a.gif', { type: 'image/gif' })]),
+    ).rejects.toThrow('图据只支持 PNG / JPG 格式：a.gif')
+  })
+
+  it('按 id 传图：没有 id 直接抛错，不发请求', async () => {
+    await expect(api.uploadImagesForRecord(undefined, [new File(['x'], 'c.png')])).rejects.toThrow(
+      '缺少记录 id',
+    )
+    expect(request.post).not.toHaveBeenCalled()
+  })
+
   it('删除：确认后从列表移除，并刷新列表让角标跟着变', async () => {
     request.delete.mockResolvedValue({ data: { success: true } })
     await api.openImageDialog(RECORD)

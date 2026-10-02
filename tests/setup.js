@@ -44,3 +44,10 @@ if (!window.matchMedia) {
     },
   })
 }
+
+// objectURL：选图预览（图片解析页、储罐液位新增行）都要它生成 <img src>。
+// 不能写成「缺了才补」—— jsdom 里已经有 vitest 自带的一份 compat 实现，
+// 但它对 jsdom 的 File 会抛 `Cannot read properties of undefined (reading '_bytes')`，
+// 于是「选完文件」那一步就炸，而不是在断言上失败。这里一律换成不生成真实地址的桩。
+URL.createObjectURL = vi.fn(() => 'blob:mock')
+URL.revokeObjectURL = vi.fn()
