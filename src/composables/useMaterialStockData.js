@@ -114,7 +114,10 @@ function applyStockFilter() {
     )
   }
   if (stockOnlyInStock.value) {
-    list = list.filter((record) => toQty(record.stockQty) > 0)
+    // ⚠️ 传的是整条记录，不是 record.stockQty：toQty 自己会取 stockQty 字段，
+    //    传值进去等于 `49482?.stockQty` → undefined → 恒为 0，
+    //    结果是「只看有库存」把 799 条全滤掉（数量列明明显示着 49482）。
+    list = list.filter((record) => toQty(record) > 0)
   }
 
   stockFiltered.value = list

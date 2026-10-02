@@ -17,6 +17,13 @@ export function getFirstDayOfCurrentMonth() {
   return formatDate(date)
 }
 
+// 本年度第一天（月底储罐液位记录的默认起始：记录是按月产生的，
+// 默认本月的话一个月里绝大多数时间打开都是空表，看着像功能坏了）
+export function getFirstDayOfCurrentYear() {
+  const date = new Date()
+  return `${date.getFullYear()}-01-01`
+}
+
 // 上周一（周统计默认起始）
 export function getLastWeekMonday() {
   const date = new Date()

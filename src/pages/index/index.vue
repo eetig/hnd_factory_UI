@@ -16,12 +16,16 @@ import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import ThemeToggle from '../../components/ThemeToggle.vue'
 import DropdownMenu from '../../components/DropdownMenu.vue'
 import ImageViewer from '../../components/ImageViewer.vue'
+import TankLevelFormDialog from '../../components/TankLevelFormDialog.vue'
+import TankLevelImageDialog from '../../components/TankLevelImageDialog.vue'
 import { useTheme } from '../../composables/useTheme'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { usePickData } from '../../composables/usePickData'
 import { useInboundData } from '../../composables/useInboundData'
 import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
 import { useMaterialStockData } from '../../composables/useMaterialStockData'
+import { useTankLevelData, TANK_LEVEL_CATEGORIES } from '../../composables/useTankLevelData'
+import { useTankLevelImages } from '../../composables/useTankLevelImages'
 // Excel 导入只在 H5 端保留。
 // 原因（已确认）：App 与小程序没有 DOM，uni-app 也没有内置的 xlsx 文件选择器
 //（uni.chooseFile 仅 H5 支持，小程序只能用 chooseMessageFile 从微信会话里选），
@@ -83,6 +87,8 @@ const tabs = [
   { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
   { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总' },
   { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录' },
+  // 月底储罐液位记录：查询免登录（不带 perm），录入/删除按钮按 tank_level:edit 权限显隐
+  { key: 'tankLevel', label: '月底储罐液位记录', icon: 'chart', hint: '按日期 / 属地查看车间储罐液位' },
   { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
   { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算' },
   // #ifdef H5 || APP-PLUS
@@ -269,6 +275,132 @@ stockImportHint = '还没有导入过库存汇总，可在「文件导入」里�
 function toggleStockOnlyInStock() {
   stockOnlyInStock.value = !stockOnlyInStock.value
   applyStockFilter()
+}
+
+// ===== 月底储罐液位记录 =====
+// 数据层是模块级单例，面板与两个弹层读同一份状态。
+// 取数**不进 onMounted**：这个 Tab 一个月才用几次，没必要在首屏就多打两个接口 ——
+// 改成首次切到该 Tab 时才拉（与压力容器底图同一个思路，见 watch(activeTab)）。
+const {
+  tankLevelTableData,
+  tankLevelPageNum,
+  tankLevelPageSize,
+  tankLevelTotal,
+  tankLevelLoading,
+  tankLevelError,
+  tankLevelStartDate,
+  tankLevelEndDate,
+  tankLevelLocation,
+  tankLevelCategory,
+  tankLevelKeyword,
+  tankLevelLocationOptions,
+  getTankLevelPageData,
+  fetchTankLevelRecords,
+  ensureTankLevelLoaded,
+  resetTankLevelFilters,
+} = useTankLevelData()
+
+// 录入与删除按钮的显隐（不是安全边界，后端每个写接口各自鉴权）
+const canEditTankLevel = computed(() => hasPerm('tank_level:edit'))
+
+// 列与线下台账（月底车间各储罐液位记录表）对应；数值列的表头直接带单位，
+// 免得与「压力容器体积计算」里的 m³ 混读。
+// 电脑端还有「所属 / 物料 / 容器编号」三列，使用方已要求撤掉，这里也不放。
+const TANK_LEVEL_COLUMNS = [
+  { key: 'index', label: '序号', width: 'w-10', align: 'center' },
+  { key: 'recordDate', label: '记录日期', width: 'w-24' },
+  { key: 'location', label: '属地', width: 'w-20' },
+  { key: 'tankName', label: '容器名称', width: 'w-32', wrap: true },
+  { key: 'levelValue', label: '容器液位 (mm)', width: 'w-24', align: 'right' },
+  { key: 'theoreticalWeight', label: '理论质量 (kg)', width: 'w-24', align: 'right' },
+  { key: 'images', label: '图据', width: 'w-16' },
+]
+
+// 属地下拉（选项来自 /api/tank-level/locations）与所属下拉共用一个底部弹层组件
+const tankLevelLocationDialogVisible = ref(false)
+const tankLevelCategoryDialogVisible = ref(false)
+
+function handleTankLevelLocationSelected(value) {
+  tankLevelLocation.value = value
+  fetchTankLevelRecords()
+}
+
+function clearTankLevelLocation() {
+  tankLevelLocation.value = ''
+  fetchTankLevelRecords()
+}
+
+function handleTankLevelCategorySelected(value) {
+  tankLevelCategory.value = value
+  fetchTankLevelRecords()
+}
+
+function clearTankLevelCategory() {
+  tankLevelCategory.value = ''
+  fetchTankLevelRecords()
+}
+
+/** 有没有筛选条件：决定空表提示语是「没查到」还是「本来就没数据」 */
+const tankLevelHasFilter = computed(() =>
+  Boolean(tankLevelLocation.value || tankLevelCategory.value || tankLevelKeyword.value.trim()),
+)
+
+// 表单弹层：点任意一行打开（record 为 null 时是新增）。
+// 没有编辑权限时同一个弹层呈现成只读详情 —— 看详情不该被权限挡住。
+const tankLevelFormVisible = ref(false)
+const tankLevelFormRecord = ref(null)
+
+function openTankLevelForm(record = null) {
+  tankLevelFormRecord.value = record
+  tankLevelFormVisible.value = true
+}
+
+function openTankLevelCreate() {
+  openTankLevelForm(null)
+}
+
+// 图据弹层的开关与请求都在 useTankLevelImages（模块级单例）里，这里直接用它的入口
+const { openImageDialog: openTankLevelImages } = useTankLevelImages()
+
+/** 图据弹层里点了某张：交给页面根部那个全局全屏查看器 */
+function handleTankLevelImagePreview({ urls = [], index = 0 } = {}) {
+  openImageViewerList(urls, index)
+}
+
+// ===== 列表里的图据缩略图 =====
+// 与领料 / 入库那套同一个思路（缩略图 → 原图 → 隐藏，露出底层占位图标），
+// 但那两处的数据源是记录上的单个 thumbnailUrl / imageUrl，这里是一组 images，故单独一份。
+const tankLevelThumbFallbacks = ref({})
+const tankLevelHiddenThumbs = ref({})
+
+function tankLevelThumbKey(record) {
+  return String(record?.id ?? `${record?.recordDate ?? ''}-${record?.tankName ?? ''}`)
+}
+
+/** 第一张照片的地址（缩略图优先，缺了就用原图）*/
+function tankLevelThumbSrc(record) {
+  const first = record?.images?.[0]
+  if (!first) return ''
+
+  const key = tankLevelThumbKey(record)
+  return resolveAssetUrl(tankLevelThumbFallbacks.value[key] || first.thumbnailUrl || first.url)
+}
+
+function handleTankLevelThumbError(event, record) {
+  const first = record?.images?.[0]
+  const el = event?.target
+  if (!first || !el) return
+
+  const key = tankLevelThumbKey(record)
+  const original = resolveAssetUrl(first.url)
+
+  // 用 getAttribute('src') 比较：el.src 会被补成绝对 URL，与相对路径永远不相等
+  if (original && el.getAttribute('src') !== original) {
+    tankLevelThumbFallbacks.value = { ...tankLevelThumbFallbacks.value, [key]: original }
+    return
+  }
+  el.style.display = 'none'
+  tankLevelHiddenThumbs.value = { ...tankLevelHiddenThumbs.value, [key]: true }
 }
 
 // 入库汇总数据（与工单核算、周统计面板共享）
@@ -559,10 +691,27 @@ const pickColumns = [
 // 小程序与 App 端没有「同源」这个概念。
 const imageViewerVisible = ref(false)
 const imageViewerUrls = ref([])
+// 打开时先看第几张（月底储罐液位记录的图据是多张，点哪张先看哪张）
+const imageViewerIndex = ref(0)
 
 function openImageViewer(url) {
   if (!url) return
   imageViewerUrls.value = [resolveAssetUrl(url)]
+  imageViewerIndex.value = 0
+  imageViewerVisible.value = true
+}
+
+/**
+ * 一次看多张（月底储罐液位记录的图据）。
+ * 传进来的是后端给的相对路径，这里统一过 resolveAssetUrl ——
+ * 与单图入口同一个道理，查看器只认能直接加载的地址。
+ */
+function openImageViewerList(urls, index = 0) {
+  const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean).map(resolveAssetUrl)
+  if (!list.length) return
+
+  imageViewerUrls.value = list
+  imageViewerIndex.value = Math.min(Math.max(Number(index) || 0, 0), list.length - 1)
   imageViewerVisible.value = true
 }
 
@@ -1908,6 +2057,12 @@ watch(activeTab, (tab, prevTab) => {
     stopVesselLoop()
   }
 
+  // 月底储罐液位记录同理：首次进这个 Tab 才拉数据（含属地下拉选项），
+  // 已经取过就不再打接口 —— 面板是 v-show 常驻的，挂载时机与切 Tab 不是一回事
+  if (tab === 'tankLevel') {
+    ensureTankLevelLoaded()
+  }
+
   // 离开导入页且期间导入成功 → 刷新各数据集
   if (prevTab === 'import' && importDirty.value) {
     importDirty.value = false
@@ -2567,11 +2722,11 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'stock'">
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
-            <view class="stock-search">
+            <view class="filter-search">
               <wd-icon name="search" size="14px" />
               <input
                 v-model="stockKeyword"
-                class="stock-search__input"
+                class="filter-search__input"
                 type="text"
                 placeholder="物料编码 / 物料描述"
                 placeholder-class="ui-placeholder"
@@ -2584,7 +2739,7 @@ watch(activeTab, (tab, prevTab) => {
             <!-- 库存快照语义下会留下一批数量为 0 的物料行（信息保留供查询），
                  默认把它们收起来，需要时点开看 -->
             <view
-              class="stock-filter"
+              class="filter-chip"
               :class="stockOnlyInStock ? 'is-on' : ''"
               @click="toggleStockOnlyInStock"
             >
@@ -2837,6 +2992,201 @@ watch(activeTab, (tab, prevTab) => {
               description="功能建设中，敬请期待"
             />
         </section>
+      </div>
+
+      <div v-show="activeTab === 'tankLevel'">
+        <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
+          <!-- 筛选行：日期区间 + 属地 + 所属 + 关键字。
+               条件全部走**接口查询**（不像物料查询那样前端本地过滤）：记录是按月累积的，
+               全量拉到手机上再筛不划算，电脑端也是这么查的。
+               关键字因此不做逐字实时过滤（会把接口打爆），回车 / 键盘搜索键才发请求。 -->
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+            <DateField
+              v-model="tankLevelStartDate"
+              placeholder="起始日期"
+              @change="fetchTankLevelRecords"
+            />
+            <span class="text-sm text-slate-500">至</span>
+            <DateField
+              v-model="tankLevelEndDate"
+              placeholder="结束日期"
+              @change="fetchTankLevelRecords"
+            />
+
+            <FilterHeaderCell
+              label="属地"
+              :selected="tankLevelLocation"
+              hint="属地"
+              :max-width="110"
+              @open="tankLevelLocationDialogVisible = true"
+              @clear="clearTankLevelLocation"
+            />
+            <FilterHeaderCell
+              label="所属"
+              :selected="tankLevelCategory"
+              hint="所属（产品 / 原料）"
+              :max-width="110"
+              @open="tankLevelCategoryDialogVisible = true"
+              @clear="clearTankLevelCategory"
+            />
+
+            <view class="filter-search">
+              <wd-icon name="search" size="14px" />
+              <input
+                v-model="tankLevelKeyword"
+                class="filter-search__input"
+                type="text"
+                placeholder="物料 / 容器名称 / 容器编号"
+                placeholder-class="ui-placeholder"
+                confirm-type="search"
+                @confirm="fetchTankLevelRecords"
+              />
+            </view>
+
+            <view class="filter-chip" @click="resetTankLevelFilters">重置</view>
+
+            <!-- 录入入口：只有 tank_level:edit 权限才出现（后端写接口各自鉴权） -->
+            <view v-if="canEditTankLevel" class="filter-chip is-on" @click="openTankLevelCreate">
+              <wd-icon name="add" size="14px" />
+              新增
+            </view>
+
+            <span class="ml-auto text-sm text-slate-500">
+              共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录
+            </span>
+          </div>
+
+          <div class="relative">
+            <LoadingMask v-if="tankLevelLoading" />
+
+            <PanelState
+              v-else-if="tankLevelError"
+              type="error"
+              title="暂时无法获取储罐液位记录"
+              :description="tankLevelError"
+              action-text="重新加载"
+              @action="fetchTankLevelRecords"
+            />
+
+            <PanelState
+              v-else-if="tankLevelTableData.length === 0"
+              :title="tankLevelHasFilter ? '没有符合筛选条件的记录' : '暂无储罐液位记录'"
+              :description="
+                tankLevelHasFilter
+                  ? '换个日期区间或关键字试试，或点「重置」回到默认范围。'
+                  : canEditTankLevel
+                    ? '点上方「新增」开始录入。'
+                    : '数据由管理员维护。'
+              "
+            />
+
+            <div v-else>
+              <div class="overflow-x-auto">
+                <view class="dt dt--scroll min-w-full divide-y divide-slate-200 text-left">
+                  <view class="dt__head bg-slate-50">
+                    <view class="dt__row">
+                      <view
+                        v-for="column in TANK_LEVEL_COLUMNS"
+                        :key="column.key"
+                        class="dt__cell whitespace-nowrap py-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        :class="[
+                          column.width,
+                          column.align === 'right'
+                            ? 'pl-2 pr-3 text-right'
+                            : column.align === 'center'
+                              ? 'px-2 text-center'
+                              : 'px-2',
+                        ]"
+                      >
+                        {{ column.label }}
+                      </view>
+                    </view>
+                  </view>
+                  <view class="dt__body divide-y divide-slate-100 bg-white">
+                    <!-- 点任意一行打开详情 / 编辑弹层（没有编辑权限时同一层是只读详情）：
+                         手机屏幕窄，再挤一列「操作」按钮只会让表格更长 -->
+                    <view
+                      v-for="(record, index) in tankLevelTableData"
+                      :key="record.id || index"
+                      class="dt__row transition hover:bg-slate-50"
+                      @click="openTankLevelForm(record)"
+                    >
+                      <view class="dt__cell w-10 whitespace-nowrap px-2 py-2 text-center text-sm font-semibold text-slate-900">{{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ displayText(record.recordDate) }}</view>
+                      <view class="dt__cell w-20 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ displayText(record.location) }}</view>
+                      <view class="dt__cell w-32 whitespace-normal break-words px-2 py-2 text-sm text-slate-700">{{ displayText(record.tankName) }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ displayText(record.levelValue) }}</view>
+                      <view class="dt__cell w-24 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-slate-900">{{ displayText(record.theoreticalWeight) }}</view>
+                      <!-- 图据：点开弹层看大图 / 拍照上传 / 删图。
+                           ⚠️ .stop 不能省：不拦的话会连带触发行点击，弹层与查看器一起打开 -->
+                      <view class="dt__cell w-16 whitespace-nowrap px-2 py-2 text-sm text-slate-600">
+                        <view
+                          class="thumb"
+                          :aria-label="record.images.length ? `查看照片（共 ${record.images.length} 张）` : '暂无照片'"
+                          @click.stop="openTankLevelImages(record)"
+                        >
+                          <wd-icon name="picture" size="12px" />
+                          <image
+                            v-if="record.images.length && !tankLevelHiddenThumbs[tankLevelThumbKey(record)]"
+                            class="thumb__img"
+                            :src="tankLevelThumbSrc(record)"
+                            mode="aspectFill"
+                            lazy-load
+                            alt="储罐液位照片"
+                            @error="handleTankLevelThumbError($event, record)"
+                          />
+                          <text v-if="record.images.length > 1" class="thumb__badge">{{ record.images.length }}</text>
+                        </view>
+                      </view>
+                    </view>
+                  </view>
+                </view>
+              </div>
+
+              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+                <wd-pagination
+                  v-model="tankLevelPageNum"
+                  custom-style="max-width: 340px;"
+                  :total="tankLevelTotal"
+                  :page-size="tankLevelPageSize"
+                  show-message
+                  :hide-if-one-page="false"
+                  @change="(event) => getTankLevelPageData(event.value)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- 记录说明：与线下台账表尾、电脑端一字不差 -->
+          <div class="border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
+            <p>记录说明：</p>
+            <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
+            <p>2. 记录时间为每月月底下午3点</p>
+          </div>
+        </section>
+
+        <!-- 表单弹层（新增 / 编辑 / 只读详情）与图据弹层。
+             图据弹层的开关在 useTankLevelImages 里，这里不用绑 v-model；
+             大图交给页面根部的 <ImageViewer />，见 handleTankLevelImagePreview。 -->
+        <TankLevelFormDialog v-model="tankLevelFormVisible" :record="tankLevelFormRecord" />
+        <TankLevelImageDialog @preview="handleTankLevelImagePreview" />
+
+        <!-- 属地 / 所属两个下拉都复用物料选择弹层：选项都是短字符串列表，
+             底部弹层 + 搜索的形态在手机上比浮层好用（见 DropdownMenu 的适用范围说明） -->
+        <ProductSelectDialog
+          v-model="tankLevelLocationDialogVisible"
+          :options="tankLevelLocationOptions"
+          :selected="tankLevelLocation"
+          label="属地"
+          @select="handleTankLevelLocationSelected"
+        />
+        <ProductSelectDialog
+          v-model="tankLevelCategoryDialogVisible"
+          :options="TANK_LEVEL_CATEGORIES"
+          :selected="tankLevelCategory"
+          label="所属（产品 / 原料）"
+          @select="handleTankLevelCategorySelected"
+        />
       </div>
 
       <div v-show="activeTab === 'vessel'">
@@ -3300,7 +3650,7 @@ watch(activeTab, (tab, prevTab) => {
       <!-- 单据大图查看器（领料 / 入库共用）：全屏黑底 + 手势缩放。
            挂在页面根部而不是各自的 Tab 面板里：它要 position: fixed 铺满视口，
            前提是「从页面根到这里没有 transform 祖先」（说明 4.2）。 -->
-      <ImageViewer v-model="imageViewerVisible" :urls="imageViewerUrls" />
+      <ImageViewer v-model="imageViewerVisible" :urls="imageViewerUrls" :current="imageViewerIndex" />
       <wd-toast />
       <wd-message-box />
     </wd-config-provider>
@@ -3760,8 +4110,8 @@ watch(activeTab, (tab, prevTab) => {
   margin-top: -1px;
 }
 
-/* ===== 「物料查询」筛选行 ===== */
-.stock-search {
+/* ===== 筛选行的公共件（物料查询 / 月底储罐液位记录共用）===== */
+.filter-search {
   display: flex;
   min-width: 200px;
   min-height: 36px;
@@ -3775,7 +4125,7 @@ watch(activeTab, (tab, prevTab) => {
   color: $ui-text-3;
 }
 
-.stock-search__input {
+.filter-search__input {
   /* min-width: 0 不能省：flex 子项默认按内容宽当最小宽度，
      输入框的固有宽度会把整行顶出容器（物料选择器踩过同一个坑） */
   min-width: 0;
@@ -3785,8 +4135,8 @@ watch(activeTab, (tab, prevTab) => {
   font-size: 14px;
 }
 
-/* 「只看有库存」开关：一颗胶囊，开=强调色淡底 */
-.stock-filter {
+/* 胶囊按钮（开关 / 动作）：开=强调色淡底 */
+.filter-chip {
   display: flex;
   height: 32px;
   flex: 0 0 auto;
@@ -3800,7 +4150,7 @@ watch(activeTab, (tab, prevTab) => {
   transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
 }
 
-.stock-filter.is-on {
+.filter-chip.is-on {
   background-color: $ui-accent-soft;
   color: $ui-accent-text;
 }
@@ -3847,6 +4197,22 @@ watch(activeTab, (tab, prevTab) => {
   border: 1px solid $ui-border;
   border-radius: 4px;
   background-color: $ui-surface-2;
+}
+
+/* 多张照片时角上的张数（月底储罐液位记录的图据可多张）*/
+.thumb__badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background-color: $ui-accent;
+  color: $ui-on-accent;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
 }
 
 /* ===== 图片查看器（工单汇总与周统计各一份，共用这套类名）=====
