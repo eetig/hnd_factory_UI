@@ -6,7 +6,7 @@ import dayjs from 'dayjs'
 import request from '../../api/request'
 import { uploadFiles } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
-import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../../api/auth'
+import { clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
 import { APP_ENV, ACTIVE_ENV } from '../../api/env'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import DateField from '../../components/DateField.vue'
@@ -75,13 +75,19 @@ const { isLight, themeClass, wotTheme, themeVars } = useTheme()
 
 // Tab 元数据同时喂给三处：顶部栏（当前标题 + 说明）、抽屉菜单（图标 + 名称 + 说明）。
 // icon 取值必须来自 wot-design-uni 的图标字体，写错会渲染成空白方块。
+// adminOnly：台账明细，只给 admin（决策-004）。这 6 页背后的接口
+// （/api/work-order、/api/pick、/api/inbound、/api/goods-move）在后端也被同一角色闸门拦着，
+// 两边必须同进同退 —— 只藏前端等于数据公开，只锁后端等于非 admin 点进去满屏 403。
+//
+// 周统计（weekly）**不在此列**：它对所有人可见，数据走 /api/stats/weekly 这条
+// 只吐汇总数的公开接口（同样见决策-004），不依赖上面那些明细。
 const tabs = [
-  { key: 'workOrder', label: '工单汇总', icon: 'list', hint: '查看当前所有生产工单及处理状态' },
-  { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录' },
-  { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录' },
-  { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量' },
-  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果' },
-  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算' },
+  { key: 'workOrder', label: '工单汇总', icon: 'list', hint: '查看当前所有生产工单及处理状态', adminOnly: true },
+  { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录', adminOnly: true },
+  { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录', adminOnly: true },
+  { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量', adminOnly: true },
+  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果', adminOnly: true },
+  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算', adminOnly: true },
   { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存' },
   // 图片解析：单据图片识别辅助录入（变更-003）。权限位与文件导入相同（work_order:import）
   { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
@@ -96,20 +102,14 @@ const tabs = [
   // #endif
 ]
 
-// 按权限过滤可见 Tab
-const visibleTabs = computed(() => tabs.filter((tab) => hasPerm(tab.perm)))
+// 可见 Tab = 两类过滤的叠加：adminOnly 看角色，其余看权限位
+const visibleTabs = computed(() =>
+  tabs.filter((tab) => (tab.adminOnly ? isAdmin() : hasPerm(tab.perm))),
+)
 
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
-
-// 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
-// 否则会停在一个空白的 activeTab 上
-watch(visibleTabs, (list) => {
-  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
-    activeTab.value = list[0].key
-  }
-})
 
 // ===== 导航（豆包式）=====
 // 页面主体不再放 Tab 条：全部导航收进左侧抽屉，正文直接铺满。
@@ -168,8 +168,9 @@ async function handleLogout() {
   }
 
   clearAuth()
-  // 退出即回到只读浏览：读接口本就免登录，数据无需重取；
-  // 写入类 Tab 与按钮会随 authState 变化自动隐藏。
+  // 退出即回到只读浏览：查询类接口（物料 / 周统计 / 储罐液位 …）本就免登录，数据无需重取；
+  // 台账明细那 6 个 Tab（决策-004）与写入类按钮会随 authState 变化自动隐藏。
+  // 已经取回来的明细还留在内存里，但 Tab 与面板都不可见了，不会再展示出来。
   //
   // 原来这里还有一句 router.replace('/')，在单页应用里等价于「留在本页」；
   // uni-app 里没有等价且必要的操作（reLaunch 到当前页反而会重建页面、白重取一次数据），
@@ -186,6 +187,19 @@ const reportColumns = [
 ]
 
 const activeTab = ref('workOrder')
+
+// 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
+// 否则会停在一个空白的 activeTab 上。
+//
+// immediate 是必须的：非 admin 打开页面时首屏默认 Tab（工单汇总）本就不可见，
+// 而 visibleTabs 只在「值发生变化」时才触发回调，首次渲染的可见列表
+// 是在这之前就定下来的 —— 不加 immediate 页面会停在隐藏面板上，看起来一片空白。
+// 同理，这个 watch 必须放在 activeTab 声明之后（immediate 会立刻读到它，放前面撞 TDZ）。
+watch(visibleTabs, (list) => {
+  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = list[0].key
+  }
+}, { immediate: true })
 
 // 工单数据与筛选（与工单报工面板共享同一份数据）
 const {
@@ -222,9 +236,8 @@ const {
   clearOrderNoFilter,
 } = useWorkOrderData()
 
-// 领料汇总数据（与原辅料核算、周统计面板共享）
+// 领料汇总数据（原辅料核算取筛选后的 pickFiltered；周统计已改为走后端汇总接口）
 const {
-  allPickRecords,
   pickFiltered,
   pickTableData,
   pickPageNum,
@@ -237,7 +250,6 @@ const {
   pickMaterialDialogVisible,
   pickMaterialFilter,
   pickMaterialOptions,
-  getPickDate,
   getPickPageData,
   filterPickRecords,
   fetchPickRecords,
@@ -403,9 +415,8 @@ function handleTankLevelThumbError(event, record) {
   tankLevelHiddenThumbs.value = { ...tankLevelHiddenThumbs.value, [key]: true }
 }
 
-// 入库汇总数据（与工单核算、周统计面板共享）
+// 入库汇总数据（工单核算取筛选后的 inboundFiltered；周统计已走后端汇总接口）
 const {
-  allInboundRecords,
   inboundFiltered,
   inboundTableData,
   inboundPageNum,
@@ -418,7 +429,6 @@ const {
   inboundMaterialDialogVisible,
   inboundMaterialFilter,
   inboundMaterialOptions,
-  getInboundDate,
   getInboundPageData,
   filterInboundRecords,
   fetchInboundRecords,
@@ -570,13 +580,20 @@ function handleImportCancel() {
  */
 const importDirty = ref(false)
 
-function refreshAllData() {
+function fetchAdminOnlyData() {
+  if (!isAdmin()) return
   fetchWorkOrders()
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+}
+
+function refreshAllData() {
+  fetchAdminOnlyData()
   // 库存汇总也可能在这次导入里被更新
   fetchStockRecords()
+  // 周统计走的是独立的汇总接口（非 admin 也要能看），不在上面的 admin 分支里
+  fetchWeeklyStats()
 }
 
 function handleImportBack() {
@@ -788,7 +805,7 @@ const costingColumns = [
   { key: 'unreportedQty', label: '未报工数', width: 'w-20', align: 'right' },
 ]
 
-// 已报工数量：按归一化产成品名称汇总工单的确认产量
+// 已报工数量：按归一化产成品名称汇总工单的确认产量（只算工单汇总筛选后的工单）
 const reportedQtyMap = computed(() => {
   const map = new Map()
 
@@ -802,12 +819,13 @@ const reportedQtyMap = computed(() => {
   return map
 })
 
-// 工单核算：以已入库产成品（入库汇总的物料名称去重）为行，入库数与已报工数汇总，差额为未报工数
+// 工单核算：以已入库产成品（入库汇总当前筛选后的物料名称去重）为行，
+// 入库数与已报工数汇总，差额为未报工数
 const costingRows = computed(() => {
   const rows = new Map()
 
-  // 入库数：来自入库汇总数据，按物料名称去重
-  for (const record of allInboundRecords.value) {
+  // 入库数：来自入库汇总当前筛选后的数据，按物料名称去重
+  for (const record of inboundFiltered.value) {
     const materialName = String(record.materialName ?? '').trim()
     const key = normalizeMaterialName(materialName)
     if (!key) continue
@@ -890,12 +908,13 @@ const MATERIAL_COSTING_DERIVED = [
 ]
 
 
-// 原辅料核算：以领料汇总的物料名称去重为行，领料数按物料累加，已报工数取货物移动数量合计
+// 原辅料核算：以领料汇总当前筛选后的物料名称去重为行，
+// 领料数按物料累加，已报工数取货物移动数量合计
 const materialCostingRows = computed(() => {
   const rows = new Map()
 
-  // 领料数：来自领料汇总数据，按物料名称去重
-  for (const record of allPickRecords.value) {
+  // 领料数：来自领料汇总当前筛选后的数据，按物料名称去重
+  for (const record of pickFiltered.value) {
     const materialName = String(record.materialName ?? '').trim()
     const key = normalizeMaterialName(materialName)
     if (!key) continue
@@ -994,21 +1013,69 @@ const weeklyRemaining = ref(
 // 150产品（HND-V150）物料编码
 const WEEKLY_INBOUND_MATERIAL_CODE = '114001897'
 
-// 150产品入库数：按物料编码 + 时间范围，累计入库汇总的数量
-const weeklyInboundQty = computed(() => {
-  const sum = allInboundRecords.value
-    .filter((record) => {
-      if (String(record.materialCode ?? '').trim() !== WEEKLY_INBOUND_MATERIAL_CODE) return false
+// ===== 周统计取数（决策-004）=====
+// 改造前这两个和在本地从 allInboundRecords / allPickRecords 现算，
+// 而那两条明细接口现在只给 admin 了 —— 周统计对所有人可见，
+// 所以改走 /api/stats/weekly：它只回汇总数，不回明细。
+//
+// ⚠️ 求和口径（闭区间、日期为空的记录照样计入）与改造前**完全一致**，
+// 服务端实现见 WeeklyStatsServiceImpl；物料编码由前端传，后端不硬编码业务常量。
+const WEEKLY_PICK_CODES = WEEKLY_ROW_DEFINITIONS.map((row) => row.materialCode)
 
-      const inboundDate = getInboundDate(record)
-      if (!inboundDate) return true
+// 查询区间：默认「上周一 ~ 上周日」。定义要放在下面那个 watch 之前 ——
+// watch 的依赖数组是立刻就求值的，晚于它声明会撞上 TDZ。
+const weeklyStartDate = ref(getLastWeekMonday())
+const weeklyEndDate = ref(getLastWeekSunday())
 
-      return inboundDate >= weeklyStartDate.value && inboundDate <= weeklyEndDate.value
+const weeklyStats = ref({ pickQty: {}, inboundQty: {} })
+const weeklyStatsLoading = ref(false)
+const weeklyStatsError = ref('')
+
+async function fetchWeeklyStats() {
+  // 日期被清空时不发请求：后端把空值当「不限」，而「没选日期」在这里的预期是什么都不算。
+  // 与改造前一致 —— 那时清掉结束日期，整张表也会变成 0。
+  if (!weeklyStartDate.value || !weeklyEndDate.value) {
+    weeklyStats.value = { pickQty: {}, inboundQty: {} }
+    return
+  }
+
+  weeklyStatsLoading.value = true
+  weeklyStatsError.value = ''
+
+  try {
+    const res = await request.get('/api/stats/weekly', {
+      params: {
+        start: weeklyStartDate.value,
+        end: weeklyEndDate.value,
+        pickMaterials: WEEKLY_PICK_CODES.join(','),
+        inboundMaterials: WEEKLY_INBOUND_MATERIAL_CODE,
+      },
     })
-    .reduce((total, record) => total + (Number(record.inboundQty) || 0), 0)
 
-  return formatQty(sum)
-})
+    if (res.data?.success === true) {
+      weeklyStats.value = {
+        pickQty: res.data.data?.pickQty || {},
+        inboundQty: res.data.data?.inboundQty || {},
+      }
+    } else {
+      weeklyStats.value = { pickQty: {}, inboundQty: {} }
+      weeklyStatsError.value = res.data?.msg || '周统计加载失败，请稍后重试。'
+    }
+  } catch (error) {
+    weeklyStats.value = { pickQty: {}, inboundQty: {} }
+    weeklyStatsError.value = error.response?.data?.msg || '周统计加载失败，请稍后重试。'
+  } finally {
+    weeklyStatsLoading.value = false
+  }
+}
+
+// 日期范围变了就重新取数（改造前是本地过滤，改一次不用请求）
+watch([weeklyStartDate, weeklyEndDate], fetchWeeklyStats)
+
+// 150产品入库数：接口已按区间汇总好，这里只取值
+const weeklyInboundQty = computed(() =>
+  formatQty(Number(weeklyStats.value.inboundQty?.[WEEKLY_INBOUND_MATERIAL_CODE]) || 0),
+)
 
 const weeklyInboundRow = computed(() => ({
   materialCode: WEEKLY_INBOUND_MATERIAL_CODE,
@@ -1016,23 +1083,12 @@ const weeklyInboundRow = computed(() => ({
   value: weeklyInboundQty.value,
 }))
 
-// 原料领用：按时间范围 + 物料编码，从领料汇总数据求和
+// 原料领用：同上，值由 /api/stats/weekly 备好
 function getWeeklyPickQty(materialCode) {
   const code = String(materialCode ?? '').trim()
   if (!code) return 0
 
-  const sum = allPickRecords.value
-    .filter((record) => {
-      if (String(record.materialCode ?? '').trim() !== code) return false
-
-      const pickDate = getPickDate(record)
-      if (!pickDate) return true
-
-      return pickDate >= weeklyStartDate.value && pickDate <= weeklyEndDate.value
-    })
-    .reduce((total, record) => total + (Number(record.pickQty) || 0), 0)
-
-  return formatQty(sum)
+  return formatQty(Number(weeklyStats.value.pickQty?.[code]) || 0)
 }
 
 const weeklyRows = computed(() => {
@@ -1067,8 +1123,6 @@ const weeklyPageSize = ref(10)
 const weeklyTotal = ref(0)
 const weeklyLoading = ref(false)
 const weeklyError = ref('')
-const weeklyStartDate = ref(getLastWeekMonday())
-const weeklyEndDate = ref(getLastWeekSunday())
 
 // 标题：按所选日期范围生成，如「9月7日-9月13日周统计（截止9月13日晚8点）」
 const weeklyTitle = computed(() => {
@@ -2035,10 +2089,7 @@ function cleanupVessel() {
 }
 
 onMounted(() => {
-  fetchWorkOrders()
-  fetchPickRecords()
-  fetchInboundRecords()
-  fetchGoodsMoveRecords()
+  fetchAdminOnlyData()
   fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
@@ -2061,6 +2112,11 @@ watch(activeTab, (tab, prevTab) => {
   // 已经取过就不再打接口 —— 面板是 v-show 常驻的，挂载时机与切 Tab 不是一回事
   if (tab === 'tankLevel') {
     ensureTankLevelLoaded()
+  }
+
+  // 周统计：进 Tab 时取一次汇总数（日期没变就不必重复请求）
+  if (tab === 'weekly') {
+    fetchWeeklyStats()
   }
 
   // 离开导入页且期间导入成功 → 刷新各数据集
@@ -2852,8 +2908,20 @@ watch(activeTab, (tab, prevTab) => {
             <DateField v-model="weeklyEndDate" placeholder="结束日期" @change="filterWeeklyOrders" />
           </div>
 
-          <view class="p-6">
-            <view class="overflow-x-auto">
+          <view class="relative p-6">
+            <LoadingMask v-if="weeklyStatsLoading" />
+
+            <!-- 接口挂了就明确报错，不要把表默默显示成全 0 —— 那看起来像真实数据 -->
+            <PanelState
+              v-else-if="weeklyStatsError"
+              type="error"
+              title="暂时无法获取周统计数据"
+              :description="weeklyStatsError"
+              action-text="重新加载"
+              @action="fetchWeeklyStats"
+            />
+
+            <view v-else class="overflow-x-auto">
               <!-- 周统计表：改造前是带边框的原生表格（border-collapse 合并相邻边）。
                    这里同样换成 flex 行；单元格保留各自的 border 类，相邻边框靠
                    .weekly-grid 里的负边距重叠来还原 1px 单线（见样式区注释）。 -->
@@ -3636,7 +3704,7 @@ watch(activeTab, (tab, prevTab) => {
             >
               登录
             </button>
-            <text class="drawer__tip">未登录也可以只读浏览工单数据</text>
+            <text class="drawer__tip">未登录也可以浏览物料、周统计等查询页</text>
             <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>

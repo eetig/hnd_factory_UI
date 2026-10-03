@@ -727,6 +727,13 @@ JS 不再量尺寸、也不再每帧重绘 —— 只剩液位缓动一件事，
   - `request` 合法域名（`/api/*`）
   - `uploadFile` 合法域名（图片上传、OCR 识别）
   - `downloadFile` 合法域名（`/files`、`/thumbs` 单据图片；**长按保存到相册也走这条通道**，见 5.8）
+- **逐条清单与 Nginx 侧设计**（25 个请求、上游端口、`^~` 与路径重写的必要性、线上实测、
+  真机验收表）见 `D:\deploy\小程序HTTPS与Nginx.md`，可直接给运维的配置见 `D:\deploy\nginx\hbhnd.cloud.conf`；
+- ⚠️ **小程序端超时是平台级 60s，不是代码里的 300s**：`src/api/http-common.js` 把超时放宽到了
+  300s（Excel 解析很慢），但微信 `networkTimeout` 默认 60000 会先掐断（当前产物 `app.json` 里
+  没有这一项 = 吃默认值），真机上传大图 / OCR 超 60s 会报成「超时」，看着像后端挂了。
+  要改就在 `manifest.json` 的 `mp-weixin` 下加 `networkTimeout`（uni-app 认这个键）——
+  目前**只记录未改**，等真机实测后再定，详见上述文档第六节第 2 条；
 
 ### 6.3 超时
 
@@ -921,29 +928,79 @@ npm run sync:app-icons -- dev   # 同步到 dist/dev/app
 | `/files`、`/thumbs` | 直连 `img-service`，手工重写为 `/api/img/*`（`IMG_REWRITE=true`）| Nginx 同源路由，原样透传（`IMG_REWRITE=false`）|
 | H5 开发代理 | 四条路由分别指 8084 / 8085 / 8082 并带 rewrite | 三条路由原样透传给域名 |
 
-### 10.2 怎么切 / 打包前检查
+### 10.2 打 App 正式包：完整清单（★ 每次更新 App 都照这个走）
+
+> 八步，顺序不能乱。**第 ① 步切 `remote`，第 ⑦ 步切回 `local`** —— 两步都容易漏，漏了各自有各自的坑。
+
+**① 切环境**（`src/api/env.js`，唯一开关）
+
+```js
+export const APP_ENV = 'remote'    // 打正式包用；日常联调是 'local'
+```
+
+**② 删旧产物**（这一步是 10.5 那次事故的根因，别省）
 
 ```bash
-# 1) 改 src/api/env.js 一行：   export const APP_ENV = 'remote'
-# 2) 重新打包（H5 / 小程序 / App 各打一个包）
-npm run build:app        # 或 build:h5 / build:mp-weixin
+rm -rf dist/build dist/cache dist/release      # dist/dev 可以留
+```
 
-# 3) 自检产物（build:app 已自动执行；换过产物 / 手工复验时再跑一遍）
+**③ 重新编译**
+
+```bash
+npm run build:app        # 末尾自动跑 check-app-env
+```
+
+> 云打包时 HBuilderX 会**自己再编译一次**，所以这一步的价值是「提前暴露问题 + 给自检一个基准」，
+> 真正保证顺序的是第 ④ 步的 IDE 刷新。
+
+**④ HBuilderX 出包**
+
+- **先在 IDE 里刷新项目**（右键 → 刷新）：IDE 可能抱着内存里的旧文件，刷新才是把磁盘改动读进去
+- 菜单「发行 → 原生App-云打包」→ 平台勾 Android
+- **证书、包名保持弹窗里已有的值，不要改**（改包名 = 手机上多一个图标；改证书 = 覆盖安装失败）
+- 版本名称 / 版本号应显示 `src/manifest.json` 里的新值。**显示的是旧值就停下，回去刷新**
+- 产物落在 `dist/release/apk/__UNI__BE0BD40__<时间戳>.apk`
+  —— **文件名里的时间戳必须晚于第 ① 步的时刻**，这就是「产物是不是这次编的」的证据
+
+**⑤ 过验收闸门**（必须退出码 0）
+
+```bash
 npm run check:app-env
 ```
 
-vite 每次启动 / 构建都会打印当前环境，打包前扫一眼终端即可确认：
+四类产物（App / App-Plus / wgt 缓存 / **APK 本身**）逐项应是「私网地址: 无、线上域名: 命中」。
+APK 那一项会解包读 `www/app-service.js` —— 这是唯一能证明「要发出去的那个包是对的」的检查。
 
-```
-[env] APP_ENV=remote → 线上部署（hbhnd.cloud 同源入口）（接口 base = https://hbhnd.cloud）
+**⑥ 归档并记档**：APK 拷成 `D:\deploy\HND生产助手-<版本>.apk`，把 **文件名 / 大小 / md5 / 版本号**
+记进当次的交付清单与统筹文档。
+
+**⑦ 切回 `local`**（★ 最容易漏，后果比打错包更隐蔽）
+
+```js
+export const APP_ENV = 'local'
 ```
 
-> ⚠️ origin 是**编译期**内联进产物的（`API_ORIGIN` 是常量，不是运行时配置），
-> 所以「装到手机上才发现连的是开发机」只能靠重新打包解决，改后端或改 hosts 都没用。
+留着 `remote` 的话，本地 `npm run dev:*` 会**静默指向生产**；开发时通常正是用 admin 登录的，
+写操作会落进工厂的真实库 —— 看不见，也撤不回。
+
+**⑧ 真机升级注意**（每次更新都要过一遍）
+
+- 包名变了 → 桌面出现**两个图标**（本项目当前是 `uni.app.UNIBE0BD40`）
+- 签名变了 → 覆盖安装被拒，手机只提示「应用未安装」→ **先卸载旧版再装**（数据都在服务端，无损失）
+- **证书 / keystore 必须留档**：丢了以后永远只能卸载重装。当前这张是**自有证书**（非 DCloud 云端证书），
+  指纹、有效期与序列号记在 `D:\deploy\部署清单.md` 第一节
+
+> **这条链路的原理**（出问题时回来看）：
 >
-> **APK 是另一条路**：`npm run build:app` 只产出 `dist/build/app`，
-> APK 要回 HBuilderX 走「发行 → 原生App-云打包」；**打 APK 前必须先重新 build**，
-> 否则打出来的就是「新壳 + 旧 JS」，装到手机上照样连开发机（复盘见 10.5）。
+> - vite 每次启动 / 构建都会打印当前环境，扫一眼终端即可确认：
+>   `[env] APP_ENV=remote → 线上部署（hbhnd.cloud 同源入口）（接口 base = https://hbhnd.cloud）`
+> - origin 是**编译期**内联进产物的（`API_ORIGIN` 是常量，不是运行时配置），
+>   所以「装到手机上才发现连的是开发机」只能靠重新打包解决，改后端或改 hosts 都没用。
+> - **APK 是另一条路**：`npm run build:app` 只产出 `dist/build/app`，
+>   APK 要回 HBuilderX 走「发行 → 原生App-云打包」；**打 APK 前必须先重新 build**，
+>   否则打出来的就是「新壳 + 旧 JS」，装到手机上照样连开发机（复盘见 10.5）。
+> - **小程序端没有这道闸门**：`check-app-env` 只查 App 侧那四类产物，不查 `mp-weixin`。
+>   要让小程序连线上，同样先切 `remote`，但只能人工核对（变更-018 记过这一条）。
 
 ### 10.3 远程四路由实测（2026-10-01，开发机直连公网）
 

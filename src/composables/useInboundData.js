@@ -3,7 +3,8 @@ import request from '../api/request'
 import { getToday, getFirstDayOfCurrentMonth, pickField } from '../utils/format'
 
 // ===== 入库汇总数据（模块级单例）=====
-// 入库汇总面板、工单核算面板、周统计面板共用同一份数据。
+// 入库汇总面板与工单核算面板共用这份数据；工单核算取的是筛选后的 inboundFiltered
+//（周统计已改走后端汇总接口，不再要全量记录）。
 const allInboundRecords = ref([])
 const inboundFiltered = ref([])
 const inboundTableData = ref([])

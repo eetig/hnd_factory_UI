@@ -135,7 +135,7 @@ async function handleLogin() {
           {{ loading ? '登录中...' : '登录' }}
         </button>
 
-        <text class="login-foot">未登录也可以只读浏览工单数据</text>
+        <text class="login-foot">未登录也可以浏览物料、周统计等查询页</text>
       </view>
     </wd-config-provider>
   </view>
