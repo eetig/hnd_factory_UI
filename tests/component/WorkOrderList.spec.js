@@ -25,19 +25,33 @@ import StatsTable from '../../src/components/StatsTable.vue'
 import TankLevelPanel from '../../src/components/TankLevelPanel.vue'
 import TankLevelImageDialog from '../../src/components/TankLevelImageDialog.vue'
 
-const TAB_LABELS = [
+/**
+ * 决策-004：6 张台账明细页只给 admin。
+ * 这两组标签就是「谁该看见什么」的清单，前端显隐必须与后端角色闸门同口径。
+ */
+const ADMIN_ONLY_TAB_LABELS = [
   '工单汇总',
   '领料汇总',
   '入库汇总',
   '工单报工',
   '工单核算',
   '原辅料核算',
+]
+
+// 非 admin 也能看见的：台账之外的查询/计算页（不含需要权限位的「文件导入」「图片解析」）
+const PUBLIC_TAB_LABELS = [
+  '物料查询',
   '周统计',
   '日报表记录',
   '月底储罐液位记录',
   '压力容器体积计算',
   '电费预提',
 ]
+
+/** 取 Tab 条自身的文本：各面板是 v-show 常驻的，整页 text() 会带上隐藏面板里的字 */
+function tabBarText(wrapper) {
+  return wrapper.find('nav[aria-label="页面切换"]').text()
+}
 
 /**
  * 月底储罐液位记录（变更-004）的一行样例：字段与后端 TankLevelVO 对齐。
@@ -59,7 +73,7 @@ const TANK_LEVEL_ROW = {
 }
 
 /**
- * 冒烟测试：WorkOrderList.vue 是大页面（12 个 Tab），
+ * 冒烟测试：WorkOrderList.vue 是大页面（14 个 Tab，其中 6 个只给 admin），
  * 拆组件之后最怕的就是「模板里引用了已经删掉的东西」这类低级错误 ——
  * 构建能过、但一打开页面就白屏。这里把整页挂起来跑一遍兜住这种情况。
  */
@@ -86,12 +100,36 @@ describe('WorkOrderList 页面冒烟', () => {
     wrapper = mountPage()
   })
 
-  it('能挂载并列出所有未做权限过滤的 Tab', () => {
-    const text = wrapper.text()
+  it('能挂载并列出对所有人可见的 Tab（admin 专属的 6 页不出现）', () => {
+    const text = tabBarText(wrapper)
 
-    for (const label of TAB_LABELS) {
+    for (const label of PUBLIC_TAB_LABELS) {
       expect(text).toContain(label)
     }
+    for (const label of ADMIN_ONLY_TAB_LABELS) {
+      expect(text).not.toContain(label)
+    }
+  })
+
+  it('非 admin 首屏落在可见的第一个 Tab 上，不会停在隐藏面板', () => {
+    // 默认 Tab 是「工单汇总」，非 admin 看不见它 —— 停在上面会是一片空白
+    const active = wrapper.find('nav[aria-label="页面切换"] button.text-sky-600')
+    expect(active.exists()).toBe(true)
+    expect(active.text().trim()).toBe('物料查询')
+  })
+
+  it('admin 登录后 6 张台账 Tab 才出现', async () => {
+    authState.roleKey = 'admin'
+    await nextTick()
+
+    const text = tabBarText(wrapper)
+    for (const label of ADMIN_ONLY_TAB_LABELS) {
+      expect(text).toContain(label)
+    }
+
+    // 复位：authState 是模块级单例，不还原会污染同文件里后面的用例
+    authState.roleKey = ''
+    await nextTick()
   })
 
   it('三张汇总表都交给 StatsTable 渲染，且列配置与空表文案正确', () => {
@@ -405,6 +443,10 @@ describe('WorkOrderList 页面冒烟', () => {
   })
 
   it('切换 Tab 会切换对应面板的显示（v-show）', async () => {
+    // 「工单报工」是 admin 专属（决策-004），先切到 admin 身份，Tab 才在条上
+    authState.roleKey = 'admin'
+    await nextTick()
+
     const reportPanel = wrapper.findAllComponents(StatsTable)[0].element.parentElement
     expect(reportPanel.style.display).toBe('none')
 
@@ -413,10 +455,60 @@ describe('WorkOrderList 页面冒烟', () => {
     await tab.trigger('click')
 
     expect(reportPanel.style.display).toBe('')
+
+    authState.roleKey = ''
+    await nextTick()
   })
 
   it('周统计面板按默认区间（上周一到上周日）生成标题', () => {
     expect(wrapper.text()).toMatch(/\d+月\d+日-\d+月\d+日周统计（截止\d+月\d+日晚8点）/)
+  })
+
+  it('周统计：进 Tab 调公开汇总接口取数（明细接口只给 admin，这条给所有人）', async () => {
+    request.get.mockImplementation(() =>
+      Promise.resolve({
+        data: {
+          success: true,
+          data: {
+            pickQty: { 111001787: 12.5, 111001786: 300, 112004292: 1 },
+            inboundQty: { 114001897: 1000 },
+          },
+        },
+      }),
+    )
+
+    const tab = findTabLabel(wrapper, '周统计')
+    await tab.trigger('click')
+    await flushPromises()
+
+    // 物料编码由前端传，后端不硬编码业务常量
+    const call = request.get.mock.calls.find(([url]) => url === '/api/stats/weekly')
+    expect(call).toBeTruthy()
+    expect(call[1].params.pickMaterials).toBe('111001787,111001786,112004292')
+    expect(call[1].params.inboundMaterials).toBe('114001897')
+    expect(call[1].params.start).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+
+    const table = wrapper.findAll('table').find((node) => node.text().includes('150产品入库数'))
+    expect(table).toBeTruthy()
+    // 接口回的数已经进了表：领用 = 接口值 × 换算系数（氯铂酸 1 × 20）
+    expect(table.text()).toContain('12.5')
+    expect(table.text()).toContain('1000')
+    expect(table.text()).toContain('20')
+  })
+
+  it('周统计：接口失败时报错，而不是把表默默显示成全 0', async () => {
+    request.get.mockImplementation((url) =>
+      url === '/api/stats/weekly'
+        ? Promise.resolve({ data: { success: false, msg: '统计失败' } })
+        : Promise.resolve({ data: { success: true, dataList: [], data: [] } }),
+    )
+
+    const tab = findTabLabel(wrapper, '周统计')
+    await tab.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂时无法获取周统计数据')
+    expect(wrapper.text()).toContain('统计失败')
   })
 
   it('Tab 条：装不下时横向滚动，滚轮可左右滑动，滚到头放行给页面', () => {

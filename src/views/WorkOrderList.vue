@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
-import { clearAuth, getRoleName, hasPerm, isLoggedIn } from '../api/auth'
+import { clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../api/auth'
 import StatsTable from '../components/StatsTable.vue'
 import OrderImageDialog from '../components/OrderImageDialog.vue'
 import ProductSelectDialog from '../components/ProductSelectDialog.vue'
@@ -49,13 +49,19 @@ dayjs.extend(updateLocale)
 dayjs.updateLocale('zh-cn', { weekStart: 1 })
 dayjs.locale('zh-cn')
 
+// adminOnly：台账明细，只给 admin（决策-004）。这 6 页背后的接口
+// （/api/work-order、/api/pick、/api/inbound、/api/goods-move）在后端也被同一角色闸门拦着，
+// 两边必须同进同退 —— 只藏前端等于数据公开，只锁后端等于非 admin 点进去满屏 403。
+//
+// 周统计（weekly）**不在此列**：它对所有人可见，数据走 /api/stats/weekly 这条
+// 只吐汇总数的公开接口（同样见决策-004），不依赖上面那些明细。
 const tabs = [
-  { key: 'workOrder', label: '工单汇总' },
-  { key: 'material', label: '领料汇总' },
-  { key: 'inbound', label: '入库汇总' },
-  { key: 'report', label: '工单报工' },
-  { key: 'costing', label: '工单核算' },
-  { key: 'materialCosting', label: '原辅料核算' },
+  { key: 'workOrder', label: '工单汇总', adminOnly: true },
+  { key: 'material', label: '领料汇总', adminOnly: true },
+  { key: 'inbound', label: '入库汇总', adminOnly: true },
+  { key: 'report', label: '工单报工', adminOnly: true },
+  { key: 'costing', label: '工单核算', adminOnly: true },
+  { key: 'materialCosting', label: '原辅料核算', adminOnly: true },
   { key: 'stock', label: '物料查询' },
   { key: 'weekly', label: '周统计' },
   { key: 'daily', label: '日报表记录' },
@@ -67,20 +73,14 @@ const tabs = [
   { key: 'imageParse', label: '图片解析', perm: 'work_order:import' },
 ]
 
-// 按权限过滤可见 Tab
-const visibleTabs = computed(() => tabs.filter((tab) => hasPerm(tab.perm)))
+// 可见 Tab = 两类过滤的叠加：adminOnly 看角色，其余看权限位
+const visibleTabs = computed(() =>
+  tabs.filter((tab) => (tab.adminOnly ? isAdmin() : hasPerm(tab.perm))),
+)
 
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
-
-// 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
-// 否则会停在一个空白的 activeTab 上
-watch(visibleTabs, (list) => {
-  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
-    activeTab.value = list[0].key
-  }
-})
 
 // ===== Tab 条横向滚动 =====
 // 14 个 Tab 一屏放不下：早先是让按钮里的文字自己折行（「工单汇总」变两行），
@@ -123,8 +123,9 @@ async function handleLogout() {
   }
 
   clearAuth()
-  // 退出即回到只读浏览：读接口本就免登录，数据无需重取；
-  // 写入类 Tab 与按钮会随 authState 变化自动隐藏
+  // 退出即回到只读浏览：查询类接口（物料 / 周统计 / 储罐液位 …）本就免登录，数据无需重取；
+  // 台账明细那 6 个 Tab（决策-004）与写入类按钮会随 authState 变化自动隐藏。
+  // 已经取回来的明细还留在内存里，但 Tab 与面板都不可见了，不会再展示出来。
   router.replace('/')
 }
 
@@ -139,6 +140,19 @@ const reportColumns = [
 
 const router = useRouter()
 const activeTab = ref('workOrder')
+
+// 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
+// 否则会停在一个空白的 activeTab 上。
+//
+// immediate 是必须的：非 admin 打开页面时首屏默认 Tab（工单汇总）本就不可见，
+// 而 visibleTabs 只在「值发生变化」时才触发回调，首次渲染的可见列表
+// 是在这之前就定下来的 —— 不加 immediate 页面会停在隐藏面板上，看起来一片空白。
+// 同理，这个 watch 必须放在 activeTab 声明之后（immediate 会立刻读到它，放前面撞 TDZ）。
+watch(visibleTabs, (list) => {
+  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
+    activeTab.value = list[0].key
+  }
+}, { immediate: true })
 
 // 切换 Tab 后把激活项滚进视野：登录/退出会让 visibleTabs 变化并自动切 Tab，
 // 切到的那个可能在可视区之外，用户会看不到自己现在在哪一页。
@@ -192,9 +206,8 @@ const {
   clearOrderNoFilter,
 } = useWorkOrderData()
 
-// 领料汇总数据（与原辅料核算、周统计面板共享）
+// 领料汇总数据（与原辅料核算面板共享；周统计已改为走后端汇总接口，不再要全量记录）
 const {
-  allPickRecords,
   pickTableData,
   pickPageNum,
   pickPageSize,
@@ -206,7 +219,6 @@ const {
   pickMaterialDialogVisible,
   pickMaterialFilter,
   pickMaterialOptions,
-  getPickDate,
   getPickPageData,
   filterPickRecords,
   fetchPickRecords,
@@ -238,9 +250,8 @@ function toggleStockOnlyInStock(value) {
   applyStockFilter()
 }
 
-// 入库汇总数据（与工单核算、周统计面板共享）
+// 入库汇总数据（与工单核算面板共享；周统计已改为走后端汇总接口，不再要全量记录）
 const {
-  allInboundRecords,
   inboundTableData,
   inboundPageNum,
   inboundPageSize,
@@ -252,7 +263,6 @@ const {
   inboundMaterialDialogVisible,
   inboundMaterialFilter,
   inboundMaterialOptions,
-  getInboundDate,
   getInboundPageData,
   filterInboundRecords,
   fetchInboundRecords,
@@ -308,13 +318,27 @@ function handleImportCancel() {
  */
 const importDirty = ref(false)
 
-function refreshAllData() {
+/**
+ * 台账明细四连发：工单 / 领料 / 入库 / 货物移动。
+ *
+ * 这四个接口在后端是 admin 专属（决策-004），非 admin 调过去只会拿到 403 ——
+ * 403 在 request 层只 reject、不弹提示，所以不会出错，但白发四个请求没意义。
+ * 与那些 Tab 的显隐用的是同一个判据（isAdmin），不会出现「藏了 Tab 却还在拉数据」。
+ */
+function fetchAdminOnlyData() {
+  if (!isAdmin()) return
   fetchWorkOrders()
   fetchPickRecords()
   fetchInboundRecords()
   fetchGoodsMoveRecords()
+}
+
+function refreshAllData() {
+  fetchAdminOnlyData()
   // 库存汇总也可能在这次导入里被更新
   fetchStockRecords()
+  // 周统计走的是独立的汇总接口（非 admin 也要能看），不在上面的 admin 分支里
+  fetchWeeklyStats()
 }
 
 function handleImportBack() {
@@ -445,21 +469,70 @@ const weeklyRemaining = ref(
 // 150产品（HND-V150）物料编码
 const WEEKLY_INBOUND_MATERIAL_CODE = '114001897'
 
-// 150产品入库数：按物料编码 + 时间范围，累计入库汇总的数量
-const weeklyInboundQty = computed(() => {
-  const sum = allInboundRecords.value
-    .filter((record) => {
-      if (String(record.materialCode ?? '').trim() !== WEEKLY_INBOUND_MATERIAL_CODE) return false
+// ===== 周统计取数（决策-004）=====
+// 改造前这两个和在本地从 allPickRecords / allInboundRecords 现算，
+// 而那两条明细接口现在只给 admin 了 —— 周统计对所有人可见，
+// 所以改走 /api/stats/weekly：它只回汇总数，不回明细。
+//
+// ⚠️ 求和口径（闭区间、日期为空的记录照样计入）与改造前**完全一致**，
+// 服务端实现见 WeeklyStatsServiceImpl；这里的 .join(',') 把要汇总的物料编码传上去，
+// 后端不硬编码业务常量（那几个编码本来就定义在这一段）。
+const WEEKLY_PICK_CODES = WEEKLY_ROW_DEFINITIONS.map((row) => row.materialCode)
 
-      const inboundDate = getInboundDate(record)
-      if (!inboundDate) return true
+// 查询区间：默认「上周一 ~ 上周日」。定义要放在下面那个 watch 之前 ——
+// watch 的依赖数组是立刻就求值的，晚于它声明会撞上 TDZ。
+const weeklyStartDate = ref(getLastWeekMonday())
+const weeklyEndDate = ref(getLastWeekSunday())
 
-      return inboundDate >= weeklyStartDate.value && inboundDate <= weeklyEndDate.value
+const weeklyStats = ref({ pickQty: {}, inboundQty: {} })
+const weeklyStatsLoading = ref(false)
+const weeklyStatsError = ref('')
+
+async function fetchWeeklyStats() {
+  // 日期被清空时不发请求：后端把空值当「不限」，而「没选日期」在这里的预期是什么都不算。
+  // 与改造前一致 —— 那时清掉结束日期，整张表也会变成 0。
+  if (!weeklyStartDate.value || !weeklyEndDate.value) {
+    weeklyStats.value = { pickQty: {}, inboundQty: {} }
+    return
+  }
+
+  weeklyStatsLoading.value = true
+  weeklyStatsError.value = ''
+
+  try {
+    const res = await request.get('/api/stats/weekly', {
+      params: {
+        start: weeklyStartDate.value,
+        end: weeklyEndDate.value,
+        pickMaterials: WEEKLY_PICK_CODES.join(','),
+        inboundMaterials: WEEKLY_INBOUND_MATERIAL_CODE,
+      },
     })
-    .reduce((total, record) => total + (Number(record.inboundQty) || 0), 0)
 
-  return formatQty(sum)
-})
+    if (res.data?.success === true) {
+      weeklyStats.value = {
+        pickQty: res.data.data?.pickQty || {},
+        inboundQty: res.data.data?.inboundQty || {},
+      }
+    } else {
+      weeklyStats.value = { pickQty: {}, inboundQty: {} }
+      weeklyStatsError.value = res.data?.msg || '周统计加载失败，请稍后重试。'
+    }
+  } catch (error) {
+    weeklyStats.value = { pickQty: {}, inboundQty: {} }
+    weeklyStatsError.value = error.response?.data?.msg || '周统计加载失败，请稍后重试。'
+  } finally {
+    weeklyStatsLoading.value = false
+  }
+}
+
+// 日期范围变了就重新取数（改造前是本地过滤，改一次不用请求）
+watch([weeklyStartDate, weeklyEndDate], fetchWeeklyStats)
+
+// 150产品入库数：接口已按区间汇总好，这里只取值
+const weeklyInboundQty = computed(() =>
+  formatQty(Number(weeklyStats.value.inboundQty?.[WEEKLY_INBOUND_MATERIAL_CODE]) || 0),
+)
 
 const weeklyInboundRow = computed(() => ({
   materialCode: WEEKLY_INBOUND_MATERIAL_CODE,
@@ -467,23 +540,12 @@ const weeklyInboundRow = computed(() => ({
   value: weeklyInboundQty.value,
 }))
 
-// 原料领用：按时间范围 + 物料编码，从领料汇总数据求和
+// 原料领用：同上，值由 /api/stats/weekly 备好
 function getWeeklyPickQty(materialCode) {
   const code = String(materialCode ?? '').trim()
   if (!code) return 0
 
-  const sum = allPickRecords.value
-    .filter((record) => {
-      if (String(record.materialCode ?? '').trim() !== code) return false
-
-      const pickDate = getPickDate(record)
-      if (!pickDate) return true
-
-      return pickDate >= weeklyStartDate.value && pickDate <= weeklyEndDate.value
-    })
-    .reduce((total, record) => total + (Number(record.pickQty) || 0), 0)
-
-  return formatQty(sum)
+  return formatQty(Number(weeklyStats.value.pickQty?.[code]) || 0)
 }
 
 const weeklyRows = computed(() => {
@@ -509,9 +571,6 @@ const weeklyRows = computed(() => {
     }
   })
 })
-
-const weeklyStartDate = ref(getLastWeekMonday())
-const weeklyEndDate = ref(getLastWeekSunday())
 
 // 标题：按所选日期范围生成，如「9月7日-9月13日周统计（截止9月13日晚8点）」
 const weeklyTitle = computed(() => {
@@ -1131,10 +1190,7 @@ watch(vesselKey, () => {
 })
 
 onMounted(() => {
-  fetchWorkOrders()
-  fetchPickRecords()
-  fetchInboundRecords()
-  fetchGoodsMoveRecords()
+  fetchAdminOnlyData()
   fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
 })
@@ -1158,6 +1214,11 @@ watch(activeTab, (tab, prevTab) => {
     ensureTankLevelLoaded()
   }
 
+  // 周统计：进 Tab 时取一次汇总数（日期没变就不必重复请求）
+  if (tab === 'weekly') {
+    fetchWeeklyStats()
+  }
+
   // 离开导入页且期间导入成功 → 刷新各数据集
   if (prevTab === 'import' && importDirty.value) {
     importDirty.value = false
@@ -1173,8 +1234,8 @@ watch(activeTab, (tab, prevTab) => {
       <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p class="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
-          <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">工单汇总</h1>
-          <p class="mt-2 text-sm text-slate-500">查看当前所有生产工单及处理状态</p>
+          <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">HND生产助手</h1>
+          <p class="mt-2 text-sm text-slate-500">生产工单与物料数据查询助手</p>
         </div>
         <div class="flex items-center gap-3 text-sm text-slate-500">
           <span>共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单</span>
@@ -1860,57 +1921,70 @@ watch(activeTab, (tab, prevTab) => {
           </div>
 
           <div class="p-6">
-            <div class="overflow-x-auto">
-              <table class="w-full table-fixed border-collapse text-center">
-                <colgroup>
-                  <col class="w-[220px]" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                  <col class="w-32" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th colspan="5" class="border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
-                      {{ weeklyTitle }}
-                    </th>
-                  </tr>
-                  <tr>
-                    <th
-                      v-for="column in weeklyColumns"
-                      :key="column.key"
-                      scope="col"
-                      class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
-                      :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                    >
-                      {{ column.label }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in weeklyRows" :key="row.name">
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</td>
-                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
-                    <td class="border border-slate-300 p-0">
-                      <input
-                        v-model="weeklyRemaining[row.materialCode]"
-                        type="text"
-                        placeholder="/"
-                        aria-label="车间剩余"
-                        class="w-full bg-transparent py-2 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
-                      />
-                    </td>
-                    <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
-                  </tr>
-                  <tr>
-                    <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
-                    <td colspan="4" class="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
-                      {{ weeklyInboundRow.value }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="relative">
+              <LoadingMask v-if="weeklyStatsLoading" />
+
+              <PanelState
+                v-else-if="weeklyStatsError"
+                type="error"
+                title="暂时无法获取周统计数据"
+                :description="weeklyStatsError"
+                action-text="重新加载"
+                @action="fetchWeeklyStats"
+              />
+
+              <div v-else class="overflow-x-auto">
+                <table class="w-full table-fixed border-collapse text-center">
+                  <colgroup>
+                    <col class="w-[220px]" />
+                    <col class="w-32" />
+                    <col class="w-32" />
+                    <col class="w-32" />
+                    <col class="w-32" />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th colspan="5" class="border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
+                        {{ weeklyTitle }}
+                      </th>
+                    </tr>
+                    <tr>
+                      <th
+                        v-for="column in weeklyColumns"
+                        :key="column.key"
+                        scope="col"
+                        class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
+                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                      >
+                        {{ column.label }}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in weeklyRows" :key="row.name">
+                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</td>
+                      <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
+                      <td class="border border-slate-300 p-0">
+                        <input
+                          v-model="weeklyRemaining[row.materialCode]"
+                          type="text"
+                          placeholder="/"
+                          aria-label="车间剩余"
+                          class="w-full bg-transparent py-2 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                        />
+                      </td>
+                      <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
+                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
+                    </tr>
+                    <tr>
+                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
+                      <td colspan="4" class="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
+                        {{ weeklyInboundRow.value }}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>

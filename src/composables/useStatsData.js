@@ -72,8 +72,8 @@ export function buildReportedQtyMap(orders) {
 }
 
 /**
- * 工单核算：以已入库产成品（入库汇总的物料名称去重）为行，
- * 入库数与已报工数汇总，差额为未报工数。
+ * 工单核算：以已入库产成品（入库汇总**当前筛选后**的物料名称去重）为行，
+ * 入库数与已报工数汇总（已报工数取工单汇总当前筛选后的工单），差额为未报工数。
  */
 export function buildCostingRows(inboundRecords, orders) {
   const rows = new Map()
@@ -138,7 +138,7 @@ export const MATERIAL_COSTING_DERIVED = [
 ]
 
 /**
- * 原辅料核算：以领料汇总的物料名称去重为行，领料数按物料累加，
+ * 原辅料核算：以领料汇总**当前筛选后**的物料名称去重为行，领料数按物料累加，
  * 已报工数取货物移动数量合计（按物料编码）。
  */
 export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMoveRecords } = {}) {
@@ -224,20 +224,24 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
 /**
  * 三张汇总表的响应式包装。数据源仍是各 composable 的模块级单例，
  * 所以面板组件自己调用本函数即可拿到同一份数据，无需层层传 props。
+ *
+ * 三张表喂的都是各来源面板「当前筛选后」的数据（与工单报工同一口径）：
+ * 汇总面板把日期/物料筛掉之后，核算表跟着空 —— 核算是对当前所见明细的核算，
+ * 不能拿接口全量现算（否则汇总为空的区间，核算表还在显示全量数字）。
  */
 export function useStatsData() {
   const { tableDataAll } = useWorkOrderData()
-  const { allInboundRecords } = useInboundData()
-  const { allPickRecords } = usePickData()
+  const { inboundFiltered } = useInboundData()
+  const { pickFiltered } = usePickData()
   const { goodsMoveRecords, goodsMoveQtyMap } = useGoodsMoveData()
 
   const reportRows = computed(() => buildReportRows(tableDataAll.value))
 
-  const costingRows = computed(() => buildCostingRows(allInboundRecords.value, tableDataAll.value))
+  const costingRows = computed(() => buildCostingRows(inboundFiltered.value, tableDataAll.value))
 
   const materialCostingRows = computed(() =>
     buildMaterialCostingRows({
-      pickRecords: allPickRecords.value,
+      pickRecords: pickFiltered.value,
       goodsMoveQtyMap: goodsMoveQtyMap.value,
       goodsMoveRecords: goodsMoveRecords.value,
     }),

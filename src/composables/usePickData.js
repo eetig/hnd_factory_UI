@@ -3,7 +3,8 @@ import request from '../api/request'
 import { getToday, getFirstDayOfCurrentMonth, pickField } from '../utils/format'
 
 // ===== 领料汇总数据（模块级单例）=====
-// 领料汇总面板、原辅料核算面板、周统计面板共用同一份数据。
+// 领料汇总面板与原辅料核算面板共用这份数据；原辅料核算取的是筛选后的 pickFiltered
+//（周统计已改走后端汇总接口，不再要全量记录）。
 const allPickRecords = ref([])
 const pickFiltered = ref([])
 const pickTableData = ref([])
