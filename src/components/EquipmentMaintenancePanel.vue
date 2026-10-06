@@ -1,6 +1,14 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ElButton, ElCheckbox, ElDialog, ElInput, ElOption, ElSelect } from 'element-plus'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import {
+  ElButton,
+  ElCheckbox,
+  ElDialog,
+  ElInput,
+  ElOption,
+  ElPagination,
+  ElSelect,
+} from 'element-plus'
 import { CONTAINER_TYPES, containerTypeLabel, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
 import { vesselImageUrl } from '../composables/useVesselList'
 
@@ -28,6 +36,35 @@ const filtered = computed(() => {
       .some((v) => String(v).toLowerCase().includes(kw))
   })
 })
+
+/**
+ * 分页。接口一次给全表（92 行，不分页），这里只做**前端分页** ——
+ * 维护的场景是「在同一页里比对同类设备」，后端分页会让人翻着翻着看不全。
+ */
+const currentPage = ref(1)
+const pageSize = ref(20)
+const paged = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return filtered.value.slice(start, start + pageSize.value)
+})
+
+// 筛选条件一变就回第一页 —— 否则会停在一个已经空掉的页上，看着像「筛出来没数据」
+watch([keyword, onlyEnabled], () => {
+  currentPage.value = 1
+})
+watch(pageSize, () => {
+  currentPage.value = 1
+})
+
+/**
+ * 封头深度一列显示「上 / 下」。用一个列而不是两列：表格已经 14 列了，
+ * 而下封头为空只可能是平底这一种情况，并排写反而占地方。
+ */
+function headDepthText(row) {
+  const top = row.topHeadDepth ?? '—'
+  const bottom = row.bottomHeadDepth > 0 ? row.bottomHeadDepth : '平底'
+  return `${top} / ${bottom}`
+}
 
 const loadError = ref('')
 async function refresh() {
@@ -158,7 +195,11 @@ async function handleDrawingPicked(event) {
             <th class="px-4 py-2 text-left font-medium">规格</th>
             <th class="px-4 py-2 text-left font-medium">容器类型</th>
             <th class="px-4 py-2 text-right font-medium">内径</th>
+            <th class="px-4 py-2 text-right font-medium">筒体长度</th>
+            <th class="px-4 py-2 text-right font-medium">直边</th>
+            <th class="px-4 py-2 text-right font-medium">封头深度(上/下)</th>
             <th class="px-4 py-2 text-left font-medium">介质</th>
+            <th class="px-4 py-2 text-right font-medium">介质密度</th>
             <th class="px-4 py-2 text-left font-medium">底图</th>
             <th class="px-4 py-2 text-left font-medium">状态</th>
             <th class="px-4 py-2 text-right font-medium">操作</th>
@@ -166,7 +207,7 @@ async function handleDrawingPicked(event) {
         </thead>
         <tbody>
           <tr
-            v-for="row in filtered"
+            v-for="row in paged"
             :key="row.id"
             class="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
             :class="{ 'text-slate-400': row.enabled !== 1 }"
@@ -178,7 +219,11 @@ async function handleDrawingPicked(event) {
             <td class="px-4 py-2">{{ row.spec || '—' }}</td>
             <td class="px-4 py-2">{{ containerTypeLabel(row.containerType) }}</td>
             <td class="px-4 py-2 text-right">{{ row.innerDiameter ?? '—' }}</td>
+            <td class="px-4 py-2 text-right">{{ row.shellLength ?? '—' }}</td>
+            <td class="px-4 py-2 text-right">{{ row.straightFlange ?? '—' }}</td>
+            <td class="px-4 py-2 text-right">{{ headDepthText(row) }}</td>
             <td class="px-4 py-2">{{ row.medium || '—' }}</td>
+            <td class="px-4 py-2 text-right">{{ row.density ?? '—' }}</td>
             <td class="px-4 py-2">
               <img
                 v-if="row.imageFile"
@@ -196,12 +241,23 @@ async function handleDrawingPicked(event) {
             </td>
           </tr>
           <tr v-if="!filtered.length">
-            <td colspan="10" class="px-4 py-10 text-center text-sm text-slate-400">
+            <td colspan="14" class="px-4 py-10 text-center text-sm text-slate-400">
               {{ loading ? '正在加载…' : '没有符合条件的设备' }}
             </td>
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div v-if="filtered.length" class="flex justify-end px-6 py-3">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :total="filtered.length"
+        :page-sizes="[20, 50, 100]"
+        layout="total, sizes, prev, pager, next"
+        background
+      />
     </div>
 
     <!-- 编辑弹窗：16 个字段按「台账信息 / 几何参数 / 底图」三组 -->
