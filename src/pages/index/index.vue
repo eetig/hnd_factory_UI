@@ -5,7 +5,7 @@ import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import request from '../../api/request'
 import { uploadFiles } from '../../api/upload'
-import { resolveAssetUrl } from '../../api/config'
+import { resolveAssetUrl, resolveVesselImage } from '../../api/config'
 import { clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
 import { APP_ENV, ACTIVE_ENV } from '../../api/env'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
@@ -18,6 +18,7 @@ import DropdownMenu from '../../components/DropdownMenu.vue'
 import ImageViewer from '../../components/ImageViewer.vue'
 import TankLevelFormDialog from '../../components/TankLevelFormDialog.vue'
 import TankLevelImageDialog from '../../components/TankLevelImageDialog.vue'
+import EquipmentMaintenancePanel from '../../components/EquipmentMaintenancePanel.vue'
 import { useTheme } from '../../composables/useTheme'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { usePickData } from '../../composables/usePickData'
@@ -26,6 +27,7 @@ import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
 import { useMaterialStockData } from '../../composables/useMaterialStockData'
 import { useTankLevelData, TANK_LEVEL_CATEGORIES } from '../../composables/useTankLevelData'
 import { useTankLevelImages } from '../../composables/useTankLevelImages'
+import { useVesselList } from '../../composables/useVesselList'
 // Excel 导入只在 H5 端保留。
 // 原因（已确认）：App 与小程序没有 DOM，uni-app 也没有内置的 xlsx 文件选择器
 //（uni.chooseFile 仅 H5 支持，小程序只能用 chooseMessageFile 从微信会话里选），
@@ -37,6 +39,7 @@ import WorkOrderImport from '../../components/WorkOrderImport.vue'
 import ImageParse from '../../components/ImageParse.vue'
 import { REPORT_ORDER_TYPES, getReportOrderType } from '../../constants/orderTypes'
 import { normalizeImageList } from '../../utils/image'
+import { UTubeBundle, shellVolumeMm3 } from '../../utils/vesselVolume'
 import {
   formatDate,
   getToday,
@@ -96,6 +99,9 @@ const tabs = [
   // 月底储罐液位记录：查询免登录（不带 perm），录入/删除按钮按 tank_level:edit 权限显隐
   { key: 'tankLevel', label: '月底储罐液位记录', icon: 'chart', hint: '按日期 / 属地查看车间储罐液位' },
   { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
+  // 设备数据维护（2026-10-06）：台账原先只读、只能改 SQL。用**权限位**而不是 adminOnly ——
+  // 写接口本来就是「仅 admin + 该权限位」两道，将来放开给非 admin 的维护员时不必动这里。
+  { key: 'equipment', label: '设备数据维护', icon: 'edit', hint: '逐个设备核对台账 / 几何 / 底图', perm: 'equipment:edit' },
   { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算' },
   // #ifdef H5 || APP-PLUS
   { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import' },
@@ -1433,81 +1439,73 @@ async function fetchWeeklyOrders() {
 }
 
 // ===== 储罐体积计算 =====
-// 储罐配置：新增储罐只需在数组里加一项
-// imageBounds 为底图中罐体的像素边界（由图像分析 + 轮廓叠加验证得出）。
+// 容器清单来自**设备台账**（`GET /api/equipment/vessels`，变更-025）—— 以前是写死在这里的
+// 一个数组，每加一种规格都要改代码 + 出底图 + 重新发版（小程序还要走一遍发布）。
+// 现在几何、底图、介质密度都在库里，这里只剩「取数 + 兜底 + 选中项」。
 //
-// ⚠️ 这组坐标与底图的实际像素尺寸是**绑定**的：绘制时按 s = IMAGE_W / bounds.width
-//    把两者换算到画布坐标，所以图片一改尺寸，坐标必须等比跟着改，否则液位线会与
-//    图纸错位。底图现为原图 1/2 尺寸（为压小程序主包），用
-//    resources/compress-vessel-images.py 重新生成时会打印出配套的新坐标。
-const VESSELS = [
-  {
-    key: 'silane',
-    type: 'horizontal',
-    label: '三氯氢硅储罐A/B示意图',
-    diameter: 2800, // 筒体内径 φ2.8m
-    cylinderLength: 5500, // 筒体长度 l=5.5m
-    straightFlange: 40, // 封头直边 0.04m
-    headDepth: 700, // 封头曲面内高度 hi=0.7m
-    // 底图放 /static：三端里只有 /static 的路径是各端都认的（App 端由打包进 www 的资源解析），
-    // 而且 <image> 的 src 要的就是「资源路径字符串」，不是 import 出来的模块 URL。
-    image: '/static/vessel.png',
-    // 深色主题用的同尺寸亮线版（透明底 + 亮色线稿，见 resources/compress-vessel-images.py）。
-    // 两张图尺寸必须一致，否则切主题时液位线会跳 —— 脚本里有校验。
-    imageDark: '/static/vessel-dark.png',
-    // 坐标已按压缩后的底图（1075x530 = 原图 1/2）等比缩放。
-    // ⚠️ 底图一换尺寸，这组数字必须同步重算，否则液位线会与图纸错位 ——
-    //    用 resources/compress-vessel-images.py 重新生成，它会把新值打印出来。
-    imageBounds: { width: 1075, height: 530, left: 37.5, right: 1034.5, top: 65.5, bottom: 465.5 },
-    displayWidth: 680,
-    medium: '三氯氢硅',
-    density: 1.35, // 20°C、101.325kPa 工程取值（SIS 联锁/容积/物料衡算/泄放计算用）g/cm³
-    note: '三氯氢硅，若用于 SIS 联锁、储罐容积、物料衡算、泄放计算，工程上直接采用：20℃，101.325kPa，ρ=1.35 g/cm³',
-    liquid: { fill: 'rgba(208, 226, 128, 0.28)', line: '#a6cb3c' }, // 浅黄绿（氯系介质特征色，柔和不刺眼）
-  },
-  {
-    key: 'product150',
-    type: 'vertical',
-    label: '150产品储罐示意图',
-    diameter: 3600, // 筒体内径 φ3.6m
-    cylinderHeight: 4800, // 筒体高度 4.8m
-    headDepth: 900, // 顶部封头曲面内高度 0.9m
-    image: '/static/vessel-product150.png',
-    // 深色主题用的同尺寸亮线版（理由同上一台罐）
-    imageDark: '/static/vessel-product150-dark.png',
-    // 坐标已按压缩后的底图（880x969 = 原图 1/2）等比缩放，同见上方说明
-    imageBounds: { width: 880, height: 969, left: 65.5, right: 675.5, top: 31.5, tangent: 155, bottom: 965 },
-    displayWidth: 470,
-    medium: '乙烯基三氯硅烷',
-    density: 1.27, // GB/T 35498-2017，20°C、101.325kPa g/cm³（数值上等于 t/m³）
-    note: '乙烯基三氯硅烷，基准条件：20℃，101.325 kPa（常压），液体密度 1.27 g/cm³；物性来源：GB/T 35498-2017《工业用乙烯基三氯硅烷》。',
-    liquid: { fill: 'rgba(0, 255, 255, 0.4)', line: '#00ffff' },
-  },
-]
+// 展示层（配色、备注文案、显示宽度）在 composables/useVesselList.js，体积公式在
+// utils/vesselVolume.js —— 三处各管各的，改哪一样都不必动另两处。
+//
+// ⚠️ 底图坐标（imageBounds）是**按图片宽度归一化**的：width 恒为 1、height 是长宽比，
+//    其余是「占图宽的比例」。这样电脑端用原图、uni-app 用 1/2 压图能共用同一组坐标 ——
+//    绘制时仍是 s = IMAGE_W / bounds.width 那一套，只是那个 width 成了 1。
+const { vessels, vesselsLoading, vesselsFromCache, loadVessels } = useVesselList()
 
-const vesselKey = ref(VESSELS[0].key)
+// 清单是异步来的，先留空，到位后由下面这个 watch 补上选中项
+const vesselKey = ref('')
+
+watch(vessels, (list) => {
+  if (!list.length) return
+  // 只在「当前选中项不在新清单里」时才改 —— 否则每次刷新都会把用户选中的罐顶掉
+  if (!list.some((item) => item.key === vesselKey.value)) {
+    vesselKey.value = list[0].key
+  }
+})
+
+// 这个页面是**纯前端计算**（公式在本地），台账取不到时会退到本地缓存，见 useVesselList。
+// 宁可慢一拍也不要把清单清空 —— 清了就真的什么都算不了。
+onMounted(loadVessels)
 
 // 储罐下拉的浮层开关。⚠️ 必须绑给 DropdownMenu 的 v-model —— 它的遮罩与面板都是
 // v-if="modelValue"，漏绑就只 emit 一个没人监听的事件，点击毫无反应（这行别删）。
 const vesselMenuOpen = ref(false)
-const selectedVessel = computed(
-  () => VESSELS.find((item) => item.key === vesselKey.value) ?? VESSELS[0],
-)
+
+// 当前选中的容器。**可能是 null**：清单异步来，且台账取不到时会退到缓存/空。
+// 下游一律走 vesselGeometry，由它在没有选中项时返回一份「空白几何」，避免整页崩掉。
+const selectedVessel = computed(() => {
+  const list = vessels.value
+  if (!list.length) return null
+  return list.find((item) => item.key === vesselKey.value) ?? list[0]
+})
+
+// 底图实际地址：按主题挑深浅版，再按环境补前缀（包内 /static 或走网络）。
+// 放在 computed 里而不是模板里直接调函数 —— 模板里调会在每次重渲染时重算字符串。
+const vesselPaperSrc = computed(() => {
+  const vessel = selectedVessel.value
+  if (!vessel) return ''
+  return resolveVesselImage(isLight.value ? vessel.image : vessel.imageDark)
+})
 
 // 储罐下拉的选项（企微式浮层，见 components/DropdownMenu.vue）。
-// hint 用「罐型 + 主尺寸 + 密度」把两个罐一眼分开：浮层里只有 2 项，而罐名长得很像
-//（都带「储罐…示意图」），光看名字容易点错。
+// hint 用「罐型 + 主尺寸 + 密度」把几台容器一眼分开：浮层里罐名长得很像，
+// 光看名字容易点错。
 // icon 两行都用 chart-bubble（本面板自己的图标）：图标字体里没有卧式/立式罐的图形，
 // 硬凑一个别的语义反而更误导，罐型交给 hint 表达。
 const vesselOptions = computed(() =>
-  VESSELS.map((vessel) => ({
-    value: vessel.key,
-    label: vessel.label,
-    hint: vessel.type === 'vertical'
-      ? `立式 · φ${vessel.diameter / 1000}m × H${vessel.cylinderHeight / 1000}m · ρ${vessel.density}`
-      : `卧式 · φ${vessel.diameter / 1000}m × L${vessel.cylinderLength / 1000}m · ρ${vessel.density}`,
-    icon: 'chart-bubble',
-  })),
+  vessels.value.map((vessel) => {
+    const size =
+      vessel.type === 'vertical'
+        ? `立式 · φ${vessel.diameter / 1000}m × H${vessel.cylinderHeight / 1000}m`
+        : `卧式 · φ${vessel.diameter / 1000}m × L${vessel.cylinderLength / 1000}m`
+    // 密度可以不配（再沸器的介质未定）—— 直接拼会显示成「ρundefined」，缺就整段不拼
+    const density = vessel.density ? ` · ρ${vessel.density}` : ''
+    return {
+      value: vessel.key,
+      label: vessel.label,
+      hint: size + density,
+      icon: 'chart-bubble',
+    }
+  }),
 )
 
 // 浮层选中后写回唯一的罐标识；下游（selectedVessel / vesselGeometry）一行不动
@@ -1515,18 +1513,50 @@ function handleVesselSelect(key) {
   vesselKey.value = key
 }
 
+// 没有选中项时（清单还没到 / 台账取不到且无缓存）用这份**空白几何**兜住：
+// 下游的 vesselDiagram / vesselStartVolume / vesselCapacity 等全都会读它，
+// 让它们拿到 null 会一路崩到模板。这里给一个「画不出东西但不炸、也不产生 NaN」的形状
+// （半径、量程都取正数，避免体积公式里出现除以零），界面上另有明确提示。
+const BLANK_VESSEL_GEOMETRY = {
+  type: 'horizontal',
+  diameter: 1,
+  radius: 0.5,
+  cylinderLength: 1,
+  straightFlange: 0,
+  headDepth: 0.25,
+  bottomHeadDepth: 0,
+  maxLevel: 1,
+  imageBounds: { width: 1, height: 1, left: 0, right: 1, top: 0, bottom: 1 },
+  displayWidth: 320,
+  liquid: { fill: 'transparent', line: 'transparent' },
+  medium: '',
+  density: null,
+  note: '',
+  bundle: null,
+}
+
 // 当前储罐的几何参数（统一两种罐型的字段）
 const vesselGeometry = computed(() => {
   const vessel = selectedVessel.value
+  if (!vessel) return BLANK_VESSEL_GEOMETRY
 
   if (vessel.type === 'vertical') {
+    // 下封头可选：150 产品储罐是平底，缺省 0；甲醇计量罐上下都有封头。
+    // 液位基准是**罐底最低点**（有下封头时即下封头顶点），所以量程要把下封头那一段算进去。
+    // 直边（cylindrical 的那 40mm）是等径圆筒段，并入筒体高度 —— 体积与液位映射都按合并后的算
+    const bottomHeadDepth = vessel.bottomHeadDepth ?? 0
+    const cylinderHeight = vessel.cylinderHeight + 2 * (vessel.straightFlange ?? 0)
     return {
       type: 'vertical',
       diameter: vessel.diameter,
       radius: vessel.diameter / 2,
-      cylinderHeight: vessel.cylinderHeight,
+      cylinderHeight,
       headDepth: vessel.headDepth,
-      maxLevel: vessel.cylinderHeight + vessel.headDepth,
+      bottomHeadDepth,
+      // 直边已经并进上面那个 cylinderHeight 了（体积与液位映射都用合并后的值），
+      // 这里再单独透传一份：对账要按「封头曲面 + 直边」算，缺了它会对不上台账的 head_volume
+      straightFlange: vessel.straightFlange ?? 0,
+      maxLevel: bottomHeadDepth + cylinderHeight + vessel.headDepth,
       imageBounds: vessel.imageBounds,
       displayWidth: vessel.displayWidth ?? 680,
       liquid: vessel.liquid,
@@ -1553,6 +1583,9 @@ const vesselGeometry = computed(() => {
     medium: vessel.medium ?? '',
     density: vessel.density ?? null,
     note: vessel.note ?? '',
+    // 罐内管束：只有再沸器有。构造一次由 computed 缓存，不会每帧重建；
+    // 容积计算与渲染都读它，没配 bundle 的两台罐拿到 null（行为与改造前一致）
+    bundle: vessel.bundle ? new UTubeBundle({ ...vessel.bundle }) : null,
   }
 })
 
@@ -1614,20 +1647,35 @@ function vesselWavePattern(line) {
 // 改造前是在逻辑坐标系里算 Y 再乘缩放比换成画布像素，这里直接出百分比 ——
 // 百分比跟着盒子缩放，所以「屏幕上多大」不需要 JS 知道。
 //   卧式：液面高度随半径线性变化；
-//   立式：筒体段与封头段分开映射（底图里的封头画得比真实椭球略扁，
-//         分段映射才能让液面始终贴合图纸上的结构线）。
+//   立式：下封头段 / 筒体段 / 上封头段分开映射（底图里的封头画得比真实椭球略扁，
+//         分段映射才能让液面始终贴合图纸上的结构线）。没有下封头的罐只有后两段。
 function levelBottomPercent(level, geometry, bounds, scale) {
   const bottom = bounds.bottom * scale
 
   if (geometry.type === 'vertical') {
     const tangent = bounds.tangent * scale
     const apex = bounds.top * scale
-    const y =
-      level <= geometry.cylinderHeight
-        ? bottom - (level / geometry.cylinderHeight) * (bottom - tangent)
-        : tangent -
-          (Math.min(geometry.headDepth, level - geometry.cylinderHeight) / geometry.headDepth) *
-            (tangent - apex)
+    // 下封头：150 产品储罐是平底（bottomHeadDepth 缺省 0、底图也没有 tangentBottom），
+    // 此时 tangentBottom 就是 bottom，三段并成两段，结果与改造前逐位一致
+    const hasBottomHead =
+      geometry.bottomHeadDepth > 0 && bounds.tangentBottom !== undefined
+    const bottomHead = hasBottomHead ? geometry.bottomHeadDepth : 0
+    const tangentBottom = hasBottomHead ? bounds.tangentBottom * scale : bottom
+
+    let y
+    if (bottomHead > 0 && level <= bottomHead) {
+      // 下封头段：液位自罐底最低点（下封头顶点）量起
+      y = bottom - (level / bottomHead) * (bottom - tangentBottom)
+    } else {
+      const shellLevel = level - bottomHead
+      y =
+        shellLevel <= geometry.cylinderHeight
+          ? tangentBottom - (shellLevel / geometry.cylinderHeight) * (tangentBottom - tangent)
+          : tangent -
+            (Math.min(geometry.headDepth, shellLevel - geometry.cylinderHeight) /
+              geometry.headDepth) *
+              (tangent - apex)
+    }
     return ((bottom - y) / (bottom - apex)) * 100
   }
 
@@ -1676,13 +1724,22 @@ const vesselDiagram = computed(() => {
   // 立式：上半是半椭圆封头、下半是等径筒体 → 上两角 rx 50% / ry 封头深占比，下两角直角。
   let tankStyle
   if (geometry.type === 'vertical') {
-    const ry = ((bounds.tangent - bounds.top) / (bounds.bottom - bounds.top)) * 100
+    const tankH = bounds.bottom - bounds.top
+    const ry = ((bounds.tangent - bounds.top) / tankH) * 100
+    // 下封头：底图里多一条 tangentBottom（下封头与筒体的切线）。有它就把下两角
+    // 也改成椭圆角，没有就是平底（150 产品储罐），下两角直角。
+    const hasBottomHead =
+      geometry.bottomHeadDepth > 0 && bounds.tangentBottom !== undefined
+    const ryBottom = hasBottomHead ? ((bounds.bottom - bounds.tangentBottom) / tankH) * 100 : 0
     tankStyle = {
       left: toLeft(bounds.left),
       top: toTop(bounds.top),
       width: `${((tankWidth / W) * 100).toFixed(4)}%`,
       height: `${((tankHeight / H) * 100).toFixed(4)}%`,
-      borderRadius: `50% 50% 0 0 / ${ry.toFixed(4)}% ${ry.toFixed(4)}% 0 0`,
+      // 斜杠前是四个角的水平半径、斜杠后是垂直半径（顺序 左上/右上/右下/左下）
+      borderRadius: hasBottomHead
+        ? `50% 50% 50% 50% / ${ry.toFixed(4)}% ${ry.toFixed(4)}% ${ryBottom.toFixed(4)}% ${ryBottom.toFixed(4)}%`
+        : `50% 50% 0 0 / ${ry.toFixed(4)}% ${ry.toFixed(4)}% 0 0`,
     }
   } else {
     const headPx = (geometry.headDepth / geometry.diameter) * tankHeight
@@ -1803,39 +1860,19 @@ const vesselWaveSwatch = computed(() => ({
   backgroundImage: vesselWavePattern(vesselGeometry.value.liquid.line),
 }))
 
-// 液体体积（mm³）—— 闭式解，依据工艺核算公式：
-//   V(h) = L[ πr²/2 − (r−h)√(2rh−h²) − r²·arcsin((r−h)/r) ]
-//        + (π·hi)/(3r) · [ 3r²h − r³ + (r−h)³ ]
-// 第一项为筒体（含两端直边）内液体体积，第二项为两端椭圆封头曲面内液体体积合计
+// 液体体积（mm³）：壳体液位体积 − 液面以下换热管所占体积。
+// 两项的实现都在 utils/vesselVolume.js（两套前端共用同一份内容），这里只做调用：
+//   · 壳体是闭式解，依据工艺核算公式
+//       V(h) = L[ πr²/2 − (r−h)√(2rh−h²) − r²·arcsin((r−h)/r) ]
+//            + (π·hi)/(3r) · [ 3r²h − r³ + (r−h)³ ]
+//     第一项为筒体（含两端直边）内液体体积，第二项为两端椭圆封头曲面内液体体积合计
+//   · 管束项只有配了 bundle 的罐（再沸器）才有；另两台罐 geometry.bundle 为 null，
+//     减 0，结果与改造前逐位一致
+// 液位入参是 mm，返回 mm³。
 function liquidVolumeMm3(depth, geometry) {
-  const r = geometry.radius
-  const h = Math.max(0, Math.min(geometry.maxLevel, Number(depth) || 0))
-  if (h <= 0) return 0
-
-  // 立式储罐：筒体为等径圆柱，顶部为半椭球封头
-  //   V = πr²h（筒体段） + πr²[ t − t³/(3hi²) ]（封头段，t = h − 筒体高度）
-  if (geometry.type === 'vertical') {
-    const cylinderPart = Math.PI * r * r * Math.min(h, geometry.cylinderHeight)
-    if (h <= geometry.cylinderHeight) return cylinderPart
-
-    const t = h - geometry.cylinderHeight
-    const hi = geometry.headDepth
-    const headPart = Math.PI * r * r * (t - Math.pow(t, 3) / (3 * hi * hi))
-    return cylinderPart + headPart
-  }
-
-  // 卧式储罐：闭式解，依据工艺核算公式
-  const straightLength = geometry.cylinderLength + 2 * geometry.straightFlange
-  const sqrtTerm = Math.sqrt(Math.max(0, 2 * r * h - h * h))
-  const asinTerm = Math.asin(Math.max(-1, Math.min(1, (r - h) / r)))
-
-  const cylinder =
-    straightLength * ((Math.PI * r * r) / 2 - (r - h) * sqrtTerm - r * r * asinTerm)
-  const heads =
-    ((Math.PI * geometry.headDepth) / (3 * r)) *
-    (3 * r * r * h - Math.pow(r, 3) + Math.pow(r - h, 3))
-
-  return cylinder + heads
+  const shell = shellVolumeMm3(depth, geometry)
+  const tubeBundle = geometry.bundle ? geometry.bundle.immersedVolumeMm3(depth) : 0
+  return shell - tubeBundle
 }
 
 const vesselStartVolume = computed(
@@ -1874,21 +1911,64 @@ const vesselSpecs = computed(() => {
   const g = vesselGeometry.value
   // 毫米 → 米。保留两位后去掉多余的 0（0.04m 而不是 0.040m）
   const m = (value) => `${(value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')} m`
+  // 说明性字段（根数、规格、图纸口径的筒体高与直边、铭牌容积）读原始选项：
+  // 几何实例上只留计算用到的量。`?? {}` 兜住「清单还没到」的瞬间（此时各项都取不到，
+  // 规格网格会退化成只显示几何算得出来的那几项）
+  const raw = selectedVessel.value ?? {}
+  const bundleConfig = raw.bundle
 
   const items = []
 
   if (g.type === 'vertical') {
     items.push({ label: '筒体内径', value: `φ${m(g.diameter)}` })
-    items.push({ label: '筒体高度', value: m(g.cylinderHeight) })
+    // 筒体高度按图纸口径显示（不含直边）。几何计算里直边是并进筒体高的等径圆筒段，
+    // 显示时拆回来 —— 否则「图纸写 3400、页面写 3.48m」会对不上
+    items.push({ label: '筒体高度', value: m(raw.cylinderHeight ?? g.cylinderHeight) })
+    if ((raw.straightFlange ?? 0) > 0) {
+      items.push({ label: '封头直边', value: m(raw.straightFlange) })
+    }
   } else {
     items.push({ label: '筒体内径', value: `φ${m(g.diameter)}` })
     items.push({ label: '筒体长度', value: `l = ${m(g.cylinderLength)}` })
-    items.push({ label: '封头直边', value: m(g.straightFlange) })
+    // 直边为 0 的罐（再沸器）不列这一项，免得规格里出现「0 m」
+    if (g.straightFlange > 0) items.push({ label: '封头直边', value: m(g.straightFlange) })
   }
 
-  items.push({ label: '封头曲面', value: `hi = ${m(g.headDepth)}` })
-  items.push({ label: '总容积', value: `${vesselCapacity.value.toFixed(1)} m³` })
+  // 上下都有封头时（甲醇计量罐）两条分开列，免得「封头曲面 0.55m」被当成罐底也是封头
+  const hasBottomHead = (g.bottomHeadDepth ?? 0) > 0
+  items.push({
+    label: hasBottomHead ? '上封头曲面' : '封头曲面',
+    value: `hi = ${m(g.headDepth)}`,
+  })
+  if (hasBottomHead) {
+    items.push({ label: '下封头曲面', value: `hi = ${m(g.bottomHeadDepth)}` })
+  }
+  // 带管束的罐：这个总容积是**扣掉管束后的净值**，标签上必须写清楚，
+  // 否则会被当成毛容积用（壳体满罐是 18.3 m³，净值 18.0 m³）
+  items.push({
+    label: g.bundle ? '总容积（已扣管束）' : '总容积',
+    value: `${vesselCapacity.value.toFixed(1)} m³`,
+  })
   items.push({ label: '液位量程', value: `0 ~ ${g.maxLevel} mm` })
+
+  // 管束：根数与规格决定扣除量，单列出来便于与真实图纸核对
+  if (bundleConfig && g.bundle) {
+    items.push({
+      label: '换热管',
+      value: `${bundleConfig.tubeCount} 根 ${bundleConfig.tubeSpec}`,
+    })
+    items.push({
+      label: '管束挤占',
+      value: `${(g.bundle.totalVolumeMm3 / 1e9).toFixed(4)} m³`,
+    })
+  }
+
+  // 数据表的铭牌全容积。**只作对照、不参与计算** —— 它与上面那个按几何算出的总容积对不上，
+  // 所以标签里必须带「铭牌」二字，否则两个容积并排会被当成程序算错了一个
+  const nameplateVolume = selectedVessel.value.nameplateVolume
+  if (nameplateVolume) {
+    items.push({ label: '铭牌全容积', value: `${nameplateVolume} m³` })
+  }
 
   // 介质与密度：质量换算用的就是这两个数，单列出来比埋在长句里好找
   if (g.medium) items.push({ label: '介质', value: g.medium })
@@ -1896,6 +1976,56 @@ const vesselSpecs = computed(() => {
 
   return items
 })
+
+// 录入对账：台账里的 head_volume 是**单个封头的「曲面 + 直边」**容积（源台账给的，不是我们编的），
+// 按同一口径用当前几何自己算一遍，对不上就说明库里的几何填错了。
+// 这是白捡的校验 —— 几何一填错（内径多打个 0、封头深忘了改）立刻看得见，
+// 否则要等到有人拿它算体积时才发现，而那时数值已经错了。
+// 台账没给 head_volume 的行（如 150产品罐是平底、源表未给）跳过，不误报。
+const RECONCILE_TOLERANCE = 0.01 // 1%：图纸取值与源台账的舍入差远小于这个
+const vesselReconcileWarning = computed(() => {
+  const expected = selectedVessel.value?.headVolumeForCheck
+  if (!expected) return ''
+
+  const g = vesselGeometry.value
+  const r = g.radius
+  const head = g.headDepth
+  if (!r || !head) return ''
+
+  // 单位：r / head / straightFlange 都是 mm，算出来是 mm³，除以 1e9 得 m³
+  const computedM3 =
+    (((2 / 3) * Math.PI * r * r * head + Math.PI * r * r * (g.straightFlange ?? 0)) / 1e9)
+  const diff = Math.abs(computedM3 - expected) / expected
+  if (diff <= RECONCILE_TOLERANCE) return ''
+
+  return (
+    `几何参数与台账对不上：按几何算出的封头容积是 ${computedM3.toFixed(4)} m³，` +
+    `台账记的是 ${expected} m³（差 ${(diff * 100).toFixed(1)}%）。` +
+    `请核对台账里这台容器的内径 / 封头曲面深 / 直边。`
+  )
+})
+
+// 台账标了「带内置管束」（container_type=4）却取不到管束参数 —— 那会**静默不扣**管内排液体积
+// （再沸器满罐偏大约 1.9%），页面上看不出任何异常。管束参数目前还在前端的临时表里
+// （见 useVesselList 的 BUNDLE_BY_ID，待台账加列后删除），所以新增同类容器时最容易漏配。
+const vesselBundleWarning = computed(() => {
+  const vessel = selectedVessel.value
+  if (vessel?.containerType === 4 && !vessel.bundle) {
+    return '这台容器在台账里标了「带内置管束」，但取不到它的管束参数，体积没有扣除管内排液体积 —— 请补录。'
+  }
+  return ''
+})
+
+// 公式块下方那句说明。页面上方那个式子算的是**壳体**体积，而配了管束的罐（再沸器）
+// 读数还要再扣掉管束 —— 说明必须跟着变，否则「程序按此式实时计算液体体积」
+// 与旁边的读数对不上，会被当成算错了。
+// 写成 computed 而不是模板里的 v-if：小程序端对块级条件渲染的编译支持面更窄，
+// 插值在三端行为完全一致。
+const vesselFormulaCaption = computed(() =>
+  vesselGeometry.value.bundle
+    ? '程序按此式算出壳体体积，再扣除液面以下的换热管体积 —— 两者之差才是上表的有效液体体积'
+    : '程序按此式实时计算液体体积',
+)
 
 let vesselFrameId = null // 缓动帧循环句柄（null = 已停帧）
 let vesselTransitions = { start: null, end: null } // 起始/终止液位的缓动过渡状态
@@ -3062,6 +3192,11 @@ watch(activeTab, (tab, prevTab) => {
         </section>
       </div>
 
+      <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
+      <div v-show="activeTab === 'equipment'">
+        <EquipmentMaintenancePanel />
+      </div>
+
       <div v-show="activeTab === 'tankLevel'">
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
           <!-- 筛选行：日期区间 + 属地 + 所属 + 关键字。
@@ -3259,6 +3394,30 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'vessel'">
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
+          <!-- 容器清单来自设备台账（异步）。取不到时**必须给出明确提示**：
+               这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
+               只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。
+               注意文案里不要写 Markdown 星号，模板里是纯文本，会原样显示出来。 -->
+          <view
+            v-if="vesselsLoading && !vessels.length"
+            class="border-b border-slate-100 px-6 py-3 text-xs text-slate-500"
+          >
+            正在加载容器清单…
+          </view>
+          <view
+            v-else-if="vesselsFromCache"
+            class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs leading-relaxed text-amber-800"
+          >
+            <template v-if="vessels.length">
+              当前显示的是本地缓存的容器清单（设备台账接口暂时取不到）。若台账刚改过几何参数，
+              这里的数值可能不是最新的 —— 恢复连接后会自动刷新。
+            </template>
+            <template v-else>
+              取不到容器清单：设备台账接口连不上，本地也没有缓存。
+              请稍后重试；若一直如此，请联系管理员核对台账里这几台容器的几何参数是否已填写。
+            </template>
+          </view>
+
           <!-- 储罐信息区：只剩罐型选择这一行。
                规格网格与介质条件备注已挪到卡片末尾、液体体积计算公式正上方。
                改造前选择器与规格说明挤在一个 flex 行里：固定 224px 的选择器在 360px 小屏上
@@ -3278,7 +3437,7 @@ watch(activeTab, (tab, prevTab) => {
                 @select="handleVesselSelect"
               >
                 <view class="vessel-select" :class="{ 'is-open': vesselMenuOpen }">
-                  <text class="vessel-select__label">{{ selectedVessel.label }}</text>
+                  <text class="vessel-select__label">{{ selectedVessel ? selectedVessel.label : '—' }}</text>
                   <view class="vessel-select__caret">
                     <wd-icon name="arrow-down" size="14px" />
                   </view>
@@ -3312,7 +3471,7 @@ watch(activeTab, (tab, prevTab) => {
                 <template v-if="vesselImageReady">
                   <image
                     class="vessel-diagram__paper"
-                    :src="isLight ? selectedVessel.image : selectedVessel.imageDark"
+                    :src="vesselPaperSrc"
                     :style="vesselDiagram.paperStyle"
                     mode="scaleToFill"
                   />
@@ -3534,6 +3693,14 @@ watch(activeTab, (tab, prevTab) => {
             <p v-if="vesselGeometry.note" class="mt-3 text-xs font-medium leading-relaxed text-amber-700">
               {{ vesselGeometry.note }}
             </p>
+            <!-- 录入对账：几何与台账的封头容积对不上时单独一行红字（不阻断计算，
+                 因为页面算的是按几何来的，台账那列只用于核对） -->
+            <p v-if="vesselReconcileWarning" class="mt-2 text-xs font-medium leading-relaxed text-red-600">
+              {{ vesselReconcileWarning }}
+            </p>
+            <p v-if="vesselBundleWarning" class="mt-2 text-xs font-medium leading-relaxed text-red-600">
+              {{ vesselBundleWarning }}
+            </p>
           </div>
 
           <div class="border-t border-slate-100 bg-slate-50 px-6 py-4">
@@ -3568,12 +3735,12 @@ watch(activeTab, (tab, prevTab) => {
               <p v-if="vesselGeometry.type === 'vertical'" class="mt-3 text-center text-xs leading-relaxed text-slate-500">
                 <text class="mf-var">r</text> 筒体内半径　<text class="mf-var">h</text> 液位高度　<text class="mf-var">H</text> 筒体高度　<text class="mf-var">h</text><text class="mf-sub">i</text> 封头曲面内高度
                 <span class="text-slate-400">｜</span>
-                程序按此式实时计算液体体积
+                {{ vesselFormulaCaption }}
               </p>
               <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
                 <text class="mf-var">L</text> 筒体长度（含两端直边）　<text class="mf-var">r</text> 筒体内半径　<text class="mf-var">h</text> 液位高度　<text class="mf-var">h</text><text class="mf-sub">i</text> 封头曲面内高度
                 <span class="text-slate-400">｜</span>
-                程序按此式实时计算液体体积
+                {{ vesselFormulaCaption }}
               </p>
             </div>
           </div>

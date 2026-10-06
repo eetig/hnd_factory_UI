@@ -8,7 +8,7 @@
 // 由 dev 代理或生产 Nginx 做同源路由。App 与小程序端没有「同源」这回事，
 // 相对路径无法解析，必须补上绝对 origin。
 
-import { ACTIVE_ENV } from './env'
+import { ACTIVE_ENV, VESSEL_IMAGE_ORIGIN } from './env'
 
 /**
  * 非 H5 端（App / 小程序）的接口 origin —— 后端 hnd_factory。
@@ -101,4 +101,28 @@ export function resolveAssetUrl(url) {
   // #endif
 
   return `${ORIGIN}${path}`
+}
+
+/**
+ * 容器底图的取图地址（压力容器体积计算页）。
+ *
+ * `VESSELS[].image` / `.imageDark` 里现在只写**文件名**（如 'vessel.png'），
+ * 由这里按环境补前缀：
+ *   local  → `/static/vessel.png`               包内（开发/联调，离线可用）
+ *   remote → `https://hbhnd.cloud/vessels/...`  走网络，不占小程序包体
+ *
+ * 为什么要这么做、服务器侧要放哪些文件，见 env.js 的 VESSEL_IMAGE_ORIGIN 注释
+ * 与《UNIAPP迁移说明》§6.1。
+ *
+ * 已经是绝对地址或绝对路径的原样返回 —— 便于临时把某一张指到别处做验证。
+ */
+export function resolveVesselImage(file) {
+  if (!file) return ''
+  // **上传的底图**（2026-10-06 起「设备数据维护」页可传图）存的是 `/files/xxx.png` ——
+  // img-service 存 MinIO、Nginx 同源暴露，与单据图片是同一条通道。
+  // 必须交给 resolveAssetUrl 去补 origin：App/小程序端没有「同源」这回事，
+  // 留个相对路径过去就是 404。
+  if (file.startsWith('/files/') || file.startsWith('/thumbs/')) return resolveAssetUrl(file)
+  if (/^(https?:)?\/\//i.test(file) || file.startsWith('/')) return file
+  return VESSEL_IMAGE_ORIGIN ? `${VESSEL_IMAGE_ORIGIN}/${file}` : `/static/${file}`
 }

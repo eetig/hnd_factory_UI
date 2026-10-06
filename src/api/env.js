@@ -26,7 +26,7 @@ export const APP_ENV = 'local'
  * 开发机（跑 hnd_factory / img-service / myocr 的那台）的局域网 IP。
  * 手机与电脑必须在同一网段，App 真机才能直连；换网络后要改这里（cmd 里 ipconfig 查）。
  */
-const LAN_HOST = '192.168.3.2'
+const LAN_HOST = '172.26.20.69'
 
 /** 本机联调：局域网直连三台服务 */
 const LOCAL_ENV = {
@@ -68,3 +68,24 @@ const REMOTE_ENV = {
  * 会被 minify 直接删掉 —— 正式包里不会再有本机地址。
  */
 export const ACTIVE_ENV = APP_ENV === 'local' ? LOCAL_ENV : REMOTE_ENV
+
+/**
+ * 容器底图（压力容器体积计算页那几张图纸）的取图根地址。
+ *
+ * 为什么要有这个开关：**小程序主包上限 2 MB，而 `src/static/` 里的东西是
+ * 全量打进包体的**（没有按需加载可言）。底图深浅两张平均 215 KB 一种，
+ * 只够放 4 种容器 —— 再加两种就超限（见 UNIAPP迁移说明.md §6.1）。
+ * 把图挪到服务器按 URL 加载后，**包体不再随容器种类增长**（859 KB → 0）。
+ *
+ *   local  → ''               用包内 /static/（开发/联调，离线可用，零延迟）
+ *   remote → 'https://hbhnd.cloud/vessels'  走网络
+ *
+ * ⚠️ 刻意**跟着 APP_ENV 走**，不另开一个开关 —— 多一个「打包前记得切」的开关
+ *    就多一个会忘的地方，本项目在 APP_ENV 上已经吃过一次亏（见变更-006）。
+ *    这样「打包前确认 APP_ENV=remote」这条既有规矩顺带把底图也管住了。
+ *
+ * ⚠️ 服务器侧要存在这个目录（`/vessels/`），且**不能**落在 Nginx 已接管的
+ *    `/files`、`/thumbs`（那两条路由给 img-service）或 `/api` 之下。
+ *    要上传哪些文件见 UNIAPP迁移说明.md §6.1。
+ */
+export const VESSEL_IMAGE_ORIGIN = APP_ENV === 'remote' ? `${REMOTE_ENV.apiOrigin}/vessels` : ''

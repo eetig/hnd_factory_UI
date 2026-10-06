@@ -6,10 +6,11 @@
     "dev:h5": "uni",
     "dev:app": "uni -p app",
     "dev:mp-weixin": "uni -p mp-weixin",
-    "build:h5": "uni build",
-    "build:app": "uni build -p app && node resources/sync-app-icons.mjs build && node resources/check-app-env.mjs",
-    "build:mp-weixin": "uni build -p mp-weixin",
+    "build:h5": "uni build && node resources/strip-vessel-images.mjs",
+    "build:app": "uni build -p app && node resources/sync-app-icons.mjs build && node resources/strip-vessel-images.mjs && node resources/check-app-env.mjs",
+    "build:mp-weixin": "uni build -p mp-weixin && node resources/strip-vessel-images.mjs",
     "sync:app-icons": "node resources/sync-app-icons.mjs",
+    "strip:vessel-images": "node resources/strip-vessel-images.mjs",
     "check:app-env": "node resources/check-app-env.mjs"
   },
   "dependencies": {

@@ -1,39 +1,33 @@
-"""压缩储罐底图，让小程序主包回到 2MB 上限以内；同时产出深色主题用的「亮线版」。
+"""产出容器底图的**浅色/深色两版**，并打印库里的 `image_bounds`。
 
 用法：
     python resources/compress-vessel-images.py
 
-输入：resources/vessel-source/{vessel,vessel-product150}.png（原图，未压缩）
-输出：src/static/{vessel,vessel-product150}.png          白纸版：透明区域合成为白，
-                                                         深色线稿 —— 浅色主题用
-      src/static/{vessel,vessel-product150}-dark.png     亮线版：透明底 + 亮色线稿
-                                                         —— 深色主题用
+输入：resources/vessel-source/*.png（原图）
+输出：src/static/*.png        白纸版：透明区域合成为白、深色线稿 —— 浅色主题用
+      src/static/*-dark.png   亮线版：透明底 + 亮色线稿        —— 深色主题用
 
-## 为什么要压
+## 这个脚本在做什么（与它最初的样子不同了）
 
-小程序主包上限 2MB。压缩前实测：
-    代码（js/wxml/wxss/json）  385 KB
-    static/ 两张底图          1689 KB   ← 630 + 1059
-    合计                      ≈ 2.0 MB   ← 卡在上限上，传不上去
+一开始它叫「压缩底图」：那会儿底图打进小程序主包，2MB 上限卡得死，靠**降采样 1/2 +
+PNG-8 调色板**压下来。**2026-10-06 的 变更-024 把底图移出了小程序包**（改从服务器按 URL 加载），
+压包体这个动机就没了 —— 于是 `FACTOR` 改回 1：**不再降采样，两套前端共用同一份原图**。
 
-## 三个杠杆
+为什么不干脆别降采样、也别归一化坐标：底图分辨率一旦不一致（电脑端原图 / uni-app 压图），
+`image_bounds` 就得做成与分辨率无关的表示（曾用过「按图片宽度归一化」），
+多一层换算就多一个会错的地方。统一成一份图，坐标直接是原图像素坐标，两端通用。
 
-1. **去透明通道**。原图是 RGBA，实测约 90% 像素 alpha=0（完全透明）、8% 不透明、
-   1.5% 是抗锯齿过渡带 —— 也就是黑线稿 + 透明底。
-   白纸版把透明区域合成为白色：底图显示在卡片上，而卡片本身就是白的，
-   渲染结果与原来逐像素一致，却省下一整个 alpha 通道。
+代价要知道：**手机端首次进这个页面要下载的是原图**（四台合计约 1.8 MB，此前是 446 KB）。
+若哪天嫌大，正解是在**服务器侧**放一份降采样版（那就又回到两份分辨率了），
+而不是再改这里的 `FACTOR` —— 那会让两端的坐标对不上。
 
-2. **降采样 1/2**。底图按逻辑宽 1075px 显示（index.vue 的 VESSEL_IMAGE_WIDTH），
-   而整幅图还要再缩放到屏幕尺寸：
-       H5 桌面最宽 680 CSS px → 底图实际显示约 532 CSS px（2× 屏 1064 设备px）
-       手机约 318 CSS px     → 底图实际显示约 248 CSS px（3× 屏 744 设备px）
-   原图 2150 宽是需求的 2~4 倍，纯属浪费。
-   取 1/2 是刻意的：2150 → 1075 正好等于 VESSEL_IMAGE_WIDTH，
-   于是代码里的 s = VESSEL_IMAGE_WIDTH / bounds.width 变成精确的 1.0，
-   映射不再有舍入。
+## 仍然保留的两个杠杆
 
-3. **PNG-8 调色板**。线稿只有黑、白与抗锯齿灰阶，实测 256 色量化后
-   PSNR 53+ dB（45 dB 以上人眼基本分辨不出）。
+1. **去透明通道**。原图是 RGBA（黑线稿 + 透明底）。白纸版把透明区域合成为白色：
+   底图显示在卡片上，而卡片本身就是白的，渲染结果与原来逐像素一致，
+   却省下一整个 alpha 通道。
+2. **PNG-8 调色板**。线稿只有黑、白与抗锯齿灰阶，量化后 PSNR 50+ dB
+   （45 dB 以上人眼基本分辨不出）。
 
 ## 深色主题为什么另存一张图
 
@@ -55,17 +49,18 @@
 存法用 PNG-8 调色板 + tRNS（调色板 256 项全是线色，索引本身就是不透明度），
 比 RGBA 小约 1/3，解码后与逐像素 RGBA 完全一致。
 
-## ⚠️ 改了图就必须同步改代码里的 imageBounds
+## ⚠️ 改了图就必须同步改库里的 image_bounds
 
-index.vue 的 VESSELS 配置里有一组 `imageBounds`，描述**罐体在原图像素坐标系中的位置**。
-图一缩放，这套坐标就得等比缩放，否则液位线会与图纸对不上。
+`equipment_ledger.image_bounds` 描述**罐体在底图里的位置**，前端按它画罐体路径与液面。
+图一换，这套坐标就得跟着改，否则液位线会与图纸错位。
 两张图（白纸版 / 亮线版）尺寸必须一致，否则切主题时液位线会跳 —— 见 compress() 里的校验。
 
-本脚本会按新的图像尺寸重算并打印出 imageBounds，直接替换过去即可。
-如果换了缩放倍数，务必重新跑一遍脚本、重新替换这组数字。
+**坐标就是原图像素坐标**（本表的 `bounds` 本来就是按原图量的，直接贴进库即可）。
+本脚本会把它们打印成一行 JSON。
 """
 
 import io
+import json
 import math
 import os
 
@@ -75,7 +70,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.join(BASE, 'vessel-source')
 OUT_DIR = os.path.join(os.path.dirname(BASE), 'src', 'static')
 
-FACTOR = 2  # 降采样倍数（1/2）
+FACTOR = 1  # 不降采样（2026-10-06 起）
 
 # 亮线版的线色。它不是主题令牌，而是图纸自身的"墨色"：白纸版是原图的深色墨，
 # 亮线版就是这个浅灰蓝（#cbd5e1，在深色卡片 #17171c 上约 12:1 对比度）。
@@ -95,6 +90,32 @@ VESSELS = [
         'orig_size': (1760, 1938),
         # 立式罐：顶部半椭球封头 + 等径筒体（多一个 tangent）
         'bounds': {'width': 1760, 'height': 1938, 'left': 131, 'right': 1351, 'top': 63, 'tangent': 310, 'bottom': 1930},
+    },
+    {
+        'file': 'vessel-reboiler.png',
+        'orig_size': (1616, 820),
+        # 卧式再沸器：椭圆封头 + 圆筒（直边为 0）。与另两张不同，这张底图里
+        # 罐体内部还画着 U 型管束、罐外右侧接着管箱 —— 液面填充裁在 bounds 路径内，
+        # 管束与管箱不会被填色，这是刻意的（管箱不在容器内部，见 vesselVolume.js）。
+        # ⚠️ 原始图纸（1920x1184）右下角有「豆包AI生成」水印，入库前已裁掉：
+        #    裁剪框 (200,174,1816,994)，故本表坐标是**裁剪后**坐标系。
+        'bounds': {'width': 1616, 'height': 820, 'left': 53, 'right': 1377, 'top': 92, 'bottom': 659},
+    },
+    {
+        'file': 'vessel-methanol.png',
+        'orig_size': (708, 1520),
+        # 立式甲醇计量罐：**上下都有封头**（150 产品储罐只有上封头，是平底），
+        # 所以比另两台多一个 tangentBottom（下封头与筒体的切线）。
+        # 底图由厂家图纸加工而来：原始图纸（1312x1664，白底不透明）右下角有
+        # 「豆包AI生成」水印（x 1079~1283 / y 1593~1639），与罐体（x 348~1038 / y 42~1543）
+        # 不重叠，裁剪时自然排除；裁剪框 (338,32,1046,1552) → 708x1520（取偶数便于 1/2 降采样）。
+        # ⚠️ 穹顶被顶部管口（N1/N4/M1）遮住，顶点没法直接量 —— 用对称位置的干净列
+        #    （x=655 与 720 都在 y=116）反解椭圆得到：上切线 250 / 顶点 115，
+        #    下切线 1146 / 顶点 1279。复核方式：画出的长径比 2.095 与实际的 2.082 差 0.65%。
+        'bounds': {
+            'width': 708, 'height': 1520, 'left': 72, 'right': 627.5,
+            'top': 83, 'tangent': 218, 'tangentBottom': 1114, 'bottom': 1247,
+        },
     },
 ]
 
@@ -175,8 +196,10 @@ def compress(entry):
           f'（透明底 + #{DARK_INK[0]:02x}{DARK_INK[1]:02x}{DARK_INK[2]:02x}，'
           f'墨量互补差 {spread} 阶 / 尺寸校验通过）')
 
-    new_bounds = {k: round(v / FACTOR, 4) for k, v in entry['bounds'].items()}
-    return new_bounds, new_kb, dark_kb, quality
+    # 坐标就是**原图像素坐标**（本表的 bounds 本来就是按原图量的）。
+    # 两套前端用同一份原图（2026-10-06 起），所以坐标不必再缩放、也不必归一化 ——
+    # 直接把这组值贴进 equipment_ledger.image_bounds 即可，两端通用。
+    return {k: v for k, v in entry['bounds'].items()}, new_kb, dark_kb, quality
 
 
 def main():
@@ -192,13 +215,13 @@ def main():
 
     print(f'四张合计 {total:.1f} KB（原 1689 KB；深浅两版按主题二选一，不会同时下载）')
 
-    print('\n===== 把下面这组 imageBounds 替换进 index.vue 的 VESSELS =====')
+    print('\n===== 把下面这组 image_bounds 贴进 equipment_ledger 对应行 =====')
+    print('（原图像素坐标 —— 两套前端用同一份原图，直接贴，两端通用）\n')
     for name, bounds, _ in results:
-        pairs = ', '.join(f'{k}: {v}' for k, v in bounds.items())
         print(f'  {name}')
-        print(f'    imageBounds: {{ {pairs} }},')
-    print('\n（数值 = 原值 ÷ %d，因为图等比缩了 %d 倍；不改这组坐标液位线会与图纸错位）'
-          % (FACTOR, FACTOR))
+        print('    ' + json.dumps(bounds, ensure_ascii=False))
+        print()
+    print('注意：改了图就要重跑本脚本并更新库里那组坐标，否则液位线与图纸会错位。')
 
 
 if __name__ == '__main__':
