@@ -58,26 +58,33 @@ dayjs.locale('zh-cn')
 //
 // 周统计（weekly）**不在此列**：它对所有人可见，数据走 /api/stats/weekly 这条
 // 只吐汇总数的公开接口（同样见决策-004），不依赖上面那些明细。
+const TAB_GROUPS = [
+  { key: 'order', label: '工单报工', hint: '工单、领料、入库与核算' },
+  { key: 'stats', label: '数据统计', hint: '周统计与台账记录' },
+  { key: 'tools', label: '工具', hint: '查询与计算' },
+  { key: 'maintain', label: '数据维护', hint: '基础数据与录入' },
+]
+
 const tabs = [
-  { key: 'workOrder', label: '工单汇总', adminOnly: true },
-  { key: 'material', label: '领料汇总', adminOnly: true },
-  { key: 'inbound', label: '入库汇总', adminOnly: true },
-  { key: 'report', label: '工单报工', adminOnly: true },
-  { key: 'costing', label: '工单核算', adminOnly: true },
-  { key: 'materialCosting', label: '原辅料核算', adminOnly: true },
-  { key: 'stock', label: '物料查询' },
-  { key: 'weekly', label: '周统计' },
-  { key: 'daily', label: '日报表记录' },
-  { key: 'tankLevel', label: '月底储罐液位记录' },
-  { key: 'vessel', label: '压力容器体积计算' },
+  { key: 'workOrder', label: '工单汇总', adminOnly: true, group: 'order' },
+  { key: 'material', label: '领料汇总', adminOnly: true, group: 'order' },
+  { key: 'inbound', label: '入库汇总', adminOnly: true, group: 'order' },
+  { key: 'report', label: '工单报工', adminOnly: true, group: 'order' },
+  { key: 'costing', label: '工单核算', adminOnly: true, group: 'order' },
+  { key: 'materialCosting', label: '原辅料核算', adminOnly: true, group: 'order' },
+  { key: 'stock', label: '物料查询', group: 'tools' },
+  { key: 'weekly', label: '周统计', group: 'stats' },
+  { key: 'daily', label: '日报表记录', group: 'stats' },
+  { key: 'tankLevel', label: '月底储罐液位记录', group: 'stats' },
+  { key: 'vessel', label: '压力容器体积计算', group: 'tools' },
   // 设备数据维护（2026-10-06）：台账原先只读、只能改 SQL，这个页签是它的维护入口。
   // 用**权限位**而不是 adminOnly：写接口本来就是「仅 admin + 该权限位」两道，
   // 将来要放开给非 admin 的维护员时只需给角色加权限位，不必动这里的结构。
-  { key: 'equipment', label: '设备数据维护', perm: 'equipment:edit' },
-  { key: 'electricity', label: '电费预提' },
-  { key: 'import', label: '文件导入', perm: 'work_order:import' },
+  { key: 'equipment', label: '设备数据维护', perm: 'equipment:edit', group: 'maintain' },
+  { key: 'electricity', label: '电费预提', group: 'tools' },
+  { key: 'import', label: '文件导入', perm: 'work_order:import', group: 'maintain' },
   // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
-  { key: 'imageParse', label: '图片解析', perm: 'work_order:import' },
+  { key: 'imageParse', label: '图片解析', perm: 'work_order:import', group: 'maintain' },
 ]
 
 // 可见 Tab = 两类过滤的叠加：adminOnly 看角色，其余看权限位
@@ -89,9 +96,9 @@ const visibleTabs = computed(() =>
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
 
-// ===== Tab 条横向滚动 =====
-// 14 个 Tab 一屏放不下：早先是让按钮里的文字自己折行（「工单汇总」变两行），
-// 既难看又让 Tab 条高度不一。现在按钮一律不折行，装不下就横向滚动。
+// ===== 卡片行横向滚动 =====
+// 原来是给 14 个 Tab 的横条用的（一屏放不下）；改成 dashboard 后页签挪进组内，
+// 这一套原样留给「同组页面卡片」—— 工单报工那一组有 6 张卡，窄屏照样会溢出。
 const tabNavRef = ref(null)
 
 /**
@@ -179,6 +186,53 @@ watch(activeTab, async (key) => {
     nav.scrollLeft = right - nav.clientWidth
   }
 })
+
+// ===== 分组（dashboard 侧栏 / 组内卡片）=====
+//
+// ⚠️ 这几个都**必须放在 activeTab 声明之后** —— watch 的第一个参数是立即求值的，
+// 放前面会撞上 TDZ（Cannot access 'activeTab' before initialization）。同上方两处注释的坑。
+
+/**
+ * 当前所在的大类。**由 activeTab 推导，不是独立状态** ——
+ * 这样侧栏高亮、组内卡片与「登录/退出后自动切页」「导入返回跳回工单汇总」这些既有逻辑
+ * 天然一致，不会出现「切了页但侧栏还停在上一个组」这类要额外同步的 bug。
+ */
+const currentGroup = computed(
+  () => tabs.find((tab) => tab.key === activeTab.value)?.group ?? TAB_GROUPS[0].key,
+)
+
+/** 当前组里**可见**的页 —— 组内卡片用它 */
+const groupTabs = computed(() => visibleTabs.value.filter((tab) => tab.group === currentGroup.value))
+
+/**
+ * 侧栏要列的组：**只保留有可见页的**。
+ *
+ * 「工单报工」那 6 页全是 adminOnly —— 匿名/非 admin 时整组都不可见，
+ * 无条件列出来就是一个点了没反应的死按钮（还以为页面卡了）。
+ * 与手机端抽屉同一口径（那边的 visibleGroups）。
+ */
+const sidebarGroups = computed(() =>
+  TAB_GROUPS.map((group) => ({
+    ...group,
+    tabs: visibleTabs.value.filter((tab) => tab.group === group.key),
+  })).filter((group) => group.tabs.length > 0),
+)
+
+/** 当前页标题（主区顶部） */
+const activeTabLabel = computed(
+  () => tabs.find((tab) => tab.key === activeTab.value)?.label ?? '',
+)
+
+/**
+ * 切大类：落到该类第一个**可见**页。
+ *
+ * 不能盲取该类第一个页 —— 非 admin 时前 6 个页不可见（决策-004），
+ * 那样一点「工单报工」就会切到一个看不见的页上，主区一片空白。
+ */
+function selectGroup(key) {
+  const first = visibleTabs.value.find((tab) => tab.group === key)
+  if (first) activeTab.value = first.key
+}
 
 // 工单数据与筛选（与工单报工面板共享同一份数据）
 const {
@@ -1339,71 +1393,112 @@ watch(activeTab, (tab, prevTab) => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-slate-50 px-4 py-8 sm:px-6 lg:px-8">
-    <div class="mx-auto max-w-7xl">
-      <header class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p class="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
-          <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">HND生产助手</h1>
-          <p class="mt-2 text-sm text-slate-500">生产工单与物料数据查询助手</p>
-        </div>
-        <div class="flex items-center gap-3 text-sm text-slate-500">
-          <span>共 <span class="font-semibold text-slate-900">{{ total }}</span> 条工单</span>
-          <span class="text-slate-300">|</span>
-
-          <!-- 未登录即可只读浏览；写入类功能按权限隐藏，登录入口放这里 -->
-          <template v-if="loggedIn">
-            <span>{{ roleName }}</span>
-            <button
-              type="button"
-              class="rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-              @click="handleLogout"
-            >
-              退出
-            </button>
-          </template>
-          <template v-else>
-            <span class="text-slate-400">只读浏览</span>
-            <button
-              type="button"
-              class="rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
-              @click="goLogin"
-            >
-              登录
-            </button>
-          </template>
-        </div>
-      </header>
-
+    <main class="min-h-screen bg-slate-50">
+    <div class="mx-auto flex max-w-[1600px] gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <!--
-        Tab 条横向滚动（14 个 Tab 一屏装不下）。
-        · overflow-x-auto 会让 overflow-y 也算作 auto，`-bottom-px` 的下划线会掉到
-          padding box 外面被裁掉 —— 所以补一个 pb-px 把它兜回来；
-        · 隐藏滚动条：滚动靠滚轮/触控板，一条横杠横在 Tab 下面反而碍眼。
+        左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
+
+        分组只是「怎么看这些页」，**不新增状态** —— 当前组由 activeTab 推导（见 currentGroup），
+        所以「登录/退出后自动切页」「导入返回跳回工单汇总」这些既有逻辑一行都不用动。
+
+        窄屏不隐藏：页签从顶部挪走了，侧栏是**唯一**的页面入口，藏掉就没法切页了。
+        代价是窄窗口下主区被压窄（主区自己会横向滚），比「没有导航」可接受得多。
       -->
-      <nav
-        ref="tabNavRef"
-        class="mb-6 flex gap-8 overflow-x-auto border-b border-slate-200 pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        aria-label="页面切换"
-        @wheel="handleTabWheel"
-      >
-        <button
-          v-for="tab in visibleTabs"
-          :key="tab.key"
-          :data-tab-key="tab.key"
-          type="button"
-          class="relative shrink-0 whitespace-nowrap pb-3 pt-1 text-sm font-medium transition focus:outline-none"
-          :class="activeTab === tab.key ? 'text-sky-600' : 'text-slate-500 hover:text-slate-700'"
-          @click="activeTab = tab.key"
+      <aside class="w-56 shrink-0">
+        <div class="sticky top-6 space-y-4">
+          <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
+            <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
+            <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
+
+            <!-- 未登录即可只读浏览；写入类功能按权限隐藏 -->
+            <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
+              <template v-if="loggedIn">
+                <p class="font-medium text-slate-700">{{ roleName }}</p>
+                <button
+                  type="button"
+                  class="mt-1 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                  @click="handleLogout"
+                >
+                  退出登录
+                </button>
+              </template>
+              <template v-else>
+                <p class="text-slate-400">只读浏览</p>
+                <button
+                  type="button"
+                  class="mt-1 rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+                  @click="goLogin"
+                >
+                  登录
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <nav class="space-y-1 rounded-xl border border-slate-200 bg-white p-2 shadow-sm" aria-label="功能分类">
+            <button
+              v-for="group in sidebarGroups"
+              :key="group.key"
+              type="button"
+              class="w-full rounded-lg px-3 py-2 text-left text-sm transition"
+              :class="
+                currentGroup === group.key
+                  ? 'bg-sky-50 font-medium text-sky-700'
+                  : 'text-slate-600 hover:bg-slate-50'
+              "
+              @click="selectGroup(group.key)"
+            >
+              {{ group.label }}
+              <span class="mt-0.5 block text-xs font-normal text-slate-400">{{ group.hint }}</span>
+            </button>
+          </nav>
+
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+            <p class="text-xs font-medium text-slate-400">设置</p>
+            <p class="mt-1 text-xs text-slate-400">
+              共 <span class="font-semibold text-slate-600">{{ total }}</span> 条工单
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <div class="min-w-0 flex-1">
+
+      <!-- 主区顶部：当前页标题 + **同组页面的卡片**。
+           页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
+           卡片行沿用原来 Tab 条的横向滚动写法（见下方注释），只是把下划线换成了卡片态。 -->
+      <div class="mb-4">
+        <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">{{ activeTabLabel }}</h2>
+        <!--
+          横向滚动：
+          · overflow-x-auto 会让 overflow-y 也算作 auto，补 pb-px 把边兜回来；
+          · 隐藏滚动条：滚动靠滚轮/触控板，一条横杠横在卡片下面反而碍眼。
+        -->
+        <div
+          ref="tabNavRef"
+          class="flex gap-2 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label="页面切换"
+          @wheel="handleTabWheel"
         >
-          {{ tab.label }}
-          <span
-            v-if="activeTab === tab.key"
-            class="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-sky-600"
-            aria-hidden="true"
-          ></span>
-        </button>
-      </nav>
+          <button
+            v-for="tab in groupTabs"
+            :key="tab.key"
+            :data-tab-key="tab.key"
+            type="button"
+            :aria-current="activeTab === tab.key ? 'page' : undefined"
+            class="shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-sm transition focus:outline-none"
+            :class="
+              activeTab === tab.key
+                ? 'border-sky-200 bg-sky-50 font-medium text-sky-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800'
+            "
+            @click="activeTab = tab.key"
+          >
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
 
       <div v-show="activeTab === 'workOrder'">
         <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -2419,6 +2514,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'imageParse'">
         <ImageParse />
+      </div>
       </div>
     </div>
     </main>

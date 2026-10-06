@@ -48,9 +48,28 @@ const PUBLIC_TAB_LABELS = [
   '电费预提',
 ]
 
-/** 取 Tab 条自身的文本：各面板是 v-show 常驻的，整页 text() 会带上隐藏面板里的字 */
-function tabBarText(wrapper) {
-  return wrapper.find('nav[aria-label="页面切换"]').text()
+/**
+ * 遍历四个大类，收集它们各自的页签标签。
+ *
+ * ⚠️ 2026-10-07 起页签不再是一条平铺的横条：侧栏是四个大类，横条只显示**当前组**的页。
+ * 所以要断言「某一页在不在」得逐个大类点进去看（下面 switchToTab 同理）。
+ *
+ * 用 [aria-label] 而不是 nav 选择器：横条现在是 div（不是 nav），只有 aria-label 是稳的。
+ */
+async function allTabLabels(wrapper) {
+  const labels = []
+  const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+  for (const group of groups) {
+    await group.trigger('click')
+    labels.push(...wrapper.findAll('[aria-label="页面切换"] button').map((b) => b.text().trim()))
+  }
+  return labels
+}
+
+/** 当前激活的页（卡片上带 aria-current="page"） */
+function activeTabKey(wrapper) {
+  const active = wrapper.find('[aria-label="页面切换"] button[aria-current="page"]')
+  return active.exists() ? active.attributes('data-tab-key') : null
 }
 
 /**
@@ -86,11 +105,25 @@ function mountPage() {
   })
 }
 
-// Tab 标签可能是 button/span/div，取「文本恰好等于标签名的最深节点」
-function findTabLabel(wrapper, text) {
-  return wrapper
-    .findAll('button, a, span, div')
-    .find((node) => node.element.children.length === 0 && node.text().trim() === text)
+/**
+ * 切到某一页：先找到它在哪个大类下（逐个点大类、看它的卡片里有没有这一页），再点那张卡片。
+ *
+ * ⚠️ 2026-10-07 起不能直接点一个不在当前组里的页签 —— 横条只显示当前组的页。
+ * 这里照用户的操作顺序来，而不是去读组件内部的 tabs 常量（那样测试就成了实现的白盒复述）。
+ */
+async function switchToTab(wrapper, text) {
+  const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+  for (const group of groups) {
+    await group.trigger('click')
+    const card = wrapper
+      .findAll('[aria-label="页面切换"] button')
+      .find((b) => b.text().trim() === text)
+    if (card) {
+      await card.trigger('click')
+      return
+    }
+  }
+  throw new Error(`找不到页签：${text}（四个大类里都没有）`)
 }
 
 describe('WorkOrderList 页面冒烟', () => {
@@ -100,31 +133,43 @@ describe('WorkOrderList 页面冒烟', () => {
     wrapper = mountPage()
   })
 
-  it('能挂载并列出对所有人可见的 Tab（admin 专属的 6 页不出现）', () => {
-    const text = tabBarText(wrapper)
+  it('侧栏按大类分组，只列出**有可见页**的组；遍历各组，admin 专属的 6 页都不出现', async () => {
+    const groupText = wrapper
+      .findAll('nav[aria-label="功能分类"] button')
+      .map((g) => g.text())
+      .join('|')
 
+    // 「工单报工」那 6 页全是 adminOnly、「数据维护」三页都要权限位：
+    // 匿名时这两组整组都不可见 —— 列出来就是点了没反应的死按钮，用户会以为页面卡了
+    expect(groupText).not.toContain('工单报工')
+    expect(groupText).not.toContain('数据维护')
+    for (const name of ['数据统计', '工具']) {
+      expect(groupText).toContain(name)
+    }
+
+    // 页签按大类分开了，不能再只看横条 —— 要逐个大类进去看它的页签
+    const labels = await allTabLabels(wrapper)
     for (const label of PUBLIC_TAB_LABELS) {
-      expect(text).toContain(label)
+      expect(labels).toContain(label)
     }
     for (const label of ADMIN_ONLY_TAB_LABELS) {
-      expect(text).not.toContain(label)
+      expect(labels).not.toContain(label)
     }
   })
 
   it('非 admin 首屏落在可见的第一个 Tab 上，不会停在隐藏面板', () => {
-    // 默认 Tab 是「工单汇总」，非 admin 看不见它 —— 停在上面会是一片空白
-    const active = wrapper.find('nav[aria-label="页面切换"] button.text-sky-600')
-    expect(active.exists()).toBe(true)
-    expect(active.text().trim()).toBe('物料查询')
+    // 默认 Tab 是「工单汇总」，非 admin 看不见它 —— 停在上面会是一片空白。
+    // 现在用 aria-current 取激活项（横条从下划线改成了卡片态，类名不再是稳定的断言点）
+    expect(activeTabKey(wrapper)).toBe('stock')
   })
 
   it('admin 登录后 6 张台账 Tab 才出现', async () => {
     authState.roleKey = 'admin'
     await nextTick()
 
-    const text = tabBarText(wrapper)
+    const labels = await allTabLabels(wrapper)
     for (const label of ADMIN_ONLY_TAB_LABELS) {
-      expect(text).toContain(label)
+      expect(labels).toContain(label)
     }
 
     // 复位：authState 是模块级单例，不还原会污染同文件里后面的用例
@@ -177,9 +222,7 @@ describe('WorkOrderList 页面冒烟', () => {
       }),
     )
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    expect(tab).toBeTruthy()
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
 
     expect(request.get).toHaveBeenCalledWith('/api/tank-level/list', expect.any(Object))
@@ -226,8 +269,7 @@ describe('WorkOrderList 页面冒烟', () => {
       }),
     )
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
 
     const panel = wrapper.findComponent(TankLevelPanel)
@@ -248,8 +290,7 @@ describe('WorkOrderList 页面冒烟', () => {
       }),
     )
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
     expect(wrapper.findComponent(TankLevelPanel).text()).not.toContain('新增一行')
 
@@ -284,8 +325,7 @@ describe('WorkOrderList 页面冒烟', () => {
       }),
     )
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
 
     // tankLevelLoaded 是模块级单例、跨用例共享：本文件靠前的用例已经加载过，
@@ -316,8 +356,7 @@ describe('WorkOrderList 页面冒烟', () => {
     authState.permissions = ['tank_level:edit', 'tank_level:delete']
     await nextTick()
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
     // tankLevelLoaded 是模块级单例，前面的用例已经加载过，这里显式重拉
     const searchButton = wrapper.findAll('button').find((node) => node.text().trim() === '查询')
@@ -361,8 +400,7 @@ describe('WorkOrderList 页面冒烟', () => {
     authState.permissions = ['tank_level:edit', 'tank_level:delete']
     await nextTick()
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
 
     const panel = wrapper.findComponent(TankLevelPanel)
@@ -415,8 +453,7 @@ describe('WorkOrderList 页面冒烟', () => {
     authState.permissions = ['tank_level:edit']
     await nextTick()
 
-    const tab = findTabLabel(wrapper, '月底储罐液位记录')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '月底储罐液位记录')
     await flushPromises()
 
     const panel = wrapper.findComponent(TankLevelPanel)
@@ -450,9 +487,7 @@ describe('WorkOrderList 页面冒烟', () => {
     const reportPanel = wrapper.findAllComponents(StatsTable)[0].element.parentElement
     expect(reportPanel.style.display).toBe('none')
 
-    const tab = findTabLabel(wrapper, '工单报工')
-    expect(tab).toBeTruthy()
-    await tab.trigger('click')
+    await switchToTab(wrapper, '工单报工')
 
     expect(reportPanel.style.display).toBe('')
 
@@ -477,8 +512,7 @@ describe('WorkOrderList 页面冒烟', () => {
       }),
     )
 
-    const tab = findTabLabel(wrapper, '周统计')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '周统计')
     await flushPromises()
 
     // 物料编码由前端传，后端不硬编码业务常量
@@ -503,16 +537,15 @@ describe('WorkOrderList 页面冒烟', () => {
         : Promise.resolve({ data: { success: true, dataList: [], data: [] } }),
     )
 
-    const tab = findTabLabel(wrapper, '周统计')
-    await tab.trigger('click')
+    await switchToTab(wrapper, '周统计')
     await flushPromises()
 
     expect(wrapper.text()).toContain('暂时无法获取周统计数据')
     expect(wrapper.text()).toContain('统计失败')
   })
 
-  it('Tab 条：装不下时横向滚动，滚轮可左右滑动，滚到头放行给页面', () => {
-    const nav = wrapper.find('nav[aria-label="页面切换"]')
+  it('页签卡片行：装不下时横向滚动，滚轮可左右滑动，滚到头放行给页面', () => {
+    const nav = wrapper.find('[aria-label="页面切换"]')
     expect(nav.exists()).toBe(true)
     // 按钮不许折行（这就是「工单汇总」被压成两行的原因），装不下靠滚动解决
     expect(nav.classes()).toContain('overflow-x-auto')
@@ -531,15 +564,15 @@ describe('WorkOrderList 页面冒烟', () => {
     expect(el.scrollLeft).toBe(300)
     expect(inner.defaultPrevented).toBe(true)
 
-    // 已经滚到最右：不拦截，页面还能继续往下滚（否则指针停在 Tab 条上整页都动不了）
+    // 已经滚到最右：不拦截，页面还能继续往下滚（否则指针停在卡片行上整页都动不了）
     el.scrollLeft = 800
     const atEnd = new WheelEvent('wheel', { deltaY: 100, cancelable: true })
     el.dispatchEvent(atEnd)
     expect(atEnd.defaultPrevented).toBe(false)
   })
 
-  it('Tab 条：本来就装得下时不拦截滚轮', () => {
-    const el = wrapper.find('nav[aria-label="页面切换"]').element
+  it('页签卡片行：本来就装得下时不拦截滚轮', () => {
+    const el = wrapper.find('[aria-label="页面切换"]').element
     Object.defineProperty(el, 'scrollWidth', { value: 300, configurable: true })
     Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true })
 
