@@ -189,6 +189,7 @@ async function handleDrawingPicked(event) {
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-xs text-slate-500">
           <tr>
+            <th class="px-4 py-2 text-right font-medium">序号</th>
             <th class="px-4 py-2 text-left font-medium">位号</th>
             <th class="px-4 py-2 text-left font-medium">名称</th>
             <th class="px-4 py-2 text-left font-medium">昵称</th>
@@ -207,12 +208,17 @@ async function handleDrawingPicked(event) {
         </thead>
         <tbody>
           <tr
-            v-for="row in paged"
+            v-for="(row, index) in paged"
             :key="row.id"
             class="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
             :class="{ 'text-slate-400': row.enabled !== 1 }"
             @click="openEdit(row)"
           >
+            <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
+                 一翻页就重新数会串 -->
+            <td class="px-4 py-2 text-right text-xs text-slate-400">
+              {{ (currentPage - 1) * pageSize + index + 1 }}
+            </td>
             <td class="px-4 py-2">{{ row.equipmentCode || '—' }}</td>
             <td class="px-4 py-2 font-medium">{{ row.equipmentName }}</td>
             <td class="px-4 py-2">{{ row.nickname || '—' }}</td>
@@ -241,7 +247,7 @@ async function handleDrawingPicked(event) {
             </td>
           </tr>
           <tr v-if="!filtered.length">
-            <td colspan="14" class="px-4 py-10 text-center text-sm text-slate-400">
+            <td colspan="15" class="px-4 py-10 text-center text-sm text-slate-400">
               {{ loading ? '正在加载…' : '没有符合条件的设备' }}
             </td>
           </tr>
