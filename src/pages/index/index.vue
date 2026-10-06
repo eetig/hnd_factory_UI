@@ -84,33 +84,51 @@ const { isLight, themeClass, wotTheme, themeVars } = useTheme()
 //
 // 周统计（weekly）**不在此列**：它对所有人可见，数据走 /api/stats/weekly 这条
 // 只吐汇总数的公开接口（同样见决策-004），不依赖上面那些明细。
+// 顶部导航的四个大类（使用方 2026-10-07 定）。**顺序即抽屉里的分组顺序**，与电脑端一致。
+// 分组只是「怎么看这些页」，不新增状态：当前组由 activeTab 推导（见 currentGroup）。
+const TAB_GROUPS = [
+  { key: 'order', label: '工单报工' },
+  { key: 'stats', label: '数据统计' },
+  { key: 'tools', label: '工具' },
+  { key: 'maintain', label: '数据维护' },
+]
+
 const tabs = [
-  { key: 'workOrder', label: '工单汇总', icon: 'list', hint: '查看当前所有生产工单及处理状态', adminOnly: true },
-  { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录', adminOnly: true },
-  { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录', adminOnly: true },
-  { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量', adminOnly: true },
-  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果', adminOnly: true },
-  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算', adminOnly: true },
-  { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存' },
+  { key: 'workOrder', label: '工单汇总', icon: 'list', hint: '查看当前所有生产工单及处理状态', adminOnly: true, group: 'order' },
+  { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录', adminOnly: true, group: 'order' },
+  { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录', adminOnly: true, group: 'order' },
+  { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量', adminOnly: true, group: 'order' },
+  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果', adminOnly: true, group: 'order' },
+  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算', adminOnly: true, group: 'order' },
+  { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存', group: 'tools' },
   // 图片解析：单据图片识别辅助录入（变更-003）。权限位与文件导入相同（work_order:import）
-  { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import' },
-  { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总' },
-  { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录' },
+  { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import', group: 'maintain' },
+  { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总', group: 'stats' },
+  { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录', group: 'stats' },
   // 月底储罐液位记录：查询免登录（不带 perm），录入/删除按钮按 tank_level:edit 权限显隐
-  { key: 'tankLevel', label: '月底储罐液位记录', icon: 'chart', hint: '按日期 / 属地查看车间储罐液位' },
-  { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算' },
+  { key: 'tankLevel', label: '月底储罐液位记录', icon: 'chart', hint: '按日期 / 属地查看车间储罐液位', group: 'stats' },
+  { key: 'vessel', label: '压力容器体积计算', icon: 'chart-bubble', hint: '卧式 / 立式储罐液位体积换算', group: 'tools' },
   // 设备数据维护（2026-10-06）：台账原先只读、只能改 SQL。用**权限位**而不是 adminOnly ——
   // 写接口本来就是「仅 admin + 该权限位」两道，将来放开给非 admin 的维护员时不必动这里。
-  { key: 'equipment', label: '设备数据维护', icon: 'edit', hint: '逐个设备核对台账 / 几何 / 底图', perm: 'equipment:edit' },
-  { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算' },
+  { key: 'equipment', label: '设备数据维护', icon: 'edit', hint: '逐个设备核对台账 / 几何 / 底图', perm: 'equipment:edit', group: 'maintain' },
+  { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算', group: 'tools' },
   // #ifdef H5 || APP-PLUS
-  { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import' },
+  { key: 'import', label: '文件导入', icon: 'file-excel', hint: '上传 Excel 批量导入工单', perm: 'work_order:import', group: 'maintain' },
   // #endif
 ]
 
 // 可见 Tab = 两类过滤的叠加：adminOnly 看角色，其余看权限位
 const visibleTabs = computed(() =>
   tabs.filter((tab) => (tab.adminOnly ? isAdmin() : hasPerm(tab.perm))),
+)
+
+// 抽屉里按大类分组渲染。**只保留有可见页的组** —— 小程序端没有「文件导入」，
+// 数据维护那组只剩两项；将来再少一项时也不该留一个空标题在那里。
+const visibleGroups = computed(() =>
+  TAB_GROUPS.map((group) => ({
+    ...group,
+    tabs: visibleTabs.value.filter((tab) => tab.group === group.key),
+  })).filter((group) => group.tabs.length > 0),
 )
 
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
@@ -3835,25 +3853,29 @@ watch(activeTab, (tab, prevTab) => {
             </view>
           </view>
 
-          <text class="drawer__group">全部功能</text>
-
+          <!-- 按大类分组（2026-10-07）：分组标题放进 scroll-view 里，跟列表一起滚。
+               只渲染**有可见页**的组 —— 小程序端没有「文件导入」，数据维护那组只剩两项，
+               但也不该留一个空标题。 -->
           <scroll-view class="drawer__list" scroll-y>
-            <view
-              v-for="tab in visibleTabs"
-              :key="tab.key"
-              class="menu-item"
-              :class="{ 'is-active': activeTab === tab.key }"
-              @click="selectTabFromMenu(tab.key)"
-            >
-              <view class="menu-item__icon">
-                <wd-icon :name="tab.icon" size="18px" />
+            <template v-for="group in visibleGroups" :key="group.key">
+              <text class="drawer__group">{{ group.label }}</text>
+              <view
+                v-for="tab in group.tabs"
+                :key="tab.key"
+                class="menu-item"
+                :class="{ 'is-active': activeTab === tab.key }"
+                @click="selectTabFromMenu(tab.key)"
+              >
+                <view class="menu-item__icon">
+                  <wd-icon :name="tab.icon" size="18px" />
+                </view>
+                <view class="menu-item__text">
+                  <text class="menu-item__label">{{ tab.label }}</text>
+                  <text class="menu-item__hint">{{ tab.hint }}</text>
+                </view>
+                <wd-icon v-if="activeTab === tab.key" name="check" size="16px" />
               </view>
-              <view class="menu-item__text">
-                <text class="menu-item__label">{{ tab.label }}</text>
-                <text class="menu-item__hint">{{ tab.hint }}</text>
-              </view>
-              <wd-icon v-if="activeTab === tab.key" name="check" size="16px" />
-            </view>
+            </template>
           </scroll-view>
 
           <view class="drawer__foot">
