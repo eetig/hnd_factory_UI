@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useToast } from 'wot-design-uni'
 import { hasPerm } from '../api/auth'
 import { resolveAssetUrl } from '../api/config'
@@ -33,6 +33,25 @@ const filtered = computed(() => {
 })
 
 const canEdit = computed(() => hasPerm('equipment:edit'))
+
+/**
+ * 一次只渲染 20 张卡片，底部「显示更多」再放。
+ *
+ * 手机端不用分页器（那是桌面表格的形态，小屏上点页码很难受），
+ * 但也不能一次把 92 张铺出来 —— 每张卡片都带一张底图缩略图，一次性渲染会明显卡顿。
+ */
+const visibleCount = ref(20)
+const visible = computed(() => filtered.value.slice(0, visibleCount.value))
+const hasMore = computed(() => filtered.value.length > visibleCount.value)
+
+function showMore() {
+  visibleCount.value += 20
+}
+
+// 筛选条件一变就收回到 20 张，否则刚筛完还停在几百张的状态
+watch([keyword, onlyEnabled], () => {
+  visibleCount.value = 20
+})
 
 onMounted(async () => {
   try {
@@ -96,7 +115,7 @@ function thumbOf(row) {
     <view v-else-if="!filtered.length" class="eq-page__empty">没有符合条件的设备</view>
 
     <view
-      v-for="row in filtered"
+      v-for="row in visible"
       :key="row.id"
       class="eq-card"
       :class="{ 'is-off': row.enabled !== 1 }"
@@ -125,6 +144,10 @@ function thumbOf(row) {
       <view v-if="canEdit" class="eq-card__side" @click.stop="toggleEnabled(row)">
         <text>{{ row.enabled === 1 ? '停用' : '启用' }}</text>
       </view>
+    </view>
+
+    <view v-if="hasMore" class="eq-page__more" @click="showMore">
+      <text>显示更多（还有 {{ filtered.length - visibleCount }} 条）</text>
     </view>
 
     <EquipmentFormDialog v-model="dialogOpen" :record="current" @saved="onSaved" />
@@ -192,6 +215,16 @@ function thumbOf(row) {
   font-size: 26rpx;
   color: #b0b4bd;
   text-align: center;
+}
+
+.eq-page__more {
+  margin: 20rpx 24rpx 0;
+  padding: 22rpx 0;
+  font-size: 26rpx;
+  color: #2b6cb0;
+  text-align: center;
+  border: 1rpx dashed var(--ui-border, #e5e6eb);
+  border-radius: 16rpx;
 }
 
 .eq-card {
