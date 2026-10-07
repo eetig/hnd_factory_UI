@@ -2233,6 +2233,7 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'daily'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <PanelState
+              type="pending"
               title="日报表记录"
               description="功能建设中，敬请期待"
             />
@@ -2533,6 +2534,7 @@ watch(activeTab, (tab, prevTab) => {
           </div>
 
           <PanelState
+              type="pending"
               title="电费预提"
               description="功能建设中，敬请期待"
             />
