@@ -50,6 +50,7 @@ function handleSelect(item) {
     <el-input
       v-model="keyword"
       :placeholder="`输入关键词搜索${label}`"
+      :aria-label="`搜索${label}`"
       clearable
       autofocus
     />

@@ -1537,20 +1537,24 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'workOrder'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
             <el-date-picker
               v-model="startDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="起始日期"
+              placeholder="选择日期"
+              aria-label="起始日期"
               :first-day-of-week="1"
               @change="filterWorkOrders"
             />
-            <span class="text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
             <el-date-picker
               v-model="endDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="结束日期"
+              placeholder="选择日期"
+              aria-label="结束日期"
               :first-day-of-week="1"
               @change="filterWorkOrders"
             />
@@ -1693,20 +1697,24 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'material'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
             <el-date-picker
               v-model="pickStartDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="起始日期"
+              placeholder="选择日期"
+              aria-label="起始日期"
               :first-day-of-week="1"
               @change="filterPickRecords"
             />
-            <span class="text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
             <el-date-picker
               v-model="pickEndDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="结束日期"
+              placeholder="选择日期"
+              aria-label="结束日期"
               :first-day-of-week="1"
               @change="filterPickRecords"
             />
@@ -1853,20 +1861,24 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'inbound'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
             <el-date-picker
               v-model="inboundStartDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="起始日期"
+              placeholder="选择日期"
+              aria-label="起始日期"
               :first-day-of-week="1"
               @change="filterInboundRecords"
             />
-            <span class="text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
             <el-date-picker
               v-model="inboundEndDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="结束日期"
+              placeholder="选择日期"
+              aria-label="结束日期"
               :first-day-of-week="1"
               @change="filterInboundRecords"
             />
@@ -2043,6 +2055,7 @@ watch(activeTab, (tab, prevTab) => {
             <el-input
               v-model="stockKeyword"
               placeholder="物料编码 / 物料名称 / 规格"
+              aria-label="搜索物料"
               clearable
               class="w-72"
               @input="applyStockFilter"
@@ -2142,19 +2155,23 @@ watch(activeTab, (tab, prevTab) => {
       <div v-show="activeTab === 'weekly'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
             <el-date-picker
               v-model="weeklyStartDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="起始日期"
+              placeholder="选择日期"
+              aria-label="起始日期"
               :first-day-of-week="1"
             />
-            <span class="text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-sm text-slate-500">至</span>
+            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
             <el-date-picker
               v-model="weeklyEndDate"
               type="date"
               value-format="YYYY-MM-DD"
-              placeholder="结束日期"
+              placeholder="选择日期"
+              aria-label="结束日期"
               :first-day-of-week="1"
             />
           </div>

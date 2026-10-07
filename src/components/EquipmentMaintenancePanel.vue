@@ -174,7 +174,13 @@ async function handleDrawingPicked(event) {
         逐个设备对着图纸核对参数：{{ filtered.length }} / {{ rows.length }} 条
       </p>
       <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-        <el-input v-model="keyword" placeholder="位号 / 名称 / 昵称 / 规格 / 车间" clearable class="w-64" />
+        <el-input
+          v-model="keyword"
+          placeholder="位号 / 名称 / 昵称 / 规格 / 车间"
+          aria-label="搜索设备"
+          clearable
+          class="w-64"
+        />
         <el-checkbox v-model="onlyEnabled" label="只看启用的" />
         <el-button @click="refresh">刷新</el-button>
         <el-button type="primary" @click="openCreate">新增设备</el-button>

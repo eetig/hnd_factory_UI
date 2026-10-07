@@ -305,27 +305,32 @@ function handleThumbError(event, image) {
 
     <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
     <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+      <span class="shrink-0 text-xs text-slate-500">起始日期</span>
       <el-date-picker
         v-model="tankLevelStartDate"
         type="date"
         value-format="YYYY-MM-DD"
-        placeholder="起始日期"
+        placeholder="选择日期"
+        aria-label="起始日期"
         :first-day-of-week="1"
         @change="fetchTankLevelRecords"
       />
-      <span class="text-sm text-slate-500">至</span>
+      <span class="shrink-0 text-sm text-slate-500">至</span>
+      <span class="shrink-0 text-xs text-slate-500">结束日期</span>
       <el-date-picker
         v-model="tankLevelEndDate"
         type="date"
         value-format="YYYY-MM-DD"
-        placeholder="结束日期"
+        placeholder="选择日期"
+        aria-label="结束日期"
         :first-day-of-week="1"
         @change="fetchTankLevelRecords"
       />
+      <span class="shrink-0 text-xs text-slate-500">属地</span>
       <el-select
         v-model="tankLevelLocation"
         style="width: 9.5rem"
-        placeholder="属地"
+        placeholder="全部"
         clearable
         aria-label="属地"
         @change="fetchTankLevelRecords"
@@ -337,12 +342,13 @@ function handleThumbError(event, image) {
           :value="location"
         />
       </el-select>
+      <span class="shrink-0 text-xs text-slate-500">所属</span>
       <el-select
         v-model="tankLevelCategory"
         style="width: 9.5rem"
-        placeholder="所属(产品/原料)"
+        placeholder="全部"
         clearable
-        aria-label="所属"
+        aria-label="所属（产品 / 原料）"
         @change="fetchTankLevelRecords"
       >
         <el-option
@@ -356,6 +362,7 @@ function handleThumbError(event, image) {
         v-model="tankLevelKeyword"
         style="width: 13rem"
         placeholder="物料 / 容器名称 / 容器编号"
+        aria-label="搜索物料或容器"
         clearable
         @keyup.enter="fetchTankLevelRecords"
         @clear="fetchTankLevelRecords"
