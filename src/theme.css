@@ -31,13 +31,40 @@
   --el-color-primary-dark-2: #026a9f;
 
   /* ===== 大圆角（EP 2.14.5 默认：base 4px / small 2px / round 20px）===== */
-  /* 控件：输入框、按钮、下拉、日期选择器 */
+  /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */
   --el-border-radius-base: 12px;
   /* EP 的 round 默认只有 20px，不是真胶囊 */
   --el-border-radius-round: 9999px;
+
   /*
-   * 对话框默认是 var(--el-border-radius-base)，跟着变成 12px。
-   * 但弹窗属于「卡片」不是「控件」，按使用方定的 20px 单独给。
+   * ⚠️ 下面这几个**不能写在 :root 上** —— 它们由 Element Plus 声明在**组件自己的类**上
+   *    （`.el-pagination` / `.el-popover` / `.el-message-box` / `.el-dialog`），
+   *    元素自身的声明比从 :root 继承来的更近，写在 :root 是**静默失效**的。
+   *    第一版就是这么写的，量出来分页按钮还是 2px 才发现；同一次错误里，
+   *    对话框其实也停在 12px 而不是我声称的 20px。
+   *
+   *    原则：**量渲染结果，别量变量** —— 变量的值对不代表用它的组件拿到了。
+   *
+   *    （`--el-border-radius-base` 与 `-small` 是真在 :root 上的，不用管。）
    */
-  --el-dialog-border-radius: 20px;
+  --el-border-radius-small: 6px; /* 勾选框：跟着大圆角走，但不能圆到看不出是方框 */
+}
+
+/*
+ * 下面几条放在 :root 之外，选择器与 EP 同为单类权重，
+ * 靠「theme.css 排在 element-plus/dist/index.css 之后」取胜。
+ * 默认值分别是 2px / 4px / 4px / 继承 base，都是不跟随 base 的独立变量，
+ * 漏掉就会出现「卡片 20px、旁边一个 4px 直角」，且踩中的全是高频组件。
+ */
+.el-pagination {
+  --el-pagination-border-radius: 12px; /* 默认 2px，比 base 还尖 */
+}
+.el-popover {
+  --el-popover-border-radius: 12px; /* el-select / el-date-picker / el-autocomplete 的浮层面板 */
+}
+.el-message-box {
+  --el-messagebox-border-radius: 20px; /* ElMessageBox 确认框；与对话框同级：属于「卡片」 */
+}
+.el-dialog {
+  --el-dialog-border-radius: 20px; /* 默认继承 base(12px)，但弹窗是「卡片」不是「控件」 */
 }
