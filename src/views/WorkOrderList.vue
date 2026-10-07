@@ -1478,7 +1478,7 @@ watch(activeTab, (tab, prevTab) => {
               </button>
             </template>
             <template v-else>
-              <p class="text-slate-400">只读浏览</p>
+              <p class="text-slate-500">只读浏览</p>
               <button
                 type="button"
                 class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98]"
@@ -1627,7 +1627,7 @@ watch(activeTab, (tab, prevTab) => {
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-if="tableData.length === 0">
-                  <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+                  <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-500">
                     没有符合筛选条件的工单
                   </td>
                 </tr>
@@ -1778,7 +1778,7 @@ watch(activeTab, (tab, prevTab) => {
                       <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                         <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
                           @click="openPickImageDialog(record)"
                         >
@@ -1938,7 +1938,7 @@ watch(activeTab, (tab, prevTab) => {
                       <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                         <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
                           @click="openInboundImageDialog(record)"
                         >
@@ -2113,7 +2113,7 @@ watch(activeTab, (tab, prevTab) => {
                       <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.unit) }}</td>
                       <td
                         class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold"
-                        :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-400'"
+                        :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-500'"
                       >
                         {{ displayText(formatStockQty(record.stockQty)) }}
                       </td>
@@ -2208,7 +2208,7 @@ watch(activeTab, (tab, prevTab) => {
                           type="text"
                           placeholder="/"
                           aria-label="车间剩余"
-                          class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                          class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
                         />
                       </td>
                       <td class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
@@ -2281,10 +2281,10 @@ watch(activeTab, (tab, prevTab) => {
               </p>
               <!-- 录入对账：几何与台账的封头容积对不上时单独一行红字（不阻断计算 ——
                    页面算的是按几何来的，台账那列只用于核对） -->
-              <p v-if="vesselReconcileWarning" class="mt-1 text-xs font-medium text-red-600">
+              <p v-if="vesselReconcileWarning" class="mt-1 text-xs font-medium text-rose-600">
                 {{ vesselReconcileWarning }}
               </p>
-              <p v-if="vesselBundleWarning" class="mt-1 text-xs font-medium text-red-600">
+              <p v-if="vesselBundleWarning" class="mt-1 text-xs font-medium text-rose-600">
                 {{ vesselBundleWarning }}
               </p>
             </div>
@@ -2390,7 +2390,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-500">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
                   </div>
                 </div>
               </div>
@@ -2443,7 +2443,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-500">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
                   </div>
                 </div>
               </div>
@@ -2454,18 +2454,18 @@ watch(activeTab, (tab, prevTab) => {
 
           <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
             <div class="mx-auto max-w-[900px] overflow-x-auto">
-              <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-400">
+              <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
                 液体体积计算公式
               </p>
 
               <div v-if="vesselGeometry.type === 'vertical'" class="math-formula text-center text-slate-700">
                 <div>
                   <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
-                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
-                  <span class="mx-7 text-slate-300">｜</span>
+                  <span class="ml-2 text-xs text-slate-500">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
+                  <span class="mx-7 text-slate-500" aria-hidden="true">｜</span>
                   <i>V</i>(<i>h</i>) = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
                   <span class="frac"><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span> ]
-                  <span class="ml-2 text-xs text-slate-400">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
+                  <span class="ml-2 text-xs text-slate-500">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
                 </div>
               </div>
 
@@ -2483,12 +2483,12 @@ watch(activeTab, (tab, prevTab) => {
 
               <p v-if="vesselGeometry.type === 'vertical'" class="mt-3 text-center text-xs leading-relaxed text-slate-500">
                 <i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>H</i> 筒体高度　<i>h</i><sub>i</sub> 封头曲面内高度
-                <span class="text-slate-400">｜</span>
+                <span class="text-slate-500">｜</span>
                 {{ vesselFormulaCaption }}
               </p>
               <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
                 <i>L</i> 筒体长度（含两端直边）　<i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>h</i><sub>i</sub> 封头曲面内高度
-                <span class="text-slate-400">｜</span>
+                <span class="text-slate-500">｜</span>
                 {{ vesselFormulaCaption }}
               </p>
             </div>

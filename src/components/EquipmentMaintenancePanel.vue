@@ -211,12 +211,12 @@ async function handleDrawingPicked(event) {
             v-for="(row, index) in paged"
             :key="row.id"
             class="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
-            :class="{ 'text-slate-400': row.enabled !== 1 }"
+            :class="{ 'text-slate-500': row.enabled !== 1 }"
             @click="openEdit(row)"
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
                  一翻页就重新数会串 -->
-            <td class="px-4 py-2.5 text-right text-xs text-slate-400">
+            <td class="px-4 py-2.5 text-right text-xs text-slate-500">
               {{ (currentPage - 1) * pageSize + index + 1 }}
             </td>
             <td class="px-4 py-2.5">{{ row.equipmentCode || '—' }}</td>
@@ -237,7 +237,7 @@ async function handleDrawingPicked(event) {
                 alt=""
                 class="h-8 w-8 rounded-xl border border-slate-200 object-contain"
               />
-              <span v-else class="text-xs text-slate-400">未配</span>
+              <span v-else class="text-xs text-slate-500">未配</span>
             </td>
             <td class="px-4 py-2.5 text-xs">{{ row.enabled === 1 ? '启用' : '已停用' }}</td>
             <td class="px-4 py-2.5 text-right">
@@ -247,7 +247,7 @@ async function handleDrawingPicked(event) {
             </td>
           </tr>
           <tr v-if="!filtered.length">
-            <td colspan="15" class="px-4 py-10 text-center text-sm text-slate-400">
+            <td colspan="15" class="px-4 py-10 text-center text-sm text-slate-500">
               {{ loading ? '正在加载…' : '没有符合条件的设备' }}
             </td>
           </tr>
@@ -304,7 +304,7 @@ async function handleDrawingPicked(event) {
         <div>
           <p class="mb-2 text-xs font-medium text-slate-500">
             几何参数
-            <span class="font-normal text-slate-400">
+            <span class="font-normal text-slate-500">
               ｜筒体长度不含两端直边；下封头留空表示平底
             </span>
           </p>
@@ -332,7 +332,7 @@ async function handleDrawingPicked(event) {
               <el-button v-if="draft.imageFile" size="small" @click="draft.imageFile = ''">
                 清除
               </el-button>
-              <p class="mt-1 text-slate-400">上传后自动生成深色主题用的亮线版</p>
+              <p class="mt-1 text-slate-500">上传后自动生成深色主题用的亮线版</p>
             </div>
           </div>
           <input
@@ -344,7 +344,7 @@ async function handleDrawingPicked(event) {
           />
         </div>
 
-        <p v-if="message" class="text-xs text-red-600">{{ message }}</p>
+        <p v-if="message" class="text-xs text-rose-600">{{ message }}</p>
       </div>
 
       <template #footer>

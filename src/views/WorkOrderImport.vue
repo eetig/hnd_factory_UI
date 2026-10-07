@@ -426,7 +426,7 @@ function handleBackToList() {
 
         <p class="text-sm text-slate-500">
           {{ currentFile?.name }}
-          <span v-if="currentFile?.size" class="text-slate-400">
+          <span v-if="currentFile?.size" class="text-slate-500">
             （{{ formatFileSize(currentFile.size) }}）
           </span>
         </p>
@@ -447,7 +447,7 @@ function handleBackToList() {
         <p class="text-base font-medium text-slate-700">
           将 Excel 文件拖到此处，或 <span class="text-sky-600">点击选择文件</span>
         </p>
-        <p class="text-xs text-slate-400">仅支持 .xlsx / .xls 格式</p>
+        <p class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->

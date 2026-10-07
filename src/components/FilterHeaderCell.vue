@@ -35,7 +35,7 @@ const emit = defineEmits(['open', 'clear'])
     <button
       v-if="selected"
       type="button"
-      class="rounded-xl px-1 text-slate-400 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+      class="rounded-xl px-1 text-slate-500 transition hover:text-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
       :aria-label="`清除${hint || label}筛选`"
       @click="emit('clear')"
     >

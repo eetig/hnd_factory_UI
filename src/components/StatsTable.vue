@@ -72,7 +72,7 @@ function getRowKey(item, index) {
         </thead>
         <tbody class="divide-y divide-slate-100 bg-white">
           <tr v-if="rows.length === 0">
-            <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-400">
+            <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-500">
               {{ emptyText }}
             </td>
           </tr>

@@ -499,7 +499,7 @@ function removeRow(image, row) {
 function inputClass(col) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
 }
@@ -647,7 +647,7 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-2">
         <div
           class="mb-1 flex h-12 w-12 items-center justify-center rounded-full"
-          :class="isFull ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-600'"
+          :class="isFull ? 'bg-slate-100 text-slate-500' : 'bg-sky-50 text-sky-600'"
         >
           <svg
             class="h-6 w-6"
@@ -665,10 +665,10 @@ onUnmounted(() => {
           </svg>
         </div>
 
-        <p class="text-base font-semibold" :class="isFull ? 'text-slate-400' : 'text-slate-900'">
+        <p class="text-base font-semibold" :class="isFull ? 'text-slate-500' : 'text-slate-900'">
           {{ isFull ? `已达上限（${MAX_COUNT} 张）` : '点击选择图片，或将图片拖到此处' }}
         </p>
-        <p class="text-sm" :class="isFull ? 'text-slate-400' : 'text-slate-500'">
+        <p class="text-sm" :class="isFull ? 'text-slate-500' : 'text-slate-600'">
           支持 PNG / JPG，单张不超过 {{ MAX_SIZE / 1024 / 1024 }}MB，最多 {{ MAX_COUNT }} 张
         </p>
       </div>
@@ -713,7 +713,7 @@ onUnmounted(() => {
 
           <div class="border-t border-slate-100 px-2.5 py-2.5">
             <p class="truncate text-xs text-slate-600" :title="image.name">{{ image.name }}</p>
-            <p class="text-xs text-slate-400">{{ formatFileSize(image.size) }}</p>
+            <p class="text-xs text-slate-500">{{ formatFileSize(image.size) }}</p>
           </div>
 
           <button
@@ -854,7 +854,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-sky-50 hover:text-sky-600"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
                         >
@@ -879,7 +879,7 @@ onUnmounted(() => {
                       <span
                         v-else-if="col.key === 'materialCode'"
                         class="block px-1.5 py-1 text-sm"
-                        :class="row.materialCode ? 'text-slate-900' : 'text-slate-300'"
+                        :class="row.materialCode ? 'text-slate-900' : 'text-slate-500'"
                       >
                         {{ row.materialCode || '—' }}
                       </span>
@@ -888,7 +888,7 @@ onUnmounted(() => {
                       <div v-else-if="col.key === 'actions'" class="flex justify-center">
                         <button
                           type="button"
-                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
                           title="删除该行"
                           @click="removeRow(image, row)"
                         >
@@ -944,12 +944,12 @@ onUnmounted(() => {
                   </svg>
                   增加一行
                 </button>
-                <p class="text-xs text-slate-400">
+                <p class="text-xs text-slate-500">
                   对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
                 </p>
               </div>
 
-              <p class="mt-2 text-xs text-slate-400">
+              <p class="mt-2 text-xs text-slate-500">
                 识别引擎 {{ image.result.engine || '—' }} · 耗时
                 {{ image.result.costMillis != null ? `${image.result.costMillis} ms` : '—' }}
               </p>
@@ -1035,7 +1035,7 @@ onUnmounted(() => {
             <span class="min-w-0 flex-1 truncate text-sm text-slate-700" :title="item.name">
               {{ item.name }}
             </span>
-            <span class="shrink-0 text-xs text-slate-400">{{ item.unit || '' }}</span>
+            <span class="shrink-0 text-xs text-slate-500">{{ item.unit || '' }}</span>
           </button>
         </li>
       </ul>

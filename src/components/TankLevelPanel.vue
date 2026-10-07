@@ -186,7 +186,7 @@ const canCreate = computed(
 function inputClass(align) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
     align === 'right' ? 'text-right' : '',
   ]
 }
@@ -471,7 +471,7 @@ function handleThumbError(event, image) {
                   >
                     <template #default="{ item }">
                       <span class="text-sm text-slate-800">{{ item.name }}</span>
-                      <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                      <span v-if="item.spec" class="ml-2 text-xs text-slate-500">
                         {{ item.spec }}
                       </span>
                     </template>
@@ -606,7 +606,7 @@ function handleThumbError(event, image) {
                     >
                       <template #default="{ item }">
                         <span class="text-sm text-slate-800">{{ item.name }}</span>
-                        <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                        <span v-if="item.spec" class="ml-2 text-xs text-slate-500">
                           {{ item.spec }}
                         </span>
                       </template>
@@ -657,7 +657,7 @@ function handleThumbError(event, image) {
                      编辑态与只读态行为一致，所以不放进上面的两态分支，免得写两份 -->
                 <td class="whitespace-nowrap px-3 py-2.5">
                   <span
-                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
                     :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '暂无图据'"
                     @click="openImageDialog(record)"
                   >
@@ -759,7 +759,7 @@ function handleThumbError(event, image) {
           </svg>
           新增一行
         </button>
-        <span class="text-xs text-slate-400">
+        <span class="text-xs text-slate-500">
           记录日期 + 容器编号是唯一键，同一天同一容器只能有一条记录
         </span>
       </div>

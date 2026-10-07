@@ -107,7 +107,7 @@ function handleFileSelected(event) {
           删除当前图片
         </el-button>
       </div>
-      <span v-else class="w-full text-center text-sm text-slate-400">{{ emptyText }}</span>
+      <span v-else class="w-full text-center text-sm text-slate-500">{{ emptyText }}</span>
     </div>
 
     <div v-if="images.length" class="mt-3 text-center text-sm text-slate-500">
