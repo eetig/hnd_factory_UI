@@ -492,8 +492,8 @@ function handleBackToList() {
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rose-50">
@@ -518,7 +518,7 @@ function handleBackToList() {
                 v-for="column in columns"
                 :key="column.key"
                 scope="col"
-                class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                 :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
               >
                 {{ column.label }}
@@ -543,7 +543,7 @@ function handleBackToList() {
         </table>
       </div>
 
-      <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+      <div class="flex justify-end border-t border-slate-100 px-6 py-3">
         <el-pagination
           v-model:current-page="pageNum"
           :page-size="pageSize"
@@ -572,8 +572,8 @@ function handleBackToList() {
           <table class="min-w-full divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-rose-50">

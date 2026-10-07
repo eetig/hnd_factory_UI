@@ -1536,7 +1536,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'workOrder'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
             <el-date-picker
               v-model="startDate"
               type="date"
@@ -1649,7 +1649,7 @@ watch(activeTab, (tab, prevTab) => {
             </table>
           </div>
 
-          <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+          <div class="flex justify-end border-t border-slate-100 px-6 py-3">
             <el-pagination
               v-model:current-page="pageNum"
               :page-size="pageSize"
@@ -1745,7 +1745,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -1905,7 +1905,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -2093,7 +2093,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in stockColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         {{ column.label }}
@@ -2141,7 +2141,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'weekly'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
             <el-date-picker
               v-model="weeklyStartDate"
               type="date"

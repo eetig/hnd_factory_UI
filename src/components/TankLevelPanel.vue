@@ -416,7 +416,7 @@ function handleThumbError(event, image) {
                   :key="column.key"
                   scope="col"
                   class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                  :class="column.align === 'right' ? 'pl-3 pr-4 text-right' : 'px-3'"
+                  :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                 >
                   {{ column.label }}
                 </th>
@@ -645,10 +645,10 @@ function handleThumbError(event, image) {
                   <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ record.tankName }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm text-slate-600">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ record.levelValue }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm font-semibold text-sky-700">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">
                     {{ record.theoreticalWeight }}
                   </td>
                 </template>
