@@ -1394,7 +1394,13 @@ watch(activeTab, (tab, prevTab) => {
 <template>
   <el-config-provider :locale="zhCn">
     <main class="min-h-screen bg-slate-50">
-    <div class="mx-auto flex max-w-[1600px] gap-6 px-4 py-6 sm:px-6 lg:px-8">
+    <!--
+      外壳**不再限宽居中**（原先这里挂的是 mx-auto max-w-[1600px]，我早先加的）。
+      留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
+      跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
+      主区不再被压到 1600：几个台账表格本来就宽，宽出来正好摊开列。
+    -->
+    <div class="flex">
       <!--
         左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
 
@@ -1404,39 +1410,49 @@ watch(activeTab, (tab, prevTab) => {
         窄屏不隐藏：页签从顶部挪走了，侧栏是**唯一**的页面入口，藏掉就没法切页了。
         代价是窄窗口下主区被压窄（主区自己会横向滚），比「没有导航」可接受得多。
       -->
-      <aside class="w-56 shrink-0">
-        <div class="sticky top-6 space-y-4">
-          <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
-            <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
-            <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
+      <!--
+        整块做成**浮动面板**：四边 16px 外边距、圆角 20px、一层低透明度柔和投影（使用方 2026-10-07 定）。
+        原先这里是三张各自带边框的小卡片，现在并成一块 —— 浮起来之后还分层画边框，
+        会变成「面板里套卡片」的双层轮廓，反而糊。
 
-            <!-- 未登录即可只读浏览；写入类功能按权限隐藏 -->
-            <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
-              <template v-if="loggedIn">
-                <p class="font-medium text-slate-700">{{ roleName }}</p>
-                <button
-                  type="button"
-                  class="mt-1 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-                  @click="handleLogout"
-                >
-                  退出登录
-                </button>
-              </template>
-              <template v-else>
-                <p class="text-slate-400">只读浏览</p>
-                <button
-                  type="button"
-                  class="mt-1 rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
-                  @click="goLogin"
-                >
-                  登录
-                </button>
-              </template>
-            </div>
+        sticky 用 top-4（与那 16px 是同一个数）：长页面滚动时面板跟着走，
+        滚起来不会出现「先贴上边、再被 16px 顶开」的突兀感。
+      -->
+      <aside class="w-56 shrink-0">
+        <div
+          class="sticky top-4 m-4 rounded-[20px] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.08)]"
+        >
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
+          <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
+          <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
+
+          <!-- 未登录即可只读浏览；写入类功能按权限隐藏 -->
+          <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
+            <template v-if="loggedIn">
+              <p class="font-medium text-slate-700">{{ roleName }}</p>
+              <button
+                type="button"
+                class="mt-1 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                @click="handleLogout"
+              >
+                退出登录
+              </button>
+            </template>
+            <template v-else>
+              <p class="text-slate-400">只读浏览</p>
+              <button
+                type="button"
+                class="mt-1 rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+                @click="goLogin"
+              >
+                登录
+              </button>
+            </template>
           </div>
 
-          <nav class="space-y-1 rounded-xl border border-slate-200 bg-white p-2 shadow-sm" aria-label="功能分类">
+          <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
+               再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
+          <nav class="mt-3 space-y-1 border-t border-slate-100 pt-3" aria-label="功能分类">
             <button
               v-for="group in sidebarGroups"
               :key="group.key"
@@ -1454,7 +1470,7 @@ watch(activeTab, (tab, prevTab) => {
             </button>
           </nav>
 
-          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+          <div class="mt-3 border-t border-slate-100 pt-3">
             <p class="text-xs font-medium text-slate-400">设置</p>
             <p class="mt-1 text-xs text-slate-400">
               共 <span class="font-semibold text-slate-600">{{ total }}</span> 条工单
@@ -1463,7 +1479,12 @@ watch(activeTab, (tab, prevTab) => {
         </div>
       </aside>
 
-      <div class="min-w-0 flex-1">
+      <!--
+        主区**左边不留内边距**：侧栏那块浮动面板自己带 16px 外边距（m-4），
+        这里再补一层就成 32px 的缝，跟「四边 16px」对不上。
+        py-4 则是与面板的上下 16px 对齐。
+      -->
+      <div class="min-w-0 flex-1 py-4 pr-4 sm:pr-6">
 
       <!-- 主区顶部：当前页标题 + **同组页面的卡片**。
            页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
