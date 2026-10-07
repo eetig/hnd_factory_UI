@@ -259,8 +259,10 @@ const STATS_DETAIL = [
             </ul>
           </article>
 
-          <!-- 格子 D：数据维护，占 4 列 -->
-          <article class="rounded-card border border-slate-200 bg-white p-7 lg:col-span-4">
+          <!-- 格子 D：数据维护，占 4 列。底色给了浅灰，凑够技能 Section 4.7
+               「bento 至少 2 到 3 个格子要有真实视觉差异」那条：现在是
+               A 灰底+真实截图 / B 天蓝底 / C 白底 / D 灰底，三格有差异、一格留白做节奏 -->
+          <article class="rounded-card border border-slate-200 bg-slate-50 p-7 lg:col-span-4">
             <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h3 class="text-xl font-semibold tracking-tight">{{ GROUPS[3].label }}</h3>
               <span class="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
@@ -277,7 +279,7 @@ const STATS_DETAIL = [
               <li
                 v-for="page in GROUPS[3].pages"
                 :key="page"
-                class="rounded-full border border-slate-300 px-3 py-1 text-xs text-slate-600"
+                class="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600"
               >
                 {{ page }}
               </li>
@@ -297,7 +299,7 @@ const STATS_DETAIL = [
           <div>
             <h2 class="text-3xl font-semibold tracking-tight md:text-4xl">把液位读成体积和质量</h2>
             <p class="mt-5 text-base leading-relaxed text-slate-600">
-              四台容器的几何参数都进了设备台账：内径、筒体长度、直边、上下封头深度。椭圆封头按分段积分算，卧式与再沸器按弓形面积算，液位输进去，体积和质量直接出来。
+              几何参数取自设备台账：内径、筒体长度、直边、封头深度。椭圆封头按分段积分，卧式与再沸器按弓形面积。
             </p>
             <ul class="mt-7 flex flex-wrap gap-x-2 gap-y-2">
               <li
@@ -337,8 +339,19 @@ const STATS_DETAIL = [
             <p class="mt-3 text-sm leading-relaxed text-slate-600">
               打开地址就能用，不需要账号。以下六页对所有人开放。
             </p>
-            <ul class="mt-6 divide-y divide-slate-100 border-t border-slate-100">
-              <li v-for="page in OPEN_PAGES" :key="page" class="py-3 text-sm text-slate-700">
+            <!--
+              六项用**胶囊**而不是带分隔线的列表。
+              技能在两处点名禁止了这个写法：Section 4.9「超过 5 项的列表不要用默认 ul +
+              divide-y」、Section 9.F「不要给长列表的每一行都画上下边框」。
+              上一版正是 6 行 divide-y + border-t，正好踩中。
+              胶囊还与本页别处（功能清单、容器名）的写法一致。
+            -->
+            <ul class="mt-6 flex flex-wrap gap-x-2 gap-y-2.5">
+              <li
+                v-for="page in OPEN_PAGES"
+                :key="page"
+                class="rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-xs text-slate-600"
+              >
                 {{ page }}
               </li>
             </ul>
