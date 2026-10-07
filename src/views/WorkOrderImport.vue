@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
 import { STATUS_ICON_TONE } from '../constants/statusTones'
+import LoadingMask from '../components/LoadingMask.vue'
 import {
   ElButton,
   ElMessage,
@@ -419,10 +420,14 @@ function handleBackToList() {
           </div>
         </div>
 
-        <!-- 解析阶段：上传已完成，服务端解析中（时长不可预知，用不确定动画） -->
-        <div v-else class="loader" role="status" aria-label="正在解析文件">
-          <div class="loader-text">解析中...</div>
-          <div class="loader-bar"></div>
+        <!--
+          解析阶段：上传已完成，服务端解析中（时长不可预知，用不确定动画）。
+          复用全局 LoadingMask，不再自带一份 loader 样式。它是一张 inset:0 的
+          72% 白幕，需要定位且定高的父级 —— h-16 与原内联 loader 的实高
+          （24px 文字行 + 20px 间距 + 10px 条 ≈ 59px）基本齐平。
+        -->
+        <div v-else class="relative h-16 w-full">
+          <LoadingMask label="正在解析文件" text="解析中..." />
         </div>
 
         <p class="text-sm text-slate-500">
@@ -607,44 +612,3 @@ function handleBackToList() {
     </div>
   </div>
 </template>
-
-<style scoped>
-.loader {
-  display: flex;
-  width: min(360px, 80%);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.loader-text {
-  align-self: center;
-  margin-bottom: 20px;
-  color: rgb(0, 0, 0);
-  font-size: 24px;
-}
-
-.loader-bar {
-  width: 30%;
-  min-width: 110px;
-  height: 10px;
-  overflow: hidden;
-  border-radius: 5px;
-  background-color: rgb(0, 0, 0);
-  animation: loader-bar-animation 2s ease-in-out infinite;
-}
-
-@keyframes loader-bar-animation {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  50% {
-    transform: translateX(100%);
-  }
-
-  100% {
-    transform: translateX(-100%);
-  }
-}
-</style>

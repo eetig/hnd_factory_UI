@@ -41,16 +41,14 @@ table {
 }
 
 /*
- * 前庭不适的触发源是「大幅位移」与「无限循环」，不是 hover 变色。
- * 全站唯一一条无限循环的位移动画就是加载条的来回平移，这里单独关掉。
- * 两个组件各有一份同名 .loader-bar（后者待去重），非 scoped 规则一次覆盖。
+ * 减弱动效（prefers-reduced-motion）的处理**不在这里**，见
+ * src/components/LoadingMask.vue 的 scoped 块。
+ *
+ * 原因是特异性：全局的 `.loader-bar`（0,1,0）压不过组件 scoped 编译出的
+ * `.loader-bar[data-v-xxx]`（0,2,0），媒体查询又不加特异性 —— 写在这里会
+ * 静默失效。那条规则挪进了组件，与它要关掉的那条 animation 同级、靠后取胜。
  *
  * 有意不做 `* { animation-duration: .01ms }` 式的全局重置：
- * 其余动效全是 hover 过渡与 active:scale-[0.98] 按压反馈，不构成触发源，
- * 而全局重置会连 Intro.vue 的按压反馈一起抹掉——那一页受保护。
+ * 全站其余动效全是 hover 过渡与 active:scale-[0.98] 按压反馈，不构成前庭
+ * 触发源，而全局重置会连 Intro.vue 的按压反馈一起抹掉 —— 那一页受保护。
  */
-@media (prefers-reduced-motion: reduce) {
-  .loader-bar {
-    animation: none;
-  }
-}
