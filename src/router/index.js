@@ -19,6 +19,17 @@ const router = createRouter({
       name: 'WorkOrderList',
       component: WorkOrderList,
     },
+    {
+      /*
+       * 内部推广落地页。给厂内同事与领导的导览页，不是工作台的一部分。
+       *
+       * 用**懒加载**：这一页要引用三张截图资源，且与工作台的首屏毫无关系。
+       * 静态 import 会把它的代码塞进主包，拖慢真正天天要用的工作台。
+       */
+      path: '/intro',
+      name: 'Intro',
+      component: () => import('../views/Intro.vue'),
+    },
   ],
 })
 
