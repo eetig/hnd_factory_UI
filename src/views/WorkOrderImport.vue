@@ -7,7 +7,7 @@ import {
   ElMessage,
   ElPagination,
 } from 'element-plus'
-import 'element-plus/dist/index.css'
+// EP 样式与主题覆盖统一由 src/main.js 按序导入（见那里的注释），这里不再重复 import
 
 // imported：导入成功时通知父组件（父组件需在离开本页时刷新各数据集）
 const emit = defineEmits(['cancel', 'back', 'imported'])
@@ -397,7 +397,7 @@ function handleBackToList() {
     />
 
     <section
-      class="relative cursor-pointer rounded-xl border-2 border-dashed bg-white p-12 transition"
+      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition"
       :class="dragActive ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400'"
       @click="openFilePicker"
       @dragover.prevent="dragActive = true"
@@ -448,7 +448,7 @@ function handleBackToList() {
           将 Excel 文件拖到此处，或 <span class="text-sky-600">点击选择文件</span>
         </p>
         <p class="text-xs text-slate-400">仅支持 .xlsx / .xls 格式</p>
-        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
+        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
           <span v-if="previewError" class="font-medium text-rose-600">解析失败</span>
@@ -457,7 +457,7 @@ function handleBackToList() {
       </div>
     </section>
 
-    <div v-if="previewError" class="mt-6 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-5 py-4">
+    <div v-if="previewError" class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4">
       <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-500">!</div>
       <div>
         <h3 class="text-sm font-semibold text-rose-700">文件解析失败</h3>
@@ -465,7 +465,7 @@ function handleBackToList() {
       </div>
     </div>
 
-    <section v-if="previewList.length" class="mt-6 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+    <section v-if="previewList.length" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
@@ -481,11 +481,11 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="hasPreviewErrors" class="mt-6 rounded-xl border border-rose-200 bg-rose-50 px-5 py-4">
+    <section v-if="hasPreviewErrors" class="mt-6 rounded-card border border-rose-200 bg-rose-50 px-5 py-4">
       <h3 class="text-sm font-semibold text-rose-700">
         文件校验失败行（共 {{ previewErrors.length }} 行），请修正文件后重新上传
       </h3>
-      <div class="mt-3 overflow-x-auto rounded-lg bg-white">
+      <div class="mt-3 overflow-x-auto rounded-card bg-white">
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
@@ -503,7 +503,7 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-slate-200 bg-white shadow-card">
       <div class="overflow-x-auto">
         <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
           <colgroup>
@@ -552,7 +552,7 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="imported" class="mt-6 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+    <section v-if="imported" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
@@ -565,7 +565,7 @@ function handleBackToList() {
 
       <div v-if="importFailRows.length" class="mt-3">
         <h4 class="text-sm font-semibold text-rose-700">导入失败行（共 {{ importFailRows.length }} 行）</h4>
-        <div class="mt-3 overflow-x-auto rounded-lg border border-rose-100">
+        <div class="mt-3 overflow-x-auto rounded-card border border-rose-100">
           <table class="min-w-full divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>

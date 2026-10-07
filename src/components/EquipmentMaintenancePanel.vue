@@ -167,7 +167,7 @@ async function handleDrawingPicked(event) {
 </script>
 
 <template>
-  <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+  <section class="rounded-card border border-slate-200 bg-white shadow-card">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-100 px-6 py-3.5">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
@@ -235,7 +235,7 @@ async function handleDrawingPicked(event) {
                 v-if="row.imageFile"
                 :src="imagePreview(row.imageFile)"
                 alt=""
-                class="h-8 w-8 rounded border border-slate-200 object-contain"
+                class="h-8 w-8 rounded-xl border border-slate-200 object-contain"
               />
               <span v-else class="text-xs text-slate-400">未配</span>
             </td>
@@ -324,7 +324,7 @@ async function handleDrawingPicked(event) {
               v-if="draft.imageFile"
               :src="imagePreview(draft.imageFile)"
               alt=""
-              class="h-24 w-24 rounded border border-slate-200 object-contain"
+              class="h-24 w-24 rounded-card border border-slate-200 object-contain"
             />
             <div class="text-xs text-slate-500">
               <p class="mb-1">{{ draft.imageFile || '未配置' }}</p>

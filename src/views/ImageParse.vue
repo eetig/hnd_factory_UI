@@ -498,7 +498,7 @@ function removeRow(image, row) {
 /** 可编辑单元格：静默时不显边框，悬停/聚焦才提示可改，避免整表看起来像表单控件 */
 function inputClass(col) {
   return [
-    'w-full rounded border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
+    'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
     'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
@@ -637,7 +637,7 @@ onUnmounted(() => {
     />
 
     <section
-      class="rounded-xl border-2 border-dashed bg-white p-10 text-center transition"
+      class="rounded-card border-2 border-dashed bg-white p-10 text-center transition"
       :class="dropZoneClass"
       @click="openFilePicker"
       @dragover.prevent="dragActive = true"
@@ -676,12 +676,12 @@ onUnmounted(() => {
 
     <p
       v-if="message"
-      class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+      class="rounded-card border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
     >
       {{ message }}
     </p>
 
-    <section v-if="images.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section v-if="images.length" class="rounded-card border border-slate-200 bg-white shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
         <p class="text-sm text-slate-600">
           已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
@@ -701,7 +701,7 @@ onUnmounted(() => {
         <li
           v-for="image in images"
           :key="image.id"
-          class="group relative overflow-hidden rounded-lg border border-slate-200"
+          class="group relative overflow-hidden rounded-card border border-slate-200"
         >
           <img
             :src="image.url"
@@ -732,7 +732,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-lg bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -742,12 +742,12 @@ onUnmounted(() => {
 
     <p
       v-if="materialLookupError"
-      class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
+      class="rounded-card border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
     >
       {{ materialLookupError }}（物料编码将全部留空，可手工填写）
     </p>
 
-    <section v-if="submitted.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <section v-if="submitted.length" class="rounded-card border border-slate-200 bg-white shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
@@ -762,13 +762,13 @@ onUnmounted(() => {
         <article
           v-for="image in submitted"
           :key="image.id"
-          class="overflow-hidden rounded-lg border border-slate-200"
+          class="overflow-hidden rounded-card border border-slate-200"
         >
           <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3">
             <img
               :src="image.url"
               :alt="image.name"
-              class="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover"
+              class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 object-cover"
             />
             <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
               {{ image.name }}
@@ -817,7 +817,7 @@ onUnmounted(() => {
                           :preview-src-list="[image.url]"
                           :preview-teleported="true"
                           fit="cover"
-                          class="h-8 w-8 rounded border border-slate-200"
+                          class="h-8 w-8 rounded-xl border border-slate-200"
                         />
                       </div>
 
@@ -854,7 +854,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
                         >
@@ -888,7 +888,7 @@ onUnmounted(() => {
                       <div v-else-if="col.key === 'actions'" class="flex justify-center">
                         <button
                           type="button"
-                          class="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
                           title="删除该行"
                           @click="removeRow(image, row)"
                         >
@@ -919,7 +919,7 @@ onUnmounted(() => {
                 </tbody>
               </table>
 
-              <p v-else class="rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+              <p v-else class="rounded-card bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
                 暂无行项目，可点下方「增加一行」手工补充。
               </p>
 
@@ -928,7 +928,7 @@ onUnmounted(() => {
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
                   @click="addRow(image)"
                 >
                   <svg
@@ -972,7 +972,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-lg bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1003,7 +1003,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
           @input="handlePickerInput"
           @keyup.enter="runPickerSearch"
         />
@@ -1023,7 +1023,7 @@ onUnmounted(() => {
 
       <ul
         v-else-if="pickerResults.length"
-        class="max-h-80 overflow-y-auto rounded-lg border border-slate-200"
+        class="max-h-80 overflow-y-auto rounded-card border border-slate-200"
       >
         <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
           <button

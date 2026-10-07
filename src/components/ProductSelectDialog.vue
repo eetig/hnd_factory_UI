@@ -54,7 +54,7 @@ function handleSelect(item) {
       autofocus
     />
 
-    <div class="mt-4 max-h-[50vh] overflow-y-auto rounded-lg border border-slate-200">
+    <div class="mt-4 max-h-[50vh] overflow-y-auto rounded-card border border-slate-200">
       <button
         v-for="item in filteredOptions"
         :key="item"

@@ -1,0 +1,43 @@
+/*
+ * Element Plus 主题覆盖（使用方 2026-10-07 定：单一高亮色 + 大圆角）。
+ *
+ * ⚠️ 导入顺序是这份文件能不能生效的前提：必须排在 element-plus/dist/index.css **之后**。
+ *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
+ *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
+ *
+ * 背景：这个项目原先有两套蓝 —— 手写 markup 用 Tailwind sky-600（#0284c7），
+ * 而所有 el-* 组件用的是 Element Plus 默认的 #409eff。el-input 18 处、el-date-picker 10 处、
+ * el-pagination 7 处，等于「点开一个下拉，页面上冒出另一种蓝」。这里把 EP 侧对齐到 sky-600，
+ * 收成唯一的高亮色。手写侧不动（值本来就对）。
+ */
+
+:root {
+  /* ===== 高亮色：对齐 Tailwind sky-600 ===== */
+  --el-color-primary: #0284c7;
+
+  /*
+   * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
+   * 否则 hover / disabled / 浅底 会比主色偏色：
+   *   light-N = 主色与白色按 (10-N)/10 混合，例如 light-9 = 10% 主色 + 90% 白
+   *   dark-2  = 主色混 20% 黑
+   * 校验方法：EP 默认主色 #409eff 的 light-3 是 #79bbff，
+   * 用同一条公式算 0.7×64+0.3×255 = 121 = 0x79 ✅ —— 公式与 EP 一致
+   */
+  --el-color-primary-light-3: #4ea9d8;
+  --el-color-primary-light-5: #81c2e3;
+  --el-color-primary-light-7: #b3daee;
+  --el-color-primary-light-8: #cce6f4;
+  --el-color-primary-light-9: #e6f3f9;
+  --el-color-primary-dark-2: #026a9f;
+
+  /* ===== 大圆角（EP 2.14.5 默认：base 4px / small 2px / round 20px）===== */
+  /* 控件：输入框、按钮、下拉、日期选择器 */
+  --el-border-radius-base: 12px;
+  /* EP 的 round 默认只有 20px，不是真胶囊 */
+  --el-border-radius-round: 9999px;
+  /*
+   * 对话框默认是 var(--el-border-radius-base)，跟着变成 12px。
+   * 但弹窗属于「卡片」不是「控件」，按使用方定的 20px 单独给。
+   */
+  --el-dialog-border-radius: 20px;
+}

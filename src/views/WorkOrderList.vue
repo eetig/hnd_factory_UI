@@ -46,7 +46,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import 'element-plus/dist/index.css'
+// EP 样式与主题覆盖统一由 src/main.js 按序导入（见那里的注释），这里不再重复 import
 
 dayjs.extend(updateLocale)
 dayjs.updateLocale('zh-cn', { weekStart: 1 })
@@ -1420,7 +1420,7 @@ watch(activeTab, (tab, prevTab) => {
       -->
       <aside class="w-56 shrink-0">
         <div
-          class="sticky top-4 m-4 rounded-[20px] bg-white p-4 shadow-[0_8px_28px_rgba(15,23,42,0.08)]"
+          class="sticky top-4 m-4 rounded-card bg-white p-4 shadow-card"
         >
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
           <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
@@ -1432,7 +1432,7 @@ watch(activeTab, (tab, prevTab) => {
               <p class="font-medium text-slate-700">{{ roleName }}</p>
               <button
                 type="button"
-                class="mt-1 rounded px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
                 @click="handleLogout"
               >
                 退出登录
@@ -1442,7 +1442,7 @@ watch(activeTab, (tab, prevTab) => {
               <p class="text-slate-400">只读浏览</p>
               <button
                 type="button"
-                class="mt-1 rounded px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
                 @click="goLogin"
               >
                 登录
@@ -1457,7 +1457,7 @@ watch(activeTab, (tab, prevTab) => {
               v-for="group in sidebarGroups"
               :key="group.key"
               type="button"
-              class="w-full rounded-lg px-3 py-2 text-left text-sm transition"
+              class="w-full rounded-xl px-3 py-2 text-left text-sm transition"
               :class="
                 currentGroup === group.key
                   ? 'bg-sky-50 font-medium text-sky-700'
@@ -1508,7 +1508,7 @@ watch(activeTab, (tab, prevTab) => {
             :data-tab-key="tab.key"
             type="button"
             :aria-current="activeTab === tab.key ? 'page' : undefined"
-            class="shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-sm transition focus:outline-none"
+            class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none"
             :class="
               activeTab === tab.key
                 ? 'border-sky-200 bg-sky-50 font-medium text-sky-700'
@@ -1522,7 +1522,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'workOrder'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
             <el-date-picker
               v-model="startDate"
@@ -1678,7 +1678,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'material'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <el-date-picker
               v-model="pickStartDate"
@@ -1766,7 +1766,7 @@ watch(activeTab, (tab, prevTab) => {
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
                           @click="openPickImageDialog(record)"
                         >
@@ -1789,7 +1789,7 @@ watch(activeTab, (tab, prevTab) => {
                             alt="领料单据"
                             loading="lazy"
                             decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                            class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
                             @error="handleImgError($event, record)"
                           />
                         </span>
@@ -1818,12 +1818,12 @@ watch(activeTab, (tab, prevTab) => {
           width="70vw"
           align-center
         >
-          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
+          <div class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6">
             <img
               v-if="currentPickImage"
               :src="currentPickImage"
               alt="领料单据大图"
-              class="max-h-[70vh] max-w-full rounded-lg object-contain"
+              class="max-h-[70vh] max-w-full rounded-card object-contain"
             />
           </div>
         </el-dialog>
@@ -1838,7 +1838,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'inbound'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <el-date-picker
               v-model="inboundStartDate"
@@ -1926,7 +1926,7 @@ watch(activeTab, (tab, prevTab) => {
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
                       <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
                         <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded bg-slate-100 text-slate-400"
+                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
                           @click="openInboundImageDialog(record)"
                         >
@@ -1949,7 +1949,7 @@ watch(activeTab, (tab, prevTab) => {
                             alt="入库单据"
                             loading="lazy"
                             decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                            class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
                             @error="handleImgError($event, record)"
                           />
                         </span>
@@ -1978,12 +1978,12 @@ watch(activeTab, (tab, prevTab) => {
           width="70vw"
           align-center
         >
-          <div class="flex min-h-[400px] items-center justify-center rounded-lg bg-slate-50 p-6">
+          <div class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6">
             <img
               v-if="currentInboundImage"
               :src="currentInboundImage"
               alt="入库单据大图"
-              class="max-h-[70vh] max-w-full rounded-lg object-contain"
+              class="max-h-[70vh] max-w-full rounded-card object-contain"
             />
           </div>
         </el-dialog>
@@ -2025,7 +2025,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'stock'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <el-input
               v-model="stockKeyword"
@@ -2127,7 +2127,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'weekly'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
             <el-date-picker
               v-model="weeklyStartDate"
@@ -2218,7 +2218,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'daily'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <PanelState
               title="日报表记录"
               description="功能建设中，敬请期待"
@@ -2236,7 +2236,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'vessel'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
                这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
                只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
@@ -2310,7 +2310,7 @@ watch(activeTab, (tab, prevTab) => {
             <!-- 体积变化：居中作为视觉焦点 -->
             <div
                 class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
-                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-xl border border-slate-200 bg-slate-50 px-6 py-4'"
+                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-card border border-slate-200 bg-slate-50 px-6 py-4'"
             >
               <span class="text-sm text-slate-500">体积变化</span>
               <span
@@ -2485,7 +2485,7 @@ watch(activeTab, (tab, prevTab) => {
       </div>
 
       <div v-show="activeTab === 'electricity'">
-        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <section class="rounded-card border border-slate-200 bg-white shadow-card">
           <!-- 电价档位备注 -->
           <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
             <div class="flex items-start gap-3">
@@ -2495,19 +2495,19 @@ watch(activeTab, (tab, prevTab) => {
               <div class="min-w-0 flex-1">
                 <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
                 <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">10 万度以内</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                     </p>
                   </div>
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">20 万度以内</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                     </p>
                   </div>
-                  <div class="rounded-lg border border-amber-200/70 bg-white px-4 py-2.5">
+                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
                     <p class="text-xs text-slate-500">20 万度以上</p>
                     <p class="mt-1 text-lg font-semibold text-slate-900">
                       0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>

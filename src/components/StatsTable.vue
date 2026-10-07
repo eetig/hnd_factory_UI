@@ -51,7 +51,7 @@ function getRowKey(item, index) {
 </script>
 
 <template>
-  <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+  <section class="rounded-card border border-slate-200 bg-white shadow-card">
     <div class="overflow-x-auto">
       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
         <colgroup>
