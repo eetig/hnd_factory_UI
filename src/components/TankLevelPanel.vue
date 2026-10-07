@@ -362,7 +362,7 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+        class="rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800"
         @click="fetchTankLevelRecords"
       >
         查询
@@ -527,7 +527,7 @@ function handleThumbError(event, image) {
                       />
                       <button
                         type="button"
-                        class="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-900/70 text-[10px] leading-none text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100"
+                        class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/70 text-xs leading-none text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100"
                         :aria-label="`移除 ${item.file.name}`"
                         @click="removePendingImage(item.key)"
                       >
@@ -540,7 +540,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-sky-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -686,7 +686,7 @@ function handleThumbError(event, image) {
                     <!-- 多张时在角上标出总数，免得点开才知道有几张 -->
                     <span
                       v-if="record.images.length > 1"
-                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-medium leading-none text-white"
+                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-700 px-1 text-xs font-medium leading-none text-white"
                     >
                       {{ record.images.length }}
                     </span>
@@ -698,7 +698,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-sky-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -717,7 +717,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canEdit"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2 py-0.5 text-xs text-slate-600 transition hover:border-sky-400 hover:text-sky-700"
+                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:text-sky-700"
                       @click="startEdit(record)"
                     >
                       编辑
@@ -725,7 +725,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canDelete"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2 py-0.5 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
+                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
                       @click="removeRow(record)"
                     >
                       删除

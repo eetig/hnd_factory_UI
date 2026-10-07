@@ -91,7 +91,7 @@ async function handleLogin() {
         <button
           type="submit"
           :disabled="loading"
-          class="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-70"
+          class="w-full rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {{ loading ? '登录中...' : '登录' }}
         </button>

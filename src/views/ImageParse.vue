@@ -733,7 +733,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-xl bg-sky-700 px-6 py-3 text-sm font-medium text-white transition hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -973,7 +973,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-xl bg-sky-700 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
