@@ -434,8 +434,10 @@ function handleBackToList() {
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
+        <!-- 这里的 -600 是有意的：这是 48px 图标（纯图形，阈值 3:1），不是文字。
+             全仓最后一处 sky-600，别「对齐」成 -700。 -->
         <svg
-          class="h-12 w-12 text-sky-500"
+          class="h-12 w-12 text-sky-600"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -446,7 +448,7 @@ function handleBackToList() {
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
         <p class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-sky-600">点击选择文件</span>
+          将 Excel 文件拖到此处，或 <span class="text-sky-700">点击选择文件</span>
         </p>
         <p class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
@@ -559,7 +561,7 @@ function handleBackToList() {
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
           新增 <span class="font-semibold text-emerald-700">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条，
+          更新 <span class="font-semibold text-sky-700">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>

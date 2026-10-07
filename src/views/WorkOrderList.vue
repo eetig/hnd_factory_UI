@@ -1432,7 +1432,7 @@ watch(activeTab, (tab, prevTab) => {
         <div
           class="sticky top-4 m-4 flex h-[calc(100vh-2rem)] flex-col overflow-y-auto rounded-card bg-white p-4 shadow-card"
         >
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Factory Operations</p>
           <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
           <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
 
@@ -1482,7 +1482,7 @@ watch(activeTab, (tab, prevTab) => {
               <p class="text-slate-500">只读浏览</p>
               <button
                 type="button"
-                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98]"
+                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-700 transition hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98]"
                 @click="goLogin"
               >
                 登录
@@ -2392,7 +2392,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-500">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="font-semibold text-sky-700">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-500">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
                   </div>
                 </div>
               </div>
@@ -2445,7 +2445,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-500">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
+                    体积：<span class="font-semibold text-sky-700">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-500">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
                   </div>
                 </div>
               </div>

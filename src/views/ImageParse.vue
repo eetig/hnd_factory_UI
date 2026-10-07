@@ -685,7 +685,7 @@ onUnmounted(() => {
     <section v-if="images.length" class="rounded-card border border-slate-200 bg-white shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
-          已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
+          已选 <span class="font-semibold text-sky-700">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
         </p>
         <button
@@ -855,7 +855,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-sky-50 hover:text-sky-600"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-sky-50 hover:text-sky-700"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
                         >

@@ -57,7 +57,7 @@ async function handleLogin() {
   <main class="flex min-h-screen items-center justify-center bg-slate-50 px-4">
     <div class="w-full max-w-md rounded-card border border-slate-200 bg-white p-8 shadow-card">
       <div class="mb-8 text-center">
-        <p class="text-sm font-semibold uppercase tracking-[0.2em] text-sky-600">Factory Operations</p>
+        <p class="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Factory Operations</p>
         <h1 class="mt-3 text-3xl font-bold text-slate-900">登录</h1>
       </div>
 
