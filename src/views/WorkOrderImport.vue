@@ -489,14 +489,14 @@ function handleBackToList() {
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
-              <th scope="col" class="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-              <th scope="col" class="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rose-50">
             <tr v-for="(error, index) in previewErrors" :key="`${error.row}-${index}`">
-              <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">第 {{ error.row }} 行</td>
-              <td class="px-3 py-2 text-sm text-rose-600">{{ error.msg }}</td>
+              <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">第 {{ error.row }} 行</td>
+              <td class="px-3 py-2.5 text-sm text-rose-600">{{ error.msg }}</td>
             </tr>
           </tbody>
         </table>
@@ -515,7 +515,7 @@ function handleBackToList() {
                 v-for="column in columns"
                 :key="column.key"
                 scope="col"
-                class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
                 :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
               >
                 {{ column.label }}
@@ -528,10 +528,10 @@ function handleBackToList() {
                 v-for="column in columns"
                 :key="column.key"
                 :class="column.wrap
-                  ? 'max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700'
+                  ? 'max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700'
                   : (column.align === 'right'
-                    ? `whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`
-                    : `whitespace-nowrap px-3 py-2 text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`)"
+                    ? `whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`
+                    : `whitespace-nowrap px-3 py-2.5 text-sm text-slate-600${column.key === 'index' ? ' font-semibold text-slate-900' : ''}`)"
               >
                 {{ getCellValue(item, column.key, index) }}
               </td>
@@ -569,14 +569,14 @@ function handleBackToList() {
           <table class="min-w-full divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>
-                <th scope="col" class="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-                <th scope="col" class="whitespace-nowrap px-3 py-2 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-rose-50">
               <tr v-for="(row, index) in importFailRows" :key="`${row.row}-${index}`">
-                <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">第 {{ row.row }} 行</td>
-                <td class="px-3 py-2 text-sm text-rose-600">{{ row.msg }}</td>
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">第 {{ row.row }} 行</td>
+                <td class="px-3 py-2.5 text-sm text-rose-600">{{ row.msg }}</td>
               </tr>
             </tbody>
           </table>

@@ -1457,7 +1457,7 @@ watch(activeTab, (tab, prevTab) => {
               v-for="group in sidebarGroups"
               :key="group.key"
               type="button"
-              class="w-full rounded-xl px-3 py-2 text-left text-sm transition"
+              class="w-full rounded-xl px-3 py-2.5 text-left text-sm transition"
               :class="
                 currentGroup === group.key
                   ? 'bg-sky-50 font-medium text-sky-700'
@@ -1490,7 +1490,7 @@ watch(activeTab, (tab, prevTab) => {
            页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
            卡片行沿用原来 Tab 条的横向滚动写法（见下方注释），只是把下划线换成了卡片态。 -->
       <div class="mb-4">
-        <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">{{ activeTabLabel }}</h2>
+        <h2 class="mb-4 text-xl font-bold tracking-tight text-slate-900">{{ activeTabLabel }}</h2>
         <!--
           横向滚动：
           · overflow-x-auto 会让 overflow-y 也算作 auto，补 pb-px 把边兜回来；
@@ -1620,17 +1620,17 @@ watch(activeTab, (tab, prevTab) => {
                   </td>
                 </tr>
                 <tr v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="cursor-pointer transition hover:bg-slate-50" @click="openImageDialog(order)">
-                  <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.planStartDate }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.orderNo }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ order.materialCode }}</td>
-                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.planStartDate }}</td>
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.orderNo }}</td>
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</td>
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.materialCode }}</td>
+                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
                     {{ order.materialDesc }}
                   </td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</td>
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</td>
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</td>
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1679,7 +1679,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'material'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
             <el-date-picker
               v-model="pickStartDate"
               type="date"
@@ -1732,7 +1732,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in pickColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -1756,15 +1756,15 @@ watch(activeTab, (tab, prevTab) => {
                       :key="`${record.materialCode}-${record.pickDate}-${index}`"
                       class="transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.pickDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.pickDate }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
                         {{ record.materialName }}
                       </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                         <span
                           class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
@@ -1799,7 +1799,7 @@ watch(activeTab, (tab, prevTab) => {
                 </table>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
                 <el-pagination
                   v-model:current-page="pickPageNum"
                   :page-size="pickPageSize"
@@ -1839,7 +1839,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'inbound'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
             <el-date-picker
               v-model="inboundStartDate"
               type="date"
@@ -1892,7 +1892,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in inboundColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         <template v-if="column.key === 'materialName'">
@@ -1916,15 +1916,15 @@ watch(activeTab, (tab, prevTab) => {
                       :key="`${record.materialCode}-${record.inboundDate}-${index}`"
                       class="transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.inboundDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.inboundDate }}</td>
+                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
                         {{ record.materialName }}
                       </td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.materialCode }}</td>
+                      <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                         <span
                           class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
                           :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
@@ -1959,7 +1959,7 @@ watch(activeTab, (tab, prevTab) => {
                 </table>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
                 <el-pagination
                   v-model:current-page="inboundPageNum"
                   :page-size="inboundPageSize"
@@ -2026,7 +2026,7 @@ watch(activeTab, (tab, prevTab) => {
 
       <div v-show="activeTab === 'stock'">
         <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
             <el-input
               v-model="stockKeyword"
               placeholder="物料编码 / 物料名称 / 规格"
@@ -2080,7 +2080,7 @@ watch(activeTab, (tab, prevTab) => {
                         v-for="column in stockColumns"
                         :key="column.key"
                         scope="col"
-                        class="whitespace-nowrap py-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                        class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
                         :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                       >
                         {{ column.label }}
@@ -2093,25 +2093,25 @@ watch(activeTab, (tab, prevTab) => {
                       :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
                       class="transition hover:bg-slate-50"
                     >
-                      <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">{{ (stockPageNum - 1) * stockPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.materialCode) }}</td>
-                      <td class="max-w-[220px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700">{{ displayText(record.materialName) }}</td>
-                      <td class="max-w-[160px] whitespace-normal break-words px-3 py-2 text-sm text-slate-600">{{ displayText(record.spec) }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.storageLocation) }}</td>
-                      <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">{{ displayText(record.unit) }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (stockPageNum - 1) * stockPageSize + index + 1 }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.materialCode) }}</td>
+                      <td class="max-w-[220px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">{{ displayText(record.materialName) }}</td>
+                      <td class="max-w-[160px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.spec) }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.storageLocation) }}</td>
+                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.unit) }}</td>
                       <td
-                        class="whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm font-semibold"
+                        class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold"
                         :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-400'"
                       >
                         {{ displayText(formatStockQty(record.stockQty)) }}
                       </td>
-                      <td class="max-w-[180px] whitespace-normal break-words px-3 py-2 text-sm text-slate-600">{{ displayText(record.storageDesc) }}</td>
+                      <td class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.storageDesc) }}</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
                 <el-pagination
                   v-model:current-page="stockPageNum"
                   :page-size="stockPageSize"
@@ -2170,7 +2170,7 @@ watch(activeTab, (tab, prevTab) => {
                   </colgroup>
                   <thead>
                     <tr>
-                      <th colspan="5" class="border border-slate-300 px-3 py-2 text-base font-bold tracking-wide text-slate-800">
+                      <th colspan="5" class="border border-slate-300 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800">
                         {{ weeklyTitle }}
                       </th>
                     </tr>
@@ -2188,23 +2188,23 @@ watch(activeTab, (tab, prevTab) => {
                   </thead>
                   <tbody>
                     <tr v-for="row in weeklyRows" :key="row.name">
-                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.name }}</td>
-                      <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
+                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ row.name }}</td>
+                      <td class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
                       <td class="border border-slate-300 p-0">
                         <input
                           v-model="weeklyRemaining[row.materialCode]"
                           type="text"
                           placeholder="/"
                           aria-label="车间剩余"
-                          class="w-full bg-transparent py-2 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
+                          class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-400 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
                         />
                       </td>
-                      <td class="border border-slate-300 py-2 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
-                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
+                      <td class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
+                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
                     </tr>
                     <tr>
-                      <td class="border border-slate-300 px-3 py-2 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
-                      <td colspan="4" class="border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
+                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
+                      <td colspan="4" class="border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-800">
                         {{ weeklyInboundRow.value }}
                       </td>
                     </tr>
@@ -2261,7 +2261,7 @@ watch(activeTab, (tab, prevTab) => {
           </div>
 
           <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
-          <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-3.5">
+          <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-4">
             <div class="min-w-0 flex-1">
               <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
               <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">

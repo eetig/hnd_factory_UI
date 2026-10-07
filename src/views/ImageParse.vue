@@ -682,7 +682,7 @@ onUnmounted(() => {
     </p>
 
     <section v-if="images.length" class="rounded-card border border-slate-200 bg-white shadow-card">
-      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
+      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
@@ -711,7 +711,7 @@ onUnmounted(() => {
             decoding="async"
           />
 
-          <div class="border-t border-slate-100 px-2.5 py-2">
+          <div class="border-t border-slate-100 px-2.5 py-2.5">
             <p class="truncate text-xs text-slate-600" :title="image.name">{{ image.name }}</p>
             <p class="text-xs text-slate-400">{{ formatFileSize(image.size) }}</p>
           </div>
@@ -732,7 +732,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-xl bg-slate-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -748,7 +748,7 @@ onUnmounted(() => {
     </p>
 
     <section v-if="submitted.length" class="rounded-card border border-slate-200 bg-white shadow-card">
-      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
+      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
           <span class="font-semibold text-emerald-600">{{ successCount }}</span>
@@ -758,7 +758,7 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <div class="space-y-5 p-6">
+      <div class="space-y-6 p-6">
         <article
           v-for="image in submitted"
           :key="image.id"
@@ -796,7 +796,7 @@ onUnmounted(() => {
                     <th
                       v-for="col in image.table.columns"
                       :key="col.key"
-                      class="border border-slate-200 px-3 py-2 font-medium"
+                      class="border border-slate-200 px-3 py-2.5 font-medium"
                       :class="alignClass(col)"
                     >
                       {{ col.label }}
@@ -972,7 +972,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1003,7 +1003,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-sky-500"
           @input="handlePickerInput"
           @keyup.enter="runPickerSearch"
         />

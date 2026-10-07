@@ -168,7 +168,7 @@ async function handleDrawingPicked(event) {
 
 <template>
   <section class="rounded-card border border-slate-200 bg-white shadow-card">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-100 px-6 py-3.5">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-slate-100 px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
         逐个设备对着图纸核对参数：{{ filtered.length }} / {{ rows.length }} 条
@@ -181,7 +181,7 @@ async function handleDrawingPicked(event) {
       </div>
     </div>
 
-    <p v-if="loadError" class="border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-xs text-amber-800">
+    <p v-if="loadError" class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800">
       {{ loadError }}
     </p>
 
@@ -189,21 +189,21 @@ async function handleDrawingPicked(event) {
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-xs text-slate-500">
           <tr>
-            <th class="px-4 py-2 text-right font-medium">序号</th>
-            <th class="px-4 py-2 text-left font-medium">位号</th>
-            <th class="px-4 py-2 text-left font-medium">名称</th>
-            <th class="px-4 py-2 text-left font-medium">昵称</th>
-            <th class="px-4 py-2 text-left font-medium">规格</th>
-            <th class="px-4 py-2 text-left font-medium">容器类型</th>
-            <th class="px-4 py-2 text-right font-medium">内径</th>
-            <th class="px-4 py-2 text-right font-medium">筒体长度</th>
-            <th class="px-4 py-2 text-right font-medium">直边</th>
-            <th class="px-4 py-2 text-right font-medium">封头深度(上/下)</th>
-            <th class="px-4 py-2 text-left font-medium">介质</th>
-            <th class="px-4 py-2 text-right font-medium">介质密度</th>
-            <th class="px-4 py-2 text-left font-medium">底图</th>
-            <th class="px-4 py-2 text-left font-medium">状态</th>
-            <th class="px-4 py-2 text-right font-medium">操作</th>
+            <th class="px-4 py-2.5 text-right font-medium">序号</th>
+            <th class="px-4 py-2.5 text-left font-medium">位号</th>
+            <th class="px-4 py-2.5 text-left font-medium">名称</th>
+            <th class="px-4 py-2.5 text-left font-medium">昵称</th>
+            <th class="px-4 py-2.5 text-left font-medium">规格</th>
+            <th class="px-4 py-2.5 text-left font-medium">容器类型</th>
+            <th class="px-4 py-2.5 text-right font-medium">内径</th>
+            <th class="px-4 py-2.5 text-right font-medium">筒体长度</th>
+            <th class="px-4 py-2.5 text-right font-medium">直边</th>
+            <th class="px-4 py-2.5 text-right font-medium">封头深度(上/下)</th>
+            <th class="px-4 py-2.5 text-left font-medium">介质</th>
+            <th class="px-4 py-2.5 text-right font-medium">介质密度</th>
+            <th class="px-4 py-2.5 text-left font-medium">底图</th>
+            <th class="px-4 py-2.5 text-left font-medium">状态</th>
+            <th class="px-4 py-2.5 text-right font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -216,21 +216,21 @@ async function handleDrawingPicked(event) {
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
                  一翻页就重新数会串 -->
-            <td class="px-4 py-2 text-right text-xs text-slate-400">
+            <td class="px-4 py-2.5 text-right text-xs text-slate-400">
               {{ (currentPage - 1) * pageSize + index + 1 }}
             </td>
-            <td class="px-4 py-2">{{ row.equipmentCode || '—' }}</td>
-            <td class="px-4 py-2 font-medium">{{ row.equipmentName }}</td>
-            <td class="px-4 py-2">{{ row.nickname || '—' }}</td>
-            <td class="px-4 py-2">{{ row.spec || '—' }}</td>
-            <td class="px-4 py-2">{{ containerTypeLabel(row.containerType) }}</td>
-            <td class="px-4 py-2 text-right">{{ row.innerDiameter ?? '—' }}</td>
-            <td class="px-4 py-2 text-right">{{ row.shellLength ?? '—' }}</td>
-            <td class="px-4 py-2 text-right">{{ row.straightFlange ?? '—' }}</td>
-            <td class="px-4 py-2 text-right">{{ headDepthText(row) }}</td>
-            <td class="px-4 py-2">{{ row.medium || '—' }}</td>
-            <td class="px-4 py-2 text-right">{{ row.density ?? '—' }}</td>
-            <td class="px-4 py-2">
+            <td class="px-4 py-2.5">{{ row.equipmentCode || '—' }}</td>
+            <td class="px-4 py-2.5 font-medium">{{ row.equipmentName }}</td>
+            <td class="px-4 py-2.5">{{ row.nickname || '—' }}</td>
+            <td class="px-4 py-2.5">{{ row.spec || '—' }}</td>
+            <td class="px-4 py-2.5">{{ containerTypeLabel(row.containerType) }}</td>
+            <td class="px-4 py-2.5 text-right">{{ row.innerDiameter ?? '—' }}</td>
+            <td class="px-4 py-2.5 text-right">{{ row.shellLength ?? '—' }}</td>
+            <td class="px-4 py-2.5 text-right">{{ row.straightFlange ?? '—' }}</td>
+            <td class="px-4 py-2.5 text-right">{{ headDepthText(row) }}</td>
+            <td class="px-4 py-2.5">{{ row.medium || '—' }}</td>
+            <td class="px-4 py-2.5 text-right">{{ row.density ?? '—' }}</td>
+            <td class="px-4 py-2.5">
               <img
                 v-if="row.imageFile"
                 :src="imagePreview(row.imageFile)"
@@ -239,8 +239,8 @@ async function handleDrawingPicked(event) {
               />
               <span v-else class="text-xs text-slate-400">未配</span>
             </td>
-            <td class="px-4 py-2 text-xs">{{ row.enabled === 1 ? '启用' : '已停用' }}</td>
-            <td class="px-4 py-2 text-right">
+            <td class="px-4 py-2.5 text-xs">{{ row.enabled === 1 ? '启用' : '已停用' }}</td>
+            <td class="px-4 py-2.5 text-right">
               <el-button size="small" @click.stop="handleToggle(row)">
                 {{ row.enabled === 1 ? '停用' : '启用' }}
               </el-button>
@@ -272,10 +272,10 @@ async function handleDrawingPicked(event) {
       :title="isNew ? '新增设备' : `编辑：${draft.equipmentName || ''}`"
       width="720px"
     >
-      <div class="space-y-5">
+      <div class="space-y-6">
         <div>
           <p class="mb-2 text-xs font-medium text-slate-500">台账信息</p>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div class="grid grid-cols-2 gap-x-4 gap-y-4">
             <label class="text-sm">设备位号<el-input v-model="draft.equipmentCode" /></label>
             <label class="text-sm">设备名称<el-input v-model="draft.equipmentName" /></label>
             <label class="text-sm">设备昵称<el-input v-model="draft.nickname" /></label>
@@ -308,7 +308,7 @@ async function handleDrawingPicked(event) {
               ｜筒体长度不含两端直边；下封头留空表示平底
             </span>
           </p>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div class="grid grid-cols-2 gap-x-4 gap-y-4">
             <label class="text-sm">内径 (mm)<el-input v-model="draft.innerDiameter" /></label>
             <label class="text-sm">筒体长度 (mm)<el-input v-model="draft.shellLength" /></label>
             <label class="text-sm">直边 (mm)<el-input v-model="draft.straightFlange" /></label>

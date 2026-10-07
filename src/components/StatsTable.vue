@@ -21,11 +21,11 @@ const props = defineProps({
  * 用字符串拼接出来的类名不会被生成。
  */
 const WRAP_CELL_CLASS = {
-  'w-[200px]': 'max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700',
-  'w-[240px]': 'max-w-[240px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700',
+  'w-[200px]': 'max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700',
+  'w-[240px]': 'max-w-[240px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700',
 }
 const DEFAULT_WRAP_CELL_CLASS =
-  'max-w-[200px] whitespace-normal break-words px-3 py-2 text-sm text-slate-700'
+  'max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700'
 
 // 首列是序号，其余列按配置渲染
 const bodyColumns = computed(() => props.columns.filter((column) => column.key !== 'index'))
@@ -39,10 +39,10 @@ function cellClass(column) {
 
   if (column.align === 'right') {
     const color = column.emphasis ? 'font-semibold text-sky-700' : 'text-slate-600'
-    return `whitespace-nowrap py-2 pl-3 pr-5 text-right text-sm ${color}`
+    return `whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm ${color}`
   }
 
-  return 'whitespace-nowrap px-3 py-2 text-sm text-slate-600'
+  return 'whitespace-nowrap px-3 py-2.5 text-sm text-slate-600'
 }
 
 function getRowKey(item, index) {
@@ -81,7 +81,7 @@ function getRowKey(item, index) {
             :key="getRowKey(item, index)"
             class="transition hover:bg-slate-50"
           >
-            <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">
+            <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
               {{ index + 1 }}
             </td>
             <td v-for="column in bodyColumns" :key="column.key" :class="cellClass(column)">

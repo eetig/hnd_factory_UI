@@ -304,7 +304,7 @@ function handleThumbError(event, image) {
     </div>
 
     <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
-    <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
+    <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
       <el-date-picker
         v-model="tankLevelStartDate"
         type="date"
@@ -362,14 +362,14 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700"
+        class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
         @click="fetchTankLevelRecords"
       >
         查询
       </button>
       <button
         type="button"
-        class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+        class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
         @click="resetTankLevelFilters"
       >
         重置
@@ -425,7 +425,7 @@ function handleThumbError(event, image) {
             <tbody class="divide-y divide-slate-100 bg-white">
               <!-- 新增草稿行：固定在表格最前，一眼能看到自己正在补的那条 -->
               <tr v-if="isCreating" class="bg-sky-50/60">
-                <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-sky-700">新增</td>
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-sky-700">新增</td>
                 <td class="px-2 py-1.5">
                   <input
                     v-model="draft.recordDate"
@@ -536,7 +536,7 @@ function handleThumbError(event, image) {
                     </span>
                   </div>
                 </td>
-                <td class="whitespace-nowrap px-3 py-2">
+                <td class="whitespace-nowrap px-3 py-2.5">
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
@@ -564,7 +564,7 @@ function handleThumbError(event, image) {
                 class="transition"
                 :class="isEditing(record) ? 'bg-sky-50/60' : 'hover:bg-slate-50'"
               >
-                <td class="whitespace-nowrap px-3 py-2 text-sm font-semibold text-slate-900">
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
                   {{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}
                 </td>
 
@@ -636,26 +636,26 @@ function handleThumbError(event, image) {
 
                 <!-- ===== 只读态 ===== -->
                 <template v-if="!isEditing(record)">
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ record.recordDate }}
                   </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ record.location }}
                   </td>
-                  <td class="whitespace-nowrap px-3 py-2 text-sm text-slate-600">
+                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ record.tankName }}
                   </td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-4 text-right text-sm text-slate-600">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm text-slate-600">
                     {{ record.levelValue }}
                   </td>
-                  <td class="whitespace-nowrap py-2 pl-3 pr-4 text-right text-sm font-semibold text-sky-700">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm font-semibold text-sky-700">
                     {{ record.theoreticalWeight }}
                   </td>
                 </template>
 
                 <!-- 图据（可多张）：点开弹窗看大图 / 加图 / 删图。
                      编辑态与只读态行为一致，所以不放进上面的两态分支，免得写两份 -->
-                <td class="whitespace-nowrap px-3 py-2">
+                <td class="whitespace-nowrap px-3 py-2.5">
                   <span
                     class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
                     :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '暂无图据'"
@@ -694,7 +694,7 @@ function handleThumbError(event, image) {
                 </td>
 
                 <!-- 操作列：位置固定在最后，同样不必跟着编辑态复制两份 -->
-                <td v-if="isEditing(record) || canOperate" class="whitespace-nowrap px-3 py-2">
+                <td v-if="isEditing(record) || canOperate" class="whitespace-nowrap px-3 py-2.5">
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
@@ -740,7 +740,7 @@ function handleThumbError(event, image) {
 
       <!-- 录入入口：放在状态分支之外 —— 空表时也要在，否则空态提示里那句
            「点下方『新增一行』开始录入」下面什么都没有 -->
-      <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-2.5">
+      <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-3">
         <button
           type="button"
           class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
@@ -764,7 +764,7 @@ function handleThumbError(event, image) {
         </span>
       </div>
 
-      <div v-if="tankLevelHasRows" class="flex justify-end border-t border-slate-100 px-6 py-2.5">
+      <div v-if="tankLevelHasRows" class="flex justify-end border-t border-slate-100 px-6 py-3">
         <el-pagination
           v-model:current-page="tankLevelPageNum"
           :page-size="tankLevelPageSize"

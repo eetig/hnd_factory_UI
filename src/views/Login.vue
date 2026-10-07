@@ -61,7 +61,7 @@ async function handleLogin() {
         <h1 class="mt-3 text-3xl font-bold text-slate-900">登录</h1>
       </div>
 
-      <form class="space-y-5" @submit.prevent="handleLogin">
+      <form class="space-y-6" @submit.prevent="handleLogin">
         <div>
           <label for="username" class="mb-2 block text-sm font-medium text-slate-700">账号</label>
           <input
