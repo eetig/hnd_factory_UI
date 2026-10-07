@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus, { ElAutocomplete, ElSelect } from 'element-plus'
@@ -580,5 +580,107 @@ describe('WorkOrderList 页面冒烟', () => {
     el.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(false)
+  })
+})
+
+/**
+ * 侧栏收起 / 展开（使用方 2026-10-07）。
+ *
+ * 单开一个 describe，不塞进上面那个冒烟块：收起状态会写进 localStorage，
+ * 而 jsdom 的 localStorage 是按**文件**共享的 —— 沾上就会让之后挂载的页面
+ * 一开始就是收起态（一个测试污染一整份文件，且症状是别处的断言莫名其妙地红）。
+ * 这里进出一律清掉。
+ */
+describe('侧栏收起 / 展开', () => {
+  let wrapper
+
+  const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
+  const toggle = () => wrapper.find('button[aria-controls="app-sidebar"]')
+
+  beforeEach(() => {
+    window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
+    wrapper = mountPage()
+  })
+
+  afterEach(() => {
+    window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
+  })
+
+  it('点收起：aside 收窄、品牌区让位（不是被盖住），再点一次复原', async () => {
+    const aside = wrapper.find('aside')
+    // 展开态宽度 2026-10-07 由 w-56(224px) 加到 w-72(288px)：
+    // 分组块加了 36px 图标后，224px 放不下最长的那条分组提示，四条提示折行不一致。
+    expect(aside.classes()).toContain('w-72')
+    expect(toggle().attributes('aria-expanded')).toBe('true')
+    expect(toggle().attributes('aria-label')).toBe('收起侧栏')
+
+    await toggle().trigger('click')
+
+    // 收窄 = 把宽度让给主区。主区是 flex-1，自己会把那 200px 拿回去
+    expect(aside.classes()).toContain('w-[88px]')
+    expect(aside.classes()).not.toContain('w-72')
+    expect(toggle().attributes('aria-expanded')).toBe('false')
+    expect(toggle().attributes('aria-label')).toBe('展开侧栏')
+
+    // 品牌区是**让位**（display:none），不是被浮层压住 —— 使用方选的就是「内容让位、不重叠」。
+    // 三条都要断：收起态只剩图标，任何一条没让位都会在 40px 里挤成一团
+    const brand = ['Factory Operations', 'HND生产助手', '生产工单与物料数据查询助手'].map((text) =>
+      wrapper.findAll('p').find((p) => p.text() === text),
+    )
+    expect(brand.map((p) => p.element.style.display)).toEqual(['none', 'none', 'none'])
+
+    await toggle().trigger('click')
+    expect(aside.classes()).toContain('w-72')
+    expect(brand.map((p) => p.element.style.display)).toEqual(['', '', ''])
+  })
+
+  it('收起态点分组图标照样切组（不能只剩开关、把导航丢了）', async () => {
+    await toggle().trigger('click')
+
+    const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+
+    // 图标条**只列有可见页的组**：匿名时「工单报工」「数据维护」整组不可见，
+    // 列出来就是点了没反应的死按钮。
+    // 收起后按钮没有可见文字，可访问名就是组名 —— 缺了它读屏只剩一个无名图标
+    expect(groups.map((b) => b.attributes('aria-label'))).toEqual(['数据统计', '工具'])
+
+    // 匿名态当前在「工具」组（visibleTabs[0] 是物料查询），所以点「数据统计」才测得出「切」
+    expect(activeTabKey(wrapper)).toBe('stock')
+    const stats = groups.find((b) => b.attributes('aria-label') === '数据统计')
+    await stats.trigger('click')
+
+    // 落到该组第一个可见页；侧栏高亮与主区页签都由 activeTab 推导，天然同步
+    expect(activeTabKey(wrapper)).toBe('weekly')
+
+    // 收起态**没有**「块底」—— 那层 emerald-50 + 光晕只在展开态有（40px 里套环会糊）。
+    // 当前组的标记落在图标块上：实心 emerald-700 + 白图标。
+    // 顺带确认选中的确**转移**了，而不是两块一起亮
+    const tools = groups.find((b) => b.attributes('aria-label') === '工具')
+    expect(stats.find('span').classes()).toContain('bg-emerald-700')
+    expect(tools.find('span').classes()).not.toContain('bg-emerald-700')
+  })
+
+  it('展开态只有当前组带绿光晕（使用方 2026-10-07 提的「绿色光晕」）', () => {
+    // 光晕是这轮的需求本身，所以要有护栏：四块一样亮就分不出当前在哪一组了。
+    // 匿名态在「工具」组（visibleTabs[0] 是物料查询）
+    const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+    const glowing = groups.filter((b) => b.classes().includes('shadow-glow'))
+
+    expect(glowing).toHaveLength(1)
+    expect(glowing[0].text()).toContain('工具')
+    expect(glowing[0].classes()).toContain('bg-emerald-50')
+  })
+
+  it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {
+    // 收起的动机是「把 224px 让回给表格」，刷新一次就自己弹回去，等于每次打开都要重收
+    await toggle().trigger('click')
+    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('1')
+
+    const reopened = mountPage()
+    expect(reopened.find('aside').classes()).toContain('w-[88px]')
+    reopened.unmount()
+
+    await toggle().trigger('click')
+    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('0')
   })
 })

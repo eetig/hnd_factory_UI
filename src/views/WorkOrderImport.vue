@@ -65,7 +65,7 @@ const INBOUND_COLUMNS = [
   { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
   { key: 'inboundDate', label: '入库时间', width: 'w-36' },
-  { key: 'inboundQty', label: '领料数量', width: 'w-28', align: 'right' },
+  { key: 'inboundQty', label: '入库数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
 ]
 
@@ -208,6 +208,8 @@ function getPageData(page = pageNum.value) {
 }
 
 function openFilePicker() {
+  // 上传/解析途中再点选，只会把进行中的进度页换回文件选择框（变更-033）
+  if (uploading.value) return
   fileInputRef.value?.click()
 }
 
@@ -399,9 +401,14 @@ function handleBackToList() {
     />
 
     <section
-      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition"
-      :class="dragActive ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400'"
+      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+      :class="dragActive ? 'border-emerald-600 bg-emerald-50' : 'border-slate-300 hover:border-emerald-600'"
+      role="button"
+      :tabindex="uploading ? -1 : 0"
+      aria-labelledby="wo-import-drop-title wo-import-drop-hint"
       @click="openFilePicker"
+      @keydown.enter.prevent="openFilePicker"
+      @keydown.space.prevent="openFilePicker"
       @dragover.prevent="dragActive = true"
       @dragleave.prevent="dragActive = false"
       @drop.prevent="handleDrop"
@@ -414,7 +421,7 @@ function handleBackToList() {
           </p>
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
-              class="h-full rounded-full bg-sky-500 transition-[width] duration-200 ease-out"
+              class="h-full rounded-full bg-emerald-600 transition-[width] duration-200 ease-out"
               :style="{ width: `${uploadPercent}%` }"
             ></div>
           </div>
@@ -439,10 +446,10 @@ function handleBackToList() {
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
-        <!-- 这里的 -600 是有意的：这是 48px 图标（纯图形，阈值 3:1），不是文字。
-             全仓最后一处 sky-600，别「对齐」成 -700。 -->
+        <!-- 这里的 -600 是有意的：这是 48px 图标（纯图形，阈值 3:1，emerald-600 压白底 3.77 过），
+             不是文字。承载文字的实心按钮一律 -700（5.48），两者别互相「对齐」。 -->
         <svg
-          class="h-12 w-12 text-sky-600"
+          class="h-12 w-12 text-emerald-600"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -452,10 +459,10 @@ function handleBackToList() {
           <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
-        <p class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-sky-700">点击选择文件</span>
+        <p id="wo-import-drop-title" class="text-base font-medium text-slate-700">
+          将 Excel 文件拖到此处，或 <span class="text-emerald-700">点击选择文件</span>
         </p>
-        <p class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
+        <p id="wo-import-drop-hint" class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
@@ -465,7 +472,11 @@ function handleBackToList() {
       </div>
     </section>
 
-    <div v-if="previewError" class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4">
+    <div
+      v-if="previewError"
+      role="alert"
+      class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4"
+    >
       <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.error">!</div>
       <div>
         <h3 class="text-sm font-semibold text-rose-700">文件解析失败</h3>
@@ -478,7 +489,7 @@ function handleBackToList() {
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
           v-if="workOrderType"
-          class="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700"
+          class="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700"
         >
           {{ workOrderType }}
         </span>
@@ -566,7 +577,7 @@ function handleBackToList() {
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
           新增 <span class="font-semibold text-emerald-700">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-sky-700">{{ importSummary.updateCount }}</span> 条，
+          更新 <span class="font-semibold text-emerald-700">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>

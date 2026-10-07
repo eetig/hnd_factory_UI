@@ -120,10 +120,39 @@ function openCreate() {
   dialogVisible.value = true
 }
 
+// 几何/数值列只做「像不像数字」的粗校验：这些值会直接喂给容器体积计算，
+// 一旦混进 "350O"（字母 O）这类值，保存时不报错，计算页却算出一个 NaN（变更-033）
+const NUMERIC_DRAFT_FIELDS = [
+  ['innerDiameter', '内径'],
+  ['shellLength', '筒体长度'],
+  ['straightFlange', '直边'],
+  ['topHeadDepth', '上封头深度'],
+  ['bottomHeadDepth', '下封头深度'],
+  ['volumePerMm', '每毫米体积'],
+  ['density', '介质密度'],
+]
+
+/** 返回第一个「填了但不是数字」的字段名，全部合法返回空串；留空一律放行 */
+function firstNonNumericField() {
+  for (const [key, label] of NUMERIC_DRAFT_FIELDS) {
+    const raw = draft[key]
+    if (raw === null || raw === undefined) continue
+    const text = String(raw).trim()
+    if (!text) continue
+    if (!Number.isFinite(Number(text))) return label
+  }
+  return ''
+}
+
 async function handleSave() {
   message.value = ''
   if (!draft.equipmentName?.trim()) {
     message.value = '设备名称不能为空'
+    return
+  }
+  const badField = firstNonNumericField()
+  if (badField) {
+    message.value = `${badField}必须填数字（留空表示未填写）`
     return
   }
   try {
@@ -187,7 +216,11 @@ async function handleDrawingPicked(event) {
       </div>
     </div>
 
-    <p v-if="loadError" class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800">
+    <p
+      v-if="loadError"
+      role="alert"
+      class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800"
+    >
       {{ loadError }}
     </p>
 
@@ -195,30 +228,33 @@ async function handleDrawingPicked(event) {
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-xs text-slate-500">
           <tr>
-            <th class="px-4 py-2.5 text-right font-medium">序号</th>
-            <th class="px-4 py-2.5 text-left font-medium">位号</th>
-            <th class="px-4 py-2.5 text-left font-medium">名称</th>
-            <th class="px-4 py-2.5 text-left font-medium">昵称</th>
-            <th class="px-4 py-2.5 text-left font-medium">规格</th>
-            <th class="px-4 py-2.5 text-left font-medium">容器类型</th>
-            <th class="px-4 py-2.5 text-right font-medium">内径</th>
-            <th class="px-4 py-2.5 text-right font-medium">筒体长度</th>
-            <th class="px-4 py-2.5 text-right font-medium">直边</th>
-            <th class="px-4 py-2.5 text-right font-medium">封头深度(上/下)</th>
-            <th class="px-4 py-2.5 text-left font-medium">介质</th>
-            <th class="px-4 py-2.5 text-right font-medium">介质密度</th>
-            <th class="px-4 py-2.5 text-left font-medium">底图</th>
-            <th class="px-4 py-2.5 text-left font-medium">状态</th>
-            <th class="px-4 py-2.5 text-right font-medium">操作</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">位号</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">名称</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">昵称</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">规格</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">容器类型</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">内径</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">筒体长度</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">直边</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">封头深度(上/下)</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">介质</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">介质密度</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">底图</th>
+            <th scope="col" class="px-4 py-2.5 text-left font-medium">状态</th>
+            <th scope="col" class="px-4 py-2.5 text-right font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="(row, index) in paged"
             :key="row.id"
-            class="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+            tabindex="0"
+            class="cursor-pointer border-t border-slate-100 hover:bg-slate-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
             :class="{ 'text-slate-500': row.enabled !== 1 }"
             @click="openEdit(row)"
+            @keydown.enter.self.prevent="openEdit(row)"
+            @keydown.space.self.prevent="openEdit(row)"
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
                  一翻页就重新数会串 -->
@@ -240,7 +276,7 @@ async function handleDrawingPicked(event) {
               <img
                 v-if="row.imageFile"
                 :src="imagePreview(row.imageFile)"
-                alt=""
+                :alt="`${row.equipmentName} 的容器底图`"
                 class="h-8 w-8 rounded-xl border border-slate-200 object-contain"
               />
               <span v-else class="text-xs text-slate-500">未配</span>
@@ -299,9 +335,9 @@ async function handleDrawingPicked(event) {
               </el-select>
             </label>
             <label class="text-sm">介质<el-input v-model="draft.medium" /></label>
-            <label class="text-sm">介质密度 (g/cm³)<el-input v-model="draft.density" /></label>
+            <label class="text-sm">介质密度 (g/cm³)<el-input v-model="draft.density" inputmode="decimal" /></label>
             <label class="text-sm">
-              每毫米液位对应的体积 (m³/mm)<el-input v-model="draft.volumePerMm" />
+              每毫米液位对应的体积 (m³/mm)<el-input v-model="draft.volumePerMm" inputmode="decimal" />
             </label>
             <label class="text-sm col-span-2">备注<el-input v-model="draft.remark" /></label>
           </div>
@@ -315,11 +351,11 @@ async function handleDrawingPicked(event) {
             </span>
           </p>
           <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-            <label class="text-sm">内径 (mm)<el-input v-model="draft.innerDiameter" /></label>
-            <label class="text-sm">筒体长度 (mm)<el-input v-model="draft.shellLength" /></label>
-            <label class="text-sm">直边 (mm)<el-input v-model="draft.straightFlange" /></label>
-            <label class="text-sm">上封头深度 (mm)<el-input v-model="draft.topHeadDepth" /></label>
-            <label class="text-sm">下封头深度 (mm)<el-input v-model="draft.bottomHeadDepth" /></label>
+            <label class="text-sm">内径 (mm)<el-input v-model="draft.innerDiameter" inputmode="decimal" /></label>
+            <label class="text-sm">筒体长度 (mm)<el-input v-model="draft.shellLength" inputmode="decimal" /></label>
+            <label class="text-sm">直边 (mm)<el-input v-model="draft.straightFlange" inputmode="decimal" /></label>
+            <label class="text-sm">上封头深度 (mm)<el-input v-model="draft.topHeadDepth" inputmode="decimal" /></label>
+            <label class="text-sm">下封头深度 (mm)<el-input v-model="draft.bottomHeadDepth" inputmode="decimal" /></label>
           </div>
         </div>
 
@@ -329,7 +365,7 @@ async function handleDrawingPicked(event) {
             <img
               v-if="draft.imageFile"
               :src="imagePreview(draft.imageFile)"
-              alt=""
+              alt="容器底图预览"
               class="h-24 w-24 rounded-card border border-slate-200 object-contain"
             />
             <div class="text-xs text-slate-500">
@@ -350,7 +386,7 @@ async function handleDrawingPicked(event) {
           />
         </div>
 
-        <p v-if="message" class="text-xs text-rose-600">{{ message }}</p>
+        <p v-if="message" role="alert" class="text-xs text-rose-600">{{ message }}</p>
       </div>
 
       <template #footer>

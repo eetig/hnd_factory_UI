@@ -38,7 +38,7 @@ function cellClass(column) {
   if (column.wrap) return WRAP_CELL_CLASS[column.width] || DEFAULT_WRAP_CELL_CLASS
 
   if (column.align === 'right') {
-    const color = column.emphasis ? 'font-semibold text-sky-700' : 'text-slate-600'
+    const color = column.emphasis ? 'font-semibold text-emerald-700' : 'text-slate-600'
     return `whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm ${color}`
   }
 

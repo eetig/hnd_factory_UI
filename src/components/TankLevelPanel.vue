@@ -186,7 +186,7 @@ const canCreate = computed(
 function inputClass(align) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-emerald-600 focus:bg-white',
     align === 'right' ? 'text-right' : '',
   ]
 }
@@ -369,7 +369,7 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-sky-800"
+        class="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800"
         @click="fetchTankLevelRecords"
       >
         查询
@@ -431,8 +431,8 @@ function handleThumbError(event, image) {
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               <!-- 新增草稿行：固定在表格最前，一眼能看到自己正在补的那条 -->
-              <tr v-if="isCreating" class="bg-sky-50/60">
-                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-sky-700">新增</td>
+              <tr v-if="isCreating" class="bg-emerald-50/60">
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-emerald-700">新增</td>
                 <td class="px-2 py-1.5">
                   <input
                     v-model="draft.recordDate"
@@ -517,7 +517,7 @@ function handleThumbError(event, image) {
                     />
                     <button
                       type="button"
-                      class="rounded-xl border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-sky-400 hover:text-sky-700"
+                      class="rounded-xl border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-emerald-600 hover:text-emerald-700"
                       @click="pendingImageInputRef?.click()"
                     >
                       {{ pendingImages.length ? '再加一张' : '选择图片' }}
@@ -534,7 +534,7 @@ function handleThumbError(event, image) {
                       />
                       <button
                         type="button"
-                        class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/70 text-xs leading-none text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100"
+                        class="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/70 text-sm text-white opacity-0 transition hover:bg-rose-600 focus:opacity-100 group-hover:opacity-100"
                         :aria-label="`移除 ${item.file.name}`"
                         @click="removePendingImage(item.key)"
                       >
@@ -547,7 +547,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -569,7 +569,7 @@ function handleThumbError(event, image) {
                 v-for="(record, index) in tankLevelTableData"
                 :key="rowKeyOf(record)"
                 class="transition"
-                :class="isEditing(record) ? 'bg-sky-50/60' : 'hover:bg-slate-50'"
+                :class="isEditing(record) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'"
               >
                 <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
                   {{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}
@@ -655,7 +655,7 @@ function handleThumbError(event, image) {
                   <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ record.levelValue }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold text-sky-700">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold text-emerald-700">
                     {{ record.theoreticalWeight }}
                   </td>
                 </template>
@@ -664,9 +664,13 @@ function handleThumbError(event, image) {
                      编辑态与只读态行为一致，所以不放进上面的两态分支，免得写两份 -->
                 <td class="whitespace-nowrap px-3 py-2.5">
                   <span
-                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
-                    :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '暂无图据'"
+                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '添加图据'"
                     @click="openImageDialog(record)"
+                    @keydown.enter.prevent="openImageDialog(record)"
+                    @keydown.space.prevent="openImageDialog(record)"
                   >
                     <svg
                       class="h-3 w-3"
@@ -693,7 +697,7 @@ function handleThumbError(event, image) {
                     <!-- 多张时在角上标出总数，免得点开才知道有几张 -->
                     <span
                       v-if="record.images.length > 1"
-                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-700 px-1 text-xs font-medium leading-none text-white"
+                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-700 px-1 text-xs font-medium leading-none text-white"
                     >
                       {{ record.images.length }}
                     </span>
@@ -705,7 +709,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -724,7 +728,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canEdit"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:text-sky-700"
+                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:text-emerald-700"
                       @click="startEdit(record)"
                     >
                       编辑
@@ -750,7 +754,7 @@ function handleThumbError(event, image) {
       <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-3">
         <button
           type="button"
-          class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+          class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
           @click="startCreate"
         >
           <svg

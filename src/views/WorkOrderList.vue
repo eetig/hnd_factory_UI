@@ -27,12 +27,7 @@ import WorkOrderImport from './WorkOrderImport.vue'
 import ImageParse from './ImageParse.vue'
 import { getReportOrderType } from '../constants/orderTypes'
 import { STATUS_TEXT } from '../constants/statusTones'
-import {
-  getLastWeekMonday,
-  getLastWeekSunday,
-  formatMonthDay,
-  formatQty,
-} from '../utils/format'
+import { getLastWeekMonday, getLastWeekSunday, formatMonthDay, formatQty } from '../utils/format'
 import { UTubeBundle, shellVolumeMm3 } from '../utils/vesselVolume'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
@@ -45,6 +40,9 @@ import {
   ElOption,
   ElPagination,
   ElSelect,
+  // 收起态的图标条没有文字，靠 tooltip 报出组名（全仓第一处 tooltip）。
+  // 本项目没有 app.use(ElementPlus)，一律按文件显式 import。
+  ElTooltip,
 } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 // EP 样式与主题覆盖统一由 src/main.js 按序导入（见那里的注释），这里不再重复 import
@@ -163,11 +161,15 @@ const activeTab = ref('workOrder')
 // 而 visibleTabs 只在「值发生变化」时才触发回调，首次渲染的可见列表
 // 是在这之前就定下来的 —— 不加 immediate 页面会停在隐藏面板上，看起来一片空白。
 // 同理，这个 watch 必须放在 activeTab 声明之后（immediate 会立刻读到它，放前面撞 TDZ）。
-watch(visibleTabs, (list) => {
-  if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
-    activeTab.value = list[0].key
-  }
-}, { immediate: true })
+watch(
+  visibleTabs,
+  (list) => {
+    if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
+      activeTab.value = list[0].key
+    }
+  },
+  { immediate: true },
+)
 
 // 切换 Tab 后把激活项滚进视野：登录/退出会让 visibleTabs 变化并自动切 Tab，
 // 切到的那个可能在可视区之外，用户会看不到自己现在在哪一页。
@@ -203,7 +205,9 @@ const currentGroup = computed(
 )
 
 /** 当前组里**可见**的页 —— 组内卡片用它 */
-const groupTabs = computed(() => visibleTabs.value.filter((tab) => tab.group === currentGroup.value))
+const groupTabs = computed(() =>
+  visibleTabs.value.filter((tab) => tab.group === currentGroup.value),
+)
 
 /**
  * 侧栏要列的组：**只保留有可见页的**。
@@ -220,9 +224,7 @@ const sidebarGroups = computed(() =>
 )
 
 /** 当前页标题（主区顶部） */
-const activeTabLabel = computed(
-  () => tabs.find((tab) => tab.key === activeTab.value)?.label ?? '',
-)
+const activeTabLabel = computed(() => tabs.find((tab) => tab.key === activeTab.value)?.label ?? '')
 
 /**
  * 切大类：落到该类第一个**可见**页。
@@ -233,6 +235,58 @@ const activeTabLabel = computed(
 function selectGroup(key) {
   const first = visibleTabs.value.find((tab) => tab.group === key)
   if (first) activeTab.value = first.key
+}
+
+// ===== 侧栏收起 / 展开（使用方 2026-10-07：点击切换浮动面板 / 图标条）=====
+
+/**
+ * 四个大类的图标（收起后那条图标条用）。
+ *
+ * key 与 TAB_GROUPS 一一对应 —— 以后加组必须同期加图标，否则 `:d` 拿到 undefined，
+ * 画出来是一个空白按钮：点得动、能切页，但看不出是哪个组。
+ *
+ * 值是**一个 <path> 的 d**。一个 d 里可以并列写多段子路径（剪贴板的「夹子」、
+ * 数据库的椭圆都是这么画的），所以四种图形都塞得进一条 path —— 不必为
+ * <rect>/<circle> 另开元素，也就不必为此引入 v-html。
+ * 线条语言取自 Feather，与 components/FilterHeaderCell.vue 同一套。
+ */
+const GROUP_ICON_PATHS = {
+  order:
+    'M15 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2M9 2h6a1 1 0 0 1 1 1v3H8V3a1 1 0 0 1 1-1z',
+  stats: 'M18 20V10M12 20V4M6 20V14',
+  tools:
+    'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
+  maintain:
+    'M21 5a9 3 0 0 1-18 0a9 3 0 0 1 18 0zM21 12c0 1.66-4 3-9 3s-9-1.34-9-3M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5',
+}
+
+const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
+
+/** 读写都兜一层：隐私模式下 localStorage 会直接抛（同 useVesselList 的缓存写法）。 */
+function readCollapsedFlag() {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 收起状态**持久化**：收起的动机是「把 224px 让回给表格」，
+ * 刷新一次就自己弹回去，等于每次打开都要重收一遍，那这个功能就白做了。
+ */
+const collapsed = ref(readCollapsedFlag())
+
+watch(collapsed, (value) => {
+  try {
+    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0')
+  } catch {
+    // 存不进去只是下次打开忘了收起，不影响本次使用
+  }
+})
+
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
 }
 
 // 工单数据与筛选（与工单报工面板共享同一份数据）
@@ -334,9 +388,10 @@ const {
 } = useInboundData()
 
 // 货物移动数据（原辅料核算的「已报工数」来源；数据本身由 useStatsData 读取）
-// 注意：货物移动加载失败状态（goodsMoveError）目前没有在界面上呈现，
-// 只有其它数据源的错误提示，这里保留现状并在此备注，避免被误当成死代码清掉。
-const { fetchGoodsMoveRecords } = useGoodsMoveData()
+// 加载失败必须在界面上呈现（变更-033）：失败时 goodsMoveQtyMap 是空的，
+// 核算表的「已报工数」会被算成 0、「未报工数」= 全部领料量 —— 那不是缺数据，
+// 是一个看起来合理的错误答案。现在失败走横幅 + 两列显示「—」。
+const { goodsMoveError, fetchGoodsMoveRecords } = useGoodsMoveData()
 
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
@@ -350,6 +405,18 @@ const { ensureTankLevelLoaded } = useTankLevelData()
 // 三张汇总表（工单报工 / 工单核算 / 原辅料核算）的行数据来自 useStatsData，
 // 其纯函数部分有单测覆盖；本页只提供列配置
 const { reportRows, costingRows, materialCostingRows } = useStatsData()
+
+/**
+ * 原辅料核算的展示行：货物移动不可用时，把它派生的两列换成「—」。
+ *
+ * 0 与「—」的区别是这件事的全部：显示 0 等于替使用方断言「这个月没有人报工」，
+ * 真实情况却是「这个数没拿到」。领料数不依赖货物移动，照常显示。
+ */
+const materialCostingDisplayRows = computed(() =>
+  goodsMoveError.value
+    ? materialCostingRows.value.map((row) => ({ ...row, reportedQty: '—', unreportedQty: '—' }))
+    : materialCostingRows.value,
+)
 
 // 汇总表行 key：同名物料可能出现多行，用「分组键 + 序号」保证唯一
 const statsRowKey = (item, index) => `${item.orderType ?? item.materialName}-${index}`
@@ -365,7 +432,6 @@ const columns = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
 ]
-
 
 function handleImportCancel() {
   activeTab.value = 'workOrder'
@@ -443,7 +509,14 @@ function handleImgError(event, record) {
   el.style.display = 'none'
 }
 
-
+/**
+ * 这张单子能不能点开大图 —— 判据与弹窗函数里那道守卫完全一致（只看原图 imageUrl）。
+ * 能点开才把缩略图当按钮（role/tabindex/键盘都跟着它走）；点不开时它只是个占位图标，
+ * 不能变成键盘上停得下来、按下去却没反应的死节点。
+ */
+function canOpenImage(record) {
+  return Boolean(record?.imageUrl)
+}
 
 // ===== 入库汇总 =====
 const inboundColumns = [
@@ -451,7 +524,7 @@ const inboundColumns = [
   { key: 'inboundDate', label: '入库时间', width: 'w-36' },
   { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'inboundQty', label: '领料数量', width: 'w-28', align: 'right' },
+  { key: 'inboundQty', label: '入库数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
   { key: 'imageUrl', label: '线下单据', width: 'w-24' },
 ]
@@ -465,10 +538,8 @@ function openInboundImageDialog(record) {
   inboundImageDialogVisible.value = true
 }
 
-
 // 月底储罐液位记录的列配置、行 key、图据弹窗都随面板一起移到了
 // components/TankLevelPanel.vue（变更-008 加行内编辑后这块变长，留在本文件不合适）
-
 
 // ===== 工单核算 =====
 const costingColumns = [
@@ -518,9 +589,27 @@ const weeklyColumns = [
 // 周统计固定展示项定义（materialCode 为隐藏属性，仅用于查询，不展示）
 // unitLabel 为单耗单位；unitFactor 为单耗换算系数（氯铂酸按克计，需 ×1000）；qtyFactor 为领用数量换算系数
 const WEEKLY_ROW_DEFINITIONS = [
-  { materialCode: '111001787', name: '三氯氢硅（kg）', unitLabel: '吨/吨', unitFactor: 1, qtyFactor: 1 },
-  { materialCode: '111001786', name: '电石（kg）', unitLabel: '吨/吨', unitFactor: 1, qtyFactor: 1 },
-  { materialCode: '112004292', name: '氯铂酸（g）', unitLabel: '克/吨', unitFactor: 1000, qtyFactor: 20 },
+  {
+    materialCode: '111001787',
+    name: '三氯氢硅（kg）',
+    unitLabel: '吨/吨',
+    unitFactor: 1,
+    qtyFactor: 1,
+  },
+  {
+    materialCode: '111001786',
+    name: '电石（kg）',
+    unitLabel: '吨/吨',
+    unitFactor: 1,
+    qtyFactor: 1,
+  },
+  {
+    materialCode: '112004292',
+    name: '氯铂酸（g）',
+    unitLabel: '克/吨',
+    unitFactor: 1000,
+    qtyFactor: 20,
+  },
 ]
 
 // 车间剩余：手动填写（按物料编码存放），默认全部为空，不填显示 /
@@ -621,9 +710,8 @@ const weeklyRows = computed(() => {
     const actualQty = formatQty(pickQty - remainingQty)
 
     // 单耗 = 实际使用 / 150产品入库数 × 换算系数（固定保留 2 位小数）
-    const unitConsumption = inboundQty > 0
-      ? ((actualQty * (row.unitFactor ?? 1)) / inboundQty).toFixed(2)
-      : '0.00'
+    const unitConsumption =
+      inboundQty > 0 ? ((actualQty * (row.unitFactor ?? 1)) / inboundQty).toFixed(2) : '0.00'
 
     return {
       ...row,
@@ -739,8 +827,8 @@ const vesselGeometry = computed(() => {
     totalLength: vessel.cylinderLength + 2 * headTotal,
     maxLevel: vessel.diameter,
     imageBounds: vessel.imageBounds,
-      displayWidth: vessel.displayWidth ?? 680,
-      liquid: vessel.liquid,
+    displayWidth: vessel.displayWidth ?? 680,
+    liquid: vessel.liquid,
     medium: vessel.medium ?? '',
     density: vessel.density ?? null,
     note: vessel.note ?? '',
@@ -822,9 +910,8 @@ const vesselDescription = computed(() => {
   const m = (value) => (value / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
   const capacity = vesselCapacity.value.toFixed(1)
 
-  const medium = g.medium && g.density
-    ? `介质 ${g.medium}（ρ=${g.density} g/cm³，20°C、101.325 kPa）｜`
-    : ''
+  const medium =
+    g.medium && g.density ? `介质 ${g.medium}（ρ=${g.density} g/cm³，20°C、101.325 kPa）｜` : ''
 
   if (g.type === 'vertical') {
     const flange = (raw.straightFlange ?? 0) > 0 ? `直边 ${m(raw.straightFlange)}m，` : ''
@@ -1044,8 +1131,7 @@ function renderVessel() {
     const apexY = bounds.top * s
     // 下封头：150 产品储罐是平底（没有 tangentBottom），此时 tangentBottomY 就是 bottom，
     // 下面走 else 分支画平底，与改造前完全一致
-    const hasBottomHead =
-      geometry.bottomHeadDepth > 0 && bounds.tangentBottom !== undefined
+    const hasBottomHead = geometry.bottomHeadDepth > 0 && bounds.tangentBottom !== undefined
     const tangentBottomY = hasBottomHead ? bounds.tangentBottom * s : bottom
     const ryBottom = bottom - tangentBottomY
 
@@ -1394,69 +1480,298 @@ watch(activeTab, (tab, prevTab) => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-slate-50">
     <!--
+      页面底色仍是冷调 slate-50；**暖白是卡片，不是背景**（使用方 2026-10-07 纠正）。
+
+      这两者只差一层嵌套，但看出来的东西完全不同：背景变暖是「整屏泛黄」，
+      卡片是「有一张纸，东西都放在纸上」。第一版做错成了前者。
+
+      卡片四边留 16px，与侧栏浮动面板同一个数 —— 同一种留白不出现两个值。
+      **高度写死 100vh − 上下各 16px（main 的 p-4），不是 min-h**（使用方 2026-10-07
+      圈着主区要「固定大小」时改的）。原来写的是 min-h，短内容完全看不出区别 ——
+      但**下限不是高度**：内容一长纸就跟着长，里面那几级 flex 分配全部落空
+      （实测：主区栏 619 → 3157 → 3381px，整页多出一条滚动条）。
+      定高之后纸正好是一整屏，页面自己不再滚动，滚动都在两块面板内部
+      —— 这也是侧栏 `100vh − 4rem` 那个数终于「算得准」的前提。
+      内层的东西（侧栏面板、各页白色卡片）层级不变，只是现在压在暖白纸上而不是冷灰上。
+    -->
+    <main class="min-h-screen bg-slate-50 p-4">
+      <!--
       外壳**不再限宽居中**（原先这里挂的是 mx-auto max-w-[1600px]，我早先加的）。
       留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
       跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
       主区不再被压到 1600：几个台账表格本来就宽，宽出来正好摊开列。
     -->
-    <div class="flex">
-      <!--
+      <div class="flex h-[calc(100vh-2rem)] rounded-card bg-canvas shadow-card">
+        <!--
         左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
 
         分组只是「怎么看这些页」，**不新增状态** —— 当前组由 activeTab 推导（见 currentGroup），
         所以「登录/退出后自动切页」「导入返回跳回工单汇总」这些既有逻辑一行都不用动。
 
-        窄屏不隐藏：页签从顶部挪走了，侧栏是**唯一**的页面入口，藏掉就没法切页了。
-        代价是窄窗口下主区被压窄（主区自己会横向滚），比「没有导航」可接受得多。
+        「藏掉就没法切页」这条已经不成立（2026-10-07 加收起后改）。原文是
+        「窄屏不隐藏：页签从顶部挪走了，侧栏是**唯一**的页面入口」—— 当时确实如此。
+        现在藏掉不等于没有导航：收起态是**图标条**，四个大类各留一个图标、点了照样切组
+        （只列有可见页的组，见 sidebarGroups）。于是窄窗口下反而多了一条出路：
+        主动收起把 224px 让回给表格，不必再像原先那样忍着主区被压窄。
       -->
-      <!--
+        <!--
         整块做成**浮动面板**：四边 16px 外边距、圆角 20px、一层低透明度柔和投影（使用方 2026-10-07 定）。
         原先这里是三张各自带边框的小卡片，现在并成一块 —— 浮起来之后还分层画边框，
         会变成「面板里套卡片」的双层轮廓，反而糊。
 
-        sticky 用 top-4（与那 16px 是同一个数）：长页面滚动时面板跟着走，
-        滚起来不会出现「先贴上边、再被 16px 顶开」的突兀感。
+        sticky 的落点已从 top-4 改到 **top-0**（与主区那条导航条钉在同一条线上）——
+        理由与实测数据写在面板那一处注释里。四边 16px 是**静止**位置，由面板自己的
+        m-4 给；吸顶位置由 top-* 给，两者互不干扰。
 
         面板**撑满可用高度**（使用方 2026-10-07 追加）：此前高度跟着内容走，
         aside 被 main 的 min-h-screen 撑满、面板却只有小半截，下面空出一条竖带。
-        高度取 100vh − 上下各 16px，正好与外边距凑成整屏：
-        16 + (100vh − 32px) + 16 = 100vh，因此不会凭空空出一条页面滚动条。
 
-        flex-col + 导航 flex-1：「设置 / 共 N 条工单」落到面板底部（内容短时靠底对齐，
-        不浮在半空）。整块再兜一层 overflow-y-auto —— 窗口特别矮或以后大类变多时，
+        这个高度是 100vh 减掉**四层** 16px。外层暖白卡片是后加的，从两层变四层，
+        数字必须跟着改 —— 否则面板比它所在的那张卡片还高出 32px：
+          main 的 p-4 (16) + 面板 m-4 (16) + 面板高 + m-4 (16) + p-4 (16) = 100vh
+          ⇒ 面板高 = 100vh − 64px = 100vh − 4rem
+        外层卡片自己则是 100vh − 32px（= 面板高 + 面板那上下两个 16px 外边距），
+        于是三层加起来正好一整屏，不会凭空空出一条页面滚动条。
+        **这个数现在是写死的**（`h-[calc(100vh-2rem)]`，不再是 min-h）：纸不定高，
+        上面这套算术只是「至少」，主区一有长内容就全部失效 —— 见纸那一处的注释。
+
+        flex-col + 导航 flex-1：账号块落到面板底部（内容短时靠底对齐，不浮在半空）。
+        整块再兜一层 overflow-y-auto —— 窗口特别矮或以后大类变多时，
         退化成「整面板自己滚」，而不是把内容溢出到圆角外面。
+
+        收窄时额外压一层 overflow-x-hidden：overflow-y 一旦不是 visible，
+        overflow-x 就会被算成 auto，200ms 的宽度过渡里文字来不及换行，
+        会在面板底部闪出一条横向滚动条。
       -->
-      <aside class="w-56 shrink-0">
-        <div
-          class="sticky top-4 m-4 flex h-[calc(100vh-2rem)] flex-col overflow-y-auto rounded-card bg-white p-4 shadow-card"
+        <!--
+        收起态 = aside 变窄（88px），不是浮层盖在内容上 —— 使用方选的「内容让位、不重叠」，
+        所以面板留在 flex 流内，主区（flex-1）自动把那 136px 拿回去。
+
+        **两个状态的 margin 都是 m-4**，这是关键：面板离卡片内缘恒 16px 是既定口径，
+        而面板高度 h-[calc(100vh-4rem)] 里的 4rem 正是 main 的上下 p-4 加这上下两个 m-4 ——
+        只收窄、不动 margin，那行高度才不用跟着改（动 margin 就得同步动高度，
+        漏一处面板就比外层卡片高出一截，底边从卡片里冒出来）。
+
+        收起后的可见窄条是 88 − 16×2 = 56px（与使用方定的「56px 窄条」一致）。
+
+        **展开态从 w-56（224px）加宽到 w-72（288px）**：分组块加了 36px 图标之后，
+        按钮里留给文字那一列只剩 92px（实测），而最长的提示「工单、领料、入库与核算」
+        在 text-xs 下要 132px —— 于是四条提示两条折行、两条不折，行高 74/58 交替，
+        块就参差了，正是使用方说的「排版不美观」。
+
+        这与上面品牌小字那条注释是**同一个坑**：侧栏的横向余量本来就只有几 px，
+        往里塞任何东西都得先算一遍字宽，不能凭感觉。288px 下文字列是 156px，
+        132px 的提示留出 24px 余量；提示行本身也加了 truncate 兜底 ——
+        万一以后有人把某条提示写长了，它会省略号收尾，而不是再把行高撑成两种。
+      -->
+        <aside
+          class="shrink-0 transition-[width] duration-200 ease-out"
+          :class="collapsed ? 'w-[88px]' : 'w-72'"
         >
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Factory Operations</p>
-          <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
-          <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
-
-          <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
-               再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
-          <nav class="mt-3 flex-1 space-y-1 border-t border-slate-100 pt-3" aria-label="功能分类">
-            <button
-              v-for="group in sidebarGroups"
-              :key="group.key"
-              type="button"
-              class="w-full rounded-xl px-3 py-2.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.99]"
-              :class="
-                currentGroup === group.key
-                  ? 'bg-sky-50 font-medium text-sky-700'
-                  : 'text-slate-600 hover:bg-slate-50'
-              "
-              @click="selectGroup(group.key)"
-            >
-              {{ group.label }}
-              <span class="mt-0.5 block text-xs font-normal text-slate-500">{{ group.hint }}</span>
-            </button>
-          </nav>
-
           <!--
+          磨砂玻璃（使用方 2026-10-07 圈着侧栏与顶部导航条指定的三件事：
+          **背景半透明、模糊 24 像素、边缘用亮白描边**）。
+
+          ⚠️ **第一版只照这三个值做，使用方上线看到的是「没效果」。** 当场量过：
+          75% 白压在 `#fdfaf4` 的暖白纸上出来是 `#fffefc` —— 跟纸差 2~8 级、
+          跟纯白差 0~3 级，肉眼分不出；那条「亮白描边」也是白压白。模糊更无从表现：
+          **模糊一张纯色的纸，出来还是那张纸**（侧栏底下永远是那张纸，表格滑不过来）。
+          使用方当场加了第四条：**玻璃带一点色调** —— 见 tailwind.config 的 `glass`。
+          现在填充是 `bg-glass/55`：压出来 `#e5efe5`，与纸的亮度比 **1.132**（门槛 1.08，
+          第一版白玻璃 1.034）。**现行这块料是浅绿的**（使用方 2026-10-07 追加
+          「液态玻璃染成浅绿色」）—— 三版的经过与取值理由写在那个 token 的注释里，
+          别只看这里的结论。
+
+          · `backdrop-blur-[24px]` 写任意值，不写等价的 `backdrop-blur-xl`：
+            24 是这块面板的**规格数字**，写成数字，将来 Tailwind 调了档位它不会跟着飘。
+          · 描边必须是**不透明**的 `border-white`，不能跟着填充一起写 `/70`：
+            边框画在这块**自己背景之上**，`border-white/70` 压在填充上就是同一个像素 ——
+            等于没描边。只有比填充更亮，那道边才存在 —— 调了色调之后它才真的看得见。
+          · 透明度取 55%：再高面板与纸趋同（就是第一版那个「没效果」），
+            再低整块发闷、也吃掉了模糊还能透出来的那点余量。
+          · **吸顶位置从 `top-4` 改成 `top-0`**（与主区那条导航条对齐，见那处注释）：
+            sticky 的吸附基准是 **border box**，`m-4` 那 16px **不参与**吸顶 —— 实测
+            滚到 900 时面板 top = 16（就是 `top-4` 的值），不是 32。所以静止态由
+            `m-4` 给的 32px 不受影响，改的只是吸住之后那一条线：0，和导航条同一条。
+
+          ⚠️ **面板上的弱化文字跟着深了一级**（色调定案的连带项，漏掉就欠对比度）：
+          `slate-500` 压旧填充 `#fffefc` 是 4.72，压现在这块玻璃只剩 **4.04**，**跌破 AA**；
+          所以这块里所有 slate-500 的**文字**改 slate-600（实算 **6.43**），
+          分类标签从 slate-600 提到 slate-700（**8.78**），两级层次保住。
+          纯图标/控件（收起按钮、图标块、账号块）也一样是 slate-600 ——
+          本可按非文字元素的 3:1 留在 slate-500，但一块面板上两档灰并存只是噪音，索性收成一档。
+          面板上其余颜色也在玻璃上复算过一遍：选中态的名字 `emerald-800`（压玻璃 6.52，
+          它自己有 `emerald-50` 底、压底 7.29）、白图标压 `emerald-700` 图标块 5.48、
+          选中态底 `emerald-50` 上的 `emerald-700` 5.21 —— 都在 4.5 之上。
+          最紧的是 `emerald-700` 直接压玻璃的那处 —— 品牌英文小字（**4.65**），
+          过线但余量只剩 0.15，再深一档就不够（这个色调不能再往深里染）。
+          （变更-034：登录那处 emerald-700 文字收进了 emerald-800，压玻璃的只剩品牌一处。）
+          -->
+          <div
+            id="app-sidebar"
+            class="sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-white bg-glass/55 backdrop-blur-[24px] shadow-card"
+            :class="collapsed ? 'p-2' : 'p-4'"
+          >
+            <!--
+            收起/展开按钮贴右上角（这个控件的惯例位置），**只与那句英文小字同行**，
+            中文那两行单独占满整宽。
+
+            为什么不让按钮与整个品牌块同行：当初侧栏内容宽是 160px，切出 36px 后
+            那句「生产工单与物料数据查询助手」（156px）会被折成「…数据查」/「询助手」——
+            把「查询」拦腰截断，是展开态（人人都看得到的那一态）最显眼的一处难看。
+            只挤英文小字就没这个问题：它本来就折成两行（FACTORY / OPERATIONS）。
+
+            （侧栏在 2026-10-07 加宽到 w-72 后，内容宽 224px，156px 的小字与 36px 按钮
+            同行也放得下了 —— 但这个「按钮只与英文小字同行」的摆法**不因此改回**：
+            它把按钮钉在品牌块右上角，标题那两行独享整宽，眼下没有问题要解决。）
+          -->
+            <div
+              class="flex items-start gap-2"
+              :class="collapsed ? 'justify-center' : 'justify-between'"
+            >
+              <p
+                v-show="!collapsed"
+                class="min-w-0 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
+              >
+                Factory Operations
+              </p>
+              <!--
+              焦点环全站统一到 emerald-600：压白底 3.77:1、压选中项的 emerald-50 是 3.58，
+              两边都过 1.4.11 对非文字元素要求的 3:1。
+
+              这处原先用的是 slate-500，理由是「导航项那批浅色环只有 1.67:1，
+              别跟着抄」。那批环（含审计漏掉的 rose 两处、以及 slate-400 的 2.56:1）
+              已在 变更-028 一并修掉，不统一的理由随之消失 —— 同一种控件两种环色只是噪音。
+            -->
+              <button
+                type="button"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.98]"
+                :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
+                :aria-expanded="!collapsed"
+                aria-controls="app-sidebar"
+                @click="toggleSidebar"
+              >
+                <svg
+                  class="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path :d="collapsed ? 'M9 18l6-6-6-6' : 'M15 18l-6-6 6-6'" />
+                </svg>
+              </button>
+            </div>
+            <p v-show="!collapsed" class="mt-1 text-lg font-bold tracking-tight text-slate-900">
+              HND生产助手
+            </p>
+            <p v-show="!collapsed" class="mt-1 text-xs text-slate-600">
+              生产工单与物料数据查询助手
+            </p>
+
+            <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
+               再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
+            <nav
+              class="mt-4 flex-1 space-y-1.5 border-t border-slate-100 pt-4"
+              aria-label="功能分类"
+            >
+              <!--
+              收起态与展开态是**同一组按钮**，只是文字部分 v-show 掉、按钮本身
+              缩成方块。不做两套（展开一套 / 收起一套）：两套就是同一个导航
+              存了两位真值，容易只改一边；而且 nav[aria-label="功能分类"] button
+              会一次命中两组 —— 既有用例的断言是 toContain 式的，**抓不到**这种重复，
+              真正抓得到的是 tests/component 里那条把 aria-label 逐项断死的新用例。
+
+              **因此这里只能 v-show，不能 v-if**：v-if 会把收起态的按钮整个摘掉。
+
+              —— 每个分组是一个**看得见的块**（使用方 2026-10-07：「每个块周围带绿色光晕」）。
+              原先这里只是四行左对齐的文字浮在白底上，谈不上是「块」。现在图标进了一个
+              36px 的圆角方块（未选中白底 + slate-600 图标；选中 emerald-700 实心 +
+              白图标，5.48 过 AA），行才有形体 —— 面板下半部那片空白也因此读起来
+              是「列表到此为止」，而不是「列表没填满」。
+
+              未选中的图标块**必须是白**（原来是 slate-100）。侧栏改磨砂玻璃并带上色调
+              之后，面板从 #fffefc 沉到 #f1eee8，把 slate-100 的图标块追上了：
+              两者亮度比从 1.087 掉到 1.057，块与面板糊在一起。改成白是 1.158 ——
+              正好与那道**白描边**、与导航条的**白药丸**是同一个关系：这块料上，
+              抬起来的一律是白。由 visualTokens 那条「图标块一律用白」钉着。
+
+              光晕（shadow-glow + emerald-600/25 的描边）**只加在选中项**：
+              四块一样亮就分不出当前在哪一组了。收起态也不加 —— 40px 见方里再套一层环，
+              加上与按钮等大的实心图标块，会糊成一团。
+
+              图标在展开态也留着（与收起态同一个 20px 图标，只是换了底色）：
+              收起后那四个图标才学得会 —— 否则它们就是四个陌生符号。
+            -->
+              <el-tooltip
+                v-for="group in sidebarGroups"
+                :key="group.key"
+                :content="group.label"
+                placement="right"
+                :disabled="!collapsed"
+                :show-after="200"
+              >
+                <button
+                  type="button"
+                  class="rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.99]"
+                  :class="[
+                    collapsed
+                      ? 'mx-auto flex h-10 w-10 items-center justify-center'
+                      : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left',
+                    !collapsed && currentGroup === group.key
+                      ? 'bg-emerald-50 shadow-glow ring-1 ring-emerald-600/25'
+                      : '',
+                    !collapsed && currentGroup !== group.key ? 'hover:bg-slate-50' : '',
+                  ]"
+                  :aria-label="collapsed ? group.label : undefined"
+                  :aria-current="currentGroup === group.key ? 'true' : undefined"
+                  @click="selectGroup(group.key)"
+                >
+                  <span
+                    class="flex shrink-0 items-center justify-center rounded-xl transition-colors"
+                    :class="[
+                      collapsed ? 'h-10 w-10' : 'h-9 w-9',
+                      currentGroup === group.key
+                        ? 'bg-emerald-700 text-white'
+                        : 'bg-white text-slate-600',
+                      collapsed && currentGroup !== group.key ? 'hover:bg-slate-200' : '',
+                    ]"
+                  >
+                    <svg
+                      class="h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path :d="GROUP_ICON_PATHS[group.key]" />
+                    </svg>
+                  </span>
+                  <span v-show="!collapsed" class="min-w-0">
+                    <span
+                      class="block text-sm"
+                      :class="
+                        currentGroup === group.key
+                          ? 'font-medium text-emerald-800'
+                          : 'text-slate-700'
+                      "
+                      >{{ group.label }}</span
+                    >
+                    <!-- truncate 是兜底：宽度已按最长的那条提示留足，正常情况下不会省略。
+                       它防的是「以后有人把某条提示改长」—— 那时宁可省略号，也不要
+                       四条里两条折行、行高变成两种。 -->
+                    <span class="mt-0.5 block truncate text-xs font-normal text-slate-600">{{
+                      group.hint
+                    }}</span>
+                  </span>
+                </button>
+              </el-tooltip>
+            </nav>
+
+            <!--
             账号块放**面板最底**（使用方 2026-10-07：登录按钮放左下角）。
             原先它紧贴在标题下面 —— 那是视线的起点，却摆了个低频操作
             （一人一账号，登录/退出一天用不上一次），每次看侧栏都得先跨过它。
@@ -1467,1110 +1782,1592 @@ watch(activeTab, (tab, prevTab) => {
             别再往回加。
             未登录即可只读浏览；写入类功能按权限隐藏。
           -->
-          <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
-            <template v-if="loggedIn">
-              <p class="font-medium text-slate-700">{{ roleName }}</p>
-              <button
-                type="button"
-                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 active:scale-[0.98]"
-                @click="handleLogout"
-              >
-                退出登录
-              </button>
-            </template>
-            <template v-else>
-              <p class="text-slate-500">只读浏览</p>
-              <button
-                type="button"
-                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-700 transition hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98]"
-                @click="goLogin"
-              >
-                登录
-              </button>
-            </template>
-          </div>
-        </div>
-      </aside>
+            <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
+              <!--
+              2026-10-07 使用方圈出这一块说「有点丑」，重做的思路是**对齐导航行的形体**：
+              上面四组都是「36px 白图标块 + 文字」的整行块，这里原先却是两行裸文字
+              （变更-028 重做导航时漏下了这块），于是它读起来像没做完。
 
-      <!--
+              身份行**不可点**：它答的是「你是谁」（管理员 / 只读浏览），不是动作 ——
+              图标块照给，只是不响应 hover。退出/登录是动作，**整行可点**：
+              hover 与导航行同一条（整行 bg-slate-50），图标块再转成 rose / emerald 实心，
+              把「这一下会发生什么」讲清楚。
+
+              收起态**不再另做一套**：行结构不变，文字 v-show 掉、图标块 36 → 40px，
+              身份行由 tooltip + role="img" 的 aria-label 报「当前登录：xx」。
+              仍然**只有一个按钮**（展开的整行与收起的图标块是同一颗），
+              DOM 里「退出登录」不会出现两份。
+            -->
+              <template v-if="loggedIn">
+                <el-tooltip
+                  :content="roleName"
+                  placement="right"
+                  :disabled="!collapsed"
+                  :show-after="200"
+                >
+                  <div
+                    class="flex items-center"
+                    :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
+                  >
+                    <span
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600"
+                      :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
+                      :role="collapsed ? 'img' : undefined"
+                      :aria-label="collapsed ? `当前登录：${roleName}` : undefined"
+                    >
+                      <svg
+                        class="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 0 1-8 0 4 4 0 0 1 8 0z"
+                        />
+                      </svg>
+                    </span>
+                    <span
+                      v-show="!collapsed"
+                      class="min-w-0 truncate text-sm font-medium text-slate-700"
+                    >
+                      {{ roleName }}
+                    </span>
+                  </div>
+                </el-tooltip>
+                <el-tooltip
+                  content="退出登录"
+                  placement="right"
+                  :disabled="!collapsed"
+                  :show-after="200"
+                >
+                  <button
+                    type="button"
+                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 active:scale-[0.98]"
+                    :class="
+                      collapsed
+                        ? 'mx-auto flex items-center justify-center'
+                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-slate-50'
+                    "
+                    :aria-label="collapsed ? '退出登录' : undefined"
+                    @click="handleLogout"
+                  >
+                    <span
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600 transition"
+                      :class="
+                        collapsed
+                          ? 'h-10 w-10 group-hover:bg-slate-200'
+                          : 'h-9 w-9 group-hover:bg-rose-600 group-hover:text-white'
+                      "
+                    >
+                      <svg
+                        class="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <path d="M16 17l5-5-5-5" />
+                        <path d="M21 12H9" />
+                      </svg>
+                    </span>
+                    <span
+                      v-show="!collapsed"
+                      class="text-sm text-slate-700 transition group-hover:text-rose-700"
+                    >
+                      退出登录
+                    </span>
+                  </button>
+                </el-tooltip>
+              </template>
+              <template v-else>
+                <el-tooltip
+                  content="只读浏览"
+                  placement="right"
+                  :disabled="!collapsed"
+                  :show-after="200"
+                >
+                  <div
+                    class="flex items-center"
+                    :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
+                  >
+                    <span
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600"
+                      :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
+                      :role="collapsed ? 'img' : undefined"
+                      :aria-label="collapsed ? '未登录，只读浏览' : undefined"
+                    >
+                      <svg
+                        class="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 0 1-8 0 4 4 0 0 1 8 0z"
+                        />
+                      </svg>
+                    </span>
+                    <span v-show="!collapsed" class="min-w-0 truncate text-sm text-slate-600">
+                      只读浏览
+                    </span>
+                  </div>
+                </el-tooltip>
+                <el-tooltip
+                  content="登录"
+                  placement="right"
+                  :disabled="!collapsed"
+                  :show-after="200"
+                >
+                  <button
+                    type="button"
+                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.98]"
+                    :class="
+                      collapsed
+                        ? 'mx-auto flex items-center justify-center'
+                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-slate-50'
+                    "
+                    :aria-label="collapsed ? '登录' : undefined"
+                    @click="goLogin"
+                  >
+                    <span
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white transition group-hover:bg-emerald-800"
+                      :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
+                    >
+                      <svg
+                        class="h-5 w-5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        aria-hidden="true"
+                      >
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                        <path d="M10 17l5-5-5-5" />
+                        <path d="M15 12H3" />
+                      </svg>
+                    </span>
+                    <span v-show="!collapsed" class="text-sm font-medium text-emerald-800">
+                      登录
+                    </span>
+                  </button>
+                </el-tooltip>
+              </template>
+            </div>
+          </div>
+        </aside>
+
+        <!--
         主区**左边不留内边距**：侧栏那块浮动面板自己带 16px 外边距（m-4），
         这里再补一层就成 32px 的缝，跟「四边 16px」对不上。
         py-4 则是与面板的上下 16px 对齐。
       -->
-      <div class="min-w-0 flex-1 py-4 pr-4 sm:pr-6">
-
-      <!-- 主区顶部：当前页标题 + **同组页面的卡片**。
-           页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
-           卡片行沿用原来 Tab 条的横向滚动写法（见下方注释），只是把下划线换成了卡片态。 -->
-      <div class="mb-4">
-        <h2 class="mb-4 text-xl font-bold tracking-tight text-slate-900">{{ activeTabLabel }}</h2>
         <!--
+          主区列 = **一个定高的纵向 flex**（使用方 2026-10-07 圈着主区指定：
+          「红色框选区域**固定大小**，也做成**液态玻璃栏**」）。
+
+          为什么是 `flex flex-col` + 下一条 `flex-1 min-h-0`，而不是给那块手算一个
+          `h-[calc(100vh-…)]`：**导航条的高度不是常数**（页签换行、字体回退都会变），
+          把它的高度减进 calc 里，改天导航条长高两行，主区就跟着错位。
+          交给 flex 分配：列高由暖白纸的**定高**给（`h-[calc(100vh-2rem)]`，与侧栏面板那个
+          100vh−4rem 是同一套数），导航条占它该占的，**剩下的全归玻璃栏** ——
+          导航条长高多少，它就自动少多少。
+
+          ⚠️ 这套分配**只在纸是定高时才成立**，第一版这里写对了、纸那边还是 `min-h-`，
+          结果整条链一起失效（实测 619 → 3157 → 3381px）。护栏钉的是**整条链**，
+          见 tests/unit/visualTokens.spec.js 的「固定大小」那两条。
+        -->
+        <div class="flex min-w-0 flex-1 flex-col py-4 pr-4 sm:pr-6">
+          <!-- 主区顶部：当前页标题 + **同组页面的页签**。
+           页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
+           页签行沿用原来 Tab 条的横向滚动写法（见下方注释），只是把下划线换成了卡片态。
+
+           **这一条也包一张白卡片**（使用方 2026-10-07 追加）：此前标题与页签直接压在
+           暖白纸面上，而它下面的筛选/表格、左边的侧栏面板全是白的 —— 单这一条裸着，
+           就破了「东西都放在纸上」那层意思：**纸是底，白卡片才是内容**。
+           现在三层齐了：冷灰底 → 暖白纸 → 白卡片。
+
+           **这一条与侧栏面板一起改磨砂玻璃**（使用方 2026-10-07 圈着导航条指定，
+           三个值同侧栏：背景半透明 / 模糊 24px / 亮白描边），**连色调一起共用**
+           —— 两块是同一层材质（`bg-glass/55`），理由与实测数字写在侧栏那段注释里。
+           写成 `border-white` 不写 `border-slate-200`：描边要压过填充才看得见。
+           页签里未选中的那几个是白药丸（`bg-white text-slate-600`），
+           压在带色调的这一条上正好立得起来 —— 比它原来是白压白的时候更清楚。
+
+           **并且改成吸顶**（同一轮定的）。不吸顶的话它滚过去就没了，那块 24px 模糊
+           底下**永远没有东西经过**，毛玻璃等于白写；吸顶之后表格从它下面滑过，
+           彩色内容经过时确实看得见（实测 3× 截图：一条 amber 色带从底下过，
+           卡片上半段泛黄）。
+
+           为什么是 `top-0` 而不是看着更「贴纸面」的 `top-4`：**`top-4` 会漏**。
+           主区的内容不裁剪，钉在 16px 处，上面那 16px 就空出一条缝，
+           正在滚的表格行从导航条**上方**划过去（实测截图里能看见半个「再沸器 17 号」
+           悬在导航上面）—— 与 `/intro` 吸顶头部踩过的是同一个坑。`top-0` 贴着视口
+           最上沿，上面没有位置可漏。侧栏面板同步改成 `top-0`，两块钉在同一条线上
+           （静止态两者都在 y=32 不受影响）。
+
+           `z-30`：吸顶后要压在下面的卡片上；el-dialog / el-select 那类是挂到 body 的
+           2000+，不受影响。 -->
+          <div
+            class="sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-white bg-glass/55 px-6 py-4 backdrop-blur-[24px] shadow-card"
+          >
+            <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">
+              {{ activeTabLabel }}
+            </h2>
+            <!--
           横向滚动：
           · overflow-x-auto 会让 overflow-y 也算作 auto，补 pb-px 把边兜回来；
           · 隐藏滚动条：滚动靠滚轮/触控板，一条横杠横在卡片下面反而碍眼。
         -->
-        <div
-          ref="tabNavRef"
-          class="flex gap-2 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          aria-label="页面切换"
-          @wheel="handleTabWheel"
-        >
-          <button
-            v-for="tab in groupTabs"
-            :key="tab.key"
-            :data-tab-key="tab.key"
-            type="button"
-            :aria-current="activeTab === tab.key ? 'page' : undefined"
-            class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none"
-            :class="
-              activeTab === tab.key
-                ? 'border-sky-200 bg-sky-50 font-medium text-sky-700'
-                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800'
-            "
-            @click="activeTab = tab.key"
+            <div
+              ref="tabNavRef"
+              class="flex gap-2 overflow-x-auto pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              aria-label="页面切换"
+              @wheel="handleTabWheel"
+            >
+              <button
+                v-for="tab in groupTabs"
+                :key="tab.key"
+                :data-tab-key="tab.key"
+                type="button"
+                :aria-current="activeTab === tab.key ? 'page' : undefined"
+                class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none"
+                :class="
+                  activeTab === tab.key
+                    ? 'border-emerald-200 bg-emerald-50 font-medium text-emerald-700'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                "
+                @click="activeTab = tab.key"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+          </div>
+
+          <!--
+          主区玻璃栏（使用方 2026-10-07：「红色框选区域固定大小，也做成液态玻璃栏」）。
+
+          **固定大小**：`flex-1 min-h-0` —— 高度由 flex 分配（列高减导航条），
+          **与里面装的是什么无关**。这正是使用方要的那句：换页签、有没有数据、
+          表格多少行，这一块**始终是同一个大小**，不会这里缩一下那里撑一下。
+          `min-h-0` 不能省：flex item 默认 `min-height:auto`，不写它就不肯缩到
+          内容以下，「固定」立刻失效（内容长的页签会把整页顶出滚动条）。
+          内容在自己的滚动条里走（`overflow-y-auto`），**页面本身不滚**。
+
+          ⚠️ 这两条**不够**，第一版就栽在这里：`flex-1 min-h-0` 分配的是「父元素给的
+          空间」，父元素自己得先有个**定高**。当时纸还是 `min-h-[calc(100vh-2rem)]`，
+          于是实测三种内容下栏高 619 → 3157 → 3381px —— 内容短的时候看着完全正常，
+          量了才知道没固定住。链条是四级：**纸定高 → 列 flex-col → 导航条 shrink-0
+          → 栏 flex-1/min-h-0/overflow-y-auto**，缺一级整条就退化。
+
+          **与侧栏面板、导航条是同一块料**：同一个 `bg-glass/55` + `backdrop-blur-[24px]`
+          + 不透明的 `border-white` + `rounded-card` —— 三处一个 token，别再各调各的
+          （取值理由与实测数字写在 tailwind.config 的 `glass` 与侧栏那段注释里）。
+          里面那些白卡片（各页签的 `<section>`）压在带色调的玻璃上正好立得住 ——
+          与白描边、白药丸、白色图标块是同一个关系：**这块料上，抬起来的一律是白**。
+
+          ⚠️ **连带后果（要说实话）**：主区改成自己滚之后，**外面的页面不再滚动了**，
+          于是导航条那条 `sticky top-0` 从此**是惰性的** —— 不会有内容从它下面过。
+          仍然留着，两个理由：① 它是使用方上一轮（变更-030）为「让模糊有东西可糊」
+          特意定的，去掉等于把那一轮的结论悄悄推翻；② 万一哪天主区又改回整页滚，
+          它立刻恢复作用。导航条的模糊现在靠**色调**立住（与侧栏面板同理）。
+          -->
+          <div
+            class="flex-1 min-h-0 overflow-y-auto rounded-card border border-white bg-glass/55 p-4 backdrop-blur-[24px] shadow-card"
           >
-            {{ tab.label }}
-          </button>
-        </div>
-      </div>
+            <div v-show="activeTab === 'workOrder'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <span class="shrink-0 text-xs text-slate-500">起始日期</span>
+                  <el-date-picker
+                    v-model="startDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="起始日期"
+                    :first-day-of-week="1"
+                    @change="filterWorkOrders"
+                  />
+                  <span class="shrink-0 text-sm text-slate-500">至</span>
+                  <span class="shrink-0 text-xs text-slate-500">结束日期</span>
+                  <el-date-picker
+                    v-model="endDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="结束日期"
+                    :first-day-of-week="1"
+                    @change="filterWorkOrders"
+                  />
+                </div>
 
-      <div v-show="activeTab === 'workOrder'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
-            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
-            <el-date-picker
-              v-model="startDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="起始日期"
-              :first-day-of-week="1"
-              @change="filterWorkOrders"
-            />
-            <span class="shrink-0 text-sm text-slate-500">至</span>
-            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
-            <el-date-picker
-              v-model="endDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="结束日期"
-              :first-day-of-week="1"
-              @change="filterWorkOrders"
-            />
-          </div>
+                <div class="relative">
+                  <LoadingMask v-if="loading" />
 
-          <div class="relative">
-            <LoadingMask v-if="loading" />
+                  <PanelState
+                    v-else-if="errorMessage"
+                    type="error"
+                    title="暂时无法获取工单"
+                    :description="errorMessage"
+                    action-text="重新加载"
+                    @action="fetchWorkOrders"
+                  />
 
-        <PanelState
-              v-else-if="errorMessage"
-              type="error"
-              title="暂时无法获取工单"
-              :description="errorMessage"
-              action-text="重新加载"
-              @action="fetchWorkOrders"
-            />
+                  <PanelState
+                    v-else-if="
+                      tableData.length === 0 && !productFilter && !orderTypeFilter && !orderNoFilter
+                    "
+                    title="暂无工单数据"
+                    description="当前没有可展示的工单记录"
+                  />
 
-        <PanelState
-              v-else-if="tableData.length === 0 && !productFilter && !orderTypeFilter && !orderNoFilter"
-              title="暂无工单数据"
-              description="当前没有可展示的工单记录"
-            />
+                  <div v-else>
+                    <div class="overflow-x-auto">
+                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                        <colgroup>
+                          <col v-for="column in columns" :key="column.key" :class="column.width" />
+                        </colgroup>
+                        <thead class="bg-slate-50">
+                          <tr>
+                            <th
+                              v-for="column in columns"
+                              :key="column.key"
+                              scope="col"
+                              class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                              :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                            >
+                              <template v-if="column.key === 'orderNo'">
+                                <FilterHeaderCell
+                                  :label="column.label"
+                                  :selected="orderNoFilter"
+                                  hint="工单号"
+                                  max-width-class="max-w-[130px]"
+                                  @open="openOrderNoDialog"
+                                  @clear="clearOrderNoFilter"
+                                />
+                              </template>
 
-        <div v-else>
-          <div class="overflow-x-auto">
-            <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-              <colgroup>
-                <col v-for="column in columns" :key="column.key" :class="column.width" />
-              </colgroup>
-              <thead class="bg-slate-50">
-                <tr>
-                  <th
-                    v-for="column in columns"
-                    :key="column.key"
-                    scope="col"
-                    class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                    :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                  >
-                    <template v-if="column.key === 'orderNo'">
-                      <FilterHeaderCell
-                        :label="column.label"
-                        :selected="orderNoFilter"
-                        hint="工单号"
-                        max-width-class="max-w-[130px]"
-                        @open="openOrderNoDialog"
-                        @clear="clearOrderNoFilter"
-                      />
-                    </template>
+                              <template v-else-if="column.key === 'orderType'">
+                                <FilterHeaderCell
+                                  :label="column.label"
+                                  :selected="orderTypeFilter"
+                                  hint="工单类型"
+                                  max-width-class="max-w-[110px]"
+                                  @open="openOrderTypeDialog"
+                                  @clear="clearOrderTypeFilter"
+                                />
+                              </template>
 
-                    <template v-else-if="column.key === 'orderType'">
-                      <FilterHeaderCell
-                        :label="column.label"
-                        :selected="orderTypeFilter"
-                        hint="工单类型"
-                        max-width-class="max-w-[110px]"
-                        @open="openOrderTypeDialog"
-                        @clear="clearOrderTypeFilter"
-                      />
-                    </template>
+                              <template v-else-if="column.key === 'materialDesc'">
+                                <FilterHeaderCell
+                                  :label="column.label"
+                                  :selected="productFilter"
+                                  hint="产成品"
+                                  max-width-class="max-w-[110px]"
+                                  @open="openProductDialog"
+                                  @clear="clearProductFilter"
+                                />
+                              </template>
 
-                    <template v-else-if="column.key === 'materialDesc'">
-                      <FilterHeaderCell
-                        :label="column.label"
-                        :selected="productFilter"
-                        hint="产成品"
-                        max-width-class="max-w-[110px]"
-                        @open="openProductDialog"
-                        @clear="clearProductFilter"
-                      />
-                    </template>
-
-                    <template v-else>{{ column.label }}</template>
-                  </th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100 bg-white">
-                <tr v-if="tableData.length === 0">
-                  <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-500">
-                    没有符合筛选条件的工单
-                  </td>
-                </tr>
-                <tr v-for="(order, index) in tableData" :key="`${order.orderNo}-${index}`" class="cursor-pointer transition hover:bg-slate-50" @click="openImageDialog(order)">
-                  <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
-                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.planStartDate }}</td>
-                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.orderNo }}</td>
-                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ getReportOrderType(order.orderNo) }}</td>
-                  <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ order.materialCode }}</td>
-                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
-                    {{ order.materialDesc }}
-                  </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.orderQty }}</td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.confirmedQty }}</td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ order.deliveredQty }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div class="flex justify-end border-t border-slate-100 px-6 py-3">
-            <el-pagination
-              v-model:current-page="pageNum"
-              :page-size="pageSize"
-              :total="total"
-              layout="total, prev, pager, next"
-              background
-              @current-change="getPageData"
-            />
-          </div>
-        </div>
-          </div>
-        </section>
-
-      <!-- 工单图片弹窗：状态在 useOrderImages（模块级单例），组件只负责渲染 -->
-      <OrderImageDialog />
-
-      <ProductSelectDialog
-        v-model="productDialogVisible"
-        :options="productOptions"
-        :selected="productFilter"
-        @select="handleProductSelected"
-      />
-
-      <ProductSelectDialog
-        v-model="orderTypeDialogVisible"
-        :options="orderTypeOptions"
-        :selected="orderTypeFilter"
-        label="工单类型"
-        @select="handleOrderTypeSelected"
-      />
-
-      <ProductSelectDialog
-        v-model="orderNoDialogVisible"
-        :options="orderNoOptions"
-        :selected="orderNoFilter"
-        label="工单号"
-        @select="handleOrderNoSelected"
-      />
-      </div>
-
-      <div v-show="activeTab === 'material'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
-            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
-            <el-date-picker
-              v-model="pickStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="起始日期"
-              :first-day-of-week="1"
-              @change="filterPickRecords"
-            />
-            <span class="shrink-0 text-sm text-slate-500">至</span>
-            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
-            <el-date-picker
-              v-model="pickEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="结束日期"
-              :first-day-of-week="1"
-              @change="filterPickRecords"
-            />
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
-            </span>
-          </div>
-
-          <div class="relative">
-            <LoadingMask v-if="pickLoading" />
-
-            <PanelState
-              v-else-if="pickError"
-              type="error"
-              title="暂时无法获取领料汇总"
-              :description="pickError"
-              action-text="重新加载"
-              @action="fetchPickRecords"
-            />
-
-            <PanelState
-              v-else-if="pickTableData.length === 0"
-              :title="pickMaterialFilter ? '没有符合筛选条件的记录' : '暂无领料数据'"
-              :description="pickMaterialFilter ? `当前筛选：${pickMaterialFilter}` : '当前没有可展示的领料记录'"
-            />
-
-            <div v-else>
-              <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in pickColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
-                        v-for="column in pickColumns"
-                        :key="column.key"
-                        scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                      >
-                        <template v-if="column.key === 'materialName'">
-                          <FilterHeaderCell
-                            :label="column.label"
-                            :selected="pickMaterialFilter"
-                            hint="物料名称"
-                            max-width-class="max-w-[130px]"
-                            @open="openPickMaterialDialog"
-                            @clear="clearPickMaterialFilter"
-                          />
-                        </template>
-
-                        <template v-else>{{ column.label }}</template>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
-                      v-for="(record, index) in pickTableData"
-                      :key="`${record.materialCode}-${record.pickDate}-${index}`"
-                      class="transition hover:bg-slate-50"
-                    >
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (pickPageNum - 1) * pickPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.pickDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
-                        {{ record.materialName }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.pickQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
-                        <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
-                          :aria-label="record.imageUrl || record.thumbnailUrl ? '查看领料单据' : '暂无图片'"
-                          @click="openPickImageDialog(record)"
-                        >
-                          <svg
-                            class="h-3 w-3"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
+                              <template v-else>{{ column.label }}</template>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                          <tr v-if="tableData.length === 0">
+                            <td
+                              :colspan="columns.length"
+                              class="px-3 py-16 text-center text-sm text-slate-500"
+                            >
+                              没有符合筛选条件的工单
+                            </td>
+                          </tr>
+                          <tr
+                            v-for="(order, index) in tableData"
+                            :key="`${order.orderNo}-${index}`"
+                            tabindex="0"
+                            class="cursor-pointer transition hover:bg-slate-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
+                            @click="openImageDialog(order)"
+                            @keydown.enter.self.prevent="openImageDialog(order)"
+                            @keydown.space.self.prevent="openImageDialog(order)"
                           >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="m21 15-5-5L5 21" />
-                          </svg>
-                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
-                          <img
-                            v-if="record.thumbnailUrl || record.imageUrl"
-                            :src="record.thumbnailUrl || record.imageUrl"
-                            alt="领料单据"
-                            loading="lazy"
-                            decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
-                            @error="handleImgError($event, record)"
-                          />
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                            <td
+                              class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
+                            >
+                              {{ (pageNum - 1) * pageSize + index + 1 }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ order.planStartDate }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ order.orderNo }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ getReportOrderType(order.orderNo) }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ order.materialCode }}
+                            </td>
+                            <td
+                              class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700"
+                            >
+                              {{ order.materialDesc }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600"
+                            >
+                              {{ order.orderQty }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600"
+                            >
+                              {{ order.confirmedQty }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600"
+                            >
+                              {{ order.deliveredQty }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
 
-              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
-                <el-pagination
-                  v-model:current-page="pickPageNum"
-                  :page-size="pickPageSize"
-                  :total="pickTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getPickPageData"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
+                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                      <el-pagination
+                        v-model:current-page="pageNum"
+                        :page-size="pageSize"
+                        :total="total"
+                        layout="total, prev, pager, next"
+                        background
+                        @current-change="getPageData"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
 
-        <el-dialog
-          v-model="pickImageDialogVisible"
-          width="70vw"
-          align-center
-        >
-          <div class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6">
-            <img
-              v-if="currentPickImage"
-              :src="currentPickImage"
-              alt="领料单据大图"
-              class="max-h-[70vh] max-w-full rounded-card object-contain"
-            />
-          </div>
-        </el-dialog>
+              <!-- 工单图片弹窗：状态在 useOrderImages（模块级单例），组件只负责渲染 -->
+              <OrderImageDialog />
 
-        <ProductSelectDialog
-          v-model="pickMaterialDialogVisible"
-          :options="pickMaterialOptions"
-          :selected="pickMaterialFilter"
-          label="物料名称"
-          @select="handlePickMaterialSelected"
-        />
-      </div>
-
-      <div v-show="activeTab === 'inbound'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
-            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
-            <el-date-picker
-              v-model="inboundStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="起始日期"
-              :first-day-of-week="1"
-              @change="filterInboundRecords"
-            />
-            <span class="shrink-0 text-sm text-slate-500">至</span>
-            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
-            <el-date-picker
-              v-model="inboundEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="结束日期"
-              :first-day-of-week="1"
-              @change="filterInboundRecords"
-            />
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
-            </span>
-          </div>
-
-          <div class="relative">
-            <LoadingMask v-if="inboundLoading" />
-
-            <PanelState
-              v-else-if="inboundError"
-              type="error"
-              title="暂时无法获取入库汇总"
-              :description="inboundError"
-              action-text="重新加载"
-              @action="fetchInboundRecords"
-            />
-
-            <PanelState
-              v-else-if="inboundTableData.length === 0"
-              :title="inboundMaterialFilter ? '没有符合筛选条件的记录' : '暂无入库数据'"
-              :description="inboundMaterialFilter ? `当前筛选：${inboundMaterialFilter}` : '当前没有可展示的入库记录'"
-            />
-
-            <div v-else>
-              <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in inboundColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
-                        v-for="column in inboundColumns"
-                        :key="column.key"
-                        scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                      >
-                        <template v-if="column.key === 'materialName'">
-                          <FilterHeaderCell
-                            :label="column.label"
-                            :selected="inboundMaterialFilter"
-                            hint="物料名称"
-                            max-width-class="max-w-[130px]"
-                            @open="openInboundMaterialDialog"
-                            @clear="clearInboundMaterialFilter"
-                          />
-                        </template>
-
-                        <template v-else>{{ column.label }}</template>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
-                      v-for="(record, index) in inboundTableData"
-                      :key="`${record.materialCode}-${record.inboundDate}-${index}`"
-                      class="transition hover:bg-slate-50"
-                    >
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.inboundDate }}</td>
-                      <td class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
-                        {{ record.materialName }}
-                      </td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.materialCode }}</td>
-                      <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">{{ record.inboundQty }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ record.unit }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
-                        <span
-                          class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500"
-                          :aria-label="record.imageUrl || record.thumbnailUrl ? '查看入库单据' : '暂无图片'"
-                          @click="openInboundImageDialog(record)"
-                        >
-                          <svg
-                            class="h-3 w-3"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            aria-hidden="true"
-                          >
-                            <rect x="3" y="3" width="18" height="18" rx="2" />
-                            <circle cx="8.5" cy="8.5" r="1.5" />
-                            <path d="m21 15-5-5L5 21" />
-                          </svg>
-                          <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
-                          <img
-                            v-if="record.thumbnailUrl || record.imageUrl"
-                            :src="record.thumbnailUrl || record.imageUrl"
-                            alt="入库单据"
-                            loading="lazy"
-                            decoding="async"
-                            class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
-                            @error="handleImgError($event, record)"
-                          />
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
-                <el-pagination
-                  v-model:current-page="inboundPageNum"
-                  :page-size="inboundPageSize"
-                  :total="inboundTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getInboundPageData"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <el-dialog
-          v-model="inboundImageDialogVisible"
-          width="70vw"
-          align-center
-        >
-          <div class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6">
-            <img
-              v-if="currentInboundImage"
-              :src="currentInboundImage"
-              alt="入库单据大图"
-              class="max-h-[70vh] max-w-full rounded-card object-contain"
-            />
-          </div>
-        </el-dialog>
-
-        <ProductSelectDialog
-          v-model="inboundMaterialDialogVisible"
-          :options="inboundMaterialOptions"
-          :selected="inboundMaterialFilter"
-          label="物料名称"
-          @select="handleInboundMaterialSelected"
-        />
-      </div>
-
-      <div v-show="activeTab === 'report'">
-        <StatsTable
-          :columns="reportColumns"
-          :rows="reportRows"
-          empty-text="暂无报工数据"
-          :row-key="statsRowKey"
-        />
-      </div>
-
-      <div v-show="activeTab === 'costing'">
-        <StatsTable
-          :columns="costingColumns"
-          :rows="costingRows"
-          empty-text="暂无核算数据"
-          :row-key="statsRowKey"
-        />
-      </div>
-
-      <div v-show="activeTab === 'materialCosting'">
-        <StatsTable
-          :columns="materialCostingColumns"
-          :rows="materialCostingRows"
-          empty-text="暂无核算数据"
-          :row-key="statsRowKey"
-        />
-      </div>
-
-      <div v-show="activeTab === 'stock'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
-            <el-input
-              v-model="stockKeyword"
-              placeholder="物料编码 / 物料名称 / 规格"
-              aria-label="搜索物料"
-              clearable
-              class="w-72"
-              @input="applyStockFilter"
-              @clear="applyStockFilter"
-            />
-            <!-- 默认**不勾**：这一页是查物料信息，要把数量为 0 的物料也列出来 -->
-            <el-checkbox :model-value="stockOnlyInStock" @change="toggleStockOnlyInStock">
-              只看有库存
-            </el-checkbox>
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
-            </span>
-          </div>
-
-          <div class="relative">
-            <LoadingMask v-if="stockLoading" />
-
-            <PanelState
-              v-else-if="stockError"
-              type="error"
-              title="暂时无法获取物料库存"
-              :description="stockError"
-              action-text="重新加载"
-              @action="fetchStockRecords"
-            />
-
-            <PanelState
-              v-else-if="stockTableData.length === 0"
-              :title="stockKeyword || stockOnlyInStock ? '没有符合筛选条件的记录' : '暂无库存数据'"
-              :description="
-                stockKeyword || stockOnlyInStock
-                  ? '换个关键词，或取消勾选「只看有库存」看看'
-                  : '还没有导入过库存汇总，可在「文件导入」里上传库存表'
-              "
-            />
-
-            <div v-else>
-              <!-- 9 列在窄窗口下会溢出：外层 overflow-x-auto + colgroup 定宽，
-                   与领料 / 入库汇总那两张表同一套写法 -->
-              <div class="overflow-x-auto">
-                <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
-                  <colgroup>
-                    <col v-for="column in stockColumns" :key="column.key" :class="column.width" />
-                  </colgroup>
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th
-                        v-for="column in stockColumns"
-                        :key="column.key"
-                        scope="col"
-                        class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                      >
-                        {{ column.label }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-100 bg-white">
-                    <tr
-                      v-for="(record, index) in stockTableData"
-                      :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
-                      class="transition hover:bg-slate-50"
-                    >
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">{{ (stockPageNum - 1) * stockPageSize + index + 1 }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.materialCode) }}</td>
-                      <td class="max-w-[220px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">{{ displayText(record.materialName) }}</td>
-                      <td class="max-w-[160px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.spec) }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.storageLocation) }}</td>
-                      <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.unit) }}</td>
-                      <td
-                        class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold"
-                        :class="Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-500'"
-                      >
-                        {{ displayText(formatStockQty(record.stockQty)) }}
-                      </td>
-                      <td class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600">{{ displayText(record.storageDesc) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="flex justify-end border-t border-slate-100 px-6 py-3">
-                <el-pagination
-                  v-model:current-page="stockPageNum"
-                  :page-size="stockPageSize"
-                  :total="stockTotal"
-                  layout="total, prev, pager, next"
-                  background
-                  @current-change="getStockPageData"
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div v-show="activeTab === 'weekly'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
-            <span class="shrink-0 text-xs text-slate-500">起始日期</span>
-            <el-date-picker
-              v-model="weeklyStartDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="起始日期"
-              :first-day-of-week="1"
-            />
-            <span class="shrink-0 text-sm text-slate-500">至</span>
-            <span class="shrink-0 text-xs text-slate-500">结束日期</span>
-            <el-date-picker
-              v-model="weeklyEndDate"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="选择日期"
-              aria-label="结束日期"
-              :first-day-of-week="1"
-            />
-          </div>
-
-          <div class="p-6">
-            <div class="relative">
-              <LoadingMask v-if="weeklyStatsLoading" />
-
-              <PanelState
-                v-else-if="weeklyStatsError"
-                type="error"
-                title="暂时无法获取周统计数据"
-                :description="weeklyStatsError"
-                action-text="重新加载"
-                @action="fetchWeeklyStats"
+              <ProductSelectDialog
+                v-model="productDialogVisible"
+                :options="productOptions"
+                :selected="productFilter"
+                @select="handleProductSelected"
               />
 
-              <div v-else class="overflow-x-auto">
-                <table class="w-full table-fixed border-collapse text-center">
-                  <colgroup>
-                    <col class="w-[220px]" />
-                    <col class="w-32" />
-                    <col class="w-32" />
-                    <col class="w-32" />
-                    <col class="w-32" />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th colspan="5" class="border border-slate-300 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800">
-                        {{ weeklyTitle }}
-                      </th>
-                    </tr>
-                    <tr>
-                      <th
-                        v-for="column in weeklyColumns"
-                        :key="column.key"
-                        scope="col"
-                        class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
-                        :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
-                      >
-                        {{ column.label }}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="row in weeklyRows" :key="row.name">
-                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ row.name }}</td>
-                      <td class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.pickQty }}</td>
-                      <td class="border border-slate-300 p-0">
-                        <input
-                          v-model="weeklyRemaining[row.materialCode]"
-                          type="text"
-                          placeholder="/"
-                          aria-label="车间剩余"
-                          class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-300"
-                        />
-                      </td>
-                      <td class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">{{ row.actualQty }}</td>
-                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ row.unitConsumption }} {{ row.unitLabel }}</td>
-                    </tr>
-                    <tr>
-                      <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">{{ weeklyInboundRow.name }}</td>
-                      <td colspan="4" class="border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-800">
-                        {{ weeklyInboundRow.value }}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <ProductSelectDialog
+                v-model="orderTypeDialogVisible"
+                :options="orderTypeOptions"
+                :selected="orderTypeFilter"
+                label="工单类型"
+                @select="handleOrderTypeSelected"
+              />
+
+              <ProductSelectDialog
+                v-model="orderNoDialogVisible"
+                :options="orderNoOptions"
+                :selected="orderNoFilter"
+                label="工单号"
+                @select="handleOrderNoSelected"
+              />
             </div>
-          </div>
-        </section>
 
-      </div>
+            <div v-show="activeTab === 'material'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <span class="shrink-0 text-xs text-slate-500">起始日期</span>
+                  <el-date-picker
+                    v-model="pickStartDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="起始日期"
+                    :first-day-of-week="1"
+                    @change="filterPickRecords"
+                  />
+                  <span class="shrink-0 text-sm text-slate-500">至</span>
+                  <span class="shrink-0 text-xs text-slate-500">结束日期</span>
+                  <el-date-picker
+                    v-model="pickEndDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="结束日期"
+                    :first-day-of-week="1"
+                    @change="filterPickRecords"
+                  />
+                  <span class="ml-auto text-sm text-slate-500">
+                    共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
+                  </span>
+                </div>
 
-      <div v-show="activeTab === 'daily'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <PanelState
-              type="pending"
-              title="日报表记录"
-              description="功能建设中，敬请期待"
-            />
-        </section>
-      </div>
+                <div class="relative">
+                  <LoadingMask v-if="pickLoading" />
 
-      <div v-show="activeTab === 'tankLevel'">
-        <TankLevelPanel />
-      </div>
+                  <PanelState
+                    v-else-if="pickError"
+                    type="error"
+                    title="暂时无法获取领料汇总"
+                    :description="pickError"
+                    action-text="重新加载"
+                    @action="fetchPickRecords"
+                  />
 
-      <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
-      <div v-show="activeTab === 'equipment'">
-        <EquipmentMaintenancePanel />
-      </div>
+                  <PanelState
+                    v-else-if="pickTableData.length === 0"
+                    :title="pickMaterialFilter ? '没有符合筛选条件的记录' : '暂无领料数据'"
+                    :description="
+                      pickMaterialFilter
+                        ? `当前筛选：${pickMaterialFilter}`
+                        : '当前没有可展示的领料记录'
+                    "
+                  />
 
-      <div v-show="activeTab === 'vessel'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
+                  <div v-else>
+                    <div class="overflow-x-auto">
+                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                        <colgroup>
+                          <col
+                            v-for="column in pickColumns"
+                            :key="column.key"
+                            :class="column.width"
+                          />
+                        </colgroup>
+                        <thead class="bg-slate-50">
+                          <tr>
+                            <th
+                              v-for="column in pickColumns"
+                              :key="column.key"
+                              scope="col"
+                              class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                              :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                            >
+                              <template v-if="column.key === 'materialName'">
+                                <FilterHeaderCell
+                                  :label="column.label"
+                                  :selected="pickMaterialFilter"
+                                  hint="物料名称"
+                                  max-width-class="max-w-[130px]"
+                                  @open="openPickMaterialDialog"
+                                  @clear="clearPickMaterialFilter"
+                                />
+                              </template>
+
+                              <template v-else>{{ column.label }}</template>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                          <tr
+                            v-for="(record, index) in pickTableData"
+                            :key="`${record.materialCode}-${record.pickDate}-${index}`"
+                            class="transition hover:bg-slate-50"
+                          >
+                            <td
+                              class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
+                            >
+                              {{ (pickPageNum - 1) * pickPageSize + index + 1 }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.pickDate }}
+                            </td>
+                            <td
+                              class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700"
+                            >
+                              {{ record.materialName }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.materialCode }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600"
+                            >
+                              {{ record.pickQty }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.unit }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              <span
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                :role="canOpenImage(record) ? 'button' : undefined"
+                                :tabindex="canOpenImage(record) ? 0 : -1"
+                                :aria-label="
+                                  record.imageUrl || record.thumbnailUrl
+                                    ? '查看领料单据'
+                                    : '暂无图片'
+                                "
+                                @click="openPickImageDialog(record)"
+                                @keydown.enter.prevent="openPickImageDialog(record)"
+                                @keydown.space.prevent="openPickImageDialog(record)"
+                              >
+                                <svg
+                                  class="h-3 w-3"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="1.5"
+                                  aria-hidden="true"
+                                >
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                                  <circle cx="8.5" cy="8.5" r="1.5" />
+                                  <path d="m21 15-5-5L5 21" />
+                                </svg>
+                                <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
+                                <img
+                                  v-if="record.thumbnailUrl || record.imageUrl"
+                                  :src="record.thumbnailUrl || record.imageUrl"
+                                  alt="领料单据"
+                                  loading="lazy"
+                                  decoding="async"
+                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                                  @error="handleImgError($event, record)"
+                                />
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                      <el-pagination
+                        v-model:current-page="pickPageNum"
+                        :page-size="pickPageSize"
+                        :total="pickTotal"
+                        layout="total, prev, pager, next"
+                        background
+                        @current-change="getPickPageData"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <el-dialog v-model="pickImageDialogVisible" width="70vw" align-center>
+                <div
+                  class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6"
+                >
+                  <img
+                    v-if="currentPickImage"
+                    :src="currentPickImage"
+                    alt="领料单据大图"
+                    class="max-h-[70vh] max-w-full rounded-card object-contain"
+                  />
+                </div>
+              </el-dialog>
+
+              <ProductSelectDialog
+                v-model="pickMaterialDialogVisible"
+                :options="pickMaterialOptions"
+                :selected="pickMaterialFilter"
+                label="物料名称"
+                @select="handlePickMaterialSelected"
+              />
+            </div>
+
+            <div v-show="activeTab === 'inbound'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <span class="shrink-0 text-xs text-slate-500">起始日期</span>
+                  <el-date-picker
+                    v-model="inboundStartDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="起始日期"
+                    :first-day-of-week="1"
+                    @change="filterInboundRecords"
+                  />
+                  <span class="shrink-0 text-sm text-slate-500">至</span>
+                  <span class="shrink-0 text-xs text-slate-500">结束日期</span>
+                  <el-date-picker
+                    v-model="inboundEndDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="结束日期"
+                    :first-day-of-week="1"
+                    @change="filterInboundRecords"
+                  />
+                  <span class="ml-auto text-sm text-slate-500">
+                    共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
+                  </span>
+                </div>
+
+                <div class="relative">
+                  <LoadingMask v-if="inboundLoading" />
+
+                  <PanelState
+                    v-else-if="inboundError"
+                    type="error"
+                    title="暂时无法获取入库汇总"
+                    :description="inboundError"
+                    action-text="重新加载"
+                    @action="fetchInboundRecords"
+                  />
+
+                  <PanelState
+                    v-else-if="inboundTableData.length === 0"
+                    :title="inboundMaterialFilter ? '没有符合筛选条件的记录' : '暂无入库数据'"
+                    :description="
+                      inboundMaterialFilter
+                        ? `当前筛选：${inboundMaterialFilter}`
+                        : '当前没有可展示的入库记录'
+                    "
+                  />
+
+                  <div v-else>
+                    <div class="overflow-x-auto">
+                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                        <colgroup>
+                          <col
+                            v-for="column in inboundColumns"
+                            :key="column.key"
+                            :class="column.width"
+                          />
+                        </colgroup>
+                        <thead class="bg-slate-50">
+                          <tr>
+                            <th
+                              v-for="column in inboundColumns"
+                              :key="column.key"
+                              scope="col"
+                              class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                              :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                            >
+                              <template v-if="column.key === 'materialName'">
+                                <FilterHeaderCell
+                                  :label="column.label"
+                                  :selected="inboundMaterialFilter"
+                                  hint="物料名称"
+                                  max-width-class="max-w-[130px]"
+                                  @open="openInboundMaterialDialog"
+                                  @clear="clearInboundMaterialFilter"
+                                />
+                              </template>
+
+                              <template v-else>{{ column.label }}</template>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                          <tr
+                            v-for="(record, index) in inboundTableData"
+                            :key="`${record.materialCode}-${record.inboundDate}-${index}`"
+                            class="transition hover:bg-slate-50"
+                          >
+                            <td
+                              class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
+                            >
+                              {{ (inboundPageNum - 1) * inboundPageSize + index + 1 }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.inboundDate }}
+                            </td>
+                            <td
+                              class="max-w-[200px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700"
+                            >
+                              {{ record.materialName }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.materialCode }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600"
+                            >
+                              {{ record.inboundQty }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ record.unit }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              <span
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                :role="canOpenImage(record) ? 'button' : undefined"
+                                :tabindex="canOpenImage(record) ? 0 : -1"
+                                :aria-label="
+                                  record.imageUrl || record.thumbnailUrl
+                                    ? '查看入库单据'
+                                    : '暂无图片'
+                                "
+                                @click="openInboundImageDialog(record)"
+                                @keydown.enter.prevent="openInboundImageDialog(record)"
+                                @keydown.space.prevent="openInboundImageDialog(record)"
+                              >
+                                <svg
+                                  class="h-3 w-3"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  stroke-width="1.5"
+                                  aria-hidden="true"
+                                >
+                                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                                  <circle cx="8.5" cy="8.5" r="1.5" />
+                                  <path d="m21 15-5-5L5 21" />
+                                </svg>
+                                <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
+                                <img
+                                  v-if="record.thumbnailUrl || record.imageUrl"
+                                  :src="record.thumbnailUrl || record.imageUrl"
+                                  alt="入库单据"
+                                  loading="lazy"
+                                  decoding="async"
+                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                                  @error="handleImgError($event, record)"
+                                />
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                      <el-pagination
+                        v-model:current-page="inboundPageNum"
+                        :page-size="inboundPageSize"
+                        :total="inboundTotal"
+                        layout="total, prev, pager, next"
+                        background
+                        @current-change="getInboundPageData"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <el-dialog v-model="inboundImageDialogVisible" width="70vw" align-center>
+                <div
+                  class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6"
+                >
+                  <img
+                    v-if="currentInboundImage"
+                    :src="currentInboundImage"
+                    alt="入库单据大图"
+                    class="max-h-[70vh] max-w-full rounded-card object-contain"
+                  />
+                </div>
+              </el-dialog>
+
+              <ProductSelectDialog
+                v-model="inboundMaterialDialogVisible"
+                :options="inboundMaterialOptions"
+                :selected="inboundMaterialFilter"
+                label="物料名称"
+                @select="handleInboundMaterialSelected"
+              />
+            </div>
+
+            <div v-show="activeTab === 'report'">
+              <StatsTable
+                :columns="reportColumns"
+                :rows="reportRows"
+                empty-text="暂无报工数据"
+                :row-key="statsRowKey"
+              />
+            </div>
+
+            <div v-show="activeTab === 'costing'">
+              <StatsTable
+                :columns="costingColumns"
+                :rows="costingRows"
+                empty-text="暂无核算数据"
+                :row-key="statsRowKey"
+              />
+            </div>
+
+            <div v-show="activeTab === 'materialCosting'">
+              <!-- 货物移动取数失败（变更-033）：核算表那两个派生列就没有正确答案，
+                   说出来 + 给一次重试，好过让 0 冒充「没有人报工」 -->
+              <div
+                v-if="goodsMoveError"
+                role="alert"
+                class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border border-rose-200 bg-rose-50 px-5 py-4"
+              >
+                <div class="min-w-0">
+                  <h3 class="text-sm font-semibold text-rose-700">货物移动数据加载失败</h3>
+                  <p class="mt-1 text-sm text-rose-700">
+                    「已报工数 / 未报工数」暂无法计算，两列以「—」显示。{{ goodsMoveError }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="ml-auto shrink-0 rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2"
+                  @click="fetchGoodsMoveRecords"
+                >
+                  重新加载
+                </button>
+              </div>
+
+              <StatsTable
+                :columns="materialCostingColumns"
+                :rows="materialCostingDisplayRows"
+                empty-text="暂无核算数据"
+                :row-key="statsRowKey"
+              />
+            </div>
+
+            <div v-show="activeTab === 'stock'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <el-input
+                    v-model="stockKeyword"
+                    placeholder="物料编码 / 物料名称 / 规格"
+                    aria-label="搜索物料"
+                    clearable
+                    class="w-72"
+                    @input="applyStockFilter"
+                    @clear="applyStockFilter"
+                  />
+                  <!-- 默认**不勾**：这一页是查物料信息，要把数量为 0 的物料也列出来 -->
+                  <el-checkbox :model-value="stockOnlyInStock" @change="toggleStockOnlyInStock">
+                    只看有库存
+                  </el-checkbox>
+                  <span class="ml-auto text-sm text-slate-500">
+                    共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
+                  </span>
+                </div>
+
+                <div class="relative">
+                  <LoadingMask v-if="stockLoading" />
+
+                  <PanelState
+                    v-else-if="stockError"
+                    type="error"
+                    title="暂时无法获取物料库存"
+                    :description="stockError"
+                    action-text="重新加载"
+                    @action="fetchStockRecords"
+                  />
+
+                  <PanelState
+                    v-else-if="stockTableData.length === 0"
+                    :title="
+                      stockKeyword || stockOnlyInStock ? '没有符合筛选条件的记录' : '暂无库存数据'
+                    "
+                    :description="
+                      stockKeyword || stockOnlyInStock
+                        ? '换个关键词，或取消勾选「只看有库存」看看'
+                        : '还没有导入过库存汇总，可在「文件导入」里上传库存表'
+                    "
+                  />
+
+                  <div v-else>
+                    <!-- 9 列在窄窗口下会溢出：外层 overflow-x-auto + colgroup 定宽，
+                   与领料 / 入库汇总那两张表同一套写法 -->
+                    <div class="overflow-x-auto">
+                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                        <colgroup>
+                          <col
+                            v-for="column in stockColumns"
+                            :key="column.key"
+                            :class="column.width"
+                          />
+                        </colgroup>
+                        <thead class="bg-slate-50">
+                          <tr>
+                            <th
+                              v-for="column in stockColumns"
+                              :key="column.key"
+                              scope="col"
+                              class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                              :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                            >
+                              {{ column.label }}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+                          <tr
+                            v-for="(record, index) in stockTableData"
+                            :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
+                            class="transition hover:bg-slate-50"
+                          >
+                            <td
+                              class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
+                            >
+                              {{ (stockPageNum - 1) * stockPageSize + index + 1 }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ displayText(record.materialCode) }}
+                            </td>
+                            <td
+                              class="max-w-[220px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700"
+                            >
+                              {{ displayText(record.materialName) }}
+                            </td>
+                            <td
+                              class="max-w-[160px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600"
+                            >
+                              {{ displayText(record.spec) }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ displayText(record.storageLocation) }}
+                            </td>
+                            <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
+                              {{ displayText(record.unit) }}
+                            </td>
+                            <td
+                              class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold"
+                              :class="
+                                Number(record.stockQty) > 0 ? 'text-slate-900' : 'text-slate-500'
+                              "
+                            >
+                              {{ displayText(formatStockQty(record.stockQty)) }}
+                            </td>
+                            <td
+                              class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-600"
+                            >
+                              {{ displayText(record.storageDesc) }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                      <el-pagination
+                        v-model:current-page="stockPageNum"
+                        :page-size="stockPageSize"
+                        :total="stockTotal"
+                        layout="total, prev, pager, next"
+                        background
+                        @current-change="getStockPageData"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div v-show="activeTab === 'weekly'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <span class="shrink-0 text-xs text-slate-500">起始日期</span>
+                  <el-date-picker
+                    v-model="weeklyStartDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="起始日期"
+                    :first-day-of-week="1"
+                  />
+                  <span class="shrink-0 text-sm text-slate-500">至</span>
+                  <span class="shrink-0 text-xs text-slate-500">结束日期</span>
+                  <el-date-picker
+                    v-model="weeklyEndDate"
+                    type="date"
+                    value-format="YYYY-MM-DD"
+                    placeholder="选择日期"
+                    aria-label="结束日期"
+                    :first-day-of-week="1"
+                  />
+                </div>
+
+                <div class="p-6">
+                  <div class="relative">
+                    <LoadingMask v-if="weeklyStatsLoading" />
+
+                    <PanelState
+                      v-else-if="weeklyStatsError"
+                      type="error"
+                      title="暂时无法获取周统计数据"
+                      :description="weeklyStatsError"
+                      action-text="重新加载"
+                      @action="fetchWeeklyStats"
+                    />
+
+                    <div v-else class="overflow-x-auto">
+                      <table class="w-full table-fixed border-collapse text-center">
+                        <colgroup>
+                          <col class="w-[220px]" />
+                          <col class="w-32" />
+                          <col class="w-32" />
+                          <col class="w-32" />
+                          <col class="w-32" />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th
+                              colspan="5"
+                              class="border border-slate-300 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800"
+                            >
+                              {{ weeklyTitle }}
+                            </th>
+                          </tr>
+                          <tr>
+                            <th
+                              v-for="column in weeklyColumns"
+                              :key="column.key"
+                              scope="col"
+                              class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
+                              :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
+                            >
+                              {{ column.label }}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="row in weeklyRows" :key="row.name">
+                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                              {{ row.name }}
+                            </td>
+                            <td
+                              class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                            >
+                              {{ row.pickQty }}
+                            </td>
+                            <td class="border border-slate-300 p-0">
+                              <input
+                                v-model="weeklyRemaining[row.materialCode]"
+                                type="text"
+                                placeholder="/"
+                                :aria-label="`车间剩余 ${row.name}`"
+                                class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-emerald-600"
+                              />
+                            </td>
+                            <td
+                              class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                            >
+                              {{ row.actualQty }}
+                            </td>
+                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                              {{ row.unitConsumption }} {{ row.unitLabel }}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                              {{ weeklyInboundRow.name }}
+                            </td>
+                            <td
+                              colspan="4"
+                              class="border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                            >
+                              {{ weeklyInboundRow.value }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div v-show="activeTab === 'daily'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <PanelState type="pending" title="日报表记录" description="功能建设中，敬请期待" />
+              </section>
+            </div>
+
+            <div v-show="activeTab === 'tankLevel'">
+              <TankLevelPanel />
+            </div>
+
+            <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
+            <div v-show="activeTab === 'equipment'">
+              <EquipmentMaintenancePanel />
+            </div>
+
+            <div v-show="activeTab === 'vessel'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
                这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
                只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
-          <div
-            v-if="vesselsLoading && !vessels.length"
-            class="border-b border-slate-100 px-6 py-3 text-xs text-slate-500"
-          >
-            正在加载容器清单…
-          </div>
-          <div
-            v-else-if="vesselsFromCache"
-            class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs leading-relaxed text-amber-800"
-          >
-            <template v-if="vessels.length">
-              当前显示的是本地缓存的容器清单（设备台账接口暂时取不到）。若台账刚改过几何参数，
-              这里的数值可能不是最新的 —— 恢复连接后会自动刷新。
-            </template>
-            <template v-else>
-              取不到容器清单：设备台账接口连不上，本地也没有缓存。
-              请稍后重试；若一直如此，请联系管理员核对台账里这几台容器的几何参数是否已填写。
-            </template>
-          </div>
+                <div
+                  v-if="vesselsLoading && !vessels.length"
+                  class="border-b border-slate-100 px-6 py-3 text-xs text-slate-500"
+                >
+                  正在加载容器清单…
+                </div>
+                <div
+                  v-else-if="vesselsFromCache"
+                  class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs leading-relaxed text-amber-800"
+                >
+                  <template v-if="vessels.length">
+                    当前显示的是本地缓存的容器清单（设备台账接口暂时取不到）。若台账刚改过几何参数，
+                    这里的数值可能不是最新的 —— 恢复连接后会自动刷新。
+                  </template>
+                  <template v-else>
+                    取不到容器清单：设备台账接口连不上，本地也没有缓存。
+                    请稍后重试；若一直如此，请联系管理员核对台账里这几台容器的几何参数是否已填写。
+                  </template>
+                </div>
 
-          <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
-          <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-4">
-            <div class="min-w-0 flex-1">
-              <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
-              <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
-                {{ vesselGeometry.note }}
-              </p>
-              <!-- 录入对账：几何与台账的封头容积对不上时单独一行红字（不阻断计算 ——
+                <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
+                <div
+                  class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-4"
+                >
+                  <div class="min-w-0 flex-1">
+                    <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
+                    <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
+                      {{ vesselGeometry.note }}
+                    </p>
+                    <!-- 录入对账：几何与台账的封头容积对不上时单独一行红字（不阻断计算 ——
                    页面算的是按几何来的，台账那列只用于核对） -->
-              <p v-if="vesselReconcileWarning" class="mt-1 text-xs font-medium text-rose-600">
-                {{ vesselReconcileWarning }}
-              </p>
-              <p v-if="vesselBundleWarning" class="mt-1 text-xs font-medium text-rose-600">
-                {{ vesselBundleWarning }}
-              </p>
+                    <p v-if="vesselReconcileWarning" class="mt-1 text-xs font-medium text-rose-600">
+                      {{ vesselReconcileWarning }}
+                    </p>
+                    <p v-if="vesselBundleWarning" class="mt-1 text-xs font-medium text-rose-600">
+                      {{ vesselBundleWarning }}
+                    </p>
+                  </div>
+                  <el-select
+                    v-model="vesselKey"
+                    class="vessel-select shrink-0"
+                    aria-label="选择储罐"
+                  >
+                    <el-option
+                      v-for="vessel in vessels"
+                      :key="vessel.key"
+                      :label="vessel.label"
+                      :value="vessel.key"
+                    />
+                  </el-select>
+                </div>
+
+                <div
+                  class="flex flex-wrap items-stretch"
+                  :class="isVerticalVessel ? 'gap-x-6 p-6' : ''"
+                >
+                  <div
+                    class="flex justify-center"
+                    :class="isVerticalVessel ? 'shrink-0' : 'w-full p-6'"
+                  >
+                    <canvas
+                      ref="vesselCanvas"
+                      class="vessel-canvas mx-auto block w-full"
+                      :class="{ 'is-switching': vesselSwitching }"
+                      :style="{
+                        maxWidth: `${vesselGeometry.displayWidth}px`,
+                        aspectRatio: String(vesselCanvasAspect),
+                      }"
+                    ></canvas>
+                  </div>
+
+                  <div
+                    :class="
+                      isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'
+                    "
+                  >
+                    <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
+                    <div
+                      class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
+                      :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-100 px-6 pt-5'"
+                    >
+                      <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
+                      <div
+                        class="flex justify-center"
+                        :class="isVerticalVessel ? 'w-full' : 'flex-1'"
+                      >
+                        <!-- 体积变化：居中作为视觉焦点 -->
+                        <div
+                          class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
+                          :class="
+                            isVerticalVessel
+                              ? 'px-0 pb-4 pt-5'
+                              : 'rounded-card border border-slate-200 bg-slate-50 px-6 py-4'
+                          "
+                        >
+                          <span class="text-sm text-slate-500">体积变化</span>
+                          <!-- 24px 粗体属「大字号」，阈值 3:1，-600 已过 —— 与下面那处刻意不同，别对齐 -->
+                          <span
+                            class="text-2xl font-bold tracking-tight"
+                            :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
+                            >{{ vesselVolumeDelta >= 0 ? '+' : ''
+                            }}{{ vesselVolumeDelta.toFixed(2) }}</span
+                          >
+                          <span class="text-sm text-slate-500">m³</span>
+                          <span
+                            v-if="vesselMassDelta !== null"
+                            class="text-base font-semibold"
+                            :class="
+                              vesselVolumeDelta >= 0 ? STATUS_TEXT.success : STATUS_TEXT.error
+                            "
+                            >（{{ vesselMassDelta >= 0 ? '+' : ''
+                            }}{{ vesselMassDelta.toFixed(2) }} t）</span
+                          >
+                        </div>
+                      </div>
+
+                      <div
+                        class="gap-x-6 gap-y-5"
+                        :class="
+                          isVerticalVessel
+                            ? 'grid w-full grid-cols-2 px-0'
+                            : 'flex flex-wrap gap-x-6'
+                        "
+                      >
+                        <!-- 起始液位：控件与其数据同列 -->
+                        <div class="flex flex-col gap-3">
+                          <div
+                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                          >
+                            <span
+                              class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
+                            >
+                              <span
+                                class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800"
+                                aria-hidden="true"
+                              ></span>
+                              起始液位
+                            </span>
+                            <div class="flex items-center gap-3">
+                              <button
+                                type="button"
+                                class="vessel-step"
+                                aria-label="降低起始液位"
+                                @pointerdown.prevent="startStepHold('start', -1)"
+                                @keydown.enter.prevent="stepVesselLevel('start', -1)"
+                                @keydown.space.prevent="stepVesselLevel('start', -1)"
+                              >
+                                −
+                              </button>
+                              <input
+                                v-model.number="vesselStartLevel"
+                                type="number"
+                                min="0"
+                                :max="vesselGeometry.maxLevel"
+                                step="10"
+                                class="vessel-level-input w-20 min-w-0 text-right"
+                              />
+                              <button
+                                type="button"
+                                class="vessel-step"
+                                aria-label="升高起始液位"
+                                @pointerdown.prevent="startStepHold('start', 1)"
+                                @keydown.enter.prevent="stepVesselLevel('start', 1)"
+                                @keydown.space.prevent="stepVesselLevel('start', 1)"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          <div class="space-y-1 pl-1 text-sm text-slate-500">
+                            <div>
+                              液位：<span class="font-semibold text-slate-900">{{
+                                Math.round(vesselStartDisplay)
+                              }}</span>
+                              mm
+                            </div>
+                            <div>
+                              体积：<span class="font-semibold text-emerald-700">{{
+                                vesselStartVolume.toFixed(2)
+                              }}</span>
+                              m³<template v-if="vesselStartMass !== null"
+                                ><span class="ml-1 text-slate-500"
+                                  >（{{ vesselStartMass.toFixed(2) }} t）</span
+                                ></template
+                              >
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 终止液位：控件与其数据同列 -->
+                        <div class="flex flex-col gap-3">
+                          <div
+                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                          >
+                            <span
+                              class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
+                            >
+                              <span
+                                class="inline-block h-0 w-5 border-t-2"
+                                :style="{ borderColor: vesselGeometry.liquid.line }"
+                                aria-hidden="true"
+                              ></span>
+                              终止液位
+                            </span>
+                            <div class="flex items-center gap-3">
+                              <button
+                                type="button"
+                                class="vessel-step"
+                                aria-label="降低终止液位"
+                                @pointerdown.prevent="startStepHold('end', -1)"
+                                @keydown.enter.prevent="stepVesselLevel('end', -1)"
+                                @keydown.space.prevent="stepVesselLevel('end', -1)"
+                              >
+                                −
+                              </button>
+                              <input
+                                v-model.number="vesselEndLevel"
+                                type="number"
+                                min="0"
+                                :max="vesselGeometry.maxLevel"
+                                step="10"
+                                class="vessel-level-input w-20 min-w-0 text-right"
+                              />
+                              <button
+                                type="button"
+                                class="vessel-step"
+                                aria-label="升高终止液位"
+                                @pointerdown.prevent="startStepHold('end', 1)"
+                                @keydown.enter.prevent="stepVesselLevel('end', 1)"
+                                @keydown.space.prevent="stepVesselLevel('end', 1)"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+
+                          <div class="space-y-1 pl-1 text-sm text-slate-500">
+                            <div>
+                              液位：<span class="font-semibold text-slate-900">{{
+                                Math.round(vesselEndDisplay)
+                              }}</span>
+                              mm
+                            </div>
+                            <div>
+                              体积：<span class="font-semibold text-emerald-700">{{
+                                vesselEndVolume.toFixed(2)
+                              }}</span>
+                              m³<template v-if="vesselEndMass !== null"
+                                ><span class="ml-1 text-slate-500"
+                                  >（{{ vesselEndMass.toFixed(2) }} t）</span
+                                ></template
+                              >
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+                  <div class="mx-auto max-w-[900px] overflow-x-auto">
+                    <p
+                      class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500"
+                    >
+                      液体体积计算公式
+                    </p>
+
+                    <div
+                      v-if="vesselGeometry.type === 'vertical'"
+                      class="math-formula text-center text-slate-700"
+                    >
+                      <div>
+                        <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
+                        <span class="ml-2 text-xs text-slate-500"
+                          >（<i>h</i> ≤ <i>H</i>，筒体段）</span
+                        >
+                        <span class="mx-7 text-slate-500" aria-hidden="true">｜</span>
+                        <i>V</i>(<i>h</i>) = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
+                        <span class="frac"
+                          ><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span
+                        >
+                        ]
+                        <span class="ml-2 text-xs text-slate-500"
+                          >（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span
+                        >
+                      </div>
+                    </div>
+
+                    <div v-else class="math-formula text-center text-slate-700">
+                      <div>
+                        <i>V</i>(<i>h</i>) = <i>L</i> [
+                        <span class="frac"><span>π<i>r</i>²</span><span>2</span></span>
+                        − (<i>r</i> − <i>h</i>)<span class="sqrt"
+                          >√<span>2<i>rh</i> − <i>h</i>²</span></span
+                        >
+                        − <i>r</i>² · arcsin<span class="paren">(</span
+                        ><span class="frac"
+                          ><span><i>r</i> − <i>h</i></span
+                          ><span><i>r</i></span></span
+                        ><span class="paren">)</span> ] &nbsp;+&nbsp;
+                        <span class="frac"
+                          ><span>π · <i>h</i><sub>i</sub></span
+                          ><span>3<i>r</i></span></span
+                        >
+                        · [ 3<i>r</i>²<i>h</i> − <i>r</i>³ + (<i>r</i> − <i>h</i>)³ ]
+                      </div>
+                    </div>
+
+                    <p
+                      v-if="vesselGeometry.type === 'vertical'"
+                      class="mt-3 text-center text-xs leading-relaxed text-slate-500"
+                    >
+                      <i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>H</i> 筒体高度　<i>h</i
+                      ><sub>i</sub> 封头曲面内高度
+                      <span class="text-slate-500">｜</span>
+                      {{ vesselFormulaCaption }}
+                    </p>
+                    <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
+                      <i>L</i> 筒体长度（含两端直边）　<i>r</i> 筒体内半径　<i>h</i> 液位高度　<i
+                        >h</i
+                      ><sub>i</sub> 封头曲面内高度
+                      <span class="text-slate-500">｜</span>
+                      {{ vesselFormulaCaption }}
+                    </p>
+                  </div>
+                </div>
+              </section>
             </div>
-            <el-select v-model="vesselKey" class="vessel-select shrink-0" aria-label="选择储罐">
-              <el-option
-                v-for="vessel in vessels"
-                :key="vessel.key"
-                :label="vessel.label"
-                :value="vessel.key"
+
+            <div v-show="activeTab === 'electricity'">
+              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+                <!-- 电价档位备注 -->
+                <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
+                  <div class="flex items-start gap-3">
+                    <div
+                      class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-800"
+                    >
+                      !
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
+                      <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                          <p class="text-xs text-slate-500">10 万度以内</p>
+                          <p class="mt-1 text-lg font-semibold text-slate-900">
+                            1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                          </p>
+                        </div>
+                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                          <p class="text-xs text-slate-500">20 万度以内</p>
+                          <p class="mt-1 text-lg font-semibold text-slate-900">
+                            0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                          </p>
+                        </div>
+                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                          <p class="text-xs text-slate-500">20 万度以上</p>
+                          <p class="mt-1 text-lg font-semibold text-slate-900">
+                            0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <PanelState type="pending" title="电费预提" description="功能建设中，敬请期待" />
+              </section>
+            </div>
+
+            <div v-show="activeTab === 'import'">
+              <WorkOrderImport
+                @cancel="handleImportCancel"
+                @back="handleImportBack"
+                @imported="importDirty = true"
               />
-            </el-select>
-          </div>
-
-          <div class="flex flex-wrap items-stretch" :class="isVerticalVessel ? 'gap-x-6 p-6' : ''">
-            <div class="flex justify-center" :class="isVerticalVessel ? 'shrink-0' : 'w-full p-6'">
-              <canvas
-              ref="vesselCanvas"
-              class="vessel-canvas mx-auto block w-full"
-              :class="{ 'is-switching': vesselSwitching }"
-              :style="{
-                maxWidth: `${vesselGeometry.displayWidth}px`,
-                aspectRatio: String(vesselCanvasAspect),
-              }"
-            ></canvas>
             </div>
 
-            <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
-            <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
-            <div
-              class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
-              :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-100 px-6 pt-5'"
-            >
-            <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
-            <div class="flex justify-center" :class="isVerticalVessel ? 'w-full' : 'flex-1'">
-            <!-- 体积变化：居中作为视觉焦点 -->
-            <div
-                class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
-                :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-card border border-slate-200 bg-slate-50 px-6 py-4'"
-            >
-              <span class="text-sm text-slate-500">体积变化</span>
-              <!-- 24px 粗体属「大字号」，阈值 3:1，-600 已过 —— 与下面那处刻意不同，别对齐 -->
-              <span
-                class="text-2xl font-bold tracking-tight"
-                :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
-              >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span>
-              <span class="text-sm text-slate-500">m³</span>
-              <span
-                v-if="vesselMassDelta !== null"
-                class="text-base font-semibold"
-                :class="vesselVolumeDelta >= 0 ? STATUS_TEXT.success : STATUS_TEXT.error"
-              >（{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }} t）</span>
-            </div>
-            </div>
-
-            <div
-                class="gap-x-6 gap-y-5"
-                :class="
-                  isVerticalVessel
-                    ? 'grid w-full grid-cols-2 px-0'
-                    : 'flex flex-wrap gap-x-6'
-                "
-              >
-              <!-- 起始液位：控件与其数据同列 -->
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
-                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                    <span class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>
-                    起始液位
-                  </span>
-                  <div class="flex items-center gap-3">
-                    <button
-                      type="button"
-                      class="vessel-step"
-                      aria-label="降低起始液位"
-                      @pointerdown.prevent="startStepHold('start', -1)"
-                      @keydown.enter.prevent="stepVesselLevel('start', -1)"
-                      @keydown.space.prevent="stepVesselLevel('start', -1)"
-                    >
-                      −
-                    </button>
-                    <input
-                      v-model.number="vesselStartLevel"
-                      type="number"
-                      min="0"
-                      :max="vesselGeometry.maxLevel"
-                      step="10"
-                      class="vessel-level-input w-20 min-w-0 text-right"
-                    />
-                    <button
-                      type="button"
-                      class="vessel-step"
-                      aria-label="升高起始液位"
-                      @pointerdown.prevent="startStepHold('start', 1)"
-                      @keydown.enter.prevent="stepVesselLevel('start', 1)"
-                      @keydown.space.prevent="stepVesselLevel('start', 1)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <div class="space-y-1 pl-1 text-sm text-slate-500">
-                  <div>
-                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
-                  </div>
-                  <div>
-                    体积：<span class="font-semibold text-sky-700">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-500">（{{ vesselStartMass.toFixed(2) }} t）</span></template>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 终止液位：控件与其数据同列 -->
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
-                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                    <span
-                      class="inline-block h-0 w-5 border-t-2"
-                      :style="{ borderColor: vesselGeometry.liquid.line }"
-                      aria-hidden="true"
-                    ></span>
-                    终止液位
-                  </span>
-                  <div class="flex items-center gap-3">
-                    <button
-                      type="button"
-                      class="vessel-step"
-                      aria-label="降低终止液位"
-                      @pointerdown.prevent="startStepHold('end', -1)"
-                      @keydown.enter.prevent="stepVesselLevel('end', -1)"
-                      @keydown.space.prevent="stepVesselLevel('end', -1)"
-                    >
-                      −
-                    </button>
-                    <input
-                      v-model.number="vesselEndLevel"
-                      type="number"
-                      min="0"
-                      :max="vesselGeometry.maxLevel"
-                      step="10"
-                      class="vessel-level-input w-20 min-w-0 text-right"
-                    />
-                    <button
-                      type="button"
-                      class="vessel-step"
-                      aria-label="升高终止液位"
-                      @pointerdown.prevent="startStepHold('end', 1)"
-                      @keydown.enter.prevent="stepVesselLevel('end', 1)"
-                      @keydown.space.prevent="stepVesselLevel('end', 1)"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <div class="space-y-1 pl-1 text-sm text-slate-500">
-                  <div>
-                    液位：<span class="font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
-                  </div>
-                  <div>
-                    体积：<span class="font-semibold text-sky-700">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-500">（{{ vesselEndMass.toFixed(2) }} t）</span></template>
-                  </div>
-                </div>
-              </div>
-            </div>
-            </div>
+            <div v-show="activeTab === 'imageParse'">
+              <ImageParse />
             </div>
           </div>
-
-          <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
-            <div class="mx-auto max-w-[900px] overflow-x-auto">
-              <p class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
-                液体体积计算公式
-              </p>
-
-              <div v-if="vesselGeometry.type === 'vertical'" class="math-formula text-center text-slate-700">
-                <div>
-                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>h</i>
-                  <span class="ml-2 text-xs text-slate-500">（<i>h</i> ≤ <i>H</i>，筒体段）</span>
-                  <span class="mx-7 text-slate-500" aria-hidden="true">｜</span>
-                  <i>V</i>(<i>h</i>) = π<i>r</i>²<i>H</i> + π<i>r</i>²[ <i>t</i> −
-                  <span class="frac"><span><i>t</i>³</span><span>3<i>h</i><sub>i</sub>²</span></span> ]
-                  <span class="ml-2 text-xs text-slate-500">（<i>h</i> &gt; <i>H</i>，<i>t</i> = <i>h</i> − <i>H</i>）</span>
-                </div>
-              </div>
-
-              <div v-else class="math-formula text-center text-slate-700">
-                <div>
-                  <i>V</i>(<i>h</i>) = <i>L</i> [
-                  <span class="frac"><span>π<i>r</i>²</span><span>2</span></span>
-                  − (<i>r</i> − <i>h</i>)<span class="sqrt">√<span>2<i>rh</i> − <i>h</i>²</span></span>
-                  − <i>r</i>² · arcsin<span class="paren">(</span><span class="frac"><span><i>r</i> − <i>h</i></span><span><i>r</i></span></span><span class="paren">)</span> ]
-                  &nbsp;+&nbsp;
-                  <span class="frac"><span>π · <i>h</i><sub>i</sub></span><span>3<i>r</i></span></span>
-                  · [ 3<i>r</i>²<i>h</i> − <i>r</i>³ + (<i>r</i> − <i>h</i>)³ ]
-                </div>
-              </div>
-
-              <p v-if="vesselGeometry.type === 'vertical'" class="mt-3 text-center text-xs leading-relaxed text-slate-500">
-                <i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>H</i> 筒体高度　<i>h</i><sub>i</sub> 封头曲面内高度
-                <span class="text-slate-500">｜</span>
-                {{ vesselFormulaCaption }}
-              </p>
-              <p v-else class="mt-3 text-center text-xs leading-relaxed text-slate-500">
-                <i>L</i> 筒体长度（含两端直边）　<i>r</i> 筒体内半径　<i>h</i> 液位高度　<i>h</i><sub>i</sub> 封头曲面内高度
-                <span class="text-slate-500">｜</span>
-                {{ vesselFormulaCaption }}
-              </p>
-            </div>
-          </div>
-        </section>
+        </div>
       </div>
-
-      <div v-show="activeTab === 'electricity'">
-        <section class="rounded-card border border-slate-200 bg-white shadow-card">
-          <!-- 电价档位备注 -->
-          <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
-            <div class="flex items-start gap-3">
-              <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-800">
-                !
-              </div>
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
-                <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">10 万度以内</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">20 万度以内</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                  <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">20 万度以上</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <PanelState
-              type="pending"
-              title="电费预提"
-              description="功能建设中，敬请期待"
-            />
-        </section>
-      </div>
-
-      <div v-show="activeTab === 'import'">
-        <WorkOrderImport
-          @cancel="handleImportCancel"
-          @back="handleImportBack"
-          @imported="importDirty = true"
-        />
-      </div>
-
-      <div v-show="activeTab === 'imageParse'">
-        <ImageParse />
-      </div>
-      </div>
-    </div>
     </main>
   </el-config-provider>
 </template>
@@ -2578,7 +3375,9 @@ watch(activeTab, (tab, prevTab) => {
 <style scoped>
 /* 储罐图：切换罐型时淡出淡入 + 高度平滑过渡 */
 .vessel-canvas {
-  transition: aspect-ratio 320ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms ease;
+  transition:
+    aspect-ratio 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 200ms ease;
 }
 
 .vessel-canvas.is-switching {
@@ -2676,8 +3475,12 @@ watch(activeTab, (tab, prevTab) => {
   box-shadow: 0 0 0 1px rgb(148 163 184) inset;
 }
 
+/* 聚焦环跟随主色 emerald-600/100（变更-033：原先残留的是天蓝 500/100，
+   天蓝只留给 statusTones 的 info，正文界面不该出现） */
 .vessel-select :deep(.el-select__wrapper.is-focused) {
-  box-shadow: 0 0 0 1px rgb(14 165 233) inset, 0 0 0 3px rgb(224 242 254);
+  box-shadow:
+    0 0 0 1px rgb(5 150 105) inset,
+    0 0 0 3px rgb(209 250 229);
 }
 
 /* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */
