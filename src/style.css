@@ -24,3 +24,33 @@ button,
 input {
   font: inherit;
 }
+
+/*
+ * 表格数字用等宽字形（tabular figures）。
+ *
+ * Inter 默认是比例数字：'1' 比 '9' 窄，于是同一列上下两行的个位对不齐。
+ * 工单汇总的 订单数量 / 已确认 / 已发货、领料与入库的数量、体积、金额
+ * 全是右对齐数字列——这是本应用最直接的读数损耗。
+ *
+ * 只限定 table，不上 :root：
+ *   1. 对齐问题只存在于「成列」的数字，孤立的大字数值不受影响；
+ *   2. Intro.vue 受保护且整页无 <table>，限定后改动不可能波及它。
+ */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 前庭不适的触发源是「大幅位移」与「无限循环」，不是 hover 变色。
+ * 全站唯一一条无限循环的位移动画就是加载条的来回平移，这里单独关掉。
+ * 两个组件各有一份同名 .loader-bar（后者待去重），非 scoped 规则一次覆盖。
+ *
+ * 有意不做 `* { animation-duration: .01ms }` 式的全局重置：
+ * 其余动效全是 hover 过渡与 active:scale-[0.98] 按压反馈，不构成触发源，
+ * 而全局重置会连 Intro.vue 的按压反馈一起抹掉——那一页受保护。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .loader-bar {
+    animation: none;
+  }
+}
