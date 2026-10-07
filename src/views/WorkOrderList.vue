@@ -1417,22 +1417,61 @@ watch(activeTab, (tab, prevTab) => {
 
         sticky 用 top-4（与那 16px 是同一个数）：长页面滚动时面板跟着走，
         滚起来不会出现「先贴上边、再被 16px 顶开」的突兀感。
+
+        面板**撑满可用高度**（使用方 2026-10-07 追加）：此前高度跟着内容走，
+        aside 被 main 的 min-h-screen 撑满、面板却只有小半截，下面空出一条竖带。
+        高度取 100vh − 上下各 16px，正好与外边距凑成整屏：
+        16 + (100vh − 32px) + 16 = 100vh，因此不会凭空空出一条页面滚动条。
+
+        flex-col + 导航 flex-1：「设置 / 共 N 条工单」落到面板底部（内容短时靠底对齐，
+        不浮在半空）。整块再兜一层 overflow-y-auto —— 窗口特别矮或以后大类变多时，
+        退化成「整面板自己滚」，而不是把内容溢出到圆角外面。
       -->
       <aside class="w-56 shrink-0">
         <div
-          class="sticky top-4 m-4 rounded-card bg-white p-4 shadow-card"
+          class="sticky top-4 m-4 flex h-[calc(100vh-2rem)] flex-col overflow-y-auto rounded-card bg-white p-4 shadow-card"
         >
           <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
           <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
           <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
 
-          <!-- 未登录即可只读浏览；写入类功能按权限隐藏 -->
+          <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
+               再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
+          <nav class="mt-3 flex-1 space-y-1 border-t border-slate-100 pt-3" aria-label="功能分类">
+            <button
+              v-for="group in sidebarGroups"
+              :key="group.key"
+              type="button"
+              class="w-full rounded-xl px-3 py-2.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.99]"
+              :class="
+                currentGroup === group.key
+                  ? 'bg-sky-50 font-medium text-sky-700'
+                  : 'text-slate-600 hover:bg-slate-50'
+              "
+              @click="selectGroup(group.key)"
+            >
+              {{ group.label }}
+              <span class="mt-0.5 block text-xs font-normal text-slate-500">{{ group.hint }}</span>
+            </button>
+          </nav>
+
+          <!--
+            账号块放**面板最底**（使用方 2026-10-07：登录按钮放左下角）。
+            原先它紧贴在标题下面 —— 那是视线的起点，却摆了个低频操作
+            （一人一账号，登录/退出一天用不上一次），每次看侧栏都得先跨过它。
+            挪到底部后，顶部只剩「这是什么 + 去哪儿」，也顺带把面板下缘的空档填上了。
+
+            它上面原先还有一小块「设置 / 共 N 条工单」，使用方同日划掉了：
+            条数在工单汇总的分页器上本来就报（`:total="total"`），侧栏再来一遍是重复的，
+            别再往回加。
+            未登录即可只读浏览；写入类功能按权限隐藏。
+          -->
           <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
             <template v-if="loggedIn">
               <p class="font-medium text-slate-700">{{ roleName }}</p>
               <button
                 type="button"
-                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 active:scale-[0.98]"
                 @click="handleLogout"
               >
                 退出登录
@@ -1442,39 +1481,12 @@ watch(activeTab, (tab, prevTab) => {
               <p class="text-slate-400">只读浏览</p>
               <button
                 type="button"
-                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 active:scale-[0.98]"
                 @click="goLogin"
               >
                 登录
               </button>
             </template>
-          </div>
-
-          <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
-               再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
-          <nav class="mt-3 space-y-1 border-t border-slate-100 pt-3" aria-label="功能分类">
-            <button
-              v-for="group in sidebarGroups"
-              :key="group.key"
-              type="button"
-              class="w-full rounded-xl px-3 py-2.5 text-left text-sm transition"
-              :class="
-                currentGroup === group.key
-                  ? 'bg-sky-50 font-medium text-sky-700'
-                  : 'text-slate-600 hover:bg-slate-50'
-              "
-              @click="selectGroup(group.key)"
-            >
-              {{ group.label }}
-              <span class="mt-0.5 block text-xs font-normal text-slate-400">{{ group.hint }}</span>
-            </button>
-          </nav>
-
-          <div class="mt-3 border-t border-slate-100 pt-3">
-            <p class="text-xs font-medium text-slate-400">设置</p>
-            <p class="mt-1 text-xs text-slate-400">
-              共 <span class="font-semibold text-slate-600">{{ total }}</span> 条工单
-            </p>
           </div>
         </div>
       </aside>
