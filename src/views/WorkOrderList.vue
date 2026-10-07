@@ -26,6 +26,7 @@ import EquipmentMaintenancePanel from '../components/EquipmentMaintenancePanel.v
 import WorkOrderImport from './WorkOrderImport.vue'
 import ImageParse from './ImageParse.vue'
 import { getReportOrderType } from '../constants/orderTypes'
+import { STATUS_TEXT } from '../constants/statusTones'
 import {
   getLastWeekMonday,
   getLastWeekSunday,
@@ -2325,6 +2326,7 @@ watch(activeTab, (tab, prevTab) => {
                 :class="isVerticalVessel ? 'px-0 pb-4 pt-5' : 'rounded-card border border-slate-200 bg-slate-50 px-6 py-4'"
             >
               <span class="text-sm text-slate-500">体积变化</span>
+              <!-- 24px 粗体属「大字号」，阈值 3:1，-600 已过 —— 与下面那处刻意不同，别对齐 -->
               <span
                 class="text-2xl font-bold tracking-tight"
                 :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
@@ -2333,7 +2335,7 @@ watch(activeTab, (tab, prevTab) => {
               <span
                 v-if="vesselMassDelta !== null"
                 class="text-base font-semibold"
-                :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
+                :class="vesselVolumeDelta >= 0 ? STATUS_TEXT.success : STATUS_TEXT.error"
               >（{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }} t）</span>
             </div>
             </div>
@@ -2501,7 +2503,7 @@ watch(activeTab, (tab, prevTab) => {
           <!-- 电价档位备注 -->
           <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
             <div class="flex items-start gap-3">
-              <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-600">
+              <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-800">
                 !
               </div>
               <div class="min-w-0 flex-1">

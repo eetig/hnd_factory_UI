@@ -1,4 +1,6 @@
 <script setup>
+import { STATUS_TONE } from '../constants/statusTones'
+
 // 面板内的空状态 / 错误状态占位
 defineProps({
   type: { type: String, default: 'empty' }, // 'empty' | 'error'
@@ -14,7 +16,7 @@ const emit = defineEmits(['action'])
   <div class="flex min-h-72 flex-col items-center justify-center px-6 text-center">
     <div
       class="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
-      :class="type === 'error' ? 'bg-rose-50 text-rose-500' : 'bg-sky-50 text-sky-600'"
+      :class="type === 'error' ? STATUS_TONE.error : STATUS_TONE.info"
     >
       {{ type === 'error' ? '!' : '∅' }}
     </div>

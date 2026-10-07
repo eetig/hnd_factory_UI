@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref } from 'vue'
 import { ElDialog, ElImage } from 'element-plus'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
+import { STATUS_TEXT, STATUS_TONE } from '../constants/statusTones'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
 import {
   BILL_TYPE_INBOUND,
@@ -518,10 +519,10 @@ function statusText(image) {
 }
 
 function statusClass(image) {
-  if (image.status === 'loading') return 'bg-slate-100 text-slate-500'
-  if (image.status === 'success') return 'bg-emerald-50 text-emerald-700'
-  if (image.status === 'error') return 'bg-rose-50 text-rose-700'
-  return 'bg-slate-100 text-slate-500'
+  if (image.status === 'loading') return STATUS_TONE.neutral
+  if (image.status === 'success') return STATUS_TONE.success
+  if (image.status === 'error') return STATUS_TONE.error
+  return STATUS_TONE.neutral
 }
 
 // ------------------------------------------------------------------
@@ -647,7 +648,7 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-2">
         <div
           class="mb-1 flex h-12 w-12 items-center justify-center rounded-full"
-          :class="isFull ? 'bg-slate-100 text-slate-500' : 'bg-sky-50 text-sky-600'"
+          :class="isFull ? STATUS_TONE.neutral : STATUS_TONE.info"
         >
           <svg
             class="h-6 w-6"
@@ -751,7 +752,7 @@ onUnmounted(() => {
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
-          <span class="font-semibold text-emerald-600">{{ successCount }}</span>
+          <span class="font-semibold text-emerald-700">{{ successCount }}</span>
           <template v-if="errorCount">
             · 失败 <span class="font-semibold text-rose-600">{{ errorCount }}</span>
           </template>
@@ -962,7 +963,7 @@ onUnmounted(() => {
               <p
                 v-if="image.confirm?.message"
                 class="mr-auto text-xs"
-                :class="image.confirm.status === 'error' ? 'text-rose-600' : 'text-emerald-700'"
+                :class="image.confirm.status === 'error' ? STATUS_TEXT.error : STATUS_TEXT.success"
               >
                 {{ image.confirm.message }}
               </p>

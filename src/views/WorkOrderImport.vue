@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
+import { STATUS_ICON_TONE } from '../constants/statusTones'
 import {
   ElButton,
   ElMessage,
@@ -451,17 +452,17 @@ function handleBackToList() {
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
-          <span v-if="previewError" class="font-medium text-rose-600">解析失败</span>
-          <span v-else-if="previewList.length" class="font-medium text-emerald-600">解析完成</span>
+          <span v-if="previewError" class="font-medium text-rose-700">解析失败</span>
+          <span v-else-if="previewList.length" class="font-medium text-emerald-700">解析完成</span>
         </p>
       </div>
     </section>
 
     <div v-if="previewError" class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-500">!</div>
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.error">!</div>
       <div>
         <h3 class="text-sm font-semibold text-rose-700">文件解析失败</h3>
-        <p class="mt-1 text-sm text-rose-600">{{ previewError }}</p>
+        <p class="mt-1 text-sm text-rose-700">{{ previewError }}</p>
       </div>
     </div>
 
@@ -474,7 +475,7 @@ function handleBackToList() {
         >
           {{ workOrderType }}
         </span>
-        <span v-else class="rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-600">
+        <span v-else class="rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700">
           识别失败
         </span>
         <span class="text-sm text-slate-500">共 <span class="font-semibold text-slate-900">{{ total }}</span> 条记录</span>
@@ -489,8 +490,8 @@ function handleBackToList() {
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rose-50">
@@ -554,10 +555,10 @@ function handleBackToList() {
 
     <section v-if="imported" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
-        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">✓</div>
+        <div class="flex h-8 w-8 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.success">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
-          新增 <span class="font-semibold text-emerald-600">{{ importSummary.addCount }}</span> 条，
+          新增 <span class="font-semibold text-emerald-700">{{ importSummary.addCount }}</span> 条，
           更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
@@ -569,8 +570,8 @@ function handleBackToList() {
           <table class="min-w-full divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-rose-50">
