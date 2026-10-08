@@ -1,0 +1,263 @@
+/*
+ * 液态玻璃侧栏 + 页面背景层（使用方 2026-10-08 定）。
+ *
+ * ⚠️ 这是**网页近似**，不是 Apple 官方的 Liquid Glass —— 后者只存在于 Apple 平台 API。
+ *    这里用 backdrop-filter + 分层描边 + 高光叠加做的近似。见 design-taste-frontend
+ *    Section 5 / Appendix C：它明确要求这类实现要标注成 approximation，不要冒充官方。
+ *
+ * ⚠️ 这偏离了 design-taste-frontend Section 5 的建议（该条写着液态玻璃"不适用于
+ *    dashboard / 公共部门 / 无聊的 B2B"，而这是个内部工具工作台）。使用方明确要求，
+ *    按 Section 5 的写法做了完整降级路径（reduced-transparency / 不支持 backdrop-filter）。
+ *
+ * 为什么不写成 Tailwind 工具类：这一层要用 @property 注册可插值的自定义属性、
+ * ::before 做渐变描边环、mask-composite、scroll() 时间线 —— 都不是工具类能表达的。
+ */
+
+/* ============================================================
+   一、页面背景层
+   ============================================================
+   ⚠️ 必须是 absolute（随页面滚动），**不能是 fixed**。
+   侧栏是 sticky 的：fixed 背景在它背后永远停在同一块，模糊出来的东西不变，
+   「边缘高光随滚动位移」和「按下方亮度自适应」两条就都成了摆设。
+   写成 absolute 之后，背景从玻璃下面流过，两条才真的成立。            */
+
+.glass-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: #f8fafc; /* 浅色底的基准，与项目原有 bg-slate-50 一致 */
+  background-image:
+    radial-gradient(46rem 46rem at 10% 3%, rgb(186 230 253 / 0.55), transparent 62%),
+    radial-gradient(52rem 52rem at 94% 34%, rgb(224 242 254 / 0.75), transparent 64%),
+    radial-gradient(44rem 44rem at 22% 76%, rgb(186 230 253 / 0.42), transparent 60%),
+    radial-gradient(40rem 40rem at 78% 96%, rgb(224 242 254 / 0.6), transparent 62%);
+}
+
+/*
+ * 颗粒：单独一层 fixed，**不随滚动**。
+ * design-taste-frontend Section 6.E：噪点滤镜只能挂在 fixed + pointer-events-none 的
+ * 伪元素上，挂到滚动容器上会让移动端每帧重绘、FPS 崩掉。
+ * fixed 不参与滚动重绘，但又提供了"玻璃表面有微颗粒"的质感。
+ */
+.glass-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ============================================================
+   二、可插值的自定义属性
+   ============================================================
+   不注册 @property 的话，自定义属性是离散的、不能插值，滚动时间线划过去会跳变。 */
+
+@property --glint-y {
+  syntax: '<percentage>';
+  initial-value: -12%;
+  inherits: false;
+}
+
+/*
+ * ⚠️ initial-value 必须与 scrim-adapt 的 from 一致（54%）。
+ *
+ * 滚动时间线在**页面不可滚动时是 inactive**，整段动画不生效，
+ * 属性会直接回落到这里的 initial-value —— 而很多页面（物料查询这类）
+ * 一屏就放得下，根本不滚。两者不一致的话，能滚的页面顶部是 54%、
+ * 不能滚的页面是 initial-value，同一个位置两种观感。
+ * 实测踩过：initial-value 写 60% 时，1600x900 下量出来就是 60%，不是 54%。
+ */
+@property --glass-scrim {
+  syntax: '<percentage>';
+  initial-value: 54%;
+  inherits: true;
+}
+
+/* ============================================================
+   三、玻璃面板
+   ============================================================ */
+
+.glass-panel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  /*
+   * 这里**不写 border-radius** —— 由模板上的 rounded-card（20px，token 在
+   * tailwind.config.js）负责，::before / ::after 用 inherit 跟随。
+   * 两处各写一遍同一个值迟早会飘。
+   */
+  border: 1px solid rgb(255 255 255 / 0.6);
+
+  /*
+   * --glass-scrim 由滚动时间线驱动，跟着背景在该处的实际亮度走：
+   * 背景暗就把白膜加厚、背景亮就放薄。
+   *
+   * ⚠️ 它**不是**用来守文字对比度的 —— 实测过守不住，见下面 scrim-adapt 的注释。
+   *    对比度由侧栏的墨色档位保证（slate-600 起、sky-700 起）。
+   */
+  background-image: linear-gradient(
+    135deg,
+    rgb(255 255 255 / var(--glass-scrim)),
+    rgb(255 255 255 / calc(var(--glass-scrim) - 20%))
+  );
+
+  /*
+   * brightness 略抬、contrast 略收 —— 这是"轻微折射"里能真做出来的一部分：
+   * 让背后透上来的明暗关系被压平一点，像隔了一层厚玻璃。
+   * saturate 抬高是玻璃的常见观感补偿。
+   */
+  backdrop-filter: blur(20px) saturate(180%) brightness(1.06) contrast(0.94);
+  -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.06) contrast(0.94);
+
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.8),   /* 上缘高光 */
+    inset 0 -1px 0 rgb(255 255 255 / 0.24), /* 下缘 */
+    0 8px 28px rgb(15 23 42 / 0.08);
+}
+
+/*
+ * 边缘高光：用 mask-composite 把渐变裁成 1px 的描边环，环上的亮点随滚动上下走。
+ * 这样高光只出现在边缘，不会把面板中间糊白。
+ */
+.glass-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: radial-gradient(
+    circle 280px at 50% var(--glint-y),
+    rgb(255 255 255 / 0.95),
+    rgb(255 255 255 / 0.14) 62%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+/*
+ * 上缘内侧再补一道细高光，模拟厚玻璃的边缘折射。
+ * 这是 Appendix C 骨架里 inset 0 1px 0 那一条的加强版（横向铺开、两端收掉）。
+ */
+.glass-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.5),
+    rgb(255 255 255 / 0) 14%,
+    rgb(255 255 255 / 0) 86%,
+    rgb(255 255 255 / 0.16)
+  );
+}
+
+/* ============================================================
+   四、滚动驱动的时间线
+   ============================================================
+   用 CSS scroll() 时间线，不用 window.addEventListener('scroll') ——
+   后者是 design-taste-frontend Section 5.D 的硬禁（每帧触发、没有批处理、易卡）。
+   浏览器不支持 animation-timeline 时整段不生效，属性退回 @property 的初始值，
+   也就是一个静止的高光，不报错、不闪。                                     */
+
+@supports (animation-timeline: scroll()) {
+  .glass-panel::before {
+    animation: glint-travel linear both;
+    animation-timeline: scroll(root block);
+  }
+
+  .glass-panel {
+    animation: scrim-adapt linear both;
+    animation-timeline: scroll(root block);
+  }
+}
+
+/* 高光沿边缘从上走到下 */
+@keyframes glint-travel {
+  from {
+    --glint-y: -12%;
+  }
+  to {
+    --glint-y: 112%;
+  }
+}
+
+/*
+ * 白膜厚度跟着滚动走 —— 这是「玻璃根据下方内容亮度自适应」那一条的落点。
+ *
+ * 方向与档位不是拍脑袋定的，是按**实测**的背景亮度曲线：
+ * 在侧栏那一列、面板左侧的纯背景上取样，五个滚动位置量到
+ *   scroll 0   -> 相对亮度 0.8462  （最暗）
+ *   scroll 225 -> 相对亮度 0.8788  （最亮）
+ * 背景**从头到尾单调变亮**，所以膜也单调变薄：顶部最厚 54%，底部最薄 34%。
+ *
+ * ⚠️ 别把这段理解成"用来守对比度的" —— 实测过，它守不住：
+ *    scrim 从 55% 拉到 90%，slate-500 的对比度只从 4.51 挪到 4.66。
+ *    白膜加厚对对比度几乎是无效杠杆（因为背景本来就亮，糊上一层白还是亮）。
+ *    对比度是靠**墨色档位**保证的，见 WorkOrderList.vue 侧栏那段注释。
+ *    这里只负责让玻璃的厚度跟着背景明暗走，是观感层的事。
+ *
+ * 用 % 进度而不是像素：背景渐变是按页面高度百分比铺的，
+ * scroll(root block) 的进度也是"滚了整页的百分之几"，两者天然对齐，
+ * 所以页面长短不影响这套映射。
+ */
+@keyframes scrim-adapt {
+  from {
+    --glass-scrim: 54%;
+  }
+  to {
+    --glass-scrim: 34%;
+  }
+}
+
+/* ============================================================
+   五、降级路径
+   ============================================================ */
+
+/* 不支持 backdrop-filter：退回接近实心的白面板，文字对比度不受影响 */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass-panel {
+    background-color: rgb(255 255 255 / 0.94);
+    background-image: none;
+  }
+}
+
+/*
+ * 用户在系统里关了半透明效果：直接给实心底。
+ * ⚠️ prefers-reduced-transparency 的支持度参差（Safari 有、Chrome 没有），
+ *    所以不能只靠它 —— 上面那条 @supports 才是主兜底。
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .glass-panel {
+    background-color: rgb(255 255 255 / 0.97);
+    background-image: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .glass-grain {
+    display: none;
+  }
+}
+
+/*
+ * 减少动态效果：高光不跟着滚了，停在起始位置。
+ * （dial 取的是 MOTION_INTENSITY 3，本来就没有自动动画；这一条是给滚动驱动的高光的。）
+ */
+@media (prefers-reduced-motion: reduce) {
+  .glass-panel::before,
+  .glass-panel {
+    animation: none;
+  }
+}

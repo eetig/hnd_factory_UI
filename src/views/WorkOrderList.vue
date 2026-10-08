@@ -1393,14 +1393,30 @@ watch(activeTab, (tab, prevTab) => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-slate-50">
+    <main class="relative min-h-screen">
+    <!--
+      页面背景层（使用方 2026-10-08 定：侧栏改液态玻璃）。
+
+      ⚠️ 它必须是 absolute —— 随页面滚动，不是 fixed。
+      侧栏是 sticky 的：背景写成 fixed 就永远停在玻璃背后同一块，
+      模糊出来的东西不随滚动变化，「边缘高光随滚动位移」和「按下方亮度自适应」
+      两条就都成了摆设。absolute 之后背景从玻璃下面流过，两条才真的成立。
+      这也是液态玻璃的本来形态：内容在玻璃下面走。
+
+      aria-hidden：纯装饰，读屏不该念它。
+    -->
+    <div class="glass-backdrop" aria-hidden="true"></div>
+    <div class="glass-grain" aria-hidden="true"></div>
+
     <!--
       外壳**不再限宽居中**（原先这里挂的是 mx-auto max-w-[1600px]，我早先加的）。
       留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
       跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
       主区不再被压到 1600：几个台账表格本来就宽，宽出来正好摊开列。
+
+      relative 把内容抬到背景层之上（背景层是 z-0，不写这个的话同为 auto 会按 DOM 顺序压住）。
     -->
-    <div class="flex">
+    <div class="relative flex">
       <!--
         左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
 
@@ -1419,12 +1435,31 @@ watch(activeTab, (tab, prevTab) => {
         滚起来不会出现「先贴上边、再被 16px 顶开」的突兀感。
       -->
       <aside class="w-56 shrink-0">
+        <!--
+          液态玻璃面板（使用方 2026-10-08 定）。
+
+          ⚠️ bg-white 与 shadow-card 都必须去掉，不是忘了写：
+          这两条 Tailwind 工具类来自 style.css，而 style.css 排在 liquid-glass.css **之后**，
+          同权重下后者会赢 —— 留着 bg-white，它设的 background-color 会垫在玻璃的
+          background-image 下面，整块又变回不透明白，玻璃就白做了；
+          留着 shadow-card 同理，会把玻璃那圈内高光+柔和投影覆盖掉。
+          圆角则相反：故意交给 rounded-card，liquid-glass.css 里不重复写。
+
+          ── 面板内的墨色（2026-10-08 一并调整）──
+          玻璃的底色不是纯白，实测约 rgb(244,250,250)，比 bg-white 略暗，
+          所以面板里的文字比在纯白上更容易掉到 AA 线下。逐档量过之后统一提了一级：
+            sky-600  → sky-700   纯白上就只有 4.10:1，透过玻璃 3.9:1，**任何 scrim 都救不回来**
+            slate-500 → slate-600  4.5:1 骑在线上（最低探到 4.49）
+            slate-400 → slate-600  2.5:1，差得最远
+          现值实测：slate-600 = 7.0:1 起、sky-700 = 5.4:1 起、rose-700 = 5.8:1，
+          余量足够，所以玻璃才敢做得比最初透明（scrim 从 60-70% 降到 34-54%）。
+        -->
         <div
-          class="sticky top-4 m-4 rounded-card bg-white p-4 shadow-card"
+          class="glass-panel sticky top-4 m-4 rounded-card p-4"
         >
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">Factory Operations</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Factory Operations</p>
           <p class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
-          <p class="mt-1 text-xs text-slate-500">生产工单与物料数据查询助手</p>
+          <p class="mt-1 text-xs text-slate-600">生产工单与物料数据查询助手</p>
 
           <!-- 未登录即可只读浏览；写入类功能按权限隐藏 -->
           <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
@@ -1432,17 +1467,17 @@ watch(activeTab, (tab, prevTab) => {
               <p class="font-medium text-slate-700">{{ roleName }}</p>
               <button
                 type="button"
-                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                class="mt-1 rounded-xl px-1.5 py-0.5 text-slate-600 transition hover:bg-rose-50 hover:text-rose-700"
                 @click="handleLogout"
               >
                 退出登录
               </button>
             </template>
             <template v-else>
-              <p class="text-slate-400">只读浏览</p>
+              <p class="text-slate-600">只读浏览</p>
               <button
                 type="button"
-                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-600 transition hover:bg-sky-50"
+                class="mt-1 rounded-xl px-2 py-0.5 font-medium text-sky-700 transition hover:bg-sky-50"
                 @click="goLogin"
               >
                 登录
@@ -1466,14 +1501,14 @@ watch(activeTab, (tab, prevTab) => {
               @click="selectGroup(group.key)"
             >
               {{ group.label }}
-              <span class="mt-0.5 block text-xs font-normal text-slate-400">{{ group.hint }}</span>
+              <span class="mt-0.5 block text-xs font-normal text-slate-600">{{ group.hint }}</span>
             </button>
           </nav>
 
           <div class="mt-3 border-t border-slate-100 pt-3">
-            <p class="text-xs font-medium text-slate-400">设置</p>
-            <p class="mt-1 text-xs text-slate-400">
-              共 <span class="font-semibold text-slate-600">{{ total }}</span> 条工单
+            <p class="text-xs font-medium text-slate-600">设置</p>
+            <p class="mt-1 text-xs text-slate-600">
+              共 <span class="font-semibold text-slate-800">{{ total }}</span> 条工单
             </p>
           </div>
         </div>
