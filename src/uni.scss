@@ -79,6 +79,8 @@ $ui-soft-light: var(--ui-soft-light);     // 亮侧高光
 // 遮罩与浮层
 $ui-scrim: var(--ui-scrim);                 // 加载遮罩底色
 $ui-surface-trans: var(--ui-surface-trans); // 半透明卡片（遮罩上的小卡）
+$ui-glass: var(--ui-glass);                             // 液态玻璃膜（抽屉）
+$ui-glass-scrim: var(--ui-glass-scrim);                 // 抽屉展开时的遮罩（比 wot 默认轻很多）
 $ui-shadow-strong: var(--ui-shadow-strong); // 大投影（卡片、弹层）
 
 // 背景氛围光晕（页面顶部 / 登录页极光）
@@ -275,6 +277,13 @@ $radius-xl: 24rpx;
   // ---- 遮罩与浮层 ----
   --ui-scrim: rgba(11, 11, 14, 0.72);
   --ui-surface-trans: rgba(23, 23, 28, 0.94);
+  // ---- 液态玻璃（2026-10-08）----
+  // 深色主题下背后是 #0b0b0e 的页面与 #17171c 的卡片，已经很暗，
+  // 膜用近黑的低透明度，浅色文字（--ui-text #f2f2f5）压得住。
+  --ui-glass: rgba(23, 23, 28, 0.58);
+  // wot 遮罩默认 rgba(0,0,0,0.75)，那个厚度下玻璃糊出来是一片近黑，
+  // 什么都看不见。要「透出底下的内容」就必须放轻。
+  --ui-glass-scrim: rgba(0, 0, 0, 0.34);
   --ui-shadow-strong: rgba(0, 0, 0, 0.95);
   // ---- 氛围光晕 ----
   --ui-glow: rgba(90, 169, 255, 0.16);
@@ -370,6 +379,12 @@ $radius-xl: 24rpx;
   // ---- 遮罩与浮层 ----
   --ui-scrim: rgba(242, 243, 247, 0.72);
   --ui-surface-trans: rgba(255, 255, 255, 0.94);
+  // ---- 液态玻璃（2026-10-08）----
+  // 浅色主题下背后是 #f2f3f7 页面与白卡片，糊完仍然很亮，
+  // 深色文字（--ui-text #14161c）余量很大 —— 实测值见 index.vue 抽屉那段注释。
+  --ui-glass: rgba(255, 255, 255, 0.62);
+  // 同上：wot 默认 rgba(0,0,0,0.65) 太重，透不出内容。
+  --ui-glass-scrim: rgba(15, 23, 42, 0.18);
   --ui-shadow-strong: rgba(20, 22, 28, 0.16);
   // ---- 氛围光晕：白底上要收敛 ----
   --ui-glow: rgba(47, 127, 224, 0.1);

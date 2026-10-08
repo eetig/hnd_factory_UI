@@ -3823,11 +3823,28 @@ watch(activeTab, (tab, prevTab) => {
            让安全区的高度从 100vh 里扣掉 —— 否则安全区变成"屏幕外的一截"，
            底部按钮在白线附近没有留白。（列表必须是 scroll-view：小程序的 <view> 写
            overflow-y 不会滚动；高度给确定的 52vh，三端都能滚，底部账户区也留在屏内。） -->
+      <!--
+        液态玻璃（使用方 2026-10-08 定）。
+
+        这里和 PC 侧栏有个**本质区别**，也是玻璃在这边才真正成立的原因：
+        PC 侧栏自己占一列、背后是纯色，得额外铺一层背景才有东西可糊；
+        而抽屉是**压在页面内容上面**的，背后就是工单汇总那张表 —— 天然有东西可透。
+
+        三处改动：
+        1. 弹层本体背景改 transparent（原来是不透明的 --ui-surface）——
+           玻璃膜挪到 .drawer 上，因为 conditional compilation 只能写在 <style> 里，
+           写在 custom-style 这个内联字符串里就没法按平台分支。
+        2. 加 modal-style 把遮罩放轻。wd-popup 的遮罩默认是 rgba(0,0,0,0.65)，
+           而遮罩是弹层的**兄弟且在下层**，所以它也属于玻璃的 backdrop ——
+           65% 的黑压下去，backdrop-filter 糊出来的就是一片近黑，什么都看不见。
+        3. .drawer 上加模糊（见 <style> 里那段，小程序端单独兜底）。
+      -->
       <wd-popup
         v-model="menuVisible"
         position="left"
         safe-area-inset-bottom
-        custom-style="box-sizing: border-box; width: 78vw; max-width: 620rpx; height: 100vh; background-color: var(--ui-surface); display: flex; flex-direction: column; overflow: hidden;"
+        modal-style="background: var(--ui-glass-scrim);"
+        custom-style="box-sizing: border-box; width: 78vw; max-width: 620rpx; height: 100vh; background-color: transparent; display: flex; flex-direction: column; overflow: hidden;"
       >
         <view class="drawer">
           <view class="drawer__brand">
@@ -4089,6 +4106,40 @@ watch(activeTab, (tab, prevTab) => {
   box-sizing: border-box;
   flex-direction: column;
   padding: calc(var(--status-bar-height, 0px) + 36rpx) 28rpx 32rpx;
+
+  /* 右缘描边：玻璃的边要有厚度感，不然就是一块半透明色块。
+     复用 --ui-border-contrast（它本来就是"浮层控件上的醒目描边"，两套主题都有值） */
+  border-right: 1px solid $ui-border-contrast;
+
+  /* #ifdef H5 || APP-PLUS */
+  /*
+   * 液态玻璃膜（使用方 2026-10-08 定）。颜色走主题变量 --ui-glass，
+   * 浅色下是 62% 的白、深色下是 58% 的近黑（见 uni.scss）——
+   * 膜跟着主题走，而抽屉里的文字本来就用 --ui-text 那一套，所以两套主题都不用额外处理。
+   *
+   * 背景色也放进这个分支（而不是写在外面再让小程序覆盖）：写在外面会在
+   * 小程序产物里留下一条被覆盖掉的死声明，虽然无害但读起来误导。
+   */
+  background-color: $ui-glass;
+
+  /*
+   * 只有 H5 与 App 能真的模糊。App 走系统 WebView（Android System WebView 76+ /
+   * iOS WKWebView）都支持；iOS 要 -webkit- 前缀，所以两条都写。
+   * saturate 略抬是玻璃的观感补偿：背后是表格和卡片，不抬会显得发灰。
+   */
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  /* #endif */
+
+  /* #ifdef MP-WEIXIN */
+  /*
+   * ⚠️ 微信小程序**原生不支持 backdrop-filter**（小程序不是浏览器，CSS 是子集），
+   * 模糊做不了。而"半透明但不模糊"反而更糟 —— 背后表格的字会和抽屉里的导航字
+   * 叠在一起，两边都看不清。所以退回接近不透明的膜：先保住可读性。
+   * 代价说清楚：小程序端**没有**模糊效果，只是比原来通透一点点。
+   */
+  background-color: $ui-surface-trans;
+  /* #endif */
 }
 
 .drawer__brand {
