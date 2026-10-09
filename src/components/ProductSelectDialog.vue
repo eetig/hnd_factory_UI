@@ -32,7 +32,7 @@ const {
 
 const popupStyle = computed(() => {
   const base =
-    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;'
+    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;'
   const kb = liftHeight.value
   if (!kb) return base
 

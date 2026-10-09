@@ -76,6 +76,19 @@ export default defineConfig({
   server: {
     port: 9092,
     host: true,
+    /*
+     * ⚠️ 别删这条 ignored。
+     *
+     * 真机 / WebView 调试时，用相对路径起 Chrome（--user-data-dir=tmp-chrome-profile）
+     * 会把一整个 Chrome 用户数据目录丢进项目根目录。Vite 的文件监听器会去 watch 它，
+     * 而 Chrome 正锁着里面的 cache.db —— 直接 EBUSY 抛出，**整个 dev server 进程退出**，
+     * 不是警告是崩溃。实测踩过：
+     *   Error: EBUSY: resource busy or locked, watch '...\tmp-chrome-profile\...\cache.db'
+     * 崩的时候页面还在（浏览器有缓存），很容易误判成"服务好好的"，所以这里显式排除。
+     */
+    watch: {
+      ignored: ['**/tmp-chrome-profile/**'],
+    },
     // ⚠️ 代理仅 H5 端开发期有效，规则见上方 buildProxy()。
     //    切换后端环境请改 src/api/env.js 的 APP_ENV，不要在这里逐个改 target，
     //    否则会与 src/api/config.js（App/小程序用的 origin）不一致。

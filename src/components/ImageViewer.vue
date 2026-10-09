@@ -488,7 +488,7 @@ onUnmounted(() => {
       safe-area-inset-bottom
       z-index="96"
       :close-on-click-modal="!saving"
-      custom-style="background-color: var(--ui-surface); border-radius: 32rpx 32rpx 0 0;"
+      custom-style="background-color: var(--ui-glass-fill); border-radius: 32rpx 32rpx 0 0;"
     >
       <view class="iv-sheet">
         <view class="iv-sheet__head">

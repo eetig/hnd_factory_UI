@@ -117,7 +117,7 @@ async function handleDelete(image) {
     position="bottom"
     round
     safe-area-inset-bottom
-    custom-style="max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;"
+    custom-style="max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;"
     @update:model-value="(visible) => !visible && closeImageDialog()"
   >
     <view class="tli">
@@ -274,7 +274,7 @@ async function handleDelete(image) {
     justify-content: center;
     border-radius: 50%;
     background-color: $ui-scrim;
-    color: #fff;
+    color: $ui-text; // 跟 $ui-scrim 一样按主题翻转（写死 #fff 在浅色下是白字压浅底）
   }
 
   &__empty {

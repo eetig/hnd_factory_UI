@@ -47,3 +47,8 @@ project.private.config.json
 # App 签名密钥：私密文件，绝不入库（本仓库为公开仓库）
 test.keystore
 *.keystore
+
+# 真机 / WebView 调试时 Chrome 落下的用户数据目录（用相对路径 --user-data-dir
+# 起就会落到项目根）。17MB 起，且会让 Vite 的文件监听 EBUSY 崩溃 ——
+# 排除见 vite.config.js 的 server.watch.ignored。
+tmp-chrome-profile/

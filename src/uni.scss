@@ -16,7 +16,7 @@
 //
 // 约定（很重要，别绕过）：
 //   1. 新写样式一律引用 $ui-*；不要再写死色值，也不要再造一套"差不多"的灰。
-//   2. Tailwind 侧在 tailwind.config.js 里把 slate/sky/… 映射到同一组变量，
+//   2. Tailwind 侧在 tailwind.config.js 里把 slate/gold/… 映射到同一组变量，
 //      因此「Tailwind 类名」和「SCSS 变量」两条路径出来的颜色逐字相同。
 //   3. 颜色靠"层次"而不是"明暗"保持语义：slate-50 永远是最贴近背景的一层，
 //      slate-900 永远是最亮的前景（正文色）。所以 $slate-* 这些历史变量名
@@ -79,9 +79,28 @@ $ui-soft-light: var(--ui-soft-light);     // 亮侧高光
 // 遮罩与浮层
 $ui-scrim: var(--ui-scrim);                 // 加载遮罩底色
 $ui-surface-trans: var(--ui-surface-trans); // 半透明卡片（遮罩上的小卡）
-$ui-glass: var(--ui-glass);                             // 液态玻璃膜（抽屉）
-$ui-glass-scrim: var(--ui-glass-scrim);                 // 抽屉展开时的遮罩（比 wot 默认轻很多）
+// 遮罩：**故意的，没有这个 token**。抽屉展开时不给下层页面压暗（使用方 2026-10-09 要求
+// 「下层页面颜色不变」），遮罩设成了 transparent，见 index.vue 的 modal-style。
+// 别再按"遮罩应该有个主题变量"的习惯把它加回来 —— 一加回来下层页面就会变灰。
 $ui-shadow-strong: var(--ui-shadow-strong); // 大投影（卡片、弹层）
+
+// ===== 夜航玻璃拟态（Nocturne Glassmorphism，2026-10-09）=====
+// 参考 https://www.stylekit.top/zh/styles/glassmorphism 。核心不是"加个模糊"，而是
+// **场景先于玻璃**：深墨蓝夜景 + 2~3 个柔光光斑，玻璃本身无色（≤12% 白）、靠大模糊 +
+// 饱和增强借光。场景 token 见 @mixin scene-bg，材质见 @mixin glass。
+$ui-scene-bg: var(--ui-scene-bg);           // 场景底色
+// 场景是**平底 + 光斑**，没有"边缘压暗"那一层了 —— 原因见 theme-dark-vars 里的说明。
+$ui-scene-blob-1: var(--ui-scene-blob-1);   // 光斑：月光钢蓝（深）
+$ui-scene-blob-2: var(--ui-scene-blob-2);   // 光斑：月光（亮）
+$ui-scene-blob-3: var(--ui-scene-blob-3);   // 光斑：香槟暖点缀
+$ui-glass-fill: var(--ui-glass-fill);       // 玻璃膜（无色）
+$ui-glass-fill-hover: var(--ui-glass-fill-hover);
+$ui-glass-line: var(--ui-glass-line);       // 玻璃描边
+$ui-glass-line-hover: var(--ui-glass-line-hover);
+$ui-glass-elev: var(--ui-glass-elev);       // 三层方向性投影（外层深度 + 顶边受光 + 底边暗缘）
+$ui-glass-blur: var(--ui-glass-blur);       // 模糊半径
+$ui-glass-sat: var(--ui-glass-sat);         // 饱和度增强
+$ui-glass-shadow: var(--ui-glass-shadow);   // 抽屉右缘的**方向性**投影（加在弹层本体上，见 index.vue）
 
 // 背景氛围光晕（页面顶部 / 登录页极光）
 $ui-glow: var(--ui-glow);
@@ -95,8 +114,13 @@ $ui-radius-lg: 32rpx;
 $ui-radius-pill: 999rpx;
 
 // 动效：统一缓动，保证各页"丝滑"手感一致
+// 缓动换成规范的 spring 曲线（cubic-bezier(0.16, 1, 0.3, 1)：起步快、尾巴长）。
+// ⚠️ 时长**故意没有**全站跟规范调到 500ms —— 规范那个 500ms 是给 hover 上浮/阴影加深的
+//    "材质动效"，而 $ui-dur 管的是 hover 换色、选中态这类微状态。全调 500ms 会让
+//    车间里点按钮的反馈变迟钝。所以拆成两个：$ui-dur 管微状态，$ui-dur-material 管材质。
 $ui-dur: 240ms;
-$ui-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+$ui-ease: cubic-bezier(0.16, 1, 0.3, 1);
+$ui-dur-material: 500ms;
 
 // ===== 历史调色板（名字保留、值改成同一组变量）=====
 // 模板/样式里已有上千处 $slate-* 引用，一行都不用改就跟着主题走。
@@ -110,11 +134,11 @@ $slate-600: var(--ui-slate-600);
 $slate-700: var(--ui-slate-700);
 $slate-900: var(--ui-slate-900);
 
-$sky-50: var(--ui-sky-50);
-$sky-100: var(--ui-sky-100);
-$sky-500: var(--ui-sky-500);
-$sky-600: var(--ui-sky-600);
-$sky-700: var(--ui-sky-700);
+$gold-50: var(--ui-gold-50);
+$gold-100: var(--ui-gold-100);
+$gold-500: var(--ui-gold-500);
+$gold-600: var(--ui-gold-600);
+$gold-700: var(--ui-gold-700);
 
 $rose-50: var(--ui-rose-50);
 $rose-500: var(--ui-rose-500);
@@ -139,10 +163,107 @@ $radius-xl: 24rpx;
 // ===== mixin =====
 
 // 卡片容器：等价于模板里的 rounded-xl border border-slate-200 bg-white shadow-sm
+// ===== 夜航玻璃拟态：场景 + 材质（2026-10-09）=====
+// 规范：https://www.stylekit.top/zh/styles/glassmorphism
+//
+// 顺序很重要 —— **场景先于玻璃**。玻璃本身是无色的（≤12% 白），它只是把背后的
+// 场景糊一下、再借那点光。没有场景（纯色平面）时玻璃就是个灰块，这一点本项目
+// 实测过：白底表格上把膜降到 10% 也只能得到一块没有起伏的浅色板。
+
+// 磨砂颗粒（规范要求 2%~3% 噪点，消除塑料感）。
+// 用 fractalNoise 而不是随机噪点：它的振幅天然很低，所以能铺得比较浓也不像电视雪花。
+//
+// ⚠️ **浓度必须按主题分开**，这不是洁癖，是实测量出来的：
+//    · 浅色下 opacity 0.06 / 0.10 与不加颗粒的 sd 完全一致（等于没生效），要 0.3 才有质感；
+//    · 深色下颗粒是**往亮里推**的（噪声均值是中灰），0.3 会把玻璃面亮度从 0.0528 抬到 0.0870，
+//      直接吃掉表格正文的对比度（#99a3b8 在玻璃上从 4.03:1 掉到 3.02:1，跌破 AA）。
+//    所以深色用 0.16、浅色用 0.30，各自取"看得出质感"的下限。
+//
+// （`url(#n)` 里的 # 必须写成 %23；base64 形式里反而不能转义，写了会解析不到 filter、
+//   rect 按纯黑填充，整块变黑 —— 踩过。）
+@function grain-url($o) {
+  @return url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='#{$o}'/%3E%3C/svg%3E");
+}
+
+// 场景底：3 个大半径柔光光斑 + 底色渐变，纯 CSS、不引图片、**不新增 DOM**
+//（复用页面原有的"一条 radial-gradient"画法扩成多层 background-image）。
+//
+// ⚠️ 光斑必须用**固定尺寸**（background-size 给 px），不能用 `at 80% 20%` 那种百分比：
+//    百分比是相对元素自身的盒子算的，而 .page 是整页高度 —— 799 行的物料表下，
+//    "20%" 会被拉到第一屏以外几千像素的地方，第一屏只剩一片平色，玻璃就无从借光。
+//    固定 px + 方位偏移，光斑才稳定地落在首屏。
+//
+// 用大半径柔光当场景还有个副作用是好事：平滑渐变模糊前后几乎一样，
+// 所以重复行可以省掉 backdrop-filter 而不掉观感（见下面的玻璃预算）。
+@mixin scene-bg {
+  background-color: $ui-scene-bg;
+  background-image:
+    radial-gradient(circle, $ui-scene-blob-2 0%, transparent 70%),
+    radial-gradient(circle, $ui-scene-blob-1 0%, transparent 70%),
+    radial-gradient(circle, $ui-scene-blob-3 0%, transparent 72%);
+  background-size: 560px 560px, 500px 500px, 420px 420px;
+  background-position:
+    right -140px top -120px,
+    left -160px top 140px,
+    right -120px top 620px;
+  background-repeat: no-repeat;
+}
+
+// 玻璃材质：规范的"三层结构"。
+//   第 1 层 膜（无色）→ 第 2 层 模糊 + 饱和增强 → 第 3 层 方向性投影（光从上方来）
+//
+// ⚠️ **玻璃预算**：backdrop-filter 是这套配方里最贵的一条。本 App 有 799 行的物料表、
+//    92 条设备卡，逐行铺模糊会把中端机 GPU 拖垮，而且半透明会让数字读不清。规矩是：
+//      · 带 blur：只给"浮在内容之上"或"每页数量有限"的层 —— 顶栏、抽屉、弹窗、
+//        Toast、加载遮罩、每页那几个 section.panel。每页 backdrop-filter 控制在 ~15 个以内。
+//      · 不带 blur（$blur: false）：重复行（表格行、列表项、卡片列表）。
+//        只省掉模糊这一条，膜色 / 描边 / 三层投影都还在，在平滑场景上观感几乎无差。
+//   小程序端不支持 backdrop-filter，由 App.vue 里那段 MP-WEIXIN 条件编译把膜换成近不透明。
+//   ⚠️ 这条注释里**绝不能写出指令原文**（形如斜杠星号紧跟 #ifdef 的写法）：
+//      预处理器不认"这是在注释里"，会把它当成真指令，于是报
+//      「条件编译失败: #ifdef/#ifndef 缺少配对的 #endif」并按"该段被整块丢掉"处理 ——
+//      实测这次就发生在这一行（真机打包日志里两次报错都指向它）。
+@mixin glass($blur: true, $grain: true, $radius: $ui-radius-lg) {
+  /* ⚠️ 这里**绝不能写 position**。
+     曾经写过一条 position: relative（当时以为颗粒需要定位上下文，其实颗粒是
+     background-image，根本不需要），结果把 .dd__panel 的 position: absolute 覆盖掉 ——
+     下拉浮层变成文档流里的一块，整页被撑变形（真机截图里的"压力容器体积计算"页）。
+     要用 glass 的元素自己声明定位，别让材质 mixin 碰 position。 */
+  border: 1px solid $ui-glass-line;
+  border-radius: $radius;
+  background-color: $ui-glass-fill;
+  background-image: if($grain, var(--ui-grain), none);
+  background-repeat: repeat;
+  box-shadow: $ui-glass-elev;
+
+  @if $blur {
+    /* #ifndef MP-WEIXIN */
+    backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+    -webkit-backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+    /* #endif */
+  }
+}
+
 @mixin card {
-  border: 1px solid $ui-border;
-  border-radius: $ui-radius-lg;
-  background-color: $ui-surface;
+  @include glass($radius: $ui-radius-lg);
+}
+
+// 香槟金主按钮（规范里唯一允许的强调色做法：**描边 + 染色**，不是整块实心）。
+// 规范原文配方是 bg #E4B863/15 + border /40 + text #F3DCA8 + 一层金色晕影 + 顶边内高光。
+// 这里全部走 token，所以两套主题各自成立：深色是"淡金膜 + 亮金字"，
+// 浅色是"淡金膜 + 压暗金字"（#E4B863 当文字压白底只有 1.78:1，不达标）。
+// 只写 :active 不写 :hover —— 这是触屏 App，hover 会在手指抬起后粘住。
+@mixin glass-button {
+  border: 1px solid $ui-accent-strong;
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+  box-shadow: 0 4px 20px $ui-accent-glow, inset 0 1px 0 $ui-accent-strong;
+  transition: transform $ui-dur-material $ui-ease, background-color $ui-dur $ui-ease,
+    border-color $ui-dur $ui-ease;
+
+  &:active {
+    transform: scale(0.97);
+  }
 }
 
 // 胶囊容器（筛选条、标签、次级按钮的通用底）
@@ -235,100 +356,143 @@ $radius-xl: 24rpx;
 //   所以同一份变量要在标题栏的祖先（uni-app / uni-page / body）上再铺一遍 ——
 //   铺的值由这两个 mixin 统一提供，避免两处各写一份导致漂移。
 @mixin theme-dark-vars {
-  // ---- 表面：越靠上层越亮 ----
-  --ui-bg: #0b0b0e;
-  --ui-surface: #17171c;
-  --ui-surface-2: #1f1f26;
-  --ui-surface-3: #26262e;
-  --ui-border: #2a2a33;
-  --ui-border-strong: #3a3a45;
-  --ui-border-contrast: rgba(255, 255, 255, 0.18);
+  // ---- 场景（夜航玻璃拟态的地基）----
+  // 规范原话：「场景先于玻璃」。底是深墨蓝，边缘压到近黑；光斑是 2~3 个大半径柔光。
+  // 用大半径柔光而不是图片/文字当场景，有个直接好处：**平滑渐变模糊前后几乎一样**，
+  // 所以重复行可以省略 backdrop-filter（见 @mixin glass 的性能说明）而不掉观感。
+  //
+  // ⚠️ **场景底部不再压暗**（规范里那句"近黑 #060A13 用在页面边缘"这一版没照做）。
+  //    原因是用使用方实测反馈换来的：原来底上盖了一层 180deg 的 scene-bg → scene-edge
+  //    渐变，页面从上到下会从 rgb(243,243,245) 走到 rgb(227,228,233) —— 页面自己的
+  //    下半截就与上半截不是一个色了。而 .page 是整页高度，长表格下这条渐变会被拉得
+  //    很长，底部"发暗"更明显。现在改成平底：整页一个色，光斑负责层次。
+  --ui-scene-bg: #0b1322;
+  --ui-scene-blob-1: rgba(51, 81, 122, 0.42);
+  --ui-scene-blob-2: rgba(124, 156, 196, 0.26);
+  --ui-scene-blob-3: rgba(228, 184, 99, 0.1);
+  // ---- 表面：玻璃是无色的，只有一点点白 ----
+  // --ui-surface 是**不透明兜底**（小程序端、以及没上模糊的浮层），要保留一个实色。
+  --ui-bg: var(--ui-scene-bg);
+  --ui-surface: #10203a;
+  --ui-surface-2: rgba(255, 255, 255, 0.06);
+  --ui-surface-3: rgba(255, 255, 255, 0.1);
+  --ui-border: rgba(255, 255, 255, 0.12);
+  --ui-border-strong: rgba(255, 255, 255, 0.24);
+  --ui-border-contrast: rgba(255, 255, 255, 0.28);
   // ---- 叠加层 ----
-  --ui-hairline: rgba(255, 255, 255, 0.06);
-  --ui-raise: rgba(255, 255, 255, 0.035);
+  --ui-hairline: rgba(255, 255, 255, 0.07);
+  --ui-raise: rgba(255, 255, 255, 0.04);
   --ui-raise-2: rgba(255, 255, 255, 0.08);
   --ui-raise-3: rgba(255, 255, 255, 0.16);
   // ---- 文字 ----
-  --ui-text: #f2f2f5;
-  --ui-text-2: #a6a6b2;
-  --ui-text-3: #70707c;
-  // ---- 强调色 ----
-  --ui-accent: #5aa9ff;
-  --ui-accent-2: #8b7bff;
-  --ui-accent-text: #7cbcff;
-  --ui-accent-soft: rgba(90, 169, 255, 0.14);
-  --ui-accent-strong: rgba(90, 169, 255, 0.34);
-  --ui-accent-glow: rgba(90, 169, 255, 0.95);
-  --ui-on-accent: #ffffff;
-  --ui-on-light: #0b0b0e;
-  // ---- 语义色 ----
-  --ui-danger: #ff6b7a;
-  --ui-success: #4ade9b;
-  --ui-warning: #f2c14e;
-  --ui-danger-soft: rgba(255, 107, 122, 0.14);
-  --ui-danger-line: rgba(255, 107, 122, 0.3);
-  --ui-success-soft: rgba(74, 222, 155, 0.12);
-  --ui-success-line: rgba(74, 222, 155, 0.28);
+  // 规范写的是 text-white / white-60 / white-40。这里**故意用不透明色**去等值替代：
+  // 半透明文字压在"半透明玻璃 + 会变动的场景"上，实际对比度是浮动的，没法预先校验；
+  // 换成"白色压在本场景底色上的合成色"，观感一致而对比度可预测（本项目的既定做法）。
+  //
+  // ⚠️ 这组值是**按玻璃面（不是按场景底）算的**：表格正文压在玻璃上，玻璃比场景底亮一个量级
+  //    （实测 0.053 vs 0.012）。按场景底取的 white-60 拿到玻璃上只有 3.0:1，直接跌破 AA。
+  //    下面这组的实测结果：正文 5.0:1、主文字 8.9:1；弱化档（slate-400）3.7:1，
+  //    与浅色主题的 slate-400 同档，只用于占位/空态，不承载信息。
+  --ui-text: #f4f7fc;
+  --ui-text-2: #b4bccd;
+  --ui-text-3: #98a2b5;
+  // ---- 强调色：香槟金（规范里唯一允许的强调色）----
+  // ⚠️ --ui-on-accent 必须改成深色：白字压 #E4B863 只有 1.78:1。
+  --ui-accent: #e4b863;
+  --ui-accent-2: #f3dca8;
+  --ui-accent-text: #f3dca8;
+  --ui-accent-soft: rgba(228, 184, 99, 0.15);
+  --ui-accent-strong: rgba(228, 184, 99, 0.4);
+  --ui-accent-glow: rgba(228, 184, 99, 0.35);
+  --ui-on-accent: #1a1408;
+  --ui-on-light: #0b1322;
+  // ---- 语义色：规范只允许一种强调色，但状态色**承载语义**，全改金色会让"停用/告警/成功"
+  //      不可辨。所以保留，只降饱和、压暗，让它融进夜景而不是跳出来。----
+  --ui-danger: #e88a94;
+  --ui-success: #6fc79a;
+  --ui-warning: #d9b268;
+  --ui-danger-soft: rgba(232, 138, 148, 0.14);
+  --ui-danger-line: rgba(232, 138, 148, 0.3);
+  --ui-success-soft: rgba(111, 199, 154, 0.12);
+  --ui-success-line: rgba(111, 199, 154, 0.28);
   // ---- 软拟态 ----
-  --ui-soft-a: #2a2a33;
-  --ui-soft-b: #1b1b21;
-  --ui-soft-shadow: rgba(0, 0, 0, 0.55);
-  --ui-soft-light: rgba(255, 255, 255, 0.04);
+  --ui-soft-a: rgba(255, 255, 255, 0.1);
+  --ui-soft-b: rgba(6, 10, 19, 0.6);
+  --ui-soft-shadow: rgba(2, 6, 16, 0.55);
+  --ui-soft-light: rgba(255, 255, 255, 0.06);
   // ---- 遮罩与浮层 ----
-  --ui-scrim: rgba(11, 11, 14, 0.72);
-  --ui-surface-trans: rgba(23, 23, 28, 0.94);
-  // ---- 液态玻璃（2026-10-08）----
-  // 深色主题下背后是 #0b0b0e 的页面与 #17171c 的卡片，已经很暗，
-  // 膜用近黑的低透明度，浅色文字（--ui-text #f2f2f5）压得住。
-  --ui-glass: rgba(23, 23, 28, 0.58);
-  // wot 遮罩默认 rgba(0,0,0,0.75)，那个厚度下玻璃糊出来是一片近黑，
-  // 什么都看不见。要「透出底下的内容」就必须放轻。
-  --ui-glass-scrim: rgba(0, 0, 0, 0.34);
-  --ui-shadow-strong: rgba(0, 0, 0, 0.95);
-  // ---- 氛围光晕 ----
-  --ui-glow: rgba(90, 169, 255, 0.16);
-  --ui-aurora-1: rgba(90, 169, 255, 0.3);
-  --ui-aurora-2: rgba(139, 123, 255, 0.14);
+  --ui-scrim: rgba(6, 10, 19, 0.72);
+  --ui-surface-trans: rgba(16, 32, 58, 0.92);
+  // ---- 玻璃材质（@mixin glass 用）----
+  // 膜取规范允许的下限 5%（bg-white/5）：这是**对比度算出来的**，不是审美选择 ——
+  // 无头 Chrome 实测玻璃面亮度 0.053（5% 膜、无颗粒），表格正文 --ui-slate-500 压在上面
+  // 才够 AA。膜再厚一点，799 行那张表的正文就跌破 4.5:1（详见上面的文字档注释）。
+  --ui-glass-fill: rgba(255, 255, 255, 0.05);
+  --ui-glass-fill-hover: rgba(255, 255, 255, 0.12);
+  --ui-glass-line: rgba(255, 255, 255, 0.15);
+  --ui-glass-line-hover: rgba(255, 255, 255, 0.3);
+  --ui-glass-blur: 30px;
+  --ui-glass-sat: 180%;
+  --ui-grain: #{grain-url(0.16)};
+  // 三层：外层深度（光从上方来 → 影子落到下方）+ 顶边受光 + 底边背光暗缘
+  --ui-glass-elev: 0 16px 40px rgba(3, 7, 18, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.35);
+  --ui-glass-shadow: rgba(3, 7, 18, 0.6);
+  --ui-shadow-strong: rgba(2, 6, 16, 0.95);
+  // ---- 氛围光晕（场景层接管后只剩极光页在用）----
+  --ui-glow: rgba(124, 156, 196, 0.18);
+  --ui-aurora-1: rgba(124, 156, 196, 0.3);
+  --ui-aurora-2: rgba(228, 184, 99, 0.12);
   // ---- Tailwind 调色板（与 tailwind.config.js 逐字对应）----
-  --ui-white: #17171c;
-  --ui-slate-50: #1f1f26;
-  --ui-slate-100: #26262e;
-  --ui-slate-200: #2a2a33;
-  --ui-slate-300: #3a3a45;
-  --ui-slate-400: #70707c;
-  --ui-slate-500: #a6a6b2;
-  --ui-slate-600: #c2c2cc;
-  --ui-slate-700: #d8d8e0;
-  --ui-slate-800: #e6e6ec;
-  --ui-slate-900: #f2f2f5;
-  --ui-sky-50: #16233a;
-  --ui-sky-100: #1d2f4d;
-  --ui-sky-400: #5aa9ff;
-  --ui-sky-500: #5aa9ff;
-  --ui-sky-600: #7cbcff;
-  --ui-sky-700: #a5d1ff;
-  --ui-rose-50: #2c1a1f;
-  --ui-rose-100: #3a2027;
-  --ui-rose-200: #4d2830;
-  --ui-rose-500: #ff6b7a;
-  --ui-rose-600: #ff8a95;
-  --ui-rose-700: #ffb3ba;
-  --ui-emerald-50: #152a22;
-  --ui-emerald-100: #1c3a2e;
-  --ui-emerald-600: #4ade9b;
-  --ui-emerald-700: #7fe3b4;
-  --ui-amber-50: #2a2416;
-  --ui-amber-100: #3a2f1a;
-  --ui-amber-200: #4d3d1f;
-  --ui-amber-600: #f2c14e;
-  --ui-amber-700: #f2c14e;
-  --ui-amber-800: #e0ac35;
-  --ui-cyan-100: #17323d;
-  // ---- Tailwind 投影 ----
-  --ui-shadow-sm: 0 10px 24px -16px rgba(0, 0, 0, 0.9);
-  --ui-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.9);
-  --ui-shadow-md: 0 16px 36px -20px rgba(0, 0, 0, 0.95);
-  --ui-shadow-lg: 0 22px 48px -24px rgba(0, 0, 0, 0.95);
+  // white = 玻璃膜；slate-50..200 是"越靠上层越亮"的叠加层与描边；
+  // slate-400..900 是文字档，明暗与浅色主题相反。
+  --ui-white: var(--ui-glass-fill);
+  --ui-slate-50: rgba(255, 255, 255, 0.05);
+  --ui-slate-100: rgba(255, 255, 255, 0.1);
+  --ui-slate-200: rgba(255, 255, 255, 0.14);
+  --ui-slate-300: rgba(255, 255, 255, 0.22);
+  --ui-slate-400: #98a2b5;
+  --ui-slate-500: #b4bccd;
+  --ui-slate-600: #c6cddb;
+  --ui-slate-700: #dae0ec;
+  --ui-slate-800: #e8ecf4;
+  --ui-slate-900: #f4f7fc;
+  // 香槟金档位（原 sky 档改名而来，值同步换掉）
+  --ui-gold-50: rgba(228, 184, 99, 0.08);
+  --ui-gold-100: rgba(228, 184, 99, 0.14);
+  --ui-gold-400: #e4b863;
+  --ui-gold-500: #e4b863;
+  --ui-gold-600: #f3dca8;
+  --ui-gold-700: #f7e7c4;
+  --ui-rose-50: rgba(232, 138, 148, 0.1);
+  --ui-rose-100: rgba(232, 138, 148, 0.16);
+  --ui-rose-200: rgba(232, 138, 148, 0.26);
+  --ui-rose-500: #e88a94;
+  --ui-rose-600: #f0a3ab;
+  --ui-rose-700: #f7c2c7;
+  --ui-emerald-50: rgba(111, 199, 154, 0.1);
+  --ui-emerald-100: rgba(111, 199, 154, 0.16);
+  --ui-emerald-600: #6fc79a;
+  --ui-emerald-700: #9cd9b8;
+  --ui-amber-50: rgba(217, 178, 104, 0.1);
+  --ui-amber-100: rgba(217, 178, 104, 0.16);
+  --ui-amber-200: rgba(217, 178, 104, 0.26);
+  --ui-amber-600: #d9b268;
+  --ui-amber-700: #e5c88c;
+  --ui-amber-800: #edd9ae;
+  --ui-cyan-100: rgba(124, 156, 196, 0.16);
+  // ---- Tailwind 投影：规范的"三层方向性阴影"----
+  // 规范明确禁止单层扁平阴影（"没有光的方向，看起来是平面半透明"）。本仓的 shadow-*
+  // 工具类全部指向这四个 token，所以把配方放在这里，一处改动升级所有使用点。
+  // 三层 = 外层深度（光从上方来，影子落下方）+ 顶边受光 + 底边背光暗缘。
+  --ui-shadow-sm: 0 8px 24px rgba(3, 7, 18, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.3);
+  --ui-shadow: 0 12px 32px rgba(3, 7, 18, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.32);
+  --ui-shadow-md: 0 16px 40px rgba(3, 7, 18, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.35);
+  --ui-shadow-lg: 0 24px 64px rgba(3, 7, 18, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(2, 6, 16, 0.35);
   // 给 wot-design-uni 兜底主题色。
   // ⚠️ 自定义属性是在「声明它的那个元素」上完成 var() 替换的，所以这一条在浅色块里
   //    必须再写一次，否则浅色主题下的后代继承到的仍是深色主题那支强调色。
@@ -337,8 +501,16 @@ $radius-xl: 24rpx;
 
 // 浅色主题：值与 @mixin theme-dark-vars 一一对应，只是整体翻过来。
 @mixin theme-light-vars {
-  // ---- 表面：浅灰底 + 白卡片 ----
-  --ui-bg: #f2f3f7;
+  // ---- 场景：浅色是「轻量版」----
+  // 玻璃在 #f2f3f7 白底上做不出深色那样的透光效果（规范自己也禁止纯色平面背景，
+  // 但它的整套配方都是为夜景写的）。所以浅色不照搬，只保留最低限度的"场景起伏"：
+  // 底仍是使用方认可的浅灰，光斑压到很淡 —— 给玻璃一点可折射的东西就够了。
+  --ui-scene-bg: #f2f3f7;
+  --ui-scene-blob-1: rgba(124, 156, 196, 0.2);
+  --ui-scene-blob-2: rgba(228, 184, 99, 0.1);
+  --ui-scene-blob-3: rgba(124, 156, 196, 0.08);
+  // ---- 表面：浅灰底 + 磨砂白卡片 ----
+  --ui-bg: var(--ui-scene-bg);
   --ui-surface: #ffffff;
   --ui-surface-2: #f5f6f9;
   --ui-surface-3: #eaeef5;
@@ -354,13 +526,18 @@ $radius-xl: 24rpx;
   --ui-text: #14161c;
   --ui-text-2: #5a6272;
   --ui-text-3: #8b93a4;
-  // ---- 强调色：白底上要更深才够对比度 ----
-  --ui-accent: #2f7fe0;
-  --ui-accent-2: #6b5bf0;
-  --ui-accent-text: #1f6fd0;
-  --ui-accent-soft: rgba(47, 127, 224, 0.12);
-  --ui-accent-strong: rgba(47, 127, 224, 0.34);
-  --ui-accent-glow: rgba(47, 127, 224, 0.32);
+  // ---- 强调色：香槟金，但白底上必须压暗才够对比度 ----
+  // #E4B863 压白底只有 1.78:1，当文字色完全不达标；--ui-accent-text 用 #7a5c14（白底 6.3:1）。
+  // --ui-on-accent 是**压在实心强调块上的字**（日期选中日、未报角标、HND 徽标、wot 主按钮）。
+  // ⚠️ 浅色主题下它必须是**白**：底已经被压暗到 #8a6a1f，白字上去 5.04:1；
+  //    深色主题正好反过来（底是亮的 #E4B863，字用近黑 9.0:1）。两套主题各自翻转，别抄错方向。
+  //    （曾设成 #2a2008，在 #8a6a1f 上只有 3.18:1 —— 日期选中日那种小字会勉强。）
+  --ui-accent: #8a6a1f;
+  --ui-accent-2: #a9862c;
+  --ui-accent-text: #7a5c14;
+  --ui-accent-soft: rgba(228, 184, 99, 0.22);
+  --ui-accent-strong: rgba(138, 106, 31, 0.45);
+  --ui-accent-glow: rgba(176, 138, 46, 0.3);
   --ui-on-accent: #ffffff;
   --ui-on-light: #ffffff;
   // ---- 语义色 ----
@@ -379,19 +556,29 @@ $radius-xl: 24rpx;
   // ---- 遮罩与浮层 ----
   --ui-scrim: rgba(242, 243, 247, 0.72);
   --ui-surface-trans: rgba(255, 255, 255, 0.94);
-  // ---- 液态玻璃（2026-10-08）----
-  // 浅色主题下背后是 #f2f3f7 页面与白卡片，糊完仍然很亮，
-  // 深色文字（--ui-text #14161c）余量很大 —— 实测值见 index.vue 抽屉那段注释。
-  --ui-glass: rgba(255, 255, 255, 0.62);
-  // 同上：wot 默认 rgba(0,0,0,0.65) 太重，透不出内容。
-  --ui-glass-scrim: rgba(15, 23, 42, 0.18);
+  // ---- 玻璃材质：轻量版 ----
+  // 膜更实（66% 白）、模糊更小、饱和增强更弱。浅色下玻璃**不追求透光**，
+  // 主要靠描边 + 顶边内高光 + 轻投影表达"这是一块独立的板"。
+  // 描边反过来用**淡黑**而不是白：白描边压在白卡上没有边界感。
+  --ui-glass-fill: rgba(255, 255, 255, 0.66);
+  --ui-glass-fill-hover: rgba(255, 255, 255, 0.82);
+  --ui-glass-line: rgba(20, 22, 28, 0.08);
+  --ui-glass-line-hover: rgba(20, 22, 28, 0.16);
+  --ui-glass-blur: 20px;
+  --ui-glass-sat: 130%;
+  // 浅色下颗粒要 0.30 才有质感（0.06/0.10 实测等于没生效），且它是往暗里压的，不伤对比度。
+  --ui-grain: #{grain-url(0.3)};
+  --ui-glass-elev: 0 8px 24px rgba(20, 22, 28, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(20, 22, 28, 0.05);
+  --ui-glass-shadow: rgba(20, 22, 28, 0.3);
   --ui-shadow-strong: rgba(20, 22, 28, 0.16);
   // ---- 氛围光晕：白底上要收敛 ----
   --ui-glow: rgba(47, 127, 224, 0.1);
-  --ui-aurora-1: rgba(47, 127, 224, 0.16);
-  --ui-aurora-2: rgba(107, 91, 240, 0.1);
+  --ui-aurora-1: rgba(124, 156, 196, 0.22);
+  --ui-aurora-2: rgba(228, 184, 99, 0.12);
   // ---- Tailwind 调色板 ----
-  --ui-white: #ffffff;
+  // white = 玻璃膜（66% 白，压在 #f2f3f7 上合成 ≈ #fbfcfe，观感与原来的纯白几乎一致）
+  --ui-white: var(--ui-glass-fill);
   --ui-slate-50: #f6f7fa;
   --ui-slate-100: #eef0f5;
   --ui-slate-200: #e3e6ee;
@@ -402,12 +589,13 @@ $radius-xl: 24rpx;
   --ui-slate-700: #363d4a;
   --ui-slate-800: #232833;
   --ui-slate-900: #14161c;
-  --ui-sky-50: #eaf3ff;
-  --ui-sky-100: #d6e8ff;
-  --ui-sky-400: #2f7fe0;
-  --ui-sky-500: #2f7fe0;
-  --ui-sky-600: #1f6fd0;
-  --ui-sky-700: #1a5cb0;
+  // 香槟金档位（原 sky 档改名而来）
+  --ui-gold-50: #fdf7e8;
+  --ui-gold-100: #faedc8;
+  --ui-gold-400: #c9a23c;
+  --ui-gold-500: #b08a2e;
+  --ui-gold-600: #8a6a1f;
+  --ui-gold-700: #7a5c14;
   --ui-rose-50: #fdf1f2;
   --ui-rose-100: #fbe0e3;
   --ui-rose-200: #f7c6cb;
@@ -425,11 +613,15 @@ $radius-xl: 24rpx;
   --ui-amber-700: #97650b;
   --ui-amber-800: #7d530a;
   --ui-cyan-100: #d9eef6;
-  // ---- 投影：浅色下改用低透明黑 ----
-  --ui-shadow-sm: 0 10px 24px -16px rgba(20, 22, 28, 0.12);
-  --ui-shadow: 0 12px 30px -18px rgba(20, 22, 28, 0.14);
-  --ui-shadow-md: 0 16px 36px -20px rgba(20, 22, 28, 0.16);
-  --ui-shadow-lg: 0 22px 48px -24px rgba(20, 22, 28, 0.18);
+  // ---- 投影：浅色下改用低透明黑，同样是三层配方 ----
+  --ui-shadow-sm: 0 6px 18px rgba(20, 22, 28, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(20, 22, 28, 0.04);
+  --ui-shadow: 0 10px 26px rgba(20, 22, 28, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -1px 0 rgba(20, 22, 28, 0.045);
+  --ui-shadow-md: 0 14px 34px rgba(20, 22, 28, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 -1px 0 rgba(20, 22, 28, 0.05);
+  --ui-shadow-lg: 0 22px 52px rgba(20, 22, 28, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -1px 0 rgba(20, 22, 28, 0.06);
   // 见 theme-dark-vars 末尾的说明：这两条派生值必须在每个定义点上重算
   --wot-color-theme: var(--ui-accent);
 }

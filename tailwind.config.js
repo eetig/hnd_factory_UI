@@ -30,6 +30,11 @@ module.exports = {
       colors: {
         // white 代表"卡片/表面"（浅色下才是真白）
         white: 'var(--ui-white)',
+        // 「实心块上的文字」（--ui-on-light）。要它的场景是 bg-slate-900 这类"实心墨块 + 块上字"：
+        // slate-900 在深色主题下是**最亮**的一档，块上文字必须跟着一起翻 ——
+        // 写 text-white 会得到"近白块 + 近透明字"（图片解析的「提交」按钮就是这么坏的，实测过）。
+        // 浅色：墨块 #14161c + 白字；深色：近白块 #f4f7fc + 墨字。两套都 ≥16:1。
+        'on-light': 'var(--ui-on-light)',
         slate: {
           50: 'var(--ui-slate-50)',
           100: 'var(--ui-slate-100)',
@@ -42,13 +47,13 @@ module.exports = {
           800: 'var(--ui-slate-800)',
           900: 'var(--ui-slate-900)',
         },
-        sky: {
-          50: 'var(--ui-sky-50)',
-          100: 'var(--ui-sky-100)',
-          400: 'var(--ui-sky-400)',
-          500: 'var(--ui-sky-500)',
-          600: 'var(--ui-sky-600)',
-          700: 'var(--ui-sky-700)',
+        gold: {
+          50: 'var(--ui-gold-50)',
+          100: 'var(--ui-gold-100)',
+          400: 'var(--ui-gold-400)',
+          500: 'var(--ui-gold-500)',
+          600: 'var(--ui-gold-600)',
+          700: 'var(--ui-gold-700)',
         },
         rose: {
           50: 'var(--ui-rose-50)',

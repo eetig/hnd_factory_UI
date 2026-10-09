@@ -99,6 +99,39 @@ page {
   @include theme-light-vars;
 }
 
+/* #ifdef MP-WEIXIN */
+/* ⚠️ 微信小程序**原生不支持 backdrop-filter**（小程序不是浏览器，CSS 是子集）。
+   玻璃膜（--ui-glass-fill 是 8% 白 / 66% 白）在小程序端会退化成"半透明但不模糊" ——
+   背后表格的字和面板里的字叠在一起，两边都看不清。所以整块膜换成近不透明：
+   配色、描边、三层投影都保留，只是失去透明的错觉。这就是玻璃在小程序端的兜底。
+   （颗粒用的是 SVG data URI，WXSS 对它的支持不保证；不生效也只是少一层质感，不影响可读性。） */
+page {
+  --ui-glass-fill: rgba(20, 35, 58, 0.96);
+  --ui-glass-fill-hover: rgba(28, 46, 74, 0.98);
+}
+
+.theme-light {
+  --ui-glass-fill: rgba(255, 255, 255, 0.96);
+  --ui-glass-fill-hover: #ffffff;
+}
+/* #endif */
+
+/* #ifdef APP-PLUS */
+/* App：page 之外还有 html / body 两层，**它们默认是白的**。
+   App 里 100vh 不含系统栏，页面与 page 都只铺到约 96% 屏高，底下那条约 27px
+   露出来的就是这层白 —— 真机实测底部是 rgb(255,255,255)，而再往上一格是
+   rgb(227,228,233)（场景边缘色），两个色摆在一起就是"最底层跟 App 不是一个颜色"。
+   设成透明，让下面那层「窗口底色」透上来；那个颜色由 useTheme 的 applyNativeChrome
+   用 uni.setBackgroundColor 按主题设过（底部给的就是场景边缘色），接得上。
+   ⚠️ 用 APP-PLUS 而不是 #ifndef H5：小程序里根本没有 html/body，
+      而且它的页面本来就铺满整屏、不存在这条缝；写进去只会留两条永不被选中的死声明。
+   ⚠️ 也不要顺手在 H5 加这条：H5 的主题变量挂在 body 上，body 还得留着底色。 */
+html,
+body {
+  background-color: transparent;
+}
+/* #endif */
+
 /* #ifdef H5 */
 /* H5 端的主题入口是 body —— 页面内容与原生标题栏的共同祖先，一次到位：
      1) 深色默认值铺在 body 上（page/uni-page-body 不再自己声明，见上面 page 的注释）；
@@ -118,6 +151,15 @@ uni-page-head .uni-page-head {
 
 uni-page-head .uni-page-head svg path {
   fill: currentColor;
+}
+
+/* 抽屉展开时锁住底层滚动。
+   触摸那一路由遮罩负责（wd-overlay 带 @touchmove.stop.prevent，且铺满整屏压在最上层，
+   真机实测抽屉展开后滑动页面区域，scrollTop 不动）；**滚轮不受 touchmove 约束**，
+   桌面浏览器上照样能把底层滚走，所以这里单独关掉 body 的滚动。
+   类名由 index.vue 的 watch(menuVisible) 挂/摘，仅 H5 端（App 逻辑层没有 document）。 */
+body.is-drawer-open {
+  overflow: hidden;
 }
 /* #endif */
 
@@ -149,5 +191,101 @@ uni-page-head .uni-page-head svg path {
   width: 0;
   height: 0;
   display: none;
+}
+
+/* ===== 玻璃：wot 弹层（玻璃预算里的"浮层"档）=====
+   wot 弹层的表面色来自它自己的主题变量、不是本仓的 token，所以在这里统一套上玻璃材质。
+   膜色由各弹层的 custom-style 用 var(--ui-glass-fill) 指定（见各 Dialog 组件），
+   这里只补"模糊 / 饱和增强 / 描边 / 三层投影"—— 两处分工，避免同一个属性各写一份。
+
+   ⚠️ 排除抽屉（.wd-popup--left）：它自己就是一块玻璃（.drawer 上有完整材质），
+      在这里再套一层会叠成两层 blur，把抽屉调好的手感改掉。
+   ⚠️ 整块包在 #ifndef MP-WEIXIN 里：微信小程序不支持 backdrop-filter，
+      留在产物里就是两条被忽略的死声明（本项目一贯不留）。小程序端靠上面那段
+      MP 兜底把膜换成近不透明。 */
+
+/* #ifndef MP-WEIXIN */
+/* ⚠️ 模糊画在 ::before 上，**绝不能直接写在 .wd-popup 上**。
+   带 backdrop-filter / filter / transform 的元素会成为后代 `position: fixed` 的
+   **包含块**，而 wd-popup 本身正是 fixed、又几乎总是"外层"（表单弹层里再开日期、
+   物料选择器，页面筛选行里再开日期弹层）。它一旦成了包含块，内层弹层就会被钉进
+   它的盒子里、并被它的 overflow 裁掉：
+     真机实测（月底储罐液位记录 → 新增 → 选「记录日期」）：日期弹层被摆成 x=1 / 宽 392
+     —— 正好是对话框内容盒内缩 1px 边框；头部（胶囊 +「确定」）在 y=285..334，
+     整个落在对话框上边界 y=336 之外被裁掉。日期选完没有可点的「确定」，
+     人就被关在日历里出不来（就是使用方报的那条）。
+   挪到 ::before 之后弹层不再造包含块，内层弹层照常按视口定位、也不会被裁。
+   ⚠️ ::before 必须 pointer-events: none，否则这一层会挡住弹层里所有点击。
+   （同一个坑的"面板版"早就踩过并绕开了，见 pages/index/index.vue 的 .panel 注释：
+     面板因此**故意**不加 backdrop-filter。弹层这次是漏网的同一个坑。） */
+.wd-popup:not(.wd-popup--left)::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1; // 膜在弹层自身底色之下（和原来"先模糊背景、再叠底色"的次序一致）
+  border-radius: inherit; // 圆角来自各弹层的 custom-style，这里跟着走
+  content: '';
+  backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+  -webkit-backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+  pointer-events: none;
+}
+
+/* 描边与投影留在弹层根元素上：它们不造包含块，放这儿也少一层合成 */
+.wd-popup:not(.wd-popup--left) {
+  border: 1px solid $ui-glass-line;
+  box-shadow: $ui-glass-elev;
+}
+/* #endif */
+
+/* 导航列表滚到头之后，不要把滚动链传给底层页面。
+   真机实测（抽屉展开、列表已滚到尽头再上滑）：不加这条时底层
+   scrollingElement.scrollTop 会跟着涨；加上之后恒为 0。
+   ⚠️ 目标是 uni-app 内部生成的滚动容器（`.drawer__list` 里那个
+      class="uni-scroll-view" 的 div，overflow-y 是 auto、内容 1085 > 可见 435），
+      所以选择器只能这么写、也只能放全局样式里 —— scoped 够不到别人家的内部类。 */
+.drawer__list .uni-scroll-view {
+  overscroll-behavior-y: contain;
+}
+
+/* ===== 导航抽屉的弹层（静态样式）=====
+   跟手拖拽每帧都要把 custom-style 送过桥，所以静态部分挪到这里、由 custom-class 挂上，
+   custom-style 里只剩 transform / transition。改抽屉宽度或投影时改这里。
+   ⚠️ 必须是全局样式：custom-class 挂在 wot 弹层自己的根元素上，不在 NavDrawer 的
+      scoped 作用域里。 */
+.nav-drawer__popup {
+  box-sizing: border-box;
+  width: 78vw;
+  max-width: 620rpx;
+  height: 100vh;
+  background-color: transparent;
+  box-shadow: 20rpx 0 60rpx -16rpx $ui-glass-shadow;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ===== wot 分页器 =====
+   .wd-pager 自带**不透明**底色（浅色 wot 写死 #fff，深色是 --wot-dark-background）。
+   压在半透明玻璃面板上，就是"面板中间忽然多出一块实色"，边界很硬 —— 真机截图里
+   分页那一块看着像贴上去的白色矩形，就是它。
+   文字色 / 描边 / 行距走 useTheme 的 themeVars（那边是内联自定义属性，优先级必胜），
+   这里只管两件 themeVars 管不到的事：底色，以及按钮行的居中。
+
+   ⚠️ 这两条必须 !important：wot 的样式是**带作用域属性选择器**编译出来的
+      （`.wd-pager[data-v-51068025]`，等效 0,2,0），普通类名压不过它 ——
+      抬到重复类名也只是打平，胜负仍取决于产物里的先后，而那个顺序不受本仓控制。
+      （同样的理由见上面压原生标题栏那两条。改这三条前先确认 wot 的产物形态没变。） */
+.wd-pager {
+  background-color: transparent !important;
+}
+
+/* wot 的 __content 默认 justify-content: flex-start。调用点原来靠 max-width 限宽
+   加容器居中来摆中间，但那样下面那行页码说明也被一起限宽了，与按钮组对不齐；
+   限宽已从调用点移除，这里直接把内容居中。 */
+.wd-pager__content {
+  justify-content: center !important;
+  gap: 10px;
 }
 </style>

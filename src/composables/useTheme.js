@@ -25,10 +25,6 @@ const THEME_EVENT = 'hnd-theme-change'
 const DARK = 'dark'
 const LIGHT = 'light'
 
-// 强调色也要按主题换：深色底上用浅蓝，白底上必须压深才够对比度。
-// 与 App.vue 里的 --ui-accent 保持同一组值。
-const ACCENT = { [DARK]: '#5aa9ff', [LIGHT]: '#2f7fe0' }
-
 // 读持久化的选择；没存过 → 深色（改造前的默认外观）
 function readTheme() {
   return getItem(THEME_KEY) === LIGHT ? LIGHT : DARK
@@ -40,7 +36,15 @@ function readTheme() {
 // 两端都是尽力而为：H5 端这两个 API 不存在（实测 typeof 是 undefined），直接跳过。
 function applyNativeChrome(value) {
   const light = value === LIGHT
-  const background = light ? '#f2f3f7' : '#0b0b0e'
+  // 窗口底色要跟 uni.scss 的 --ui-scene-bg 对齐（场景是平底，上下同色）。
+  //
+  // ⚠️ 这里**管不到**手机最底下那条系统导航栏：实测 WebView 只有 837 CSS px
+  //    （物理 2720），屏幕是 2772 —— 最后 52 物理像素在 WebView 之外，是 Android
+  //    画的原生导航栏，CSS 与 uni 的 API 都够不着。它的颜色跟随**系统**的深浅模式，
+  //    不跟 App 主题：手机系统是浅色时，App 切到深色，那条仍然是纯白 rgb(255,255,255)。
+  //    真正要动它得走 plus.android 原生命令（Android 15+ 上该 API 已被标记废弃），
+  //    属于另一件事，见 2026-10-09 的排查记录。
+  const background = light ? '#f2f3f7' : '#0b1322'
 
   try {
     if (typeof uni !== 'undefined' && typeof uni.setBackgroundColor === 'function') {
@@ -64,6 +68,26 @@ function applyNativeChrome(value) {
   } catch {
     // 同上
   }
+
+  // #ifdef APP-PLUS
+  // 手机最底下那条约 16px 的**系统导航栏**：实测 WebView 只有 837 CSS px（物理 2720），
+  // 屏幕是 2772 —— 它在 WebView 之外，是 Android 自己画的，CSS 和上面的 uni API 都够不着。
+  // 它的颜色跟随**系统**深浅模式、不跟 App 主题：系统是浅色时，App 切到深色，那条依然是纯白
+  // rgb(255,255,255)，在深色页面上非常扎眼。
+  // 只能走 plus.android 的原生接口。⚠️ Android 15+ 上 Window.setNavigationBarColor 已被
+  // 标记废弃（对 targetSdk 35+ 无效），所以整段包在 try/catch 里 —— 不生效也不能影响别处。
+  try {
+    if (typeof plus !== 'undefined' && plus.os && plus.os.name === 'Android') {
+      const activity = plus.android.runtimeMainActivity()
+      const window = activity.getWindow()
+      plus.android.importClass(window)
+      const Color = plus.android.importClass('android.graphics.Color')
+      window.setNavigationBarColor(Color.parseColor(background))
+    }
+  } catch {
+    // 原生接口不可用（版本/权限/被系统废弃）就保持系统默认色
+  }
+  // #endif
 }
 
 // #ifdef H5
@@ -95,8 +119,44 @@ export function useTheme() {
   // 传给 wd-config-provider：wot-design-uni 内部组件（弹层、日期选择器、toast…）
   // 靠它的 wot-theme-* 类切深浅，我们自己的样式则靠 themeClass。
   const wotTheme = computed(() => theme.value)
-  // 让 wot 组件的强调色跟随主题（否则浅色下弹层里还是深色主题那支浅蓝）
-  const themeVars = computed(() => ({ colorTheme: ACCENT[theme.value] }))
+  // 传给 wd-config-provider 的 wot 主题变量。**一律引用 --ui-*，不写颜色字面量**：
+  // wot 的每个色值都是 `var(--wot-xxx, 浅色默认)`，所以这里一设，它内部组件（分页器、
+  // 输入框、单元格、弹层…）就跟着本仓的调色板走。
+  //
+  // 历史坑：这里原来写的是 `colorTheme: ACCENT[theme]`，一个 JS 写死的蓝。改香槟金时
+  // 它没跟着变，结果 wot 组件还是蓝的（我们的组件是金的）—— 同一支强调色在两处各写一份
+  // 必然会漂移，所以改成引用 CSS 变量，单一来源。ACCENT 常量已随之删除。
+  //
+  // 深色面：wot 自己的默认值是 #131313 一系（纯黑灰），压在墨蓝夜景上是一块突兀的黑；
+  // 而本仓的"表面"已经是半透明玻璃了，所以这里也给它半透明叠加层（--ui-raise-2 就是
+  // "抬升一层"的语义）—— 否则 wot 组件会变成玻璃上的一块不透明矩形（分页器实测踩过）。
+  // 只覆盖深色那套；浅色下 wot 的默认值本身与我们的轻量版相容，不必动。
+  //
+  // 分页器那几个：wot 的默认值是**黑色系**（文字 rgba(0,0,0,.69)、描边 rgba(0,0,0,.45)），
+  // 深色主题下等于看不见 —— 走 var(--ui-*) 之后两套主题各自成立。
+  // 这两条的间距也在这里收一收：默认 message-padding 底部还有 16px，叠加调用点容器的
+  // padding 后底部会空出一大块（真机截图里那块"多余的白"）。
+  const themeVars = computed(() => ({
+    colorTheme: 'var(--ui-accent)',
+    // wot 主按钮（wd-button type="primary"）的文字色默认取 $-color-white = rgb(255,255,255)。
+    // 而它的底取 $-color-theme = 我们的强调色 —— 换香槟金之后就是"金字压白字"1.78:1，
+    // 深色主题下"保存/关闭"这类按钮直接看不清。这里把它指到"强调块上的字"那个 token。
+    buttonPrimaryColor: 'var(--ui-on-accent)',
+    paginationMessageColor: 'var(--ui-text-3)',
+    paginationNavColor: 'var(--ui-text-2)',
+    paginationNavBorder: '1px solid var(--ui-border)',
+    paginationMessagePadding: '2px 0 0 0',
+    ...(theme.value === DARK
+      ? {
+          darkBackground: 'var(--ui-raise-2)',
+          darkBackground2: 'var(--ui-raise)',
+          darkBackground3: 'var(--ui-raise-2)',
+          darkBorderColor: 'var(--ui-border)',
+          darkColor: 'var(--ui-text)',
+          darkColor3: 'var(--ui-text-2)',
+        }
+      : {}),
+  }))
 
   function setTheme(value) {
     const next = value === LIGHT ? LIGHT : DARK

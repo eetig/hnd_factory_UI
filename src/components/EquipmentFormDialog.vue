@@ -204,27 +204,43 @@ async function handlePickDrawing() {
 </template>
 
 <style lang="scss" scoped>
+/* ⚠️ 颜色一律走 --ui-* 变量（理由见 EquipmentMaintenancePanel.vue 顶部那段注释）。
+   这里原来是照浅色写死的 hex，深色主题下完全不跟随：副标题 #8a8f99、字段值、分组标题、
+   标签色、选择器蓝字在白底弹层上是灰的、在深色弹层上就成了暗字压暗底。
+   注：.eq-form__title 原先没有 color，是**故意**继承页面正文色的，本身没错
+   （wot 弹层的表面色跟随主题，深色下表面 rgb(27,27,27)、继承来的正文色是近白）。
+   现在显式写出来，是为了让整个文件不依赖"表面色和页面正文色同调"这个前提。 */
+/* ⚠️ 必须是 height，不能写回 max-height。
+   uni 的 scroll-view 里，真正滚动的是第二层 .uni-scroll-view（框架给它内联
+   overflow: hidden auto），而它自己的 height: 100% 只有**父级高度确定**时才解析得出。
+   父级高度由 flex 撑出来（computed 是 auto）时，100% 会退化成内容高度 ——
+   滚动器就成了 917，比可见的 565 多出 352，整块戳出弹层之外；于是手指在表单里一滑，
+   滚的不是表单而是**整个弹层**：真机实测弹层被滚 295px，表头飞出屏幕上沿、
+   「取消 / 保存」掉到屏幕正中间（使用方截图就是这个）。
+   实测把它改成 height 之后：滚动器回到 565，弹层 scrollTop 恒为 0，表单自己正常滚。
+   （同一个道理见 ProductSelectDialog 的 popupStyle 注释：「高度必须是 height 而不是 max-height」。） */
 .eq-form {
   display: flex;
   flex-direction: column;
-  max-height: 82vh;
+  height: 82vh;
 }
 
 .eq-form__head {
   padding: 20rpx 30rpx 12rpx;
-  border-bottom: 1rpx solid var(--ui-border, #eee);
+  border-bottom: 1rpx solid var(--ui-slate-200);
 }
 
 .eq-form__title {
   font-size: 32rpx;
   font-weight: 600;
+  color: var(--ui-slate-900);
 }
 
 .eq-form__sub {
   display: block;
   margin-top: 6rpx;
   font-size: 24rpx;
-  color: #8a8f99;
+  color: var(--ui-slate-500);
 }
 
 .eq-form__body {
@@ -235,13 +251,13 @@ async function handlePickDrawing() {
 .eq-form__group {
   padding: 20rpx 30rpx 8rpx;
   font-size: 24rpx;
-  color: #8a8f99;
+  color: var(--ui-slate-500);
 }
 
 .eq-form__hint {
   margin-left: 8rpx;
   font-size: 22rpx;
-  color: #b0b4bd;
+  color: var(--ui-slate-400);
 }
 
 .eq-form__row {
@@ -253,18 +269,18 @@ async function handlePickDrawing() {
 }
 
 .eq-form__label {
-  color: #4a4f57;
+  color: var(--ui-slate-600);
 }
 
 .eq-form__value {
   font-size: 24rpx;
-  color: #8a8f99;
+  color: var(--ui-slate-500);
 }
 
 .eq-form__picker {
   padding: 8rpx 20rpx;
   font-size: 28rpx;
-  color: #2b6cb0;
+  color: var(--ui-gold-600);
 }
 
 .eq-form__drawing {
@@ -276,7 +292,7 @@ async function handlePickDrawing() {
 .eq-form__thumb {
   width: 160rpx;
   height: 160rpx;
-  border: 1rpx solid var(--ui-border, #eee);
+  border: 1rpx solid var(--ui-slate-200);
   border-radius: 12rpx;
 }
 
@@ -285,7 +301,7 @@ async function handlePickDrawing() {
   align-items: center;
   justify-content: center;
   font-size: 22rpx;
-  color: #b0b4bd;
+  color: var(--ui-slate-400);
 }
 
 .eq-form__drawing-side {
@@ -299,6 +315,6 @@ async function handlePickDrawing() {
   display: flex;
   gap: 20rpx;
   padding: 16rpx 30rpx 24rpx;
-  border-top: 1rpx solid var(--ui-border, #eee);
+  border-top: 1rpx solid var(--ui-slate-200);
 }
 </style>

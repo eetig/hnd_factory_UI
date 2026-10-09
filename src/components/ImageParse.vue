@@ -35,8 +35,8 @@ const errorCount = computed(() => images.value.filter((i) => i.status === 'error
 
 const dropZoneClass = computed(() => {
   if (isFull.value) return 'border-slate-200 bg-slate-50 cursor-not-allowed'
-  if (dragActive.value) return 'border-sky-500 bg-sky-50'
-  return 'border-slate-300 hover:border-sky-400'
+  if (dragActive.value) return 'border-gold-500 bg-gold-50'
+  return 'border-slate-300 hover:border-gold-400'
 })
 
 /** 图片来源弹层（App / 小程序）：替掉平台自带的那个 ActionSheet，见 openFilePicker */
@@ -378,7 +378,7 @@ const {
 
 const pickerCustomStyle = computed(() => {
   const base =
-    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;'
+    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;'
   const kb = pickerKeyboardHeight.value
   if (!kb) return base
 
@@ -786,7 +786,7 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-2">
         <div
           class="mb-1 flex h-12 w-12 items-center justify-center rounded-full"
-          :class="isFull ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-600'"
+          :class="isFull ? 'bg-slate-100 text-slate-400' : 'bg-gold-50 text-gold-600'"
         >
           <!-- 占位图标：原来用内联 <svg>，小程序不支持 svg 标签，换组件库图标 -->
           <wd-icon name="picture" size="24px" />
@@ -811,7 +811,7 @@ onUnmounted(() => {
     <section v-if="images.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-3.5">
         <p class="text-sm text-slate-600">
-          已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
+          已选 <span class="font-semibold text-gold-600">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
         </p>
         <button type="button" class="clear-btn" :disabled="submitting" @click="clearAll">
@@ -854,7 +854,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        class="rounded-full bg-slate-900 px-6 py-2.5 text-sm font-medium text-on-light transition hover:bg-slate-700 ip__cta focus:outline-none"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -1074,7 +1074,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="confirm__btn shrink-0 rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                class="confirm__btn shrink-0 rounded-full bg-slate-900 px-5 py-2 text-sm font-medium text-on-light transition hover:bg-slate-700 ip__cta focus:outline-none"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1100,7 +1100,7 @@ onUnmounted(() => {
       position="bottom"
       round
       safe-area-inset-bottom
-      custom-style="background-color: var(--ui-surface);"
+      custom-style="background-color: var(--ui-glass-fill);"
       @close="sourceSheetVisible = false"
     >
       <view class="source-sheet">
@@ -1193,6 +1193,18 @@ onUnmounted(() => {
    凡是自己写样式的按钮都得先清掉这套 —— 否则高度、位置、边框全都不受控，
    两个按钮摆在一起就是一个大一个小、底色描边对不上。
    （走 Tailwind 那几个类名的按钮不受影响：它们每条属性都写在类里，且类选择器优先级更高。）
+
+   ⚠️ **禁用态还有一条独立的坑**（2026-10-09 修）：uni.css 里
+       `uni-button[disabled] { color: rgba(255,255,255,.6) }`
+   优先级 (0,1,1)，**高于任何单类选择器** —— 也就是说禁用时它会盖掉你写的字色。
+   它假设禁用按钮是深色填充（浅色主题下成立）；而深色主题里本项目的"实心墨块"
+   （bg-slate-900）会翻成**近白**，于是白字压白块、整个按钮的文字看不见
+   （「提交」按钮就是这样坏的，实机截图与计算值 color=rgba(255,255,255,0.6) 都对得上）。
+   两条出路，按按钮类型选：
+     · 实心块按钮：加 Tailwind 的 `disabled:text-on-light`（生成 `.x:disabled`，(0,2,0) 能压过它）；
+     · 自绘按钮：在 `:disabled` 里**显式写 color**（见下面 .clear-btn:disabled 的说明）。
+   顺带记住它还有 `[type=default]` / `:not([type])` 两条分支（禁用时给灰底），
+   所以自己写底色的按钮一律要带 `type="button"`。
 
    ⚠️ 这一块必须放在**所有按钮样式之前**：同样是单类选择器，靠后的那条胜出。
    起初放在文件中间，结果后面的复位把前面已写好的 .clear-btn 底色/字色全清了，
@@ -1363,8 +1375,31 @@ onUnmounted(() => {
   color: $ui-danger;
 }
 
+/* ===== 实心 CTA（提交 / 确认入库）=====
+   两个按钮原来写的是 Tailwind 的 `disabled:opacity-60` / `disabled:text-on-light`，
+   但那两个类**从来没有生效过**：uni-app 的 <button> 渲染成自定义元素 <uni-button>，
+   而 CSS 的 `:disabled` 伪类只对真正的表单元素生效 —— Tailwind 的 disabled: 变体
+   编出来就是 `.x:disabled`，对自定义元素永远不匹配。uni 自己是用**属性**选择器
+   （uni-button[disabled]）绕开这一点的。
+   所以这里改用 [disabled]（uni 渲染出来的属性是 disabled="true"），并且：
+     · 显式给 color —— uni.css 的 `uni-button[disabled]{color:rgba(255,255,255,.6)}`
+       优先级 (0,1,1)，假设禁用按钮是深色填充；深色主题下 bg-slate-900 会翻成近白，
+       不覆盖就成了白字压白块（「提交」按钮就是这样看不见的）；
+     · 带上 opacity 与 cursor，把原先那两个失效的 disabled: 类想表达的东西补回来。
+   本条的优先级：类 + scoped 属性 + [disabled] = (0,3,0)，压得过 uni 的 (0,1,1)。 */
+.ip__cta[disabled] {
+  color: $ui-on-light;
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .clear-btn:disabled {
   opacity: 0.5;
+  /* ⚠️ 这一条别删。uni 内置的 `uni-button[disabled]{color:rgba(255,255,255,.6)}`
+     优先级 (0,1,1) 高于本条的类选择器 (0,1,0)，不显式写 color 就会**被它盖掉** ——
+     白字压在 $ui-raise-2 的浅底上，浅色主题下直接看不见（与「提交」按钮同源，
+     那段说明见文件顶部"按钮基线复位"一节）。 */
+  color: $ui-text-3;
 }
 
 /* 列表区的空状态：与 ProductSelectDialog 的 .picker__empty 同款（靠上留白），

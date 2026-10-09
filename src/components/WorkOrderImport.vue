@@ -488,7 +488,7 @@ function handleBackToList() {
 
     <section
       class="relative cursor-pointer rounded-xl border-2 border-dashed bg-white p-12 transition"
-      :class="dragActive ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400'"
+      :class="dragActive ? 'border-gold-500 bg-gold-50' : 'border-slate-300 hover:border-gold-400'"
       @click="openFilePicker"
       @dragover.prevent="dragActive = true"
       @dragleave.prevent="dragActive = false"
@@ -502,7 +502,7 @@ function handleBackToList() {
           </p>
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
-              class="h-full rounded-full bg-sky-500 transition-[width] duration-200 ease-out"
+              class="h-full rounded-full bg-gold-500 transition-[width] duration-200 ease-out"
               :style="{ width: `${uploadPercent}%` }"
             ></div>
           </div>
@@ -524,7 +524,7 @@ function handleBackToList() {
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
         <svg
-          class="h-12 w-12 text-sky-500"
+          class="h-12 w-12 text-gold-500"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -535,7 +535,7 @@ function handleBackToList() {
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
         <p class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-sky-600">点击选择文件</span>
+          将 Excel 文件拖到此处，或 <span class="text-gold-600">点击选择文件</span>
         </p>
         <p class="text-xs text-slate-400">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
@@ -560,7 +560,7 @@ function handleBackToList() {
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
           v-if="workOrderType"
-          class="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700"
+          class="rounded-full bg-gold-100 px-3 py-1 text-sm font-semibold text-gold-700"
         >
           {{ workOrderType }}
         </span>
@@ -656,7 +656,7 @@ function handleBackToList() {
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
           新增 <span class="font-semibold text-emerald-600">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条，
+          更新 <span class="font-semibold text-gold-600">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>

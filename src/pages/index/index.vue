@@ -14,6 +14,7 @@ import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import ThemeToggle from '../../components/ThemeToggle.vue'
+import NavDrawer from '../../components/NavDrawer.vue'
 import DropdownMenu from '../../components/DropdownMenu.vue'
 import ImageViewer from '../../components/ImageViewer.vue'
 import TankLevelFormDialog from '../../components/TankLevelFormDialog.vue'
@@ -138,10 +139,41 @@ const roleName = computed(() => getRoleName() || '已登录')
 // ===== 导航（豆包式）=====
 // 页面主体不再放 Tab 条：全部导航收进左侧抽屉，正文直接铺满。
 // 切换入口是顶部栏左上角的菜单按钮。
-const menuVisible = ref(false)
+// 抽屉本身（弹层 + 跟手拖拽 + 开合吸附 + 锁底层滚动）拆在 components/NavDrawer.vue 里，
+// 原因见那边的说明：**跟手拖拽每帧都要改位移**，这份状态留在这个上万行的组件里，
+// 会让每帧都重跑一次整页 render（12 个 Tab 的表格全部重新 patch），手感发涩。
+// 拆出去之后每帧只重渲染那个小壳。
+//
+// 这里只保留命令式入口，以及把页面左缘的触摸**转发**过去 ——
+// 转发是方法调用，不碰本组件的响应式状态，所以同样不会触发本组件重渲染。
+const navDrawer = ref(null)
 
 function openMenu() {
-  menuVisible.value = true
+  if (navDrawer.value) navDrawer.value.open()
+}
+
+function closeMenu() {
+  if (navDrawer.value) navDrawer.value.close()
+}
+
+// 页面左缘起手（是否落在起手条带内、以及整套跟手逻辑都在 NavDrawer 里）
+function onPageTouchStart(e) {
+  if (navDrawer.value) navDrawer.value.edgeStart(e)
+}
+function onPageTouchMove(e) {
+  if (navDrawer.value) navDrawer.value.edgeMove(e)
+}
+function onPageTouchEnd(e) {
+  if (navDrawer.value) navDrawer.value.endDrag(e)
+}
+
+// 导航列表的起手/松手：告诉 NavDrawer"这次手势在列表里"，它才不会把默认行为挡掉。
+// （列表在插槽里，组件自己够不着，所以由这边打标。）
+function onListTouchStart() {
+  if (navDrawer.value) navDrawer.value.setListGesture(true)
+}
+function onListTouchEnd() {
+  if (navDrawer.value) navDrawer.value.setListGesture(false)
 }
 
 // 当前面板的元数据。顶部栏与抽屉菜单共用 tabs 这一份数据源，
@@ -164,17 +196,18 @@ function handleTabChange(key) {
 
 // 抽屉里点某一项：先收起抽屉再切面板 —— 抽屉的收起动画与面板入场动画重叠，观感更顺
 function selectTabFromMenu(key) {
-  menuVisible.value = false
+  // 走 closeMenu（带收起动画），不是直接置 false —— 见 NavDrawer 里 close() 的说明
+  closeMenu()
   handleTabChange(key)
 }
 
 function logoutFromMenu() {
-  menuVisible.value = false
+  closeMenu()
   handleLogout()
 }
 
 function loginFromMenu() {
-  menuVisible.value = false
+  closeMenu()
   goLogin()
 }
 
@@ -2280,7 +2313,14 @@ watch(activeTab, (tab, prevTab) => {
        中文 locale。wot-design-uni 默认就是中文，不需要这层包裹，直接去掉。
        原来写死在这层的 Tailwind 布局类（min-h-screen / px-4 py-8 …）
        挪到 .page 里 —— 顶部还要叠加状态栏高度，Tailwind 表达不了 calc(var())。 -->
-  <view class="page" :class="themeClass">
+  <view
+    class="page"
+    :class="themeClass"
+    @touchstart="onPageTouchStart"
+    @touchmove="onPageTouchMove"
+    @touchend="onPageTouchEnd"
+    @touchcancel="onPageTouchEnd"
+  >
     <!-- 主题统一交给 wot-design-uni 的 config-provider：
          日期选择器、弹层、Toast、MessageBox 这些组件不用逐个改色。
          theme 跟随 useTheme()（wot-theme-light 无样式 = 它自己的浅色默认值）。
@@ -2415,19 +2455,18 @@ watch(activeTab, (tab, prevTab) => {
             </view>
           </div>
 
-          <!-- 居中而不是 justify-end：wd-pagination 的 .wd-pager 是行内块，宽度只等于
-               show-message 那段文字，而它内部的 __content 又是 justify-content: flex-start；
-               靠右排时按钮组会贴着这个窄块的右缘，看着像"往右冒出来一截"。
-               容器居中 + 给组件限宽（见下面 wd-pagination 上的 custom-style）之后，
-               按钮组在两处筛选行里都稳定居中；限宽还顺手挡掉 H5 桌面端把按钮摊开的问题。 -->
-          <div class="flex justify-center border-t border-slate-100 px-6 py-4">
+          <!-- 分页器各调用点统一按这个形态写（其余几处照抄本节）：
+               容器只负责"上分隔线 + 内边距"，居中由 App.vue 里那条全局规则
+               .wd-pager__content 做（wot 默认是 flex-start）。
+               2026-10-09 前这里还挂着 custom-style="max-width: 340px" 靠限宽间接居中，
+               但那会把下面那行页码说明一起限宽、与按钮组对不齐；现在限宽已移除。 -->
+          <div class="flex justify-center border-t border-slate-100 px-6 py-3">
             <!-- wd-pagination 的 change 事件传的是 `{ value: N }` 对象，不是页码本身
                  （el-pagination 传的是数字，迁移时直接绑函数会拿到对象）。
                  而 change 又在 update:modelValue 之前触发，此时 pageNum 还是旧值，
                  所以必须把新的页码显式取出来传进去，不能靠 v-model 已更新。 -->
             <wd-pagination
               v-model="pageNum"
-              custom-style="max-width: 340px;"
               :total="total"
               :page-size="pageSize"
               show-message
@@ -2447,7 +2486,7 @@ watch(activeTab, (tab, prevTab) => {
       <wd-popup
         v-model="imageDialogVisible"
         position="center"
-        custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-surface); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
+        custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-glass-fill); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
       >
         <view class="viewer-head">
           <text>物料描述：{{ currentMaterialDesc }}</text>
@@ -2547,9 +2586,6 @@ watch(activeTab, (tab, prevTab) => {
             <DateField v-model="pickStartDate" placeholder="起始日期" @change="filterPickRecords" />
             <span class="text-sm text-slate-500">至</span>
             <DateField v-model="pickEndDate" placeholder="结束日期" @change="filterPickRecords" />
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
-            </span>
           </div>
 
           <div class="relative">
@@ -2639,11 +2675,10 @@ watch(activeTab, (tab, prevTab) => {
               </div>
 
               <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
-              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
                 <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="pickPageNum"
-              custom-style="max-width: 340px;"
               :total="pickTotal"
               :page-size="pickPageSize"
               show-message
@@ -2674,9 +2709,6 @@ watch(activeTab, (tab, prevTab) => {
             <DateField v-model="inboundStartDate" placeholder="起始日期" @change="filterInboundRecords" />
             <span class="text-sm text-slate-500">至</span>
             <DateField v-model="inboundEndDate" placeholder="结束日期" @change="filterInboundRecords" />
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
-            </span>
           </div>
 
           <div class="relative">
@@ -2766,11 +2798,10 @@ watch(activeTab, (tab, prevTab) => {
               </div>
 
               <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
-              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
                 <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
                 <wd-pagination
               v-model="inboundPageNum"
-              custom-style="max-width: 340px;"
               :total="inboundTotal"
               :page-size="inboundPageSize"
               show-message
@@ -2872,7 +2903,7 @@ watch(activeTab, (tab, prevTab) => {
                   <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
                   <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.inboundQty }}</view>
                   <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
-                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-gold-700">{{ item.unreportedQty }}</view>
                 </view>
               </view>
             </view>
@@ -2915,7 +2946,7 @@ watch(activeTab, (tab, prevTab) => {
                   <view class="dt__cell w-28 whitespace-nowrap px-2 py-2 text-sm text-slate-600">{{ item.materialCode }}</view>
                   <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.pickQty }}</view>
                   <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm text-slate-600">{{ item.reportedQty }}</view>
-                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-sky-700">{{ item.unreportedQty }}</view>
+                  <view class="dt__cell w-20 whitespace-nowrap py-2 pl-2 pr-3 text-right text-sm font-semibold text-gold-700">{{ item.unreportedQty }}</view>
                 </view>
               </view>
             </view>
@@ -2951,9 +2982,6 @@ watch(activeTab, (tab, prevTab) => {
               只看有库存
             </view>
 
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
-            </span>
           </div>
 
           <div class="relative">
@@ -3028,10 +3056,9 @@ watch(activeTab, (tab, prevTab) => {
                 </view>
               </div>
 
-              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
                 <wd-pagination
                   v-model="stockPageNum"
-                  custom-style="max-width: 340px;"
                   :total="stockTotal"
                   :page-size="stockPageSize"
                   show-message
@@ -3129,7 +3156,7 @@ watch(activeTab, (tab, prevTab) => {
         <wd-popup
           v-model="weeklyImageDialogVisible"
           position="center"
-          custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-surface); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
+          custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-glass-fill); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
         >
           <view class="viewer-head">
             <text>物料描述：{{ weeklyCurrentMaterialDesc }}</text>
@@ -3272,9 +3299,6 @@ watch(activeTab, (tab, prevTab) => {
               新增
             </view>
 
-            <span class="ml-auto text-sm text-slate-500">
-              共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录
-            </span>
           </div>
 
           <div class="relative">
@@ -3364,10 +3388,9 @@ watch(activeTab, (tab, prevTab) => {
                 </view>
               </div>
 
-              <div class="flex justify-center border-t border-slate-100 px-6 py-2.5">
+              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
                 <wd-pagination
                   v-model="tankLevelPageNum"
-                  custom-style="max-width: 340px;"
                   :total="tankLevelTotal"
                   :page-size="tankLevelPageSize"
                   show-message
@@ -3627,7 +3650,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="vessel-num vessel-num--volume font-semibold text-sky-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselStartMass.toFixed(2) }}</span> t）</span></template>
+                    体积：<span class="vessel-num vessel-num--volume font-semibold text-gold-600">{{ vesselStartVolume.toFixed(2) }}</span> m³<template v-if="vesselStartMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselStartMass.toFixed(2) }}</span> t）</span></template>
                   </div>
                 </div>
               </div>
@@ -3684,7 +3707,7 @@ watch(activeTab, (tab, prevTab) => {
                     液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
                   </div>
                   <div>
-                    体积：<span class="vessel-num vessel-num--volume font-semibold text-sky-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselEndMass.toFixed(2) }}</span> t）</span></template>
+                    体积：<span class="vessel-num vessel-num--volume font-semibold text-gold-600">{{ vesselEndVolume.toFixed(2) }}</span> m³<template v-if="vesselEndMass !== null"><span class="ml-1 text-slate-400">（<span class="vessel-num vessel-num--volume">{{ vesselEndMass.toFixed(2) }}</span> t）</span></template>
                   </div>
                 </div>
               </div>
@@ -3693,7 +3716,7 @@ watch(activeTab, (tab, prevTab) => {
             </div>
           </div>
 
-          <div class="border-t border-slate-100 px-6 py-4">
+          <div class="border-t border-slate-100 px-6 py-3">
             <!-- 规格网格（从卡片头部挪下来：紧邻下方就是液体体积计算公式）。标签在上、数值在下 —— 不用「一行标签 + 一行数值」
                  是因为窄屏两列时那两种文字加起来正好会顶出格子。 -->
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -3830,22 +3853,25 @@ watch(activeTab, (tab, prevTab) => {
         PC 侧栏自己占一列、背后是纯色，得额外铺一层背景才有东西可糊；
         而抽屉是**压在页面内容上面**的，背后就是工单汇总那张表 —— 天然有东西可透。
 
-        三处改动：
+        四处改动：
         1. 弹层本体背景改 transparent（原来是不透明的 --ui-surface）——
            玻璃膜挪到 .drawer 上，因为 conditional compilation 只能写在 <style> 里，
            写在 custom-style 这个内联字符串里就没法按平台分支。
-        2. 加 modal-style 把遮罩放轻。wd-popup 的遮罩默认是 rgba(0,0,0,0.65)，
-           而遮罩是弹层的**兄弟且在下层**，所以它也属于玻璃的 backdrop ——
-           65% 的黑压下去，backdrop-filter 糊出来的就是一片近黑，什么都看不见。
+        2. **遮罩设成全透明**（使用方 2026-10-09 要求「侧边栏弹出时下层页面颜色不变」）。
+           最初这里放的是 --ui-glass-scrim（浅色 0.18 / 深色 0.34），想着"比 wot 默认的 0.65 轻很多"就够了。
+           但真机一量：0.18 也把下层那张白卡片从 rgb(255) 压到 rgb(212) —— 抽屉右侧那条竖带
+           肉眼一看就是灰的，"玻璃盖在页面上"的真实感就没了。现在改成 transparent：
+           开启前后那条竖带的亮度分位完全一致（p50 1.000 / 1.000）。
+           注意**不能直接删掉 modal-style**：wot 的遮罩默认是 rgba(0,0,0,0.65)，删了就回到最黑那种。
+           遮罩元素本身必须留着，它是"点外面关闭"的点击区。
         3. .drawer 上加模糊（见 <style> 里那段，小程序端单独兜底）。
+        4. 右缘投影**加在弹层本体上，不是 .drawer 上** —— 弹层的 custom-style 里有
+           overflow: hidden，写在 .drawer 上的 box-shadow 会被它裁掉，一点都看不见。
+           写在弹层自己身上则不受自身 overflow 影响（overflow 裁的是后代，不是
+           元素自己的 box-shadow）。实测过：同样是 overflow: hidden，弹层右缘那条
+           竖带 0.578→0.439 的亮度梯度确实存在。
       -->
-      <wd-popup
-        v-model="menuVisible"
-        position="left"
-        safe-area-inset-bottom
-        modal-style="background: var(--ui-glass-scrim);"
-        custom-style="box-sizing: border-box; width: 78vw; max-width: 620rpx; height: 100vh; background-color: transparent; display: flex; flex-direction: column; overflow: hidden;"
-      >
+      <NavDrawer ref="navDrawer">
         <view class="drawer">
           <view class="drawer__brand">
             <view class="drawer__mark">
@@ -3873,7 +3899,7 @@ watch(activeTab, (tab, prevTab) => {
           <!-- 按大类分组（2026-10-07）：分组标题放进 scroll-view 里，跟列表一起滚。
                只渲染**有可见页**的组 —— 小程序端没有「文件导入」，数据维护那组只剩两项，
                但也不该留一个空标题。 -->
-          <scroll-view class="drawer__list" scroll-y>
+          <scroll-view class="drawer__list" scroll-y @touchstart="onListTouchStart" @touchend="onListTouchEnd" @touchcancel="onListTouchEnd">
             <template v-for="group in visibleGroups" :key="group.key">
               <text class="drawer__group">{{ group.label }}</text>
               <view
@@ -3914,7 +3940,7 @@ watch(activeTab, (tab, prevTab) => {
             <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>
-      </wd-popup>
+      </NavDrawer>
 
       <!-- 提示与确认框的宿主组件。
            wot-design-uni 的 useToast()/useMessage() 走 provide/inject：
@@ -3940,11 +3966,9 @@ watch(activeTab, (tab, prevTab) => {
   box-sizing: border-box;
   min-height: 100vh;
   padding: calc(var(--status-bar-height, 0px) + 28px) 16px 40px;
-  // 深色主题的"氛围"：纯黑底 + 顶部一层蓝紫光晕，纯 CSS，不引图片资源。
-  // 拆成 background-color / background-image 两条而不是 background 简写，
-  // 避免简写把颜色一起重置掉。
-  background-color: $ui-bg;
-  background-image: radial-gradient(120% 46% at 50% 0%, $ui-glow 0%, transparent 62%);
+  // 场景先于玻璃：深墨蓝底 + 3 个大半径柔光光斑，纯 CSS、不引图片、不加 DOM。
+  // 画法与 token 都在 uni.scss 的 @mixin scene-bg 里（两套主题各一套值）。
+  @include scene-bg;
   color: $ui-text;
 }
 
@@ -3964,6 +3988,17 @@ watch(activeTab, (tab, prevTab) => {
      弹层底边跟着面板底边跑，两条关闭路径同时失效（周统计的日期弹层踩过，
      详见 UNIAPP迁移说明.md 第 4.2 节）。 */
   @include panel-in;
+
+  /* 无模糊玻璃：膜色 / 描边 / 三层投影都由 token 化的工具类提供
+     （bg-white / border-slate-200 / shadow-sm 全指向 --ui-*），这里只补一层磨砂颗粒。
+     ⚠️ **这里故意不加 backdrop-filter**，两个理由：
+       1) 它和 transform 一样会给 position: fixed 的后代建包含块 —— 就是上面注释里
+          那个坑（DateField 日期弹层、ProductSelectDialog 会只铺满面板、两条关闭路径失效）。
+          面板是玻璃预算里明确排除在模糊之外的一类，别顺手加回来。
+       2) 面板背后是平滑的柔光场景，对平滑渐变做模糊 ≈ 不模糊，本来就没收益。
+          需要模糊的是"浮在内容之上"的层（顶栏、抽屉、弹窗、Toast）。 */
+  background-image: var(--ui-grain);
+  background-repeat: repeat;
 }
 
 /* ===== 顶部栏（豆包式）=====
@@ -3972,8 +4007,14 @@ watch(activeTab, (tab, prevTab) => {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  padding: 8rpx 0 28rpx;
+  gap: 14rpx;
+  /* 浮层玻璃：顶栏正好压在场景最亮的一处光斑上，"借光"在它身上最明显。
+     属于玻璃预算里"浮在内容之上"那一档，每页只有这一个，不计入重复行。
+     内边距与 gap 刻意收紧：整条栏比原来多占了左右各 24rpx，
+     按原来的值副标题会被挤成省略号（实测过）。 */
+  @include glass($radius: $ui-radius-lg);
+  padding: 16rpx 18rpx;
+  margin-bottom: 24rpx;
 }
 
 .topbar__btn {
@@ -4081,14 +4122,13 @@ watch(activeTab, (tab, prevTab) => {
   box-shadow: 0 0 0 6rpx $ui-success-soft;
 }
 
-/* 胶囊按钮：登录 = 白底黑字的主操作；退出 = 低饱和危险色 */
+/* 胶囊按钮：登录 = 香槟金主操作（规范里唯一允许的强调色做法）；退出 = 低饱和危险色 */
 .pill-btn {
   @include pill-button;
 }
 
 .pill-btn--primary {
-  background-color: $ui-text;
-  color: $ui-on-light;
+  @include glass-button;
 }
 
 .pill-btn--danger {
@@ -4107,28 +4147,33 @@ watch(activeTab, (tab, prevTab) => {
   flex-direction: column;
   padding: calc(var(--status-bar-height, 0px) + 36rpx) 28rpx 32rpx;
 
-  /* 右缘描边：玻璃的边要有厚度感，不然就是一块半透明色块。
-     复用 --ui-border-contrast（它本来就是"浮层控件上的醒目描边"，两套主题都有值） */
-  border-right: 1px solid $ui-border-contrast;
+  /* 右缘描边：玻璃的边要有厚度感，不然就是一块半透明色块。走统一的玻璃描边 token
+     （深色是 white/15、浅色是淡黑 —— 白描边压在白卡上没有边界感）。 */
+  border-right: 1px solid $ui-glass-line;
 
   /* #ifdef H5 || APP-PLUS */
   /*
-   * 液态玻璃膜（使用方 2026-10-08 定）。颜色走主题变量 --ui-glass，
-   * 浅色下是 62% 的白、深色下是 58% 的近黑（见 uni.scss）——
-   * 膜跟着主题走，而抽屉里的文字本来就用 --ui-text 那一套，所以两套主题都不用额外处理。
+   * 液态玻璃膜。**颜色与模糊全部走 uni.scss 的玻璃材质 token**，不在这里写死：
+   * 2026-10-09 按「夜航玻璃拟态」规范改造后，膜 / 描边 / 投影 / 颗粒 / 模糊半径是
+   * 一整套（@mixin glass），抽屉只是这套材质的一个使用方。改参数请去 uni.scss，
+   * 在这里覆盖会和其他玻璃面不一致。
    *
-   * 背景色也放进这个分支（而不是写在外面再让小程序覆盖）：写在外面会在
-   * 小程序产物里留下一条被覆盖掉的死声明，虽然无害但读起来误导。
+   * 背景色放进条件编译分支（而不是写在外面再让小程序覆盖）：写在外面会在小程序产物里
+   * 留下一条被覆盖掉的死声明，虽然无害但读起来误导。
    */
-  background-color: $ui-glass;
+  background-color: $ui-glass-fill;
 
-  /*
-   * 只有 H5 与 App 能真的模糊。App 走系统 WebView（Android System WebView 76+ /
-   * iOS WKWebView）都支持；iOS 要 -webkit- 前缀，所以两条都写。
-   * saturate 略抬是玻璃的观感补偿：背后是表格和卡片，不抬会显得发灰。
-   */
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  /* 磨砂颗粒。_url 常量在 uni.scss（那里有浓度实测记录与 SVG 转义的坑）。
+     颗粒是"磨砂"这个观感的来源之一，别单独去掉。 */
+  background-image: var(--ui-grain);
+  background-repeat: repeat;
+
+  /* 大模糊 + 饱和增强 = 规范的"无色玻璃借光"。
+     ⚠️ 半径大是**故意的**：规范禁止低模糊值。之前那版 10~18px 是"半透明"而不是"玻璃"，
+     之所以看着像一块糊掉的板，是因为当时背后是白表格（没有可折射的明暗）。
+     换成夜景场景后，大半径糊的是柔光光斑，才是规范要的效果。 */
+  backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+  -webkit-backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
   /* #endif */
 
   /* #ifdef MP-WEIXIN */
@@ -4637,6 +4682,13 @@ watch(activeTab, (tab, prevTab) => {
   height: 100%;
 }
 
+/* ⚠️ 这里**不要**加 mix-blend-mode。
+   2026-10-09 曾用 `.theme-light & { mix-blend-mode: multiply }` 把"白纸底图"的白色
+   乘成卡片底色（当时底图的浅色版是白底）。观感是对的，但真机反馈**每次加载会先白一下
+   再变过来** —— 混合生效前的那一帧仍是原始白底。
+   已经改成从资源侧解决：两张底图现在都是透明底（见 resources/compress-vessel-images.py），
+   线稿直接坐在卡片实际底色上，任何底色都对，也就不需要混合模式、没有那一帧。 */
+
 /* 罐体裁剪层：轮廓 = 矩形 + 斜杠圆角（圆角值由 vesselDiagram 按罐型算好内联） */
 .vessel-diagram__tank {
   position: absolute;
@@ -4801,12 +4853,15 @@ watch(activeTab, (tab, prevTab) => {
   background-color: currentColor;
 }
 
+/* 升/降色是**语义色**，走 token：写死的 #e11d48/#059669 是 Tailwind 的 rose-600/emerald-600，
+   在墨蓝夜景上过饱和、跳出来，而且浅色主题下与本仓的 $ui-danger/$ui-success 不是同一个值。
+   换 token 后两套主题各自成立（深色是降饱和的那组，见 uni.scss）。 */
 .vessel-diagram__callout.is-decrease {
-  color: #e11d48;
+  color: $ui-danger;
 }
 
 .vessel-diagram__callout.is-increase {
-  color: #059669;
+  color: $ui-success;
 }
 
 /* 起点圆点：直径 7px（改造前是 fs × 0.26 的半径，屏幕上约 6.8px），圆心落在锚点上 */

@@ -26,7 +26,7 @@ export const APP_ENV = 'local'
  * 开发机（跑 hnd_factory / img-service / myocr 的那台）的局域网 IP。
  * 手机与电脑必须在同一网段，App 真机才能直连；换网络后要改这里（cmd 里 ipconfig 查）。
  */
-const LAN_HOST = '192.168.3.2'
+const LAN_HOST = '172.26.20.69'
 
 /** 本机联调：局域网直连三台服务 */
 const LOCAL_ENV = {

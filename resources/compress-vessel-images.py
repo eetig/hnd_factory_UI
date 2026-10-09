@@ -4,8 +4,10 @@
     python resources/compress-vessel-images.py
 
 输入：resources/vessel-source/*.png（原图）
-输出：src/static/*.png        白纸版：透明区域合成为白、深色线稿 —— 浅色主题用
-      src/static/*-dark.png   亮线版：透明底 + 亮色线稿        —— 深色主题用
+输出：src/static/*.png        浅色版：透明底 + 墨色线稿（LIGHT_INK）—— 浅色主题用
+      src/static/*-dark.png   亮线版：透明底 + 亮色线稿（DARK_INK） —— 深色主题用
+两张图**都是透明底**，差别只在线色。透明底让卡片底色直接透出来 ——
+图片背景与主题背景天然一致，不用对齐任何色值，也不需要任何 CSS 混合模式。
 
 ## 这个脚本在做什么（与它最初的样子不同了）
 
@@ -23,37 +25,40 @@ PNG-8 调色板**压下来。**2026-10-06 的 变更-024 把底图移出了小�
 
 ## 仍然保留的两个杠杆
 
-1. **去透明通道**。原图是 RGBA（黑线稿 + 透明底）。白纸版把透明区域合成为白色：
-   底图显示在卡片上，而卡片本身就是白的，渲染结果与原来逐像素一致，
-   却省下一整个 alpha 通道。
-2. **PNG-8 调色板**。线稿只有黑、白与抗锯齿灰阶，量化后 PSNR 50+ dB
-   （45 dB 以上人眼基本分辨不出）。
+1. **透明底**。原图是黑线稿（两张 RGBA 透明底、两张 RGB 白底）。脚本统一把它们归成
+   「线色 + 覆盖率 alpha」这一种表示：
+       `覆盖率 c = α × (1 − 灰度/255)`，再把 `c` 当作 alpha、线色当作 RGB 写出去。
+   浅色版线色 = 纯黑，合成到白底上与"原图合成白底"**逐像素一致**（脚本末尾的 PSNR 在盯这件事）。
+2. **PNG-8 调色板 + tRNS**。调色板 256 项全是线色，索引本身就是不透明度
+   （见 compress() 第 3/4 步）。线稿只有黑白与抗锯齿灰阶，量化后视觉无损。
+
+## ⚠️ 浅色版为什么不再是"白纸版"（2026-10-09 改的，别改回去）
+
+改造前浅色版是把透明区**合成为白**、顺带去掉了整个 alpha 通道，理由是
+「底图显示在卡片上，而卡片本身就是白的」—— 当时确实逐像素一致，还省一个通道。
+
+那张卡片后来变成了**半透明玻璃**，前提就不成立了：白纸在玻璃上是一块突兀的白板。
+先用 CSS `mix-blend-mode: multiply` 补救过（白色乘底色 = 底色），观感是对的，
+但真机反馈**图片每次加载出来会先白一下再变过来** —— 混合生效前的那一帧仍是原始白底，
+属于"在渲染层绕开资源问题"，绕不干净。所以回到资源侧：浅色版也做成透明底，
+线稿直接坐在卡片实际底色上，任何底色都对，不需要混合模式，也就没有那一帧。
+
+代价：浅色版多一个 alpha 通道（PNG-8 + tRNS，比原来大一点，仍远小于 RGBA）。
 
 ## 深色主题为什么另存一张图
 
-深色主题的卡片底是 #17171c。白纸版那块白纸会成为整个界面上最亮的一块，
-和主题底对不上（改造前的 canvas 版也一样，见 UNIAPP迁移说明.md 5.3）。
-把白纸"反色"这件事，DOM 层没有既省事又三端可靠的做法：
-    · canvas 已经拆掉（三端没有标准 Canvas2D，且每帧重绘，见 5.3）；
-    · CSS filter: invert(1) 只能把白纸反成黑底，跟主题底仍然对不齐
-      （底图只占整幅图左侧 78%，右侧标注栏会露出原始底色，接缝藏不住）；
-    · filter + mix-blend-mode: screen 能让黑底透掉、只留亮线，
-      但 blend 模式在小程序端的支持面不明确 —— 本项目对这类写法一律先求证。
-所以干脆在资源侧再出一张：**透明底 + 亮色线稿**（线色 = DARK_INK）。
-浅色读白纸版、深色读亮线版，切主题只换 <image> 的 src，三端行为完全一致；
-透明底又让卡片底色直接透出来 —— 图片背景与主题背景天然一致，不用对齐任何色值。
+原因只剩**线色**：浅色版是黑线，深色卡片（#17171c 一系）上根本看不见；
+亮线版用 DARK_INK（#cbd5e1）。两张图同尺寸、同抗锯齿、同线宽，
+切主题只换 <image> 的 src，三端行为完全一致。
 
-亮线版的画法：墨量 c = α × (1 − 灰度/255)，也就是"白纸版比纯白暗了多少"；
-把 c 当作 alpha、线色当作 RGB 写出去，就与白纸版严格互补 ——
-同一组抗锯齿、同一组线宽，两张图叠在同一位置上连笔画粗细都对得上。
-存法用 PNG-8 调色板 + tRNS（调色板 256 项全是线色，索引本身就是不透明度），
-比 RGBA 小约 1/3，解码后与逐像素 RGBA 完全一致。
+（历史：早先这里还讨论过 `filter: invert(1)` 与 `filter + mix-blend-mode: screen`
+两种"不改资源"的做法。它们解决的是"白纸反色"，在两张图都改成透明底之后已经不需要了。）
 
 ## ⚠️ 改了图就必须同步改库里的 image_bounds
 
 `equipment_ledger.image_bounds` 描述**罐体在底图里的位置**，前端按它画罐体路径与液面。
 图一换，这套坐标就得跟着改，否则液位线会与图纸错位。
-两张图（白纸版 / 亮线版）尺寸必须一致，否则切主题时液位线会跳 —— 见 compress() 里的校验。
+两张图（浅色版 / 亮线版）尺寸必须一致，否则切主题时液位线会跳 —— 见 compress() 里的校验。
 
 **坐标就是原图像素坐标**（本表的 `bounds` 本来就是按原图量的，直接贴进库即可）。
 本脚本会把它们打印成一行 JSON。
@@ -72,10 +77,14 @@ OUT_DIR = os.path.join(os.path.dirname(BASE), 'src', 'static')
 
 FACTOR = 1  # 不降采样（2026-10-06 起）
 
-# 亮线版的线色。它不是主题令牌，而是图纸自身的"墨色"：白纸版是原图的深色墨，
+# 亮线版的线色。它不是主题令牌，而是图纸自身的"墨色"：浅色版是原图的深色墨，
 # 亮线版就是这个浅灰蓝（#cbd5e1，在深色卡片 #17171c 上约 12:1 对比度）。
 # 改色号必须重跑本脚本重新出图。
 DARK_INK = (0xcb, 0xd5, 0xe1)
+
+# 浅色版的线色：原图的墨就是黑的，保持纯黑 —— 透明底 + 纯黑 + 覆盖率 alpha，
+# 合成到白底上与改造前的"白纸版"**逐像素一致**（脚本末尾的 PSNR 校验就在盯着这件事）。
+LIGHT_INK = (0x00, 0x00, 0x00)
 
 # 原图尺寸与罐体在原图坐标系里的边界（取自 index.vue 的 VESSELS.imageBounds）
 VESSELS = [
@@ -139,7 +148,7 @@ def psnr(a, b, step=2):
 def compress(entry):
     src_path = os.path.join(SRC_DIR, entry['file'])
     out_path = os.path.join(OUT_DIR, entry['file'])
-    # 深色主题用的亮线版：与白纸版同尺寸、透明底
+    # 深色主题用的亮线版：与浅色版同尺寸、透明底
     dark_path = os.path.join(OUT_DIR, entry['file'].replace('.png', '-dark.png'))
 
     src = Image.open(src_path).convert('RGBA')
@@ -149,7 +158,8 @@ def compress(entry):
             '  换过原图的话，请同步更新本脚本里的 orig_size 与 bounds。'
         )
 
-    # 1) 合成到白底（底图所在的卡片本就是白的，视觉上与透明底一致）
+    # 1) 合成到白底。**只用于算墨量**（下面第 3 步），不再是任何一张输出图的样子 ——
+    #    墨量的定义就是"比纯白暗了多少"，所以需要先有一张白底版做基准。
     alpha = src.split()[3]
     flat = Image.new('RGB', src.size, (255, 255, 255))
     flat.paste(src, mask=alpha)
@@ -158,39 +168,53 @@ def compress(entry):
     new_size = (src.size[0] // FACTOR, src.size[1] // FACTOR)
     small = flat.resize(new_size, Image.LANCZOS)
 
-    # 3) 白纸版：PNG-8 调色板（顺带去掉 alpha 通道）
-    quant = small.convert('P', palette=Image.ADAPTIVE, colors=256)
-    quant.save(out_path, optimize=True)
-
-    # 4) 亮线版：墨量 = 白纸版"比纯白暗了多少"，得到的是覆盖率 c = α × (1 − 灰度/255)。
-    #    先在全分辨率上算墨量再降采样，与白纸版共用同一组抗锯齿。
+    # 3) 墨量（覆盖率）c = α × (1 − 灰度/255)，先在全分辨率上算再降采样。
+    #    两张输出图都由它来：c 当作 alpha，线色当作 RGB，差别只在 LIGHT_INK / DARK_INK。
     ink = ImageOps.invert(ImageOps.grayscale(flat)).resize(new_size, Image.LANCZOS)
 
-    #    存成 PNG-8 + tRNS：调色板 256 项全是线色，透明度直接取索引（索引即覆盖率）。
+    # 4) 两张图都用 PNG-8 + tRNS：调色板 256 项全是线色，透明度直接取索引（索引即覆盖率）。
+    #
+    #    浅色版：**透明底 + 墨色线稿**，与亮线版同一套表示，只是线色不同。
+    #
+    #    ⚠️ 2026-10-09 之前浅色版是「白纸版」：把透明区合成为白、并去掉整个 alpha 通道。
+    #    那条优化的前提写在本文件开头 ——「底图显示在卡片上，而卡片本身就是白的」。
+    #    卡片改成半透明玻璃之后前提失效：那块白纸在玻璃上是一块白板。
+    #    曾用 CSS `mix-blend-mode: multiply` 补救过，但真机反馈**图片加载出来会先白一下
+    #    再变过来**（混合生效前的一帧是原始白底），体验不好 —— 属于"在渲染层绕开资源问题"，
+    #    绕不干净。改成透明底之后：线稿直接坐在卡片的实际底色上，任何底色都对，
+    #    不需要任何混合模式，也就没有那一帧。
+    light = Image.frombytes('P', new_size, ink.tobytes())
+    light.putpalette(list(LIGHT_INK) * 256)
+    light.info['transparency'] = bytes(range(256))
+    light.save(out_path, optimize=True)
+
     dark = Image.frombytes('P', new_size, ink.tobytes())
     dark.putpalette(list(DARK_INK) * 256)
     dark.info['transparency'] = bytes(range(256))
     dark.save(dark_path, optimize=True)
 
     # 校验：① 两张图必须同尺寸（否则切主题时液位线会错位）；
-    #       ② 墨量互补 —— 白纸版的"暗"应与亮线版的"亮"逐像素对得上
+    #       ② 墨量互补 —— 浅色版的"暗"应与亮线版的"亮"逐像素对得上
     #          （灰度换算与降采样的先后顺序不同，允许 2 个色阶的舍入差）。
     dark_size = Image.open(dark_path).size
     if dark_size != new_size:
-        raise SystemExit(f'{entry["file"]}: 亮线版尺寸 {dark_size} 与白纸版 {new_size} 不一致')
+        raise SystemExit(f'{entry["file"]}: 亮线版尺寸 {dark_size} 与浅色版 {new_size} 不一致')
 
     spread = ImageChops.difference(ImageOps.invert(ImageOps.grayscale(small)), ink).getextrema()[1]
     if spread > 2:
-        raise SystemExit(f'{entry["file"]}: 亮线版与白纸版的墨量对不上（最大差 {spread} 个色阶）')
+        raise SystemExit(f'{entry["file"]}: 亮线版与浅色版的墨量对不上（最大差 {spread} 个色阶）')
 
-    quality = psnr(small, quant.convert('RGB'))
+    # 画质校验：把浅色版合成到**白底**上，应当与"原图合成白底后降采样"逐像素一致
+    #（这正是改造前白纸版的像素值）。浅色版现在是"纯黑 + 覆盖率 alpha"，
+    # 合成到白底 = 255 − 覆盖率。
+    quality = psnr(small, ImageOps.invert(ink).convert('RGB'))
     orig_kb = os.path.getsize(src_path) / 1024
     new_kb = os.path.getsize(out_path) / 1024
     dark_kb = os.path.getsize(dark_path) / 1024
 
     print(f'{entry["file"]}')
     print(f'    {src.size[0]}x{src.size[1]}  {orig_kb:7.1f} KB')
-    print(f' →  白纸版 {new_size[0]}x{new_size[1]}  {new_kb:7.1f} KB   '
+    print(f' →  浅色版 {new_size[0]}x{new_size[1]}  {new_kb:7.1f} KB   '
           f'（{orig_kb / new_kb:.1f}x）  画质 PSNR {quality:.1f} dB')
     print(f'    亮线版 {new_size[0]}x{new_size[1]}  {dark_kb:7.1f} KB   '
           f'（透明底 + #{DARK_INK[0]:02x}{DARK_INK[1]:02x}{DARK_INK[2]:02x}，'

@@ -142,10 +142,8 @@ function handleSelect(value) {
   min-width: 100%;
   max-width: calc(100vw - 32px);
   padding: 8rpx;
-  border: 1px solid $ui-border;
-  border-radius: $ui-radius-md;
-  background-color: $ui-surface;
-  box-shadow: 0 24rpx 60rpx -24rpx $ui-shadow-strong;
+  /* 浮层 → 走统一玻璃材质（膜 + 模糊 + 描边 + 三层投影）。玻璃预算里属于"浮在内容之上"那档。 */
+  @include glass($radius: $ui-radius-md);
 
   &.is-right {
     right: 0;

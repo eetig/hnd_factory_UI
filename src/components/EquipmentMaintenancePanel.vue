@@ -98,7 +98,12 @@ function thumbOf(row) {
 <template>
   <view class="eq-page">
     <view class="eq-page__bar">
-      <input v-model="keyword" class="eq-page__search" placeholder="位号 / 名称 / 昵称 / 规格 / 车间" />
+      <input
+        v-model="keyword"
+        class="eq-page__search"
+        placeholder="位号 / 名称 / 昵称 / 规格 / 车间"
+        placeholder-style="color: var(--ui-slate-400)"
+      />
       <view class="eq-page__toggle" :class="{ 'is-on': onlyEnabled }" @click="onlyEnabled = !onlyEnabled">
         <text>只看启用的</text>
       </view>
@@ -155,6 +160,22 @@ function thumbOf(row) {
 </template>
 
 <style lang="scss" scoped>
+/*
+ * ⚠️ 这个文件里的颜色**一律走 --ui-* 变量，不要写颜色字面量**。
+ *
+ * 本仓的调色板定义在 src/uni.scss 的两套主题块里，tailwind.config.js 把
+ * white / slate-* / gold-* / amber-* 这些工具类名也指到了同一批变量上
+ * （「white」= 卡片表面，「slate-900」= 正文色，「slate-400/500」= 弱化文字，
+ * 「slate-200」= 描边，「gold-600」= 强调金，「amber-100/800」= 告警底/字）。
+ * 深色主题下这套变量的明暗是**反过来**的（slate-900 是最亮色），所以按语义选名字就行。
+ *
+ * 原先这个文件是照浅色写死的 hex，后果是深色模式下：
+ *   1) 卡片底色写的是 var(--ui-card-bg, #fff) / 搜索框 var(--ui-input-bg, #f4f5f7) ——
+ *      这两个变量在 uni.scss 里**根本不存在**，所以永远取兜底的白色，卡片在深色下还是白的；
+ *   2) .eq-card__name 没有 color，直接继承了页面的正文色（深色下是近白），
+ *      于是浅色文字压在白卡片上 —— 设备名几乎看不见；
+ *   3) 其余 #8a8f99 / #2b6cb0 / #92400e+#fef3c7 之类的字面量换主题时纹丝不动。
+ */
 .eq-page {
   padding: 20rpx 0 40rpx;
 }
@@ -170,7 +191,8 @@ function thumbOf(row) {
   height: 72rpx;
   padding: 0 24rpx;
   font-size: 26rpx;
-  background: var(--ui-input-bg, #f4f5f7);
+  color: var(--ui-slate-900);
+  background: var(--ui-slate-50);
   border-radius: 36rpx;
 }
 
@@ -179,14 +201,14 @@ function thumbOf(row) {
   align-items: center;
   padding: 0 24rpx;
   font-size: 24rpx;
-  color: #8a8f99;
-  border: 1rpx solid var(--ui-border, #e5e6eb);
+  color: var(--ui-slate-500);
+  border: 1rpx solid var(--ui-slate-200);
   border-radius: 36rpx;
 }
 
 .eq-page__toggle.is-on {
-  color: #2b6cb0;
-  border-color: #2b6cb0;
+  color: var(--ui-gold-600);
+  border-color: var(--ui-gold-600);
 }
 
 .eq-page__count {
@@ -194,26 +216,26 @@ function thumbOf(row) {
   justify-content: space-between;
   padding: 16rpx 24rpx;
   font-size: 24rpx;
-  color: #8a8f99;
+  color: var(--ui-slate-500);
 }
 
 .eq-page__add {
-  color: #2b6cb0;
+  color: var(--ui-gold-600);
 }
 
 .eq-page__error {
   margin: 0 24rpx 12rpx;
   padding: 16rpx 20rpx;
   font-size: 24rpx;
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--ui-amber-800);
+  background: var(--ui-amber-100);
   border-radius: 12rpx;
 }
 
 .eq-page__empty {
   padding: 80rpx 0;
   font-size: 26rpx;
-  color: #b0b4bd;
+  color: var(--ui-slate-400);
   text-align: center;
 }
 
@@ -221,9 +243,9 @@ function thumbOf(row) {
   margin: 20rpx 24rpx 0;
   padding: 22rpx 0;
   font-size: 26rpx;
-  color: #2b6cb0;
+  color: var(--ui-gold-600);
   text-align: center;
-  border: 1rpx dashed var(--ui-border, #e5e6eb);
+  border: 1rpx dashed var(--ui-slate-200);
   border-radius: 16rpx;
 }
 
@@ -233,8 +255,8 @@ function thumbOf(row) {
   align-items: center;
   margin: 0 24rpx 16rpx;
   padding: 20rpx;
-  background: var(--ui-card-bg, #fff);
-  border: 1rpx solid var(--ui-border, #e5e6eb);
+  background: var(--ui-white);
+  border: 1rpx solid var(--ui-slate-200);
   border-radius: 16rpx;
 }
 
@@ -245,7 +267,7 @@ function thumbOf(row) {
 .eq-card__thumb {
   width: 112rpx;
   height: 112rpx;
-  border: 1rpx solid var(--ui-border, #eee);
+  border: 1rpx solid var(--ui-slate-200);
   border-radius: 12rpx;
 }
 
@@ -254,7 +276,7 @@ function thumbOf(row) {
   align-items: center;
   justify-content: center;
   font-size: 22rpx;
-  color: #b0b4bd;
+  color: var(--ui-slate-400);
 }
 
 .eq-card__main {
@@ -271,33 +293,35 @@ function thumbOf(row) {
   align-items: baseline;
 }
 
+/* 必须显式给色：不给就继承页面正文色，深色主题下会变成浅字压在白卡片上 */
 .eq-card__name {
   font-size: 30rpx;
   font-weight: 600;
+  color: var(--ui-slate-900);
 }
 
 .eq-card__alias {
   font-size: 22rpx;
-  color: #b0b4bd;
+  color: var(--ui-slate-400);
 }
 
 .eq-card__meta {
   font-size: 24rpx;
-  color: #8a8f99;
+  color: var(--ui-slate-500);
 }
 
 .eq-card__badge {
   align-self: flex-start;
   padding: 2rpx 12rpx;
   font-size: 22rpx;
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--ui-amber-800);
+  background: var(--ui-amber-100);
   border-radius: 8rpx;
 }
 
 .eq-card__side {
   padding: 12rpx 16rpx;
   font-size: 24rpx;
-  color: #2b6cb0;
+  color: var(--ui-gold-600);
 }
 </style>

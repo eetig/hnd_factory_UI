@@ -146,7 +146,9 @@ async function handleLogin() {
 // input / button 在各端的默认盒模型差异较大（小程序 button 自带边框与默认宽度），
 // 用显式样式比用工具类逐个覆盖更稳，而这页总共也没几个元素。
 //
-// 深色主题：纯黑底 + 顶部蓝紫光晕 + 一张大圆角卡片 + 胶囊输入框 + 浅色主按钮。
+// 场景：与首页同一套 @mixin scene-bg（深墨蓝夜景 + 柔光光斑 / 浅色轻量版）。
+// 登录页额外保留 .login-aurora 那个大光斑 —— 登录卡片压在上面，需要一处focal 光源，
+// 它的两个 token（--ui-aurora-1/2）已经跟着换成月光钢蓝 + 香槟金。
 .login-page {
   position: relative;
   display: flex;
@@ -154,7 +156,7 @@ async function handleLogin() {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background-color: $ui-bg;
+  @include scene-bg;
   padding: 56rpx 32rpx;
 }
 
@@ -186,11 +188,9 @@ async function handleLogin() {
 
 .login-card {
   position: relative;
-  border: 1px solid $ui-border;
-  border-radius: 44rpx;
-  background-color: $ui-surface;
+  /* 登录卡是这块夜景上最大的一块玻璃 —— 直接吃统一材质（膜 + 模糊 + 顶边受光/底边暗缘 + 描边） */
+  @include glass($radius: 44rpx);
   padding: 56rpx 44rpx;
-  box-shadow: 0 44rpx 90rpx -44rpx $ui-shadow-strong;
 }
 
 .login-brand {

@@ -77,7 +77,7 @@ const {
 
 const popupStyle = computed(() => {
   const base =
-    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-surface); overscroll-behavior: contain;'
+    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;'
   const kb = liftHeight.value
   if (!kb) return base
 
@@ -708,7 +708,7 @@ async function handleDelete() {
     justify-content: center;
     border-radius: 50%;
     background-color: $ui-scrim;
-    color: #fff;
+    color: $ui-text; // 跟 $ui-scrim 一样按主题翻转（写死 #fff 在浅色下是白字压浅底）
   }
 
   &__photo-actions {
