@@ -186,7 +186,7 @@ const canCreate = computed(
 function inputClass(align) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-emerald-600 focus:bg-white',
     align === 'right' ? 'text-right' : '',
   ]
 }
@@ -305,27 +305,32 @@ function handleThumbError(event, image) {
 
     <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
     <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+      <span class="shrink-0 text-xs text-slate-500">起始日期</span>
       <el-date-picker
         v-model="tankLevelStartDate"
         type="date"
         value-format="YYYY-MM-DD"
-        placeholder="起始日期"
+        placeholder="选择日期"
+        aria-label="起始日期"
         :first-day-of-week="1"
         @change="fetchTankLevelRecords"
       />
-      <span class="text-sm text-slate-500">至</span>
+      <span class="shrink-0 text-sm text-slate-500">至</span>
+      <span class="shrink-0 text-xs text-slate-500">结束日期</span>
       <el-date-picker
         v-model="tankLevelEndDate"
         type="date"
         value-format="YYYY-MM-DD"
-        placeholder="结束日期"
+        placeholder="选择日期"
+        aria-label="结束日期"
         :first-day-of-week="1"
         @change="fetchTankLevelRecords"
       />
+      <span class="shrink-0 text-xs text-slate-500">属地</span>
       <el-select
         v-model="tankLevelLocation"
         style="width: 9.5rem"
-        placeholder="属地"
+        placeholder="全部"
         clearable
         aria-label="属地"
         @change="fetchTankLevelRecords"
@@ -337,12 +342,13 @@ function handleThumbError(event, image) {
           :value="location"
         />
       </el-select>
+      <span class="shrink-0 text-xs text-slate-500">所属</span>
       <el-select
         v-model="tankLevelCategory"
         style="width: 9.5rem"
-        placeholder="所属(产品/原料)"
+        placeholder="全部"
         clearable
-        aria-label="所属"
+        aria-label="所属（产品 / 原料）"
         @change="fetchTankLevelRecords"
       >
         <el-option
@@ -356,13 +362,14 @@ function handleThumbError(event, image) {
         v-model="tankLevelKeyword"
         style="width: 13rem"
         placeholder="物料 / 容器名称 / 容器编号"
+        aria-label="搜索物料或容器"
         clearable
         @keyup.enter="fetchTankLevelRecords"
         @clear="fetchTankLevelRecords"
       />
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700"
+        class="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800"
         @click="fetchTankLevelRecords"
       >
         查询
@@ -416,7 +423,7 @@ function handleThumbError(event, image) {
                   :key="column.key"
                   scope="col"
                   class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                  :class="column.align === 'right' ? 'pl-3 pr-4 text-right' : 'px-3'"
+                  :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                 >
                   {{ column.label }}
                 </th>
@@ -424,8 +431,8 @@ function handleThumbError(event, image) {
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               <!-- 新增草稿行：固定在表格最前，一眼能看到自己正在补的那条 -->
-              <tr v-if="isCreating" class="bg-sky-50/60">
-                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-sky-700">新增</td>
+              <tr v-if="isCreating" class="bg-emerald-50/60">
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-emerald-700">新增</td>
                 <td class="px-2 py-1.5">
                   <input
                     v-model="draft.recordDate"
@@ -471,7 +478,7 @@ function handleThumbError(event, image) {
                   >
                     <template #default="{ item }">
                       <span class="text-sm text-slate-800">{{ item.name }}</span>
-                      <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                      <span v-if="item.spec" class="ml-2 text-xs text-slate-500">
                         {{ item.spec }}
                       </span>
                     </template>
@@ -510,7 +517,7 @@ function handleThumbError(event, image) {
                     />
                     <button
                       type="button"
-                      class="rounded-xl border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-sky-400 hover:text-sky-700"
+                      class="rounded-xl border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-emerald-600 hover:text-emerald-700"
                       @click="pendingImageInputRef?.click()"
                     >
                       {{ pendingImages.length ? '再加一张' : '选择图片' }}
@@ -527,7 +534,7 @@ function handleThumbError(event, image) {
                       />
                       <button
                         type="button"
-                        class="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-900/70 text-[10px] leading-none text-white opacity-0 transition hover:bg-rose-600 group-hover:opacity-100"
+                        class="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900/70 text-sm text-white opacity-0 transition hover:bg-rose-600 focus:opacity-100 group-hover:opacity-100"
                         :aria-label="`移除 ${item.file.name}`"
                         @click="removePendingImage(item.key)"
                       >
@@ -540,7 +547,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -562,7 +569,7 @@ function handleThumbError(event, image) {
                 v-for="(record, index) in tankLevelTableData"
                 :key="rowKeyOf(record)"
                 class="transition"
-                :class="isEditing(record) ? 'bg-sky-50/60' : 'hover:bg-slate-50'"
+                :class="isEditing(record) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'"
               >
                 <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
                   {{ (tankLevelPageNum - 1) * tankLevelPageSize + index + 1 }}
@@ -606,7 +613,7 @@ function handleThumbError(event, image) {
                     >
                       <template #default="{ item }">
                         <span class="text-sm text-slate-800">{{ item.name }}</span>
-                        <span v-if="item.spec" class="ml-2 text-xs text-slate-400">
+                        <span v-if="item.spec" class="ml-2 text-xs text-slate-500">
                           {{ item.spec }}
                         </span>
                       </template>
@@ -645,10 +652,10 @@ function handleThumbError(event, image) {
                   <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ record.tankName }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm text-slate-600">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ record.levelValue }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-4 text-right text-sm font-semibold text-sky-700">
+                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm font-semibold text-emerald-700">
                     {{ record.theoreticalWeight }}
                   </td>
                 </template>
@@ -657,9 +664,13 @@ function handleThumbError(event, image) {
                      编辑态与只读态行为一致，所以不放进上面的两态分支，免得写两份 -->
                 <td class="whitespace-nowrap px-3 py-2.5">
                   <span
-                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-400"
-                    :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '暂无图据'"
+                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '添加图据'"
                     @click="openImageDialog(record)"
+                    @keydown.enter.prevent="openImageDialog(record)"
+                    @keydown.space.prevent="openImageDialog(record)"
                   >
                     <svg
                       class="h-3 w-3"
@@ -686,7 +697,7 @@ function handleThumbError(event, image) {
                     <!-- 多张时在角上标出总数，免得点开才知道有几张 -->
                     <span
                       v-if="record.images.length > 1"
-                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-medium leading-none text-white"
+                      class="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-emerald-700 px-1 text-xs font-medium leading-none text-white"
                     >
                       {{ record.images.length }}
                     </span>
@@ -698,7 +709,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-xl bg-emerald-700 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -717,7 +728,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canEdit"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2 py-0.5 text-xs text-slate-600 transition hover:border-sky-400 hover:text-sky-700"
+                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:text-emerald-700"
                       @click="startEdit(record)"
                     >
                       编辑
@@ -725,7 +736,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canDelete"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2 py-0.5 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
+                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
                       @click="removeRow(record)"
                     >
                       删除
@@ -743,7 +754,7 @@ function handleThumbError(event, image) {
       <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-3">
         <button
           type="button"
-          class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+          class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
           @click="startCreate"
         >
           <svg
@@ -759,7 +770,7 @@ function handleThumbError(event, image) {
           </svg>
           新增一行
         </button>
-        <span class="text-xs text-slate-400">
+        <span class="text-xs text-slate-500">
           记录日期 + 容器编号是唯一键，同一天同一容器只能有一条记录
         </span>
       </div>

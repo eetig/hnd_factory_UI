@@ -5,6 +5,9 @@
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #1e293b;
+  /* 页面底色 = Tailwind 的 slate-50。暖白**不是**底色，是工作台里那张卡片，
+     值在 tailwind.config.js 的 colors.canvas。写在这里只是为了页脚外露/回弹时
+     不出另一条颜色的边。 */
   background: #f8fafc;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -24,3 +27,31 @@ button,
 input {
   font: inherit;
 }
+
+/*
+ * 表格数字用等宽字形（tabular figures）。
+ *
+ * Inter 默认是比例数字：'1' 比 '9' 窄，于是同一列上下两行的个位对不齐。
+ * 工单汇总的 订单数量 / 已确认 / 已发货、领料与入库的数量、体积、金额
+ * 全是右对齐数字列——这是本应用最直接的读数损耗。
+ *
+ * 只限定 table，不上 :root：
+ *   1. 对齐问题只存在于「成列」的数字，孤立的大字数值不受影响；
+ *   2. Intro.vue 受保护且整页无 <table>，限定后改动不可能波及它。
+ */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * 减弱动效（prefers-reduced-motion）的处理**不在这里**，见
+ * src/components/LoadingMask.vue 的 scoped 块。
+ *
+ * 原因是特异性：全局的 `.loader-bar`（0,1,0）压不过组件 scoped 编译出的
+ * `.loader-bar[data-v-xxx]`（0,2,0），媒体查询又不加特异性 —— 写在这里会
+ * 静默失效。那条规则挪进了组件，与它要关掉的那条 animation 同级、靠后取胜。
+ *
+ * 有意不做 `* { animation-duration: .01ms }` 式的全局重置：
+ * 全站其余动效全是 hover 过渡与 active:scale-[0.98] 按压反馈，不构成前庭
+ * 触发源，而全局重置会连 Intro.vue 的按压反馈一起抹掉 —— 那一页受保护。
+ */

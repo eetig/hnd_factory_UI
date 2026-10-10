@@ -19,7 +19,6 @@ import { getToken, saveAuth } from './api/auth'
  */
 import 'element-plus/dist/index.css'
 import './theme.css'
-import './liquid-glass.css'
 import './style.css'
 
 // 刷新页面后恢复角色与权限：token 在 localStorage，角色信息需重新拉取

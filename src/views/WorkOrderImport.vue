@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
+import { STATUS_ICON_TONE } from '../constants/statusTones'
+import LoadingMask from '../components/LoadingMask.vue'
 import {
   ElButton,
   ElMessage,
@@ -63,7 +65,7 @@ const INBOUND_COLUMNS = [
   { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
   { key: 'inboundDate', label: '入库时间', width: 'w-36' },
-  { key: 'inboundQty', label: '领料数量', width: 'w-28', align: 'right' },
+  { key: 'inboundQty', label: '入库数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
 ]
 
@@ -206,6 +208,8 @@ function getPageData(page = pageNum.value) {
 }
 
 function openFilePicker() {
+  // 上传/解析途中再点选，只会把进行中的进度页换回文件选择框（变更-033）
+  if (uploading.value) return
   fileInputRef.value?.click()
 }
 
@@ -397,9 +401,14 @@ function handleBackToList() {
     />
 
     <section
-      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition"
-      :class="dragActive ? 'border-sky-500 bg-sky-50' : 'border-slate-300 hover:border-sky-400'"
+      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+      :class="dragActive ? 'border-emerald-600 bg-emerald-50' : 'border-slate-300 hover:border-emerald-600'"
+      role="button"
+      :tabindex="uploading ? -1 : 0"
+      aria-labelledby="wo-import-drop-title wo-import-drop-hint"
       @click="openFilePicker"
+      @keydown.enter.prevent="openFilePicker"
+      @keydown.space.prevent="openFilePicker"
       @dragover.prevent="dragActive = true"
       @dragleave.prevent="dragActive = false"
       @drop.prevent="handleDrop"
@@ -412,29 +421,35 @@ function handleBackToList() {
           </p>
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
-              class="h-full rounded-full bg-sky-500 transition-[width] duration-200 ease-out"
+              class="h-full rounded-full bg-emerald-600 transition-[width] duration-200 ease-out"
               :style="{ width: `${uploadPercent}%` }"
             ></div>
           </div>
         </div>
 
-        <!-- 解析阶段：上传已完成，服务端解析中（时长不可预知，用不确定动画） -->
-        <div v-else class="loader" role="status" aria-label="正在解析文件">
-          <div class="loader-text">解析中...</div>
-          <div class="loader-bar"></div>
+        <!--
+          解析阶段：上传已完成，服务端解析中（时长不可预知，用不确定动画）。
+          复用全局 LoadingMask，不再自带一份 loader 样式。它是一张 inset:0 的
+          72% 白幕，需要定位且定高的父级 —— h-16 与原内联 loader 的实高
+          （24px 文字行 + 20px 间距 + 10px 条 ≈ 59px）基本齐平。
+        -->
+        <div v-else class="relative h-16 w-full">
+          <LoadingMask label="正在解析文件" text="解析中..." />
         </div>
 
         <p class="text-sm text-slate-500">
           {{ currentFile?.name }}
-          <span v-if="currentFile?.size" class="text-slate-400">
+          <span v-if="currentFile?.size" class="text-slate-500">
             （{{ formatFileSize(currentFile.size) }}）
           </span>
         </p>
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
+        <!-- 这里的 -600 是有意的：这是 48px 图标（纯图形，阈值 3:1，emerald-600 压白底 3.77 过），
+             不是文字。承载文字的实心按钮一律 -700（5.48），两者别互相「对齐」。 -->
         <svg
-          class="h-12 w-12 text-sky-500"
+          class="h-12 w-12 text-emerald-600"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -444,24 +459,28 @@ function handleBackToList() {
           <path d="M12 16V4m0 0 4 4m-4-4-4 4" />
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
-        <p class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-sky-600">点击选择文件</span>
+        <p id="wo-import-drop-title" class="text-base font-medium text-slate-700">
+          将 Excel 文件拖到此处，或 <span class="text-emerald-700">点击选择文件</span>
         </p>
-        <p class="text-xs text-slate-400">仅支持 .xlsx / .xls 格式</p>
+        <p id="wo-import-drop-hint" class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
-          <span v-if="previewError" class="font-medium text-rose-600">解析失败</span>
-          <span v-else-if="previewList.length" class="font-medium text-emerald-600">解析完成</span>
+          <span v-if="previewError" class="font-medium text-rose-700">解析失败</span>
+          <span v-else-if="previewList.length" class="font-medium text-emerald-700">解析完成</span>
         </p>
       </div>
     </section>
 
-    <div v-if="previewError" class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4">
-      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-500">!</div>
+    <div
+      v-if="previewError"
+      role="alert"
+      class="mt-6 flex items-start gap-3 rounded-card border border-rose-200 bg-rose-50 px-5 py-4"
+    >
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.error">!</div>
       <div>
         <h3 class="text-sm font-semibold text-rose-700">文件解析失败</h3>
-        <p class="mt-1 text-sm text-rose-600">{{ previewError }}</p>
+        <p class="mt-1 text-sm text-rose-700">{{ previewError }}</p>
       </div>
     </div>
 
@@ -470,11 +489,11 @@ function handleBackToList() {
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
           v-if="workOrderType"
-          class="rounded-full bg-sky-100 px-3 py-1 text-sm font-semibold text-sky-700"
+          class="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700"
         >
           {{ workOrderType }}
         </span>
-        <span v-else class="rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-600">
+        <span v-else class="rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700">
           识别失败
         </span>
         <span class="text-sm text-slate-500">共 <span class="font-semibold text-slate-900">{{ total }}</span> 条记录</span>
@@ -489,8 +508,8 @@ function handleBackToList() {
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-              <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+              <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rose-50">
@@ -515,7 +534,7 @@ function handleBackToList() {
                 v-for="column in columns"
                 :key="column.key"
                 scope="col"
-                class="whitespace-nowrap py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                class="whitespace-nowrap py-4 text-xs font-semibold uppercase tracking-wide text-slate-500"
                 :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
               >
                 {{ column.label }}
@@ -540,7 +559,7 @@ function handleBackToList() {
         </table>
       </div>
 
-      <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+      <div class="flex justify-end border-t border-slate-100 px-6 py-3">
         <el-pagination
           v-model:current-page="pageNum"
           :page-size="pageSize"
@@ -554,11 +573,11 @@ function handleBackToList() {
 
     <section v-if="imported" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
-        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">✓</div>
+        <div class="flex h-8 w-8 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.success">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
-          新增 <span class="font-semibold text-emerald-600">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-sky-600">{{ importSummary.updateCount }}</span> 条，
+          新增 <span class="font-semibold text-emerald-700">{{ importSummary.addCount }}</span> 条，
+          更新 <span class="font-semibold text-emerald-700">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>
@@ -569,8 +588,8 @@ function handleBackToList() {
           <table class="min-w-full divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">行号</th>
-                <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-rose-500">错误说明</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
+                <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">错误说明</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-rose-50">
@@ -604,44 +623,3 @@ function handleBackToList() {
     </div>
   </div>
 </template>
-
-<style scoped>
-.loader {
-  display: flex;
-  width: min(360px, 80%);
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.loader-text {
-  align-self: center;
-  margin-bottom: 20px;
-  color: rgb(0, 0, 0);
-  font-size: 24px;
-}
-
-.loader-bar {
-  width: 30%;
-  min-width: 110px;
-  height: 10px;
-  overflow: hidden;
-  border-radius: 5px;
-  background-color: rgb(0, 0, 0);
-  animation: loader-bar-animation 2s ease-in-out infinite;
-}
-
-@keyframes loader-bar-animation {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  50% {
-    transform: translateX(100%);
-  }
-
-  100% {
-    transform: translateX(-100%);
-  }
-}
-</style>

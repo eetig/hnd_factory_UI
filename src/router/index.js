@@ -30,6 +30,18 @@ const router = createRouter({
       name: 'Intro',
       component: () => import('../views/Intro.vue'),
     },
+    {
+      /*
+       * 兜底路由。没有它时，地址打错会渲染出一张空白页、且没有任何回去的路——
+       * 对靠书签和转发链接进工作台的人来说，这比报错更难排查。
+       *
+       * 必须放在最后：Vue Router 按数组顺序匹配，这条会吞掉所有未命中的路径。
+       * 懒加载，理由同 /intro——几乎不会被访问的页面不该占主包体积。
+       */
+      path: '/:pathMatch(.*)*',
+      name: 'NotFound',
+      component: () => import('../views/NotFound.vue'),
+    },
   ],
 })
 

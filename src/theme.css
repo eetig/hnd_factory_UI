@@ -5,15 +5,18 @@
  *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
  *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
  *
- * 背景：这个项目原先有两套蓝 —— 手写 markup 用 Tailwind sky-600（#0284c7），
- * 而所有 el-* 组件用的是 Element Plus 默认的 #409eff。el-input 18 处、el-date-picker 10 处、
- * el-pagination 7 处，等于「点开一个下拉，页面上冒出另一种蓝」。这里把 EP 侧对齐到 sky-600，
- * 收成唯一的高亮色。手写侧不动（值本来就对）。
+ * 高亮色 = Tailwind emerald-700（#047857），与手写 markup 同一个值。
+ * 历史上这里是天蓝，且与 EP 自带的 #409eff 并存 —— 那个「手写 markup 一套蓝、
+ * el-* 组件另一套蓝」的问题已经解决，现在全站只有一个高亮色。
+ *
+ * **取 -700 而不是 -600 是阈值决定的，不是偏好**：白字压 -600 只有 3.77:1，
+ * 不到 AA 的 4.5；-700 是 5.48。EP 的 message / button / pagination 当前页
+ * 都会用主色压白或压浅底，所以只能停在 -700。
  */
 
 :root {
-  /* ===== 高亮色：对齐 Tailwind sky-600 ===== */
-  --el-color-primary: #0284c7;
+  /* ===== 高亮色：对齐 Tailwind emerald-700 ===== */
+  --el-color-primary: #047857;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -22,13 +25,17 @@
    *   dark-2  = 主色混 20% 黑
    * 校验方法：EP 默认主色 #409eff 的 light-3 是 #79bbff，
    * 用同一条公式算 0.7×64+0.3×255 = 121 = 0x79 ✅ —— 公式与 EP 一致
+   *
+   * ⚠️ 改 --el-color-primary 就必须**六个一起重算**，漏一个会在分页当前页、
+   *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
+   *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #4ea9d8;
-  --el-color-primary-light-5: #81c2e3;
-  --el-color-primary-light-7: #b3daee;
-  --el-color-primary-light-8: #cce6f4;
-  --el-color-primary-light-9: #e6f3f9;
-  --el-color-primary-dark-2: #026a9f;
+  --el-color-primary-light-3: #4fa189;
+  --el-color-primary-light-5: #82bcab;
+  --el-color-primary-light-7: #b4d7cd;
+  --el-color-primary-light-8: #cde4dd;
+  --el-color-primary-light-9: #e6f2ee;
+  --el-color-primary-dark-2: #036046;
 
   /* ===== 大圆角（EP 2.14.5 默认：base 4px / small 2px / round 20px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */

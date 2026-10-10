@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref } from 'vue'
 import { ElDialog, ElImage } from 'element-plus'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
+import { STATUS_TEXT, STATUS_TONE } from '../constants/statusTones'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
 import {
   BILL_TYPE_INBOUND,
@@ -40,8 +41,8 @@ const errorCount = computed(() => images.value.filter((i) => i.status === 'error
 
 const dropZoneClass = computed(() => {
   if (isFull.value) return 'border-slate-200 bg-slate-50 cursor-not-allowed'
-  if (dragActive.value) return 'border-sky-500 bg-sky-50'
-  return 'border-slate-300 hover:border-sky-400'
+  if (dragActive.value) return 'border-emerald-600 bg-emerald-50'
+  return 'border-slate-300 hover:border-emerald-600 cursor-pointer'
 })
 
 function openFilePicker() {
@@ -499,7 +500,7 @@ function removeRow(image, row) {
 function inputClass(col) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-300 hover:border-slate-300 focus:border-sky-500 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-emerald-600 focus:bg-white',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
 }
@@ -518,10 +519,10 @@ function statusText(image) {
 }
 
 function statusClass(image) {
-  if (image.status === 'loading') return 'bg-slate-100 text-slate-500'
-  if (image.status === 'success') return 'bg-emerald-50 text-emerald-700'
-  if (image.status === 'error') return 'bg-rose-50 text-rose-700'
-  return 'bg-slate-100 text-slate-500'
+  if (image.status === 'loading') return STATUS_TONE.neutral
+  if (image.status === 'success') return STATUS_TONE.success
+  if (image.status === 'error') return STATUS_TONE.error
+  return STATUS_TONE.neutral
 }
 
 // ------------------------------------------------------------------
@@ -637,9 +638,14 @@ onUnmounted(() => {
     />
 
     <section
-      class="rounded-card border-2 border-dashed bg-white p-10 text-center transition"
+      class="rounded-card border-2 border-dashed bg-white p-10 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
       :class="dropZoneClass"
+      role="button"
+      :tabindex="isFull ? -1 : 0"
+      aria-labelledby="ip-drop-title ip-drop-hint"
       @click="openFilePicker"
+      @keydown.enter.prevent="openFilePicker"
+      @keydown.space.prevent="openFilePicker"
       @dragover.prevent="dragActive = true"
       @dragleave.prevent="dragActive = false"
       @drop.prevent="handleDrop"
@@ -647,7 +653,7 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-2">
         <div
           class="mb-1 flex h-12 w-12 items-center justify-center rounded-full"
-          :class="isFull ? 'bg-slate-100 text-slate-400' : 'bg-sky-50 text-sky-600'"
+          :class="isFull ? STATUS_TONE.neutral : STATUS_TONE.info"
         >
           <svg
             class="h-6 w-6"
@@ -665,10 +671,14 @@ onUnmounted(() => {
           </svg>
         </div>
 
-        <p class="text-base font-semibold" :class="isFull ? 'text-slate-400' : 'text-slate-900'">
+        <p
+          id="ip-drop-title"
+          class="text-base font-semibold"
+          :class="isFull ? 'text-slate-500' : 'text-slate-900'"
+        >
           {{ isFull ? `已达上限（${MAX_COUNT} 张）` : '点击选择图片，或将图片拖到此处' }}
         </p>
-        <p class="text-sm" :class="isFull ? 'text-slate-400' : 'text-slate-500'">
+        <p id="ip-drop-hint" class="text-sm" :class="isFull ? 'text-slate-500' : 'text-slate-600'">
           支持 PNG / JPG，单张不超过 {{ MAX_SIZE / 1024 / 1024 }}MB，最多 {{ MAX_COUNT }} 张
         </p>
       </div>
@@ -676,6 +686,7 @@ onUnmounted(() => {
 
     <p
       v-if="message"
+      role="status"
       class="rounded-card border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
     >
       {{ message }}
@@ -684,7 +695,7 @@ onUnmounted(() => {
     <section v-if="images.length" class="rounded-card border border-slate-200 bg-white shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
-          已选 <span class="font-semibold text-sky-600">{{ images.length }}</span> /
+          已选 <span class="font-semibold text-emerald-700">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
         </p>
         <button
@@ -713,7 +724,7 @@ onUnmounted(() => {
 
           <div class="border-t border-slate-100 px-2.5 py-2.5">
             <p class="truncate text-xs text-slate-600" :title="image.name">{{ image.name }}</p>
-            <p class="text-xs text-slate-400">{{ formatFileSize(image.size) }}</p>
+            <p class="text-xs text-slate-500">{{ formatFileSize(image.size) }}</p>
           </div>
 
           <button
@@ -732,7 +743,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-xl bg-slate-900 px-6 py-3 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-xl bg-emerald-700 px-6 py-3 text-sm font-medium text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -742,6 +753,7 @@ onUnmounted(() => {
 
     <p
       v-if="materialLookupError"
+      role="alert"
       class="rounded-card border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800"
     >
       {{ materialLookupError }}（物料编码将全部留空，可手工填写）
@@ -751,7 +763,7 @@ onUnmounted(() => {
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
-          <span class="font-semibold text-emerald-600">{{ successCount }}</span>
+          <span class="font-semibold text-emerald-700">{{ successCount }}</span>
           <template v-if="errorCount">
             · 失败 <span class="font-semibold text-rose-600">{{ errorCount }}</span>
           </template>
@@ -796,6 +808,7 @@ onUnmounted(() => {
                     <th
                       v-for="col in image.table.columns"
                       :key="col.key"
+                      scope="col"
                       class="border border-slate-200 px-3 py-2.5 font-medium"
                       :class="alignClass(col)"
                     >
@@ -832,6 +845,7 @@ onUnmounted(() => {
                         v-model="image.table.doc.documentNo"
                         type="text"
                         placeholder="—"
+                        :aria-label="col.label"
                         :class="inputClass(col)"
                       />
                       <input
@@ -839,6 +853,7 @@ onUnmounted(() => {
                         v-model="image.table.doc.date"
                         type="text"
                         placeholder="—"
+                        :aria-label="col.label"
                         :class="inputClass(col)"
                       />
 
@@ -849,12 +864,14 @@ onUnmounted(() => {
                           type="text"
                           placeholder="—"
                           class="pr-6"
+                          :aria-label="col.label"
                           :class="inputClass(col)"
                           @change="handleNameChange(row, image)"
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-400 transition hover:bg-sky-50 hover:text-sky-600"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700"
+                          aria-label="搜索物料"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
                         >
@@ -879,7 +896,7 @@ onUnmounted(() => {
                       <span
                         v-else-if="col.key === 'materialCode'"
                         class="block px-1.5 py-1 text-sm"
-                        :class="row.materialCode ? 'text-slate-900' : 'text-slate-300'"
+                        :class="row.materialCode ? 'text-slate-900' : 'text-slate-500'"
                       >
                         {{ row.materialCode || '—' }}
                       </span>
@@ -888,7 +905,8 @@ onUnmounted(() => {
                       <div v-else-if="col.key === 'actions'" class="flex justify-center">
                         <button
                           type="button"
-                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                          aria-label="删除该行"
                           title="删除该行"
                           @click="removeRow(image, row)"
                         >
@@ -912,6 +930,7 @@ onUnmounted(() => {
                         v-model="row[col.key]"
                         type="text"
                         placeholder="—"
+                        :aria-label="col.label"
                         :class="inputClass(col)"
                       />
                     </td>
@@ -928,7 +947,7 @@ onUnmounted(() => {
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-sky-400 hover:bg-sky-50 hover:text-sky-700"
+                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
                   @click="addRow(image)"
                 >
                   <svg
@@ -944,12 +963,12 @@ onUnmounted(() => {
                   </svg>
                   增加一行
                 </button>
-                <p class="text-xs text-slate-400">
+                <p class="text-xs text-slate-500">
                   对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
                 </p>
               </div>
 
-              <p class="mt-2 text-xs text-slate-400">
+              <p class="mt-2 text-xs text-slate-500">
                 识别引擎 {{ image.result.engine || '—' }} · 耗时
                 {{ image.result.costMillis != null ? `${image.result.costMillis} ms` : '—' }}
               </p>
@@ -961,8 +980,9 @@ onUnmounted(() => {
             >
               <p
                 v-if="image.confirm?.message"
+                :role="image.confirm.status === 'error' ? 'alert' : 'status'"
                 class="mr-auto text-xs"
-                :class="image.confirm.status === 'error' ? 'text-rose-600' : 'text-emerald-700'"
+                :class="image.confirm.status === 'error' ? STATUS_TEXT.error : STATUS_TEXT.success"
               >
                 {{ image.confirm.message }}
               </p>
@@ -972,7 +992,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1003,7 +1023,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-sky-500"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600"
           @input="handlePickerInput"
           @keyup.enter="runPickerSearch"
         />
@@ -1028,14 +1048,14 @@ onUnmounted(() => {
         <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
           <button
             type="button"
-            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-sky-50"
+            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-emerald-50"
             @click="selectMaterial(item)"
           >
             <span class="w-28 shrink-0 font-mono text-sm text-slate-900">{{ item.code }}</span>
             <span class="min-w-0 flex-1 truncate text-sm text-slate-700" :title="item.name">
               {{ item.name }}
             </span>
-            <span class="shrink-0 text-xs text-slate-400">{{ item.unit || '' }}</span>
+            <span class="shrink-0 text-xs text-slate-500">{{ item.unit || '' }}</span>
           </button>
         </li>
       </ul>
