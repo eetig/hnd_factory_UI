@@ -99,32 +99,44 @@ describe('normalizeTankLevelRecord：接口行归一化', () => {
 })
 
 describe('buildTankLevelQuery：查询参数组装', () => {
-  it('空白条件不传给后端（未传 = 不限制）', () => {
+  // ⚠️ 分页参数永远带上，且**不受**「空白条件不传」影响：
+  // 后端把 pageNum / pageSize 标了必传（缺了回 400）—— 那是有意为之，
+  // 老版 App 的请求里没有这两个参数，若给默认值它会安静地只拿到第 1 页（10 条），
+  // 使用方看到的是「数据丢了」，比一个明确的 400 难排查得多。
+  const PAGING = { pageNum: 1, pageSize: 10 }
+
+  it('空白条件不传给后端（未传 = 不限制），但分页参数照带', () => {
     expect(
       buildTankLevelQuery({
+        ...PAGING,
         startDate: '2026-01-01',
         endDate: '',
         location: '',
         category: '',
         keyword: '   ',
       }),
-    ).toEqual({ startDate: '2026-01-01' })
+    ).toStrictEqual({ ...PAGING, startDate: '2026-01-01' })
   })
 
   it('关键字去掉首尾空格后传递', () => {
-    expect(buildTankLevelQuery({ keyword: ' V150 ' })).toEqual({ keyword: 'V150' })
+    expect(buildTankLevelQuery({ ...PAGING, keyword: ' V150 ' })).toStrictEqual({
+      ...PAGING,
+      keyword: 'V150',
+    })
   })
 
   it('条件齐备时原样带上', () => {
     expect(
       buildTankLevelQuery({
+        ...PAGING,
         startDate: '2026-01-01',
         endDate: '2026-12-31',
         location: '一车间',
         category: '产品',
         keyword: 'V150',
       }),
-    ).toEqual({
+    ).toStrictEqual({
+      ...PAGING,
       startDate: '2026-01-01',
       endDate: '2026-12-31',
       location: '一车间',
@@ -156,18 +168,24 @@ describe('fetchTankLevelRecords：接口查询与异常处理', () => {
             theoreticalWeight: 1500,
           },
         ],
+        // ⚠️ 2026-10-10 起分页在服务端：总数必须取接口给的 total，不能拿 dataList.length 当总数，
+        // 否则分页器永远只有一页（分页整改后最容易漏的一处）
+        total: 37,
+        pageNum: 1,
+        pageSize: 10,
       },
     })
 
-    const { fetchTankLevelRecords, tankLevelTableData, tankLevelTotal, tankLevelError } =
+    const { fetchTankLevelRecords, tankLevelTableData, tankLevelTotal, tankLevelError, tankLevelPageNum } =
       useTankLevelData()
 
     await fetchTankLevelRecords()
 
+    // 分页参数必传（后端缺参会回 400）
     expect(request.get).toHaveBeenCalledWith('/api/tank-level/list', {
-      params: expect.any(Object),
+      params: expect.objectContaining({ pageNum: 1, pageSize: 10 }),
     })
-    expect(tankLevelTotal.value).toBe(1)
+    expect(tankLevelTotal.value).toBe(37)
     expect(tankLevelTableData.value).toHaveLength(1)
     expect(tankLevelTableData.value[0]).toMatchObject({
       recordDate: '2026-08-31',
@@ -177,6 +195,7 @@ describe('fetchTankLevelRecords：接口查询与异常处理', () => {
       theoreticalWeight: '1500',
     })
     expect(tankLevelError.value).toBe('')
+    expect(tankLevelPageNum.value).toBe(1)
   })
 
   it('业务失败（HTTP 200 + success=false）取后端提示，且不留下半截数据', async () => {
@@ -335,35 +354,64 @@ describe('saveTankLevelRecord：新增 / 编辑', () => {
   })
 
   it('保存后停在当前页，不把用户弹回第 1 页', async () => {
-    const rows = Array.from({ length: 15 }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
-    request.get.mockResolvedValue({ data: { success: true, dataList: rows } })
+    // 服务端分页：每次取数都要按请求里的 pageNum 回对应的那一页
+    request.get.mockImplementation((url, config) => {
+      const page = config?.params?.pageNum ?? 1
+      const all = Array.from({ length: 15 }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
+      return Promise.resolve({
+        data: {
+          success: true,
+          dataList: all.slice((page - 1) * 10, page * 10),
+          total: 15,
+          pageNum: page,
+        },
+      })
+    })
     request.post.mockResolvedValue({ data: { success: true, data: { id: 1 } } })
 
     const { saveTankLevelRecord, getTankLevelPageData, tankLevelPageNum, tankLevelTableData } =
       useTankLevelData()
 
     await saveTankLevelRecord({ id: null })
-    getTankLevelPageData(2)
+    await getTankLevelPageData(2)
     expect(tankLevelTableData.value).toHaveLength(5)
+    expect(tankLevelPageNum.value).toBe(2)
 
     await saveTankLevelRecord({ id: 1 })
+
+    // 保存后按**当前页**重取，而不是回到第 1 页（否则用户改完一行就被弹回开头）
     expect(tankLevelPageNum.value).toBe(2)
+    expect(request.get.mock.calls.at(-1)[1].params).toMatchObject({ pageNum: 2 })
+    // 页面内容仍是第 2 页的 5 条
+    expect(tankLevelTableData.value).toHaveLength(5)
   })
 
   it('删除最后一条后页码不越界：停在新的末页而不是一张空表', async () => {
-    const rows = Array.from({ length: 11 }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
-    request.get.mockResolvedValue({ data: { success: true, dataList: rows } })
+    // 11 条 / 每页 10 → 第 2 页只有 1 条；删掉之后只剩 10 条、只有 1 页
+    request.get.mockImplementation((url, config) => {
+      const page = config?.params?.pageNum ?? 1
+      const remain = request.get.mock.calls.length > 2 ? 10 : 11
+      const all = Array.from({ length: remain }, (_, i) => ({ id: i + 1, tankCode: `T-${i + 1}` }))
+      return Promise.resolve({
+        data: {
+          success: true,
+          dataList: all.slice((page - 1) * 10, page * 10),
+          total: remain,
+          pageNum: page,
+        },
+      })
+    })
     request.delete.mockResolvedValue({ data: { success: true } })
 
     const { fetchTankLevelRecords, getTankLevelPageData, deleteTankLevelRecord, tankLevelPageNum, tankLevelTableData } =
       useTankLevelData()
 
     await fetchTankLevelRecords()
-    getTankLevelPageData(2) // 11 条 / 每页 10 → 第 2 页只有 1 条
+    await getTankLevelPageData(2)
     expect(tankLevelPageNum.value).toBe(2)
 
-    // 删掉后只剩 10 条 → 只剩 1 页，页码必须跟着回到第 1 页
-    request.get.mockResolvedValue({ data: { success: true, dataList: rows.slice(0, 10) } })
+    // 删掉后只剩 10 条 → 只剩 1 页，页码必须跟着回到第 1 页，
+    // 否则表格空着、分页器却停在第 2 页，看着像数据丢了
     await deleteTankLevelRecord(11)
 
     expect(tankLevelPageNum.value).toBe(1)

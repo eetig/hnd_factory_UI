@@ -3,28 +3,29 @@ import request from '../api/request'
 import { pickField } from '../utils/format'
 
 // ===== 物料库存（SAP 库存导出汇总）=====
-// 数据由「文件导入 → 库存汇总」写入（后端 material_stock 表），「物料查询」面板只读展示。
-// 筛选 / 分页都在本地做 —— 与领料汇总、入库汇总的口径一致。
 //
-// 口径（与使用方确认，见《前后端改动统筹》变更-008）：
-//   同一 (工厂+物料编码+存储地点) 的多行在**后端**相加成一条；
-//   再次导入视为当前库存快照 —— 本次文件里没有的物料数量清零但行保留，
-//   所以页面上会出现数量为 0 的物料行（「只看有库存」默认把它们收起来）。
-const allStockRecords = ref([])
-const stockFiltered = ref([])
-const stockTableData = ref([])
+// ⚠️ 改造要点（2026-10-10 统一整改）：**筛选与分页都在服务端**。
+//
+// 改造前是「整表拉回来 → 关键词与「只看有库存」在前端 filter、分页在本地 slice」。
+// 数据源本身也特殊：物料名称与规格是**主数据优先、回退库存表那一份**的联查结果，
+// 「只有主数据、库存里没有」的物料也要能搜到 —— 所以服务端那条 SQL 是双源 UNION，
+// 见 hnd_factory 的 resources/mapper/MaterialStockMapper.xml。
+//
+// ⚠️ 关键词因此**只能按回车 / 键盘搜索键触发**（模板里是 @confirm）：逐字实时过滤
+// 会把「敲一个字打一次接口」做实了。储罐液位页早就是「回车才发请求」的做法。
+const stockTableData = ref([]) // 当前页
 const stockPageNum = ref(1)
 const stockPageSize = ref(10)
-const stockTotal = ref(0)
+const stockTotal = ref(0) // **筛选后**的总条数
 const stockLoading = ref(false)
 const stockError = ref('')
-/** 关键词：物料编码 / 物料名称 / 规格，本地过滤 */
+/** 关键词：物料编码 / 物料名称 / 规格（服务端过滤，回车才发请求） */
 const stockKeyword = ref('')
 /**
  * 只看有库存。
  *
- * ⚠️ 默认 **false**（列出全部，含数量为 0 的物料）—— 这一页的用法是「按编码/名称/规格
- * 查物料信息」，不是「看还有多少货」：快照语义下文件里消失的物料会被清零但保留行，
+ * ⚠️ 默认 **false**（列出全部，含数量为 0 的物料）—— 这一页按使用方的要求是
+ * 「查物料信息」，不是「看还有多少货」：快照语义下文件里消失的物料会被清零但保留行，
  * 默认藏起来就查不到它们了。
  */
 const stockOnlyInStock = ref(false)
@@ -47,12 +48,6 @@ function normalizeStockRecord(item) {
   return Object.fromEntries(
     Object.entries(STOCK_FIELD_MAP).map(([key, aliases]) => [key, pickField(item, aliases)]),
   )
-}
-
-/** 数量列要参与数值比较（「只看有库存」）与排序，统一在此转成数字 */
-function toStockQty(record) {
-  const value = Number(String(record?.stockQty ?? '').replace(/,/g, ''))
-  return Number.isFinite(value) ? value : 0
 }
 
 /**
@@ -82,61 +77,52 @@ function formatStockQty(value) {
   return Number.isFinite(num) ? num.toLocaleString('zh-CN', { maximumFractionDigits: 3 }) : ''
 }
 
+function buildStockQuery() {
+  const params = { pageNum: stockPageNum.value, pageSize: stockPageSize.value }
+  const keyword = stockKeyword.value.trim()
+  if (keyword) params.keyword = keyword
+  if (stockOnlyInStock.value) params.onlyInStock = true
+  return params
+}
+
 async function fetchStockRecords() {
   stockLoading.value = true
   stockError.value = ''
 
   try {
-    const res = await request.get('/api/stock/list')
+    const res = await request.get('/api/stock/list', { params: buildStockQuery() })
 
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '库存接口返回异常。')
     }
 
     const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
-    allStockRecords.value = dataList.map(normalizeStockRecord).filter(Boolean)
-    applyStockFilter()
+    stockTableData.value = dataList.map(normalizeStockRecord).filter(Boolean)
+    stockTotal.value = Number(res.data?.total) || 0
+    stockPageNum.value = Number(res.data?.pageNum) || stockPageNum.value
   } catch (error) {
     stockError.value = error?.response?.data?.msg || error?.message || '库存数据加载失败。'
-    allStockRecords.value = []
-    applyStockFilter()
+    stockTableData.value = []
+    stockTotal.value = 0
   } finally {
     stockLoading.value = false
   }
 }
 
-/** 关键词（物料编码 / 物料名称 / 规格）+「只看有库存」→ 过滤后回到第 1 页 */
+/** 关键词 / 「只看有库存」变了：**回到第 1 页**再查（否则会停在越界页码上看到空表） */
 function applyStockFilter() {
-  const keyword = stockKeyword.value.trim().toLowerCase()
-  let list = allStockRecords.value
-
-  if (keyword) {
-    // 三列都能搜：编码、名称、规格 —— 使用方就是按这三样找物料的
-    list = list.filter((record) =>
-      `${record.materialCode ?? ''} ${record.materialName ?? ''} ${record.spec ?? ''}`
-        .toLowerCase()
-        .includes(keyword),
-    )
-  }
-  if (stockOnlyInStock.value) {
-    list = list.filter((record) => toStockQty(record) > 0)
-  }
-
-  stockFiltered.value = list
-  stockTotal.value = list.length
-  getStockPageData(1)
+  stockPageNum.value = 1
+  return fetchStockRecords()
 }
 
+/** 分页器回调：只换页，不重置条件 */
 function getStockPageData(page = stockPageNum.value) {
   stockPageNum.value = page
-  const start = (stockPageNum.value - 1) * stockPageSize.value
-  stockTableData.value = stockFiltered.value.slice(start, start + stockPageSize.value)
+  return fetchStockRecords()
 }
 
 export function useMaterialStockData() {
   return {
-    allStockRecords,
-    stockFiltered,
     stockTableData,
     stockPageNum,
     stockPageSize,

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElCheckbox,
@@ -18,43 +18,30 @@ import { vesselImageUrl } from '../composables/useVesselList'
 // 16 个字段横着排一屏放不下，行内编辑要在横向滚动的表格里拖着填，极易改错行；
 // 弹窗一次把字段按「台账信息 / 几何参数 / 底图」三组铺开，比对着图纸改顺手得多。
 // （手机端同理，见 uni-app 的 EquipmentFormDialog。）
+//
+// ⚠️ 2026-10-10 统一整改后，**搜索与分页都在服务端**（原先是一次拉全表 92 行 + 前端 filter
+// + 前端分页）。所以：
+//   · 关键字改成**回车才查**（下面输入框绑 @keyup.enter），不做逐字实时过滤；
+//   · 分页器照旧，只是页码/条数/关键字都发给服务端；「停用的行也要显示」这条口径没变。
 
-const { rows, loading, saving, loadLedger, saveLedger, setLedgerEnabled, uploadVesselDrawing } =
-  useEquipmentLedgerData()
-
-/** 关键字筛选：与 /api/equipment/search 的口径一致（位号/名称/昵称/规格/车间） */
-const keyword = ref('')
-const onlyEnabled = ref(false)
-
-const filtered = computed(() => {
-  const kw = keyword.value.trim().toLowerCase()
-  return rows.value.filter((row) => {
-    if (onlyEnabled.value && row.enabled !== 1) return false
-    if (!kw) return true
-    return [row.equipmentCode, row.equipmentName, row.nickname, row.spec, row.workshop]
-      .filter(Boolean)
-      .some((v) => String(v).toLowerCase().includes(kw))
-  })
-})
-
-/**
- * 分页。接口一次给全表（92 行，不分页），这里只做**前端分页** ——
- * 维护的场景是「在同一页里比对同类设备」，后端分页会让人翻着翻着看不全。
- */
-const currentPage = ref(1)
-const pageSize = ref(20)
-const paged = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  return filtered.value.slice(start, start + pageSize.value)
-})
-
-// 筛选条件一变就回第一页 —— 否则会停在一个已经空掉的页上，看着像「筛出来没数据」
-watch([keyword, onlyEnabled], () => {
-  currentPage.value = 1
-})
-watch(pageSize, () => {
-  currentPage.value = 1
-})
+const {
+  rows,
+  total,
+  loading,
+  saving,
+  loadError,
+  pageNum,
+  pageSize,
+  keyword,
+  onlyEnabled,
+  loadLedger,
+  loadLedgerPage,
+  applyLedgerFilters,
+  setLedgerPageSize,
+  saveLedger,
+  setLedgerEnabled,
+  uploadVesselDrawing,
+} = useEquipmentLedgerData()
 
 /**
  * 封头深度一列显示「上 / 下」。用一个列而不是两列：表格已经 14 列了，
@@ -66,16 +53,16 @@ function headDepthText(row) {
   return `${top} / ${bottom}`
 }
 
-const loadError = ref('')
-async function refresh() {
-  loadError.value = ''
-  try {
-    await loadLedger(true)
-  } catch {
-    loadError.value = '取不到设备台账（接口不可用）。列表里是上一次取到的数据。'
-  }
+onMounted(() => {
+  // loadLedger 自己吞错误并落到 loadError（失败时保留上一次取到的行），这里不必再包 try
+  loadLedger()
+})
+
+/** 「只看启用的」勾选变化：写回查询条件并回第 1 页重查 */
+function toggleOnlyEnabled(value) {
+  onlyEnabled.value = value
+  applyLedgerFilters()
 }
-onMounted(refresh)
 
 // ===== 编辑弹窗 =====
 
@@ -200,18 +187,21 @@ async function handleDrawingPicked(event) {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-slate-100 px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
-        逐个设备对着图纸核对参数：{{ filtered.length }} / {{ rows.length }} 条
+        逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条
       </p>
       <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+        <!-- 关键字**回车才查**（服务端搜索）：原先没写 .enter，等于每敲一个字打一次接口 -->
         <el-input
           v-model="keyword"
           placeholder="位号 / 名称 / 昵称 / 规格 / 车间"
           aria-label="搜索设备"
           clearable
           class="w-64"
+          @keyup.enter="applyLedgerFilters"
+          @clear="applyLedgerFilters"
         />
-        <el-checkbox v-model="onlyEnabled" label="只看启用的" />
-        <el-button @click="refresh">刷新</el-button>
+        <el-checkbox :model-value="onlyEnabled" label="只看启用的" @change="toggleOnlyEnabled" />
+        <el-button @click="loadLedger">刷新</el-button>
         <el-button type="primary" @click="openCreate">新增设备</el-button>
       </div>
     </div>
@@ -247,7 +237,7 @@ async function handleDrawingPicked(event) {
         </thead>
         <tbody>
           <tr
-            v-for="(row, index) in paged"
+            v-for="(row, index) in rows"
             :key="row.id"
             tabindex="0"
             class="cursor-pointer border-t border-slate-100 hover:bg-slate-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
@@ -259,7 +249,7 @@ async function handleDrawingPicked(event) {
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
                  一翻页就重新数会串 -->
             <td class="px-4 py-2.5 text-right text-xs text-slate-500">
-              {{ (currentPage - 1) * pageSize + index + 1 }}
+              {{ (pageNum - 1) * pageSize + index + 1 }}
             </td>
             <td class="px-4 py-2.5">{{ row.equipmentCode || '—' }}</td>
             <td class="px-4 py-2.5 font-medium">{{ row.equipmentName }}</td>
@@ -288,7 +278,7 @@ async function handleDrawingPicked(event) {
               </el-button>
             </td>
           </tr>
-          <tr v-if="!filtered.length">
+          <tr v-if="!rows.length">
             <td colspan="15" class="px-4 py-10 text-center text-sm text-slate-500">
               {{ loading ? '正在加载…' : '没有符合条件的设备' }}
             </td>
@@ -297,14 +287,16 @@ async function handleDrawingPicked(event) {
       </table>
     </div>
 
-    <div v-if="filtered.length" class="flex justify-end px-6 py-3">
+    <div v-if="rows.length" class="flex justify-end px-6 py-3">
       <el-pagination
-        v-model:current-page="currentPage"
+        v-model:current-page="pageNum"
         v-model:page-size="pageSize"
-        :total="filtered.length"
+        :total="total"
         :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         background
+        @current-change="loadLedgerPage"
+        @size-change="setLedgerPageSize"
       />
     </div>
 

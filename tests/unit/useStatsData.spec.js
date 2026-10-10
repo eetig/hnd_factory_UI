@@ -9,62 +9,51 @@ import { useStatsData } from '../../src/composables/useStatsData'
 // 这里钉住的是接线（composable 之间），纯函数口径见 stats.spec.js。
 // 回归场景：区间内汇总为空时，核算表必须是空的 —— 曾经它读接口全量，
 // 空区间下还在显示历史数字。
-describe('useStatsData：核算表跟随汇总面板的当前筛选', () => {
+//
+// ⚠️ 2026-10-10 整改：喂进来的不再是「前端过滤后的全量明细数组」，而是**服务端按同一套
+// 筛选条件分好组的结果**（四张明细表都改后端分页了，前端手里只剩当前页）。
+// 口径没变 —— 仍然是「汇总面板当前筛选后」的那批数据，只是聚合动作从浏览器搬到了服务端。
+// 「空区间不给历史数字」这条现在是**服务端**保证的（同一套条件过滤 + GROUP BY），
+// 所以下面的用例改成往汇总数组里塞数据，验的是接线本身。
+describe('useStatsData：核算表跟随汇总面板的当前筛选结果', () => {
   const workOrder = useWorkOrderData()
   const inbound = useInboundData()
   const pick = usePickData()
   const goodsMove = useGoodsMoveData()
-  const { costingRows, materialCostingRows } = useStatsData()
-
-  const EMPTY_RANGE = { start: '2026-10-01', end: '2026-10-03' }
+  const { reportRows, costingRows, materialCostingRows } = useStatsData()
 
   beforeEach(() => {
     // 模块级单例：每个用例先把状态清干净
-    workOrder.allWorkOrders.value = []
-    workOrder.tableDataAll.value = []
-    workOrder.startDate.value = EMPTY_RANGE.start
-    workOrder.endDate.value = EMPTY_RANGE.end
-    workOrder.productFilter.value = ''
-    workOrder.orderTypeFilter.value = ''
-    workOrder.orderNoFilter.value = ''
-
-    inbound.allInboundRecords.value = []
-    inbound.inboundFiltered.value = []
-    inbound.inboundStartDate.value = EMPTY_RANGE.start
-    inbound.inboundEndDate.value = EMPTY_RANGE.end
-    inbound.inboundMaterialFilter.value = ''
-
-    pick.allPickRecords.value = []
-    pick.pickFiltered.value = []
-    pick.pickStartDate.value = EMPTY_RANGE.start
-    pick.pickEndDate.value = EMPTY_RANGE.end
-    pick.pickMaterialFilter.value = ''
-
-    goodsMove.goodsMoveRecords.value = []
+    workOrder.workOrderSummaryRows.value = []
+    inbound.inboundSummaryRows.value = []
+    pick.pickSummaryRows.value = []
+    goodsMove.goodsMoveSummaryRows.value = []
   })
 
-  it('工单核算：区间内没有入库记录时为空行（读全量会在空区间显示历史数据）', () => {
-    inbound.allInboundRecords.value = [
-      { materialName: 'HND-V150', materialCode: 'C1', inboundQty: 100, inboundDate: '2026-09-10' },
+  it('工单报工：直接吃服务端按「类型 + 产成品」分好组的结果', () => {
+    workOrder.workOrderSummaryRows.value = [
+      { typeKey: 'operate', orderType: '操作工单', materialName: 'HND-V150', orderQty: 100, confirmedQty: 40 },
+      // 前缀认不出类型的行不进表（服务端给的是空 typeKey/orderType）
+      { typeKey: '', orderType: '', materialName: '脏数据', orderQty: 9, confirmedQty: 9 },
     ]
-    inbound.filterInboundRecords()
 
+    expect(reportRows.value).toEqual([
+      { orderType: '操作工单', materialDesc: 'HND-V150', orderQty: 100, confirmedQty: 40 },
+    ])
+  })
+
+  it('工单核算：汇总为空时核算表为空（空区间不能显示历史数字）', () => {
     expect(costingRows.value).toEqual([])
   })
 
-  it('工单核算：区间内的入库记录入行，已报工数只算工单汇总筛选后的工单', () => {
-    inbound.allInboundRecords.value = [
-      { materialName: 'HND-V150', materialCode: 'C1', inboundQty: 100, inboundDate: '2026-10-02' },
-      { materialName: 'HND-V171', materialCode: 'C2', inboundQty: 50, inboundDate: '2026-09-10' },
+  it('工单核算：以入库汇总的行为行，已报工数取工单汇总的确认产量', () => {
+    inbound.inboundSummaryRows.value = [
+      { materialName: 'HND-V150', materialCode: 'C1', inboundQty: 100 },
+      { materialName: 'HND-V171', materialCode: 'C2', inboundQty: 50 },
     ]
-    inbound.filterInboundRecords()
-
-    workOrder.allWorkOrders.value = [
-      { orderNo: '1000001', materialDesc: 'HND-V150', confirmedQty: 40, planStartDate: '2026-10-02' },
-      // 区间外的工单不计入已报工数
-      { orderNo: '1000002', materialDesc: 'HND-V150', confirmedQty: 999, planStartDate: '2026-09-10' },
+    workOrder.workOrderSummaryRows.value = [
+      { typeKey: 'operate', orderType: '操作工单', materialName: 'HND-V150', orderQty: 60, confirmedQty: 40 },
     ]
-    workOrder.filterWorkOrders()
 
     expect(costingRows.value).toEqual([
       {
@@ -74,37 +63,24 @@ describe('useStatsData：核算表跟随汇总面板的当前筛选', () => {
         reportedQty: 40,
         unreportedQty: 60,
       },
+      // 没有对应报工的那一行：已报工数 0，未报工数就是入库数
+      {
+        materialName: 'HND-V171',
+        materialCode: 'C2',
+        inboundQty: 50,
+        reportedQty: 0,
+        unreportedQty: 50,
+      },
     ])
   })
 
-  it('工单核算：入库汇总的物料筛选也传导过来（与工单报工同一口径）', () => {
-    inbound.allInboundRecords.value = [
-      { materialName: 'HND-V150', materialCode: 'C1', inboundQty: 100, inboundDate: '2026-10-02' },
-      { materialName: 'HND-V171', materialCode: 'C2', inboundQty: 50, inboundDate: '2026-10-02' },
-    ]
-    inbound.inboundMaterialFilter.value = 'HND-V171'
-    inbound.filterInboundRecords()
-
-    expect(costingRows.value.map((row) => row.materialName)).toEqual(['HND-V171'])
-  })
-
-  it('原辅料核算：区间内没有领料记录时为空行（派生行也留不下来）', () => {
-    pick.allPickRecords.value = [
-      { materialName: '电石', materialCode: 'X1', pickQty: 100, pickDate: '2026-09-10' },
-    ]
-    pick.filterPickRecords()
-
+  it('原辅料核算：汇总为空时为空行（派生行也留不下来）', () => {
     expect(materialCostingRows.value).toEqual([])
   })
 
-  it('原辅料核算：区间内的领料记录入行，已报工数取货物移动', () => {
-    pick.allPickRecords.value = [
-      { materialName: '电石', materialCode: 'X1', pickQty: 100, pickDate: '2026-10-02' },
-      { materialName: '三氯氢硅', materialCode: 'X2', pickQty: 7, pickDate: '2026-09-30' },
-    ]
-    pick.filterPickRecords()
-
-    goodsMove.goodsMoveRecords.value = [{ materialCode: 'X1', moveQty: -60, moveDate: '2026-10-02' }]
+  it('原辅料核算：领料汇总为行，已报工数取货物移动汇总', () => {
+    pick.pickSummaryRows.value = [{ materialName: '电石', materialCode: 'X1', pickQty: 100 }]
+    goodsMove.goodsMoveSummaryRows.value = [{ materialCode: 'X1', fromLocation: '5001', moveQty: -60 }]
 
     expect(materialCostingRows.value).toEqual([
       {

@@ -43,6 +43,7 @@ const {
   tankLevelLocationOptions,
   getTankLevelPageData,
   fetchTankLevelRecords,
+  reloadTankLevelRecords,
   resetTankLevelFilters,
   saveTankLevelRecord,
   deleteTankLevelRecord,
@@ -208,8 +209,8 @@ function startCreate() {
     ElMessage.warning('请先保存或取消正在编辑的那一行。')
     return
   }
-  // 草稿行不进 tankLevelTableData —— 它要参与本地分页的切片，混进去会把序号搅乱。
-  // 单独用 editingId='new' 控制渲染，保存成功后由刷新带出真行
+  // 草稿行不进 tankLevelTableData —— 那是**服务端返回的当前页**，混进去会多出一行、
+  // 也让「序号」对不上库里的顺序。单独用 editingId='new' 控制渲染，保存成功后由刷新带出真行
   editingId.value = ROW_KEY_CREATING
   draft.value = buildTankLevelDraft(null)
   clearPendingImages()
@@ -313,7 +314,7 @@ function handleThumbError(event, image) {
         placeholder="选择日期"
         aria-label="起始日期"
         :first-day-of-week="1"
-        @change="fetchTankLevelRecords"
+        @change="reloadTankLevelRecords"
       />
       <span class="shrink-0 text-sm text-slate-500">至</span>
       <span class="shrink-0 text-xs text-slate-500">结束日期</span>
@@ -324,7 +325,7 @@ function handleThumbError(event, image) {
         placeholder="选择日期"
         aria-label="结束日期"
         :first-day-of-week="1"
-        @change="fetchTankLevelRecords"
+        @change="reloadTankLevelRecords"
       />
       <span class="shrink-0 text-xs text-slate-500">属地</span>
       <el-select
@@ -333,7 +334,7 @@ function handleThumbError(event, image) {
         placeholder="全部"
         clearable
         aria-label="属地"
-        @change="fetchTankLevelRecords"
+        @change="reloadTankLevelRecords"
       >
         <el-option
           v-for="location in tankLevelLocationOptions"
@@ -349,7 +350,7 @@ function handleThumbError(event, image) {
         placeholder="全部"
         clearable
         aria-label="所属（产品 / 原料）"
-        @change="fetchTankLevelRecords"
+        @change="reloadTankLevelRecords"
       >
         <el-option
           v-for="category in TANK_LEVEL_CATEGORIES"
@@ -364,13 +365,13 @@ function handleThumbError(event, image) {
         placeholder="物料 / 容器名称 / 容器编号"
         aria-label="搜索物料或容器"
         clearable
-        @keyup.enter="fetchTankLevelRecords"
-        @clear="fetchTankLevelRecords"
+        @keyup.enter="reloadTankLevelRecords"
+        @clear="reloadTankLevelRecords"
       />
       <button
         type="button"
         class="rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800"
-        @click="fetchTankLevelRecords"
+        @click="reloadTankLevelRecords"
       >
         查询
       </button>

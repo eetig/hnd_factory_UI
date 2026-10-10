@@ -289,7 +289,9 @@ function toggleSidebar() {
   collapsed.value = !collapsed.value
 }
 
-// 工单数据与筛选（与工单报工面板共享同一份数据）
+// 工单数据与筛选（2026-10-10 整改：筛选/分页都在服务端）
+// 工单报工与工单核算原先读这份数据的「全量筛选后」数组，现在读 useStatsData，
+// 而它取的是服务端按「工单类型 + 产成品」汇总的结果（workOrderSummaryRows）
 const {
   tableData,
   pageNum,
@@ -308,9 +310,10 @@ const {
   productOptions,
   orderTypeOptions,
   orderNoOptions,
-  getPageData,
-  filterWorkOrders,
+  loadWorkOrderPage,
+  reloadWorkOrders,
   fetchWorkOrders,
+  fetchWorkOrderSummary,
   openProductDialog,
   handleProductSelected,
   clearProductFilter,
@@ -322,7 +325,7 @@ const {
   clearOrderNoFilter,
 } = useWorkOrderData()
 
-// 领料汇总数据（与原辅料核算面板共享；周统计已改为走后端汇总接口，不再要全量记录）
+// 领料汇总数据（原辅料核算取 pickSummaryRows —— 服务端按物料汇总的结果）
 const {
   pickTableData,
   pickPageNum,
@@ -335,9 +338,10 @@ const {
   pickMaterialDialogVisible,
   pickMaterialFilter,
   pickMaterialOptions,
-  getPickPageData,
-  filterPickRecords,
+  loadPickPage,
+  reloadPickRecords,
   fetchPickRecords,
+  fetchPickSummary,
   openPickMaterialDialog,
   handlePickMaterialSelected,
   clearPickMaterialFilter,
@@ -366,7 +370,7 @@ function toggleStockOnlyInStock(value) {
   applyStockFilter()
 }
 
-// 入库汇总数据（与工单核算面板共享；周统计已改为走后端汇总接口，不再要全量记录）
+// 入库汇总数据（工单核算取 inboundSummaryRows —— 服务端按物料汇总的结果）
 const {
   inboundTableData,
   inboundPageNum,
@@ -379,9 +383,10 @@ const {
   inboundMaterialDialogVisible,
   inboundMaterialFilter,
   inboundMaterialOptions,
-  getInboundPageData,
-  filterInboundRecords,
+  loadInboundPage,
+  reloadInboundRecords,
   fetchInboundRecords,
+  fetchInboundSummary,
   openInboundMaterialDialog,
   handleInboundMaterialSelected,
   clearInboundMaterialFilter,
@@ -391,7 +396,9 @@ const {
 // 加载失败必须在界面上呈现（变更-033）：失败时 goodsMoveQtyMap 是空的，
 // 核算表的「已报工数」会被算成 0、「未报工数」= 全部领料量 —— 那不是缺数据，
 // 是一个看起来合理的错误答案。现在失败走横幅 + 两列显示「—」。
-const { goodsMoveError, fetchGoodsMoveRecords } = useGoodsMoveData()
+//
+// 2026-10-10 整改：取数从「明细全表」换成服务端「按物料 + 来源库位」的汇总结果。
+const { goodsMoveError, fetchGoodsMoveSummary } = useGoodsMoveData()
 
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
@@ -438,13 +445,24 @@ function handleImportCancel() {
 }
 
 /**
- * 导入会新增/更新四类数据（工单、领料、入库、货物移动），
- * 而它们又是工单报工、工单核算、原辅料核算、周统计的数据源 —— 因此全部重新拉取。
+ * 「数据被写过了，下次切 Tab 记得重拉」的标记。
  *
- * 注意：不能只在「返回工单汇总」按钮里刷新 —— 用户也可能直接点顶部 Tab 切走，
- * 所以用 importDirty 标记 + activeTab 监听统一处理。
+ * 两个写入口都会置位：文件导入（Excel）、图片解析确认入库（走同一条落库管线）。
+ * 页面是单页 + v-show 切 Tab，Tab 从不卸载，切来切去不触发任何生命周期钩子 ——
+ * 而列表现在只在「筛条件 / 翻页」时才查，写完之后若用户不碰筛选条，就还停在旧结果上。
+ *
+ * ⚠️ 2026-10-10 之前这里只服务文件导入（判断还写死了 prevTab === 'import'），
+ * 图片解析那条链路压根没通知过页面 —— 手机端「入库成功了、领料汇总看不到」那条 bug
+ * 就出在这，电脑端是同一个结构性的坑，一并堵上。
  */
 const importDirty = ref(false)
+
+/** 图片解析确认入库成功后置脏（事件来自 views/ImageParse.vue） */
+function handleOcrConfirmed() {
+  importDirty.value = true
+  // 落库会同时影响领料/入库/库存/周统计与三个核算页
+  refreshAllData()
+}
 
 /**
  * 台账明细四连发：工单 / 领料 / 入库 / 货物移动。
@@ -458,11 +476,24 @@ function fetchAdminOnlyData() {
   fetchWorkOrders()
   fetchPickRecords()
   fetchInboundRecords()
-  fetchGoodsMoveRecords()
+  fetchGoodsMoveSummary()
+}
+
+/**
+ * 三个聚合页（工单报工 / 工单核算 / 原辅料核算）的数据源。
+ *
+ * 它们的分子分母都来自明细，明细变了就必须跟着重取 —— 分页之后没人会替它们刷新。
+ */
+function refreshSummaryData() {
+  if (!isAdmin()) return
+  fetchWorkOrderSummary()
+  fetchPickSummary()
+  fetchInboundSummary()
 }
 
 function refreshAllData() {
   fetchAdminOnlyData()
+  refreshSummaryData()
   // 库存汇总也可能在这次导入里被更新
   fetchStockRecords()
   // 周统计走的是独立的汇总接口（非 admin 也要能看），不在上面的 admin 分支里
@@ -1452,7 +1483,7 @@ onUnmounted(() => {
 })
 
 // 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
-watch(activeTab, (tab, prevTab) => {
+watch(activeTab, (tab) => {
   if (tab === 'vessel') {
     loadVesselImage()
     startVesselLoop()
@@ -1470,8 +1501,26 @@ watch(activeTab, (tab, prevTab) => {
     fetchWeeklyStats()
   }
 
-  // 离开导入页且期间导入成功 → 刷新各数据集
-  if (prevTab === 'import' && importDirty.value) {
+  // 三个聚合页：进 Tab 时重取自己的汇总数据。
+  // 它们的行来自明细（入库 / 领料 / 工单 / 货物移动），而那几份明细随时可能被
+  // 另一端（手机端、图片解析）改动 —— 进页面就实查一次，省得又出现「数据明明有、这一页看不到」。
+  if (tab === 'report' || tab === 'costing') {
+    fetchWorkOrderSummary()
+  }
+  if (tab === 'costing') {
+    fetchInboundSummary()
+  }
+  if (tab === 'materialCosting') {
+    fetchPickSummary()
+    fetchGoodsMoveSummary()
+  }
+
+  // 离开「写入页」且期间写成功 → 刷新各数据集。
+  //
+  // ⚠️ 条件里**不再限定 prevTab === 'import'**：图片解析（imageParse）也会落库，
+  // 原先它既不发通知、这里也不认它，于是「图片解析入库 → 切到领料汇总看不到新记录」。
+  // 只要 dirty 就重拉，谁写的都算。
+  if (importDirty.value) {
     importDirty.value = false
     refreshAllData()
   }
@@ -2091,7 +2140,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="起始日期"
                     :first-day-of-week="1"
-                    @change="filterWorkOrders"
+                    @change="reloadWorkOrders"
                   />
                   <span class="shrink-0 text-sm text-slate-500">至</span>
                   <span class="shrink-0 text-xs text-slate-500">结束日期</span>
@@ -2102,7 +2151,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="结束日期"
                     :first-day-of-week="1"
-                    @change="filterWorkOrders"
+                    @change="reloadWorkOrders"
                   />
                 </div>
 
@@ -2245,7 +2294,7 @@ watch(activeTab, (tab, prevTab) => {
                         :total="total"
                         layout="total, prev, pager, next"
                         background
-                        @current-change="getPageData"
+                        @current-change="loadWorkOrderPage"
                       />
                     </div>
                   </div>
@@ -2290,7 +2339,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="起始日期"
                     :first-day-of-week="1"
-                    @change="filterPickRecords"
+                    @change="reloadPickRecords"
                   />
                   <span class="shrink-0 text-sm text-slate-500">至</span>
                   <span class="shrink-0 text-xs text-slate-500">结束日期</span>
@@ -2301,7 +2350,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="结束日期"
                     :first-day-of-week="1"
-                    @change="filterPickRecords"
+                    @change="reloadPickRecords"
                   />
                   <span class="ml-auto text-sm text-slate-500">
                     共 <span class="font-semibold text-slate-900">{{ pickTotal }}</span> 条记录
@@ -2444,7 +2493,7 @@ watch(activeTab, (tab, prevTab) => {
                         :total="pickTotal"
                         layout="total, prev, pager, next"
                         background
-                        @current-change="getPickPageData"
+                        @current-change="loadPickPage"
                       />
                     </div>
                   </div>
@@ -2484,7 +2533,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="起始日期"
                     :first-day-of-week="1"
-                    @change="filterInboundRecords"
+                    @change="reloadInboundRecords"
                   />
                   <span class="shrink-0 text-sm text-slate-500">至</span>
                   <span class="shrink-0 text-xs text-slate-500">结束日期</span>
@@ -2495,7 +2544,7 @@ watch(activeTab, (tab, prevTab) => {
                     placeholder="选择日期"
                     aria-label="结束日期"
                     :first-day-of-week="1"
-                    @change="filterInboundRecords"
+                    @change="reloadInboundRecords"
                   />
                   <span class="ml-auto text-sm text-slate-500">
                     共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
@@ -2638,7 +2687,7 @@ watch(activeTab, (tab, prevTab) => {
                         :total="inboundTotal"
                         layout="total, prev, pager, next"
                         background
-                        @current-change="getInboundPageData"
+                        @current-change="loadInboundPage"
                       />
                     </div>
                   </div>
@@ -2702,7 +2751,7 @@ watch(activeTab, (tab, prevTab) => {
                 <button
                   type="button"
                   class="ml-auto shrink-0 rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2"
-                  @click="fetchGoodsMoveRecords"
+                  @click="fetchGoodsMoveSummary"
                 >
                   重新加载
                 </button>
@@ -2719,13 +2768,18 @@ watch(activeTab, (tab, prevTab) => {
             <div v-show="activeTab === 'stock'">
               <section class="rounded-card border border-slate-200 bg-white shadow-card">
                 <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                  <!-- ⚠️ 查询改到服务端之后**只能回车才发请求**（清空也要发一次，好把结果还原回来）：
+                       原先挂的是 @input（逐字实时过滤），那是「前端全量 + 本地 filter」时代的做法，
+                       照搬到服务端就是「敲一个字打一次接口」。
+                       搜索键用 .enter：不这样写会在**每一次按键**上触发，
+                       连方向键、Shift 都算 —— 与储罐液位页的关键字框同一个写法。 -->
                   <el-input
                     v-model="stockKeyword"
                     placeholder="物料编码 / 物料名称 / 规格"
                     aria-label="搜索物料"
                     clearable
                     class="w-72"
-                    @input="applyStockFilter"
+                    @keyup.enter="applyStockFilter"
                     @clear="applyStockFilter"
                   />
                   <!-- 默认**不勾**：这一页是查物料信息，要把数量为 0 的物料也列出来 -->
@@ -3363,7 +3417,7 @@ watch(activeTab, (tab, prevTab) => {
             </div>
 
             <div v-show="activeTab === 'imageParse'">
-              <ImageParse />
+              <ImageParse @confirmed="handleOcrConfirmed" />
             </div>
           </div>
         </div>

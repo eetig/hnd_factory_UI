@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { REPORT_ORDER_TYPES, getReportOrderType } from '../constants/orderTypes'
+import { REPORT_ORDER_TYPES } from '../constants/orderTypes'
 import { formatQty, normalizeMaterialName } from '../utils/format'
 import { useWorkOrderData } from './useWorkOrderData'
 import { usePickData } from './usePickData'
@@ -16,35 +16,25 @@ import { useGoodsMoveData } from './useGoodsMoveData'
 
 /**
  * 工单报工：按 工单类型 + 产成品 分组，订单数量与确认产量按组求和。
- * 只统计工单号前缀能识别出工单类型（1000/2000/3000/4000）的行。
+ *
+ * ⚠️ 2026-10-10 整改：入参从「全量工单数组」换成**服务端已经分好组的结果**
+ * （`/api/work-order/summary-by-type-material` 返回的 [{typeKey, orderType, materialName,
+ * orderQty, confirmedQty}]）。
+ *
+ * 为什么必须换：工单汇总改后端分页之后，前端手里只剩当前页的 10 条 ——
+ * 拿它分组求和会得出「前 10 条的合计」，而这页的语义是「整个筛选区间的合计」。
+ * 分组求和因此搬到了服务端（按工单号前缀 + 产成品 GROUP BY），
+ * 前端只剩「类型识别不出的行不进表」与排序这两条展示口径（与改造前一致）。
  */
-export function buildReportRows(orders) {
-  const rows = new Map()
-
-  for (const order of orders || []) {
-    const orderType = getReportOrderType(order?.orderNo)
-    if (!orderType) continue
-
-    const materialDesc = String(order.materialDesc ?? '').trim()
-    if (!materialDesc) continue
-
-    const key = `${orderType}|${materialDesc}`
-    let row = rows.get(key)
-
-    if (!row) {
-      row = { orderType, materialDesc, orderQty: 0, confirmedQty: 0 }
-      rows.set(key, row)
-    }
-
-    row.orderQty += Number(order.orderQty) || 0
-    row.confirmedQty += Number(order.confirmedQty) || 0
-  }
-
-  return [...rows.values()]
+export function buildReportRows(groupRows) {
+  return (groupRows || [])
+    // 工单号前缀认不出类型的行不进表（改造前在这里 continue 掉的也是它们）
+    .filter((row) => row?.orderType)
     .map((row) => ({
-      ...row,
-      orderQty: formatQty(row.orderQty),
-      confirmedQty: formatQty(row.confirmedQty),
+      orderType: row.orderType,
+      materialDesc: row.materialName,
+      orderQty: formatQty(Number(row.orderQty) || 0),
+      confirmedQty: formatQty(Number(row.confirmedQty) || 0),
     }))
     .sort((left, right) => {
       const byType =
@@ -57,15 +47,15 @@ export function buildReportRows(orders) {
     })
 }
 
-/** 已报工数量：按归一化产成品名称汇总工单的确认产量 */
-export function buildReportedQtyMap(orders) {
+/** 已报工数量：按归一化产成品名称汇总确认产量（入参是服务端分组结果，理由见 buildReportRows） */
+export function buildReportedQtyMap(groupRows) {
   const map = new Map()
 
-  for (const order of orders || []) {
-    const key = normalizeMaterialName(order.materialDesc)
+  for (const row of groupRows || []) {
+    const key = normalizeMaterialName(row.materialName)
     if (!key) continue
 
-    map.set(key, (map.get(key) || 0) + (Number(order.confirmedQty) || 0))
+    map.set(key, (map.get(key) || 0) + (Number(row.confirmedQty) || 0))
   }
 
   return map
@@ -74,8 +64,12 @@ export function buildReportedQtyMap(orders) {
 /**
  * 工单核算：以已入库产成品（入库汇总**当前筛选后**的物料名称去重）为行，
  * 入库数与已报工数汇总（已报工数取工单汇总当前筛选后的工单），差额为未报工数。
+ *
+ * ⚠️ 2026-10-10 整改：两个入参都换成**服务端汇总结果**（入库按物料汇总、工单按类型+产成品汇总）——
+ * 两张明细表都改后端分页了，前端手里不再有全量，拿当前页做 group by 只会得到前 10 条的合计。
+ * 字段名沿用明细那套（materialName / materialCode / inboundQty），所以这里的算法一行没动。
  */
-export function buildCostingRows(inboundRecords, orders) {
+export function buildCostingRows(inboundRecords, groupRows) {
   const rows = new Map()
 
   // 入库数：来自入库汇总数据，按物料名称去重
@@ -97,7 +91,7 @@ export function buildCostingRows(inboundRecords, orders) {
   }
 
   // 已报工数：按产成品名称匹配工单报工数据
-  const reportedQtyMap = buildReportedQtyMap(orders)
+  const reportedQtyMap = buildReportedQtyMap(groupRows)
   for (const row of rows.values()) {
     row.reportedQty = reportedQtyMap.get(normalizeMaterialName(row.materialName)) || 0
   }
@@ -140,6 +134,12 @@ export const MATERIAL_COSTING_DERIVED = [
 /**
  * 原辅料核算：以领料汇总**当前筛选后**的物料名称去重为行，领料数按物料累加，
  * 已报工数取货物移动数量合计（按物料编码）。
+ *
+ * ⚠️ 2026-10-10 整改：三个入参都改成**服务端汇总结果**（领料按物料汇总、
+ * 货物移动按「物料 + 来源库位」汇总）—— 那两条明细都改后端分页了，前端手里不再有全量。
+ *
+ * 字段名刻意沿用明细那套（materialName / materialCode / pickQty / moveQty / fromLocation），
+ * 所以**下面这套换算与派生一行没动**：换算系数、派生行、差额与排序都是报表口径，不属于数据源。
  */
 export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMoveRecords } = {}) {
   const rows = new Map()
@@ -228,22 +228,28 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
  * 三张表喂的都是各来源面板「当前筛选后」的数据（与工单报工同一口径）：
  * 汇总面板把日期/物料筛掉之后，核算表跟着空 —— 核算是对当前所见明细的核算，
  * 不能拿接口全量现算（否则汇总为空的区间，核算表还在显示全量数字）。
+ *
+ * ⚠️ 2026-10-10 整改：喂进来的不再是「全量明细数组」，而是**服务端按同一套筛选条件
+ * 分好组的结果**（四张明细表都改后端分页了，前端手里只剩当前页）。口径没变：
+ * 仍然是「汇总面板当前筛选后」的那一批数据，只是聚合动作从浏览器搬到了服务端。
  */
 export function useStatsData() {
-  const { tableDataAll } = useWorkOrderData()
-  const { inboundFiltered } = useInboundData()
-  const { pickFiltered } = usePickData()
-  const { goodsMoveRecords, goodsMoveQtyMap } = useGoodsMoveData()
+  const { workOrderSummaryRows } = useWorkOrderData()
+  const { inboundSummaryRows } = useInboundData()
+  const { pickSummaryRows } = usePickData()
+  const { goodsMoveSummaryRows, goodsMoveQtyMap } = useGoodsMoveData()
 
-  const reportRows = computed(() => buildReportRows(tableDataAll.value))
+  const reportRows = computed(() => buildReportRows(workOrderSummaryRows.value))
 
-  const costingRows = computed(() => buildCostingRows(inboundFiltered.value, tableDataAll.value))
+  const costingRows = computed(() =>
+    buildCostingRows(inboundSummaryRows.value, workOrderSummaryRows.value),
+  )
 
   const materialCostingRows = computed(() =>
     buildMaterialCostingRows({
-      pickRecords: pickFiltered.value,
+      pickRecords: pickSummaryRows.value,
       goodsMoveQtyMap: goodsMoveQtyMap.value,
-      goodsMoveRecords: goodsMoveRecords.value,
+      goodsMoveRecords: goodsMoveSummaryRows.value,
     }),
   )
 

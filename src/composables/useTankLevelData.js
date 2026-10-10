@@ -1,21 +1,27 @@
 import { computed, ref } from 'vue'
 import request from '../api/request'
-import { getToday, getFirstDayOfCurrentYear, pickField } from '../utils/format'
+import { getFirstDayOfCurrentYear, getToday, pickField } from '../utils/format'
 import { normalizeImageList } from '../utils/image'
 
 // ===== 月底储罐液位记录（模块级单例）=====
-// 数据来自 hnd_factory：GET /api/tank-level/list（库表 tank_level_record，变更-004）。
+// 数据来自 hnd_factory：GET /api/tank-level/list（库表 tank_level_record）。
+// 与电脑端（hnd_factory_UI 的 useTankLevelData.js）是同一条业务线，字段与语义保持一致，
+// 差别只在：这里走 uni 的请求层、错误由调用方 toast。
 //
 // 默认区间取「本年度」而不是「本月」：记录是按月产生的（每月月底下午 3 点抄录），
 // 若默认本月，一个月里绝大多数时间打开都是空表，用户会以为功能坏了。
-const tankLevelRecords = ref([])
-const tankLevelTableData = ref([])
+//
+// ⚠️ 改造要点（2026-10-10 统一整改）：这一页的**条件过滤早就在服务端**了
+// （改造前前端就按接口查询，不像领料/入库那样全量拉回来再本地过滤），
+// 本次只是把最后那段**前端 slice 分页**也搬到了服务端。
+const tankLevelTableData = ref([]) // 当前页
 const tankLevelPageNum = ref(1)
 const tankLevelPageSize = ref(10)
-const tankLevelTotal = ref(0)
+const tankLevelTotal = ref(0) // **筛选后**的总条数
 const tankLevelLoading = ref(false)
 const tankLevelError = ref('')
-// 是否已成功取过一次：Tab 是 v-show 常驻的，不记住这一点就会每次切换都打一次接口
+// 是否已成功取过一次：面板是 v-show 常驻的，不记住这一点就会每次切 Tab 都打一次接口。
+// 失败时不置位（见下），所以「取不到 → 离开再回来」会重试一次，比停在一张空表上好。
 const tankLevelLoaded = ref(false)
 const tankLevelStartDate = ref(getFirstDayOfCurrentYear())
 const tankLevelEndDate = ref(getToday())
@@ -28,16 +34,16 @@ const tankLevelLocations = ref([])
 export const TANK_LEVEL_CATEGORIES = ['产品', '原料']
 
 /**
- * 属地（罐组）候选：录入时给的下拉项。
+ * 属地（罐组）候选：**录入**时给的选项（变更-015，随电脑端 变更-012）。
  *
  * <p>与查询区那个属地下拉**不是一回事**：查询区取的是「库里实际出现过的值」
  * （用于筛已有数据），这里是「厂里已知的罐组」固定字典，两者用途不同，不必合并。
- * 与 {@link TANK_LEVEL_CATEGORIES} 同一个理由不做成接口 —— 就这几个罐组，
- * 为一个下拉单开接口不划算；界面上是「可选可填」，将来加了新罐组不必改代码也能录进去。
+ * 与 {@link TANK_LEVEL_CATEGORIES} 同一个理由不做成接口；界面上「可选可填」，
+ * 将来加了新罐组不必改代码也能录进去。
  */
 export const TANK_LEVEL_LOCATIONS = ['1#', '2#', '4#', '1#罐组', '2#罐组']
 
-// 字段别名容错（后端字段名有出入时自动适配，与入库/领料两处的做法一致）
+// 字段别名容错（后端字段名有出入时自动适配，与领料/入库两处的做法一致）
 const TANK_LEVEL_FIELD_MAP = {
   recordDate: ['recordDate', 'recordTime', 'date'],
   location: ['location', 'area', 'territory', 'workArea'],
@@ -45,12 +51,12 @@ const TANK_LEVEL_FIELD_MAP = {
   materialCode: ['materialCode', 'materialNo'],
   materialName: ['materialName', 'materialDesc'],
   tankName: ['tankName', 'containerName', 'tankNo'],
-  // 容器编号（设备位号）：与记录日期一起构成台账唯一键（uk_date_tank），单列一栏展示
+  // 容器编号（设备位号）：与记录日期一起构成台账唯一键，界面上不展示，
+  // 但编辑老记录时必须原样带回，否则会被清成 NULL（见 buildTankLevelDraft）
   tankCode: ['tankCode', 'containerCode', 'vesselCode', 'equipmentCode'],
   levelValue: ['levelValue', 'liquidLevel', 'level'],
   theoreticalWeight: ['theoreticalWeight', 'theoryWeight', 'theoreticalQty'],
-  // 图据（可多张，变更-011）：元素是 { imageId, url, thumbnailUrl }，
-  // 由 normalizeImageList 统一成前端内部结构（契约 2.3 的图片归一化）
+  // 图据（可多张）：元素是 { imageId, url, thumbnailUrl }，由 normalizeImageList 归一化
   images: ['images', 'imageList'],
 }
 
@@ -86,9 +92,9 @@ export function normalizeTankLevelRecord(item) {
   return record
 }
 
-/** 组装查询参数：空白条件不传（后端把「未传」当作不限制） */
-export function buildTankLevelQuery({ startDate, endDate, location, category, keyword } = {}) {
-  const params = {}
+/** 组装查询参数：空白条件不传（后端把「未传」当作不限制）；分页参数必传 */
+export function buildTankLevelQuery({ startDate, endDate, location, category, keyword, pageNum, pageSize } = {}) {
+  const params = { pageNum, pageSize }
 
   if (startDate) params.startDate = startDate
   if (endDate) params.endDate = endDate
@@ -102,10 +108,13 @@ export function buildTankLevelQuery({ startDate, endDate, location, category, ke
 }
 
 /**
- * 列表行 → 编辑草稿（行内编辑按这个结构存正在改的值）。
+ * 列表行 → 表单草稿（弹层里正在改的值）。
  *
- * <p>数值列沿用列表里的**展示字符串**直接喂输入框：`normalizeTankLevelRecord` 已经把
- * `1250.0000` 规整成 `1250`，再转一次数字、等 input 回写成字符串，等于白转两趟。
+ * ⚠️ 界面没展示的三个字段（所属 / 物料 / 容器编号）也要带上：表单提交的是整条记录，
+ *    不带就等于把它们改成空了 —— 容器编号还是唯一键的一半（电脑端同样的处理）。
+ *
+ * <p>数值列沿用列表里的**展示字符串**直接喂输入框：归一化时已经把 `1250.0000`
+ * 规整成 `1250`，再转一次数字、等 input 回写成字符串，等于白转两趟。
  */
 export function buildTankLevelDraft(record) {
   return {
@@ -128,7 +137,7 @@ export function buildTankLevelDraft(record) {
  * <p>空串一律转 null：这些列在库里都可空，送空串等于「填了一个空值」，
  * 与「没填」在语义上是两回事 —— 后端 BigDecimal 收到空串也只会解析失败。
  *
- * <p>`id` 保持 null 表示新增（后端按 id 有无分流的规则见 TankLevelSaveDTO）。
+ * <p>`id` 保持 null 表示新增（后端按 id 有无分流）。
  */
 export function buildTankLevelSavePayload(draft) {
   const text = (value) => {
@@ -156,7 +165,7 @@ export function buildTankLevelSavePayload(draft) {
 }
 
 // 属地下拉选项：以库中实际值为准，并把「当前已选但不在选项里」的值补进去，
-// 否则重新取选项后下拉会显示成空值，用户看不出自己筛了什么
+// 否则重新取选项后筛选条上会显示成空值，用户看不出自己筛了什么
 const tankLevelLocationOptions = computed(() => {
   const options = [...tankLevelLocations.value]
 
@@ -167,17 +176,8 @@ const tankLevelLocationOptions = computed(() => {
   return options
 })
 
-function getTankLevelPageData(page = tankLevelPageNum.value) {
-  tankLevelPageNum.value = page
-  const startIndex = (tankLevelPageNum.value - 1) * tankLevelPageSize.value
-  tankLevelTableData.value = tankLevelRecords.value.slice(
-    startIndex,
-    startIndex + tankLevelPageSize.value,
-  )
-}
-
 async function fetchTankLevelRecords(options) {
-  // 模板里 @click / @change 直接绑了这个函数，会把事件对象当第一个参数传进来 ——
+  // 模板里 @change / @click 直接绑了这个函数，会把事件对象当第一个参数传进来 ——
   // 所以只有显式传 { keepPage: true } 才保持当前页，传进来别的东西一律当没传
   const keepPage = options?.keepPage === true
 
@@ -192,6 +192,8 @@ async function fetchTankLevelRecords(options) {
         location: tankLevelLocation.value,
         category: tankLevelCategory.value,
         keyword: tankLevelKeyword.value,
+        pageNum: tankLevelPageNum.value,
+        pageSize: tankLevelPageSize.value,
       }),
     })
 
@@ -200,21 +202,22 @@ async function fetchTankLevelRecords(options) {
     }
 
     const dataList = Array.isArray(res.data?.dataList) ? res.data.dataList : []
-    tankLevelRecords.value = dataList.map(normalizeTankLevelRecord).filter(Boolean)
-    tankLevelTotal.value = tankLevelRecords.value.length
+    tankLevelTableData.value = dataList.map(normalizeTankLevelRecord).filter(Boolean)
+    tankLevelTotal.value = Number(res.data?.total) || 0
     tankLevelLoaded.value = true
 
-    if (keepPage) {
-      // 保存/删除后停在当前页，用户不会因为改了一行就被弹回第 1 页。
-      // 但页码要防越界：删掉某页最后一条后当前页可能已超出总页数，
-      // 那样表格空着、分页器却停在第 5 页，看着像数据丢了
-      const maxPage = Math.max(1, Math.ceil(tankLevelTotal.value / tankLevelPageSize.value))
-      getTankLevelPageData(Math.min(tankLevelPageNum.value, maxPage))
-    } else {
-      getTankLevelPageData(1)
+    // 页码越界兜底：删掉某页最后一条后，当前页可能已超出总页数，
+    // 那样表格空着、分页器却停在第 5 页，看着像数据丢了。
+    // 服务端只把「小于 1」的页码归一到第 1 页，越上界要在这里自己收回来。
+    const maxPage = Math.max(1, Math.ceil(tankLevelTotal.value / tankLevelPageSize.value))
+    if (tankLevelPageNum.value > maxPage) {
+      tankLevelPageNum.value = maxPage
+      return fetchTankLevelRecords({ keepPage: true })
+    }
+    if (!keepPage) {
+      tankLevelPageNum.value = Number(res.data?.pageNum) || tankLevelPageNum.value
     }
   } catch (error) {
-    tankLevelRecords.value = []
     tankLevelTableData.value = []
     tankLevelTotal.value = 0
     // 失败不置 loaded：离开再回来会重试一次，比停在一张空表上好
@@ -231,7 +234,7 @@ async function fetchTankLevelRecords(options) {
   }
 }
 
-/** 属地下拉选项：取不到不影响主表（日期/关键字仍可查），所以失败只清空、不弹错误 */
+/** 属地下拉选项：取不到不影响主表（日期/关键字仍可查），所以失败只清空、不报错 */
 async function fetchTankLevelLocations() {
   try {
     const res = await request.get('/api/tank-level/locations')
@@ -242,7 +245,10 @@ async function fetchTankLevelLocations() {
   }
 }
 
-/** 首次进入 Tab 时才请求（含属地下拉选项），已取过就不重复打接口 */
+/**
+ * 首次进入 Tab 时才请求（含属地下拉选项），已取过就不重复打接口。
+ * 与电脑端的同名函数一致 —— 手机端也是「进 Tab 才加载」的做法（储罐底图就是这么办的）。
+ */
 function ensureTankLevelLoaded() {
   if (tankLevelLoaded.value || tankLevelLoading.value) return
 
@@ -250,6 +256,13 @@ function ensureTankLevelLoaded() {
   fetchTankLevelRecords()
 }
 
+/** 分页器回调：只换页，不重置条件 */
+function getTankLevelPageData(page = tankLevelPageNum.value) {
+  tankLevelPageNum.value = page
+  return fetchTankLevelRecords({ keepPage: true })
+}
+
+/** 筛选条上的条件变了：回到第 1 页再查 */
 function resetTankLevelFilters() {
   tankLevelStartDate.value = getFirstDayOfCurrentYear()
   tankLevelEndDate.value = getToday()
@@ -257,30 +270,30 @@ function resetTankLevelFilters() {
   tankLevelCategory.value = ''
   tankLevelKeyword.value = ''
 
+  tankLevelPageNum.value = 1
   return fetchTankLevelRecords()
 }
 
-// ===== 写操作（需权限，仅管理员）=====
+/** 筛选条件变化（日期/属地/所属）→ 回到第 1 页查；关键字由模板在回车时调用 resetTankLevelFilters */
+function reloadTankLevelRecords() {
+  tankLevelPageNum.value = 1
+  return fetchTankLevelRecords()
+}
+
+// ===== 写操作（需权限，管理员）=====
 //
-// 三个约定，改这里之前先看：
-//   1. 后端业务失败也是 HTTP 200 + `success:false`（README 约定 1），所以每个写方法
-//      都要自己判一次 `success`，只看状态码会把「保存失败」当成功弹提示；
-//   2. 统一**抛带可读消息的 Error**，由调用方 ElMessage 提示 —— 本文件不引 UI 库，
-//      与 useOrderImages.js 那种「composable 内部直接弹提示」的写法不同；
-//   3. 写成功后**重新拉全量**而不是就地改内存里那一行：列表是前端本地分页 + 后端按
-//      (日期, 属地, 编号) 排序，就地改会让「序号」和分页位置与库里对不上。
-//      带 keepPage 是为了不把用户从正在看的那一页弹走。
+// 两个约定，改这里之前先看：
+//   1. 后端业务失败也是 HTTP 200 + `success:false`，所以每个写方法都要自己判一次
+//      `success` —— 只看状态码会把「保存失败」当成功弹提示；
+//   2. 统一**抛带可读消息的 Error**，由调用方 toast（本文件不碰 UI）。
+//      写后重新拉当前页而不是就地改内存里那一行：带 keepPage 是为了不把用户弹回第 1 页。
 
 /** 取后端给的业务错误消息；拿不到就用兜底文案 */
 function toWriteError(error, fallback) {
   return new Error(error?.response?.data?.msg || error?.message || fallback)
 }
 
-/**
- * 新增（draft.id 为空）或编辑一条记录。
- *
- * @returns 保存后的记录（含图据双字段），供调用方就地更新或做后续提示
- */
+/** 新增（draft.id 为空）或编辑一条记录，返回保存后的记录 */
 async function saveTankLevelRecord(draft) {
   let saved
   try {
@@ -313,7 +326,6 @@ async function deleteTankLevelRecord(id) {
 
 export function useTankLevelData() {
   return {
-    tankLevelRecords,
     tankLevelTableData,
     tankLevelPageNum,
     tankLevelPageSize,
@@ -330,6 +342,7 @@ export function useTankLevelData() {
     getTankLevelPageData,
     fetchTankLevelRecords,
     fetchTankLevelLocations,
+    reloadTankLevelRecords,
     ensureTankLevelLoaded,
     resetTankLevelFilters,
     saveTankLevelRecord,

@@ -6,12 +6,19 @@ import {
   buildReportRows,
 } from '../../src/composables/useStatsData'
 
+// ⚠️ 2026-10-10 整改：工单报工/工单核算的**分组求和搬到了服务端**
+// （`/api/work-order/summary-by-type-material`，按工单号前缀 + 产成品 GROUP BY），
+// 因为工单列表改成后端分页后前端只剩当前页，拿它分组求和会得出「前 10 条的合计」。
+//
+// 所以这几个 build* 的入参从「明细数组」变成了「已分组的行数组」，
+// 本文件随之改为钉住**展示口径**（排序、空值兜底、数值格式化、名称归一化匹配）；
+// 「分组求和本身对不对」改由后端保证，另有 hnd_factory 的
+// WorkOrderServiceSummaryTest 钉住分组维度与前缀→类型名的映射。
 describe('buildReportRows：工单报工汇总', () => {
-  it('按 工单类型 + 产成品 分组求和', () => {
+  it('直接展示服务端分好组的行（数量是字符串也要能显示）', () => {
     const rows = buildReportRows([
-      { orderNo: '1000001', materialDesc: 'HND-V150', orderQty: 10, confirmedQty: 8 },
-      { orderNo: '1000002', materialDesc: 'HND-V150', orderQty: 5, confirmedQty: 5 },
-      { orderNo: '2000003', materialDesc: 'HND-V150', orderQty: 1, confirmedQty: 1 },
+      { typeKey: 'operate', orderType: '操作工单', materialName: 'HND-V150', orderQty: 15, confirmedQty: 13 },
+      { typeKey: 'package', orderType: '包装工单', materialName: 'HND-V150', orderQty: 1, confirmedQty: 1 },
     ])
 
     expect(rows).toEqual([
@@ -20,30 +27,33 @@ describe('buildReportRows：工单报工汇总', () => {
     ])
   })
 
-  it('前缀识别不出工单类型、或产成品为空的行直接跳过', () => {
+  it('工单类型识别不出的行直接跳过（服务端给空 orderType）', () => {
     const rows = buildReportRows([
-      { orderNo: '9000001', materialDesc: 'HND-V150', orderQty: 10, confirmedQty: 10 },
-      { orderNo: '1000001', materialDesc: '   ', orderQty: 10, confirmedQty: 10 },
+      { typeKey: '', orderType: '', materialName: 'HND-V150', orderQty: 10, confirmedQty: 10 },
+      { typeKey: 'operate', orderType: '操作工单', materialName: 'HND-V150', orderQty: 1, confirmedQty: 1 },
     ])
 
-    expect(rows).toEqual([])
+    expect(rows).toEqual([
+      { orderType: '操作工单', materialDesc: 'HND-V150', orderQty: 1, confirmedQty: 1 },
+    ])
   })
 
   it('数量字段缺失/非数字按 0 计，浮点误差被消掉', () => {
     const rows = buildReportRows([
-      { orderNo: '1000001', materialDesc: 'A', orderQty: 0.1, confirmedQty: undefined },
-      { orderNo: '1000002', materialDesc: 'A', orderQty: 0.2, confirmedQty: 'x' },
+      { orderType: '操作工单', materialName: 'A', orderQty: 0.30000000000000004, confirmedQty: undefined },
+      { orderType: '操作工单', materialName: 'B', orderQty: 1, confirmedQty: 'x' },
     ])
 
     expect(rows[0].orderQty).toBe(0.3)
     expect(rows[0].confirmedQty).toBe(0)
+    expect(rows[1].confirmedQty).toBe(0)
   })
 
   it('同类型内按产成品名称排序（工单类型按常量表顺序）', () => {
     const rows = buildReportRows([
-      { orderNo: '3000001', materialDesc: 'B', orderQty: 1, confirmedQty: 1 },
-      { orderNo: '1000001', materialDesc: 'B', orderQty: 1, confirmedQty: 1 },
-      { orderNo: '1000002', materialDesc: 'A', orderQty: 1, confirmedQty: 1 },
+      { orderType: '转桶工单', materialName: 'B', orderQty: 1, confirmedQty: 1 },
+      { orderType: '操作工单', materialName: 'B', orderQty: 1, confirmedQty: 1 },
+      { orderType: '操作工单', materialName: 'A', orderQty: 1, confirmedQty: 1 },
     ])
 
     expect(rows.map((row) => `${row.orderType}/${row.materialDesc}`)).toEqual([
@@ -62,9 +72,9 @@ describe('buildReportRows：工单报工汇总', () => {
 describe('buildReportedQtyMap：已报工数按归一化产成品名汇总', () => {
   it('忽略空格/下划线差异', () => {
     const map = buildReportedQtyMap([
-      { materialDesc: '氯铂酸_150', confirmedQty: 2 },
-      { materialDesc: '氯铂酸 150', confirmedQty: 3 },
-      { materialDesc: '', confirmedQty: 9 },
+      { materialName: '氯铂酸_150', confirmedQty: 2 },
+      { materialName: '氯铂酸 150', confirmedQty: 3 },
+      { materialName: '', confirmedQty: 9 },
     ])
 
     expect(map.get('氯铂酸150')).toBe(5)
@@ -76,7 +86,7 @@ describe('buildCostingRows：工单核算（入库口径）', () => {
   it('以入库物料为行，未报工数 = 入库数 − 已报工数', () => {
     const rows = buildCostingRows(
       [{ materialName: 'HND-V150', materialCode: 'C1', inboundQty: 100 }],
-      [{ materialDesc: 'HND-V150', confirmedQty: 40 }],
+      [{ materialName: 'HND-V150', confirmedQty: 40 }],
     )
 
     expect(rows).toEqual([
@@ -93,7 +103,7 @@ describe('buildCostingRows：工单核算（入库口径）', () => {
   it('名称归一化只忽略空格/下划线，连字符差异匹配不上（对不上就是 0）', () => {
     const rows = buildCostingRows(
       [{ materialName: 'HND-V150', inboundQty: 10 }],
-      [{ materialDesc: 'HND V150', confirmedQty: 40 }],
+      [{ materialName: 'HND V150', confirmedQty: 40 }],
     )
 
     expect(rows[0].reportedQty).toBe(0)
@@ -116,7 +126,7 @@ describe('buildCostingRows：工单核算（入库口径）', () => {
   it('没有对应报工数据时已报工数为 0，未报工数为负也照实展示', () => {
     const rows = buildCostingRows(
       [{ materialName: 'A', inboundQty: 10 }],
-      [{ orderNo: '1000001', materialDesc: 'A', confirmedQty: 15 }],
+      [{ materialName: 'A', confirmedQty: 15 }],
     )
 
     expect(rows[0].reportedQty).toBe(15)

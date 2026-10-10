@@ -15,6 +15,11 @@ import { useMaterialStockData } from '../../src/composables/useMaterialStockData
 //   · 默认列出**全部**（含数量为 0 的物料）—— 快照语义下文件里消失的物料会被清零但保留行；
 //   · 关键词要能命中编码、名称、规格三列；
 //   · 名称/规格是「主数据优先、回退库存表」的联查结果，都没有时显示「/」。
+//
+// ⚠️ 2026-10-10 起筛选与分页都在**服务端**（列表统一整改），所以本文件的断言重心变了：
+// 从「前端 filter/slice 的结果对不对」变成「请求参数发对了没有 + 服务端回什么就显示什么」。
+// 三列命中、只看有库存、主数据回退这几条口径现在由后端 SQL 负责
+// （见 hnd_factory 的 resources/mapper/MaterialStockMapper.xml），这里只钉住前端这一侧。
 const rows = [
   {
     plantCode: '1503',
@@ -25,26 +30,6 @@ const rows = [
     storageDesc: '原材料仓',
     unit: 'KG',
     stockQty: '49482.000',
-  },
-  {
-    plantCode: '1503',
-    materialCode: '110000001',
-    materialName: null, // 主数据与库存表都没有名字
-    spec: null,
-    storageLocation: '1001',
-    storageDesc: '原材料仓',
-    unit: 'KG',
-    stockQty: '0.000',
-  },
-  {
-    plantCode: '1503',
-    materialCode: '110000002',
-    materialName: '电石渣',
-    spec: '槽车',
-    storageLocation: '1002',
-    storageDesc: '中间仓',
-    unit: 'KG',
-    stockQty: '7.000',
   },
   {
     // 只有主数据、库存汇总里没有的物料（后端 union 出来的那一类）：
@@ -59,95 +44,120 @@ const rows = [
   },
 ]
 
-describe('useMaterialStockData：物料查询（库存汇总 + 主数据联查）', () => {
+describe('useMaterialStockData：物料查询（查询条件与分页都发给服务端）', () => {
   let api
 
   beforeEach(() => {
     api = useMaterialStockData()
     // 模块级单例：每个用例先把状态清干净
-    api.allStockRecords.value = []
     api.stockKeyword.value = ''
     api.stockOnlyInStock.value = false
     api.stockPageNum.value = 1
+    api.stockPageSize.value = 10
     request.get.mockReset()
-    request.get.mockResolvedValue({ data: { success: true, dataList: rows } })
+    request.get.mockResolvedValue({ data: { success: true, dataList: rows, total: 799, pageNum: 1 } })
   })
 
-  it('默认列出全部（含没有库存的物料，也含只有主数据的物料）', async () => {
+  it('默认不带筛选条件，只发分页参数（「/」不分页是后端的事）', async () => {
     await api.fetchStockRecords()
 
-    expect(request.get).toHaveBeenCalledWith('/api/stock/list')
+    expect(request.get).toHaveBeenCalledWith('/api/stock/list', {
+      params: { pageNum: 1, pageSize: 10 },
+    })
     expect(api.stockOnlyInStock.value).toBe(false)
-    expect(api.stockTotal.value).toBe(4)
-    expect(api.stockTableData.value.map((record) => record.materialCode)).toContain('110000001')
-    expect(api.stockTableData.value.map((record) => record.materialCode)).toContain('114002501')
+    // 总数取接口的 total（**筛选后**的总条数），不是本地数组长度 ——
+    // 这正是「分页器页数」与「列表条数」能对上的前提
+    expect(api.stockTotal.value).toBe(799)
+    expect(api.stockTableData.value.map((record) => record.materialCode)).toEqual([
+      '111001785',
+      '114002501',
+    ])
   })
 
-  it('勾上「只看有库存」后，数量为 0 的和只有主数据的都被过滤掉', async () => {
+  it('「只看有库存」勾上后作为 onlyInStock 发给服务端，不在前端过滤', async () => {
     api.stockOnlyInStock.value = true
     await api.fetchStockRecords()
 
-    expect(api.stockTotal.value).toBe(2)
-    const codes = api.stockTableData.value.map((record) => record.materialCode)
-    expect(codes).not.toContain('110000001')
-    expect(codes).not.toContain('114002501')
+    expect(request.get).toHaveBeenCalledWith('/api/stock/list', {
+      params: { pageNum: 1, pageSize: 10, onlyInStock: true },
+    })
+  })
+
+  it('关键词原样发给服务端（编码/名称/规格三列命中由后端 SQL 负责）', async () => {
+    api.stockKeyword.value = '  V150  ' // 前后空格由前端去掉，别把空格带进 LIKE
+    await api.fetchStockRecords()
+
+    expect(request.get).toHaveBeenCalledWith('/api/stock/list', {
+      params: { pageNum: 1, pageSize: 10, keyword: 'V150' },
+    })
+  })
+
+  it('服务端回什么就显示什么：前端**不再**二次过滤', async () => {
+    // 故意回一条「不符合关键词」的数据 —— 若前端偷偷做了本地过滤，这条就没了
+    api.stockKeyword.value = 'V150'
+    request.get.mockResolvedValue({
+      data: { success: true, dataList: [{ materialCode: '999', materialName: '张三丰' }], total: 1 },
+    })
+
+    await api.fetchStockRecords()
+
+    expect(api.stockTableData.value.map((r) => r.materialCode)).toEqual(['999'])
+    expect(api.stockTotal.value).toBe(1)
+  })
+
+  it('换关键词 / 换开关后**回到第 1 页**再查', async () => {
+    api.stockPageNum.value = 3
+
+    api.stockKeyword.value = '硅粉'
+    await api.applyStockFilter()
+
+    expect(api.stockPageNum.value).toBe(1)
+    const [, config] = request.get.mock.calls.at(-1)
+    expect(config.params).toEqual({ pageNum: 1, pageSize: 10, keyword: '硅粉' })
+  })
+
+  it('翻页只换页码，不重置条件，也不本地切片', async () => {
+    api.stockKeyword.value = '硅粉'
+    await api.fetchStockRecords()
+    request.get.mockResolvedValue({
+      data: { success: true, dataList: [{ materialCode: '114002501' }], total: 3, pageNum: 2 },
+    })
+
+    await api.getStockPageData(2)
+
+    const [, config] = request.get.mock.calls.at(-1)
+    expect(config.params).toEqual({ pageNum: 2, pageSize: 10, keyword: '硅粉' })
+    // 页码以后端归一化后的值为准（后端会把越界页码归一到第 1 页）
+    expect(api.stockPageNum.value).toBe(2)
+    expect(api.stockTableData.value.map((r) => r.materialCode)).toEqual(['114002501'])
+  })
+
+  it('页码越界时跟随后端归一到第 1 页', async () => {
+    request.get.mockResolvedValue({
+      data: { success: true, dataList: rows, total: 799, pageNum: 1 },
+    })
+
+    await api.getStockPageData(999)
+
+    expect(api.stockPageNum.value).toBe(1)
   })
 
   it('只有主数据的物料：编码/名称/规格有值，库存那几列由「/」兜底', async () => {
+    request.get.mockResolvedValue({
+      data: { success: true, dataList: [rows[1]], total: 1, pageNum: 1 },
+    })
     await api.fetchStockRecords()
 
-    api.stockKeyword.value = 'V150'
-    api.applyStockFilter()
-
-    expect(api.stockTotal.value).toBe(1)
     const row = api.stockTableData.value[0]
     expect(row.materialCode).toBe('114002501')
     expect(api.displayText(row.materialName)).toBe('HND-V150_200kg_塑料桶')
     expect(api.displayText(row.spec)).toBe('200kg/桶')
-    // 库存列全空 -> 一律「/」
+    // 库存列全空 -> 一律「/」。这条口径是**展示层**的（后端 union 出来的补行本来就
+    // 没有库存那几列），所以仍然钉在前端这一侧
     expect(api.displayText(row.storageLocation)).toBe('/')
     expect(api.displayText(row.unit)).toBe('/')
     expect(api.displayText(api.formatStockQty(row.stockQty))).toBe('/')
     expect(api.displayText(row.storageDesc)).toBe('/')
-  })
-
-  it('关键词三列都能命中：物料编码 / 物料名称 / 规格', async () => {
-    await api.fetchStockRecords()
-
-    api.stockKeyword.value = '110000002'
-    api.applyStockFilter()
-    expect(api.stockTotal.value).toBe(1)
-
-    api.stockKeyword.value = '电石渣'
-    api.applyStockFilter()
-    expect(api.stockTableData.value[0].materialCode).toBe('110000002')
-
-    api.stockKeyword.value = '槽车'
-    api.applyStockFilter()
-    expect(api.stockTableData.value[0].materialCode).toBe('110000002')
-  })
-
-  it('换关键词后回到第 1 页', async () => {
-    await api.fetchStockRecords()
-    api.stockPageNum.value = 2
-
-    api.stockKeyword.value = '硅粉'
-    api.applyStockFilter()
-
-    expect(api.stockPageNum.value).toBe(1)
-    expect(api.stockTotal.value).toBe(1)
-  })
-
-  it('分页：按页切片', async () => {
-    await api.fetchStockRecords()
-
-    api.stockPageSize.value = 3
-    api.applyStockFilter()
-    expect(api.stockTableData.value).toHaveLength(3)
-
-    api.getStockPageData(2)
-    expect(api.stockTableData.value).toHaveLength(1)
-    expect(api.stockTableData.value[0].materialCode).toBe('114002501')
   })
 
   it('接口失败：给出可读错误，列表清空（不残留上一次的数据）', async () => {

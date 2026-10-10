@@ -4,11 +4,21 @@ import request from '../api/request'
 // ===== 设备数据维护（2026-10-06）=====
 //
 // 台账 `equipment_ledger` 原先「只读、手工维护、不提供管理接口」，这个模块是它的维护入口。
-// 使用方要逐个设备对着图纸核对参数，所以列表要一次拿全（92 行，不分页），
-// 并且**停用的行也要显示**（要能重新启用）。
+// 使用方要逐个设备对着图纸核对参数。
 //
 // 与 uni-app 仓那份是**同一套语义**（两边各自维护）：字段、容器类型口径、上传返回的处理保持一致，
 // 免得同一台设备在两端显示成两个样子。
+//
+// ⚠️ 改造要点（2026-10-10 统一整改）：**搜索与分页都在服务端**。
+//
+// 改造前是「一次拉全表（92 行）+ 前端关键字过滤 + 前端分页」，当时的注释写着
+// 「维护的场景是在同一页里比对同类设备，后端分页会让人翻着翻着看不全」。
+// 那条理由被统一整改推翻了：列表一律后端分页 + 后端条件查询。界面上仍有分页器，
+// 只是页码 / 每页条数 / 关键字都发给服务端；「停用的行也要显示」这条口径**没变**
+// （默认不带 enabled 条件，只有勾了「只看启用的」才加）。
+//
+// 关键字因此改成**回车才查**（面板里的输入框绑 @keyup.enter），不做逐字实时过滤 ——
+// 逐字过滤会把「敲一个字打一次接口」做实。
 
 /** 容器类型：1卧式 2平底立式 3立式 4再沸器。**界面上的说法**，与库里列注释一致 */
 export const CONTAINER_TYPES = [
@@ -22,29 +32,67 @@ export function containerTypeLabel(value) {
   return CONTAINER_TYPES.find((t) => t.value === value)?.label ?? '—'
 }
 
-const rows = ref([])
+const rows = ref([]) // 当前页
+const total = ref(0) // **筛选后**的总条数（服务端给的，分页器要靠它算页数）
 const loading = ref(false)
 const saving = ref(false)
-let loaded = false
+const pageNum = ref(1)
+const pageSize = ref(20)
+/** 关键字（位号/名称/昵称/规格/车间）与「只看启用的」—— 都是服务端条件 */
+const keyword = ref('')
+const onlyEnabled = ref(false)
+const loadError = ref('')
+
+function buildQuery() {
+  const params = { pageNum: pageNum.value, pageSize: pageSize.value }
+  const kw = keyword.value.trim()
+  if (kw) params.keyword = kw
+  if (onlyEnabled.value) params.onlyEnabled = true
+  return params
+}
 
 /**
- * 拉台账全表。**失败不清空已有数据** —— 维护到一半掉线，把列表清空比报错更糟
- * （使用者会以为数据没了）。
+ * 取当前页。
+ *
+ * **失败不清空已有数据** —— 维护到一半掉线，把列表清空比报错更糟
+ * （使用者会以为数据没了）。错误落到 loadError，行里留着上一次取到的内容。
  */
-export async function loadLedger(force = false) {
-  if (loaded && !force) return rows.value
+export async function loadLedger() {
   loading.value = true
+  loadError.value = ''
   try {
-    const res = await request.get('/api/equipment/ledger/list')
-    const list = Array.isArray(res.data?.data) ? res.data.data : []
-    rows.value = list
-    loaded = true
-  } catch {
-    // 保留 rows 原样；由调用方按 loading/错误态提示
-    throw new Error('load failed')
+    const res = await request.get('/api/equipment/ledger/list', { params: buildQuery() })
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '设备台账接口返回异常。')
+    }
+    rows.value = Array.isArray(res.data?.dataList) ? res.data.dataList : []
+    total.value = Number(res.data?.total) || 0
+    pageNum.value = Number(res.data?.pageNum) || pageNum.value
+  } catch (error) {
+    loadError.value =
+      error?.response?.data?.msg || error?.message || '取不到设备台账（接口不可用）。列表里是上一次取到的数据。'
   } finally {
     loading.value = false
   }
+}
+
+/** 分页器回调：只换页，不重置条件 */
+export function loadLedgerPage(page) {
+  pageNum.value = page
+  return loadLedger()
+}
+
+/** 关键字 / 「只看启用的」变了：回第 1 页重新查 */
+export function applyLedgerFilters() {
+  pageNum.value = 1
+  return loadLedger()
+}
+
+/** 每页条数变了：也回第 1 页（否则会停在一个已越界的页码上） */
+export function setLedgerPageSize(size) {
+  pageSize.value = size
+  pageNum.value = 1
+  return loadLedger()
 }
 
 /**
@@ -57,7 +105,8 @@ export async function saveLedger(draft) {
   saving.value = true
   try {
     const res = await request.post('/api/equipment/ledger/save', buildPayload(draft))
-    await loadLedger(true)
+    // 写完重新取当前页：列表数据在服务端，本地那份不会有新行
+    await loadLedger()
     return res.data?.data
   } finally {
     saving.value = false
@@ -67,7 +116,7 @@ export async function saveLedger(draft) {
 /** 停用 / 启用。**不提供删除** —— 台账是历史依据，删了就查不到「某一行是怎么来的」 */
 export async function setLedgerEnabled(id, enabled) {
   await request.post('/api/equipment/ledger/enable', null, { params: { id, enabled } })
-  await loadLedger(true)
+  await loadLedger()
 }
 
 /**
@@ -120,5 +169,22 @@ export function buildPayload(draft) {
 }
 
 export function useEquipmentLedgerData() {
-  return { rows, loading, saving, loadLedger, saveLedger, setLedgerEnabled, uploadVesselDrawing }
+  return {
+    rows,
+    total,
+    loading,
+    saving,
+    loadError,
+    pageNum,
+    pageSize,
+    keyword,
+    onlyEnabled,
+    loadLedger,
+    loadLedgerPage,
+    applyLedgerFilters,
+    setLedgerPageSize,
+    saveLedger,
+    setLedgerEnabled,
+    uploadVesselDrawing,
+  }
 }
