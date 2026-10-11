@@ -1,20 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// 打桩工单数据源：本文件只验证图片弹窗这一件事，不关心工单列表怎么来的
-vi.mock('../../src/composables/useWorkOrderData', async () => {
-  const { ref } = await import('vue')
-  const allWorkOrders = ref([])
-  const tableDataAll = ref([])
-  const filterWorkOrders = vi.fn()
+// 打桩工单数据源：本文件只验证图片弹窗这一件事，不关心工单列表怎么来的，
+// 但**形状必须取自真实 hook**（importOriginal），只把网络调用 fetchWorkOrders 换掉。
+//
+// ⚠️ 这里曾经是手写的形状（allWorkOrders / tableDataAll / filterWorkOrders）。
+// 变更-035 把这三个名字从 useWorkOrderData 里删掉时，手写 mock 跟着契约一起过期，
+// 于是单测全绿、useOrderImages 在生产里已经抛 TypeError（上传成功却报失败）。
+// 取真实形状后，契约再断，这个文件会立刻红。
+vi.mock('../../src/composables/useWorkOrderData', async (importOriginal) => {
+  const actual = await importOriginal()
+  const real = actual.useWorkOrderData()
   const fetchWorkOrders = vi.fn(async () => {})
 
   return {
-    useWorkOrderData: () => ({
-      allWorkOrders,
-      tableDataAll,
-      filterWorkOrders,
-      fetchWorkOrders,
-    }),
+    useWorkOrderData: () => ({ ...real, fetchWorkOrders }),
   }
 })
 
@@ -41,11 +40,9 @@ describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用�
 
   beforeEach(() => {
     api = useOrderImages()
-    const { allWorkOrders, tableDataAll, filterWorkOrders, fetchWorkOrders } = useWorkOrderData()
+    const { tableData, fetchWorkOrders } = useWorkOrderData()
 
-    allWorkOrders.value = []
-    tableDataAll.value = []
-    filterWorkOrders.mockClear()
+    tableData.value = []
     fetchWorkOrders.mockClear()
     request.get.mockReset()
     request.post.mockReset()
@@ -101,10 +98,12 @@ describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用�
     expect(api.currentIndex.value).toBe(0)
   })
 
-  it('上传成功后把新图片追加进列表，并同步工单数据源里的 imageList', async () => {
-    const { allWorkOrders, tableDataAll, filterWorkOrders } = useWorkOrderData()
-    allWorkOrders.value = [{ orderNo: '1000001', imageList: [] }]
-    tableDataAll.value = [{ orderNo: '1000001', imageList: [] }]
+  it('上传成功后把新图片追加进列表，并同步当前页数据源里的 imageList', async () => {
+    const { tableData } = useWorkOrderData()
+    tableData.value = [
+      { orderNo: '1000001', imageList: [] },
+      { orderNo: '1000002', imageList: [] },
+    ]
 
     api.currentOrderNo.value = '1000001'
     api.imageList.value = images
@@ -122,9 +121,9 @@ describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用�
 
     expect(api.imageList.value).toHaveLength(3)
     // 列表页的数据源也要更新，否则关掉弹窗还显示旧图
-    expect(allWorkOrders.value[0].imageList).toHaveLength(3)
-    expect(tableDataAll.value[0].imageList).toHaveLength(3)
-    expect(filterWorkOrders).toHaveBeenCalled()
+    expect(tableData.value[0].imageList).toHaveLength(3)
+    // 只动当前工单那一行，别的行不许被顺手改写
+    expect(tableData.value[1].imageList).toEqual([])
   })
 
   it('上传接口返回 success:false 时不改动列表（业务失败也是 HTTP 200）', async () => {
@@ -137,9 +136,9 @@ describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用�
     expect(api.imageList.value).toEqual(images)
   })
 
-  it('删除：确认后从列表移除并同步数据源', async () => {
-    const { allWorkOrders } = useWorkOrderData()
-    allWorkOrders.value = [{ orderNo: '1000001', imageList: images }]
+  it('删除：确认后从列表移除并同步当前页数据源', async () => {
+    const { tableData } = useWorkOrderData()
+    tableData.value = [{ orderNo: '1000001', imageList: images }]
 
     api.currentOrderNo.value = '1000001'
     api.imageList.value = [...images]
@@ -153,7 +152,7 @@ describe('useOrderImages：工单图片弹窗（工单汇总 / 周统计共用�
       data: { imageId: '1' },
     })
     expect(api.imageList.value).toEqual([images[1]])
-    expect(allWorkOrders.value[0].imageList).toEqual([images[1]])
+    expect(tableData.value[0].imageList).toEqual([images[1]])
   })
 
   it('删除：用户取消确认时一个请求都不发', async () => {

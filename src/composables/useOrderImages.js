@@ -25,7 +25,7 @@ const uploading = ref(false)
 const deleting = ref(false)
 
 export function useOrderImages() {
-  const { allWorkOrders, tableDataAll, filterWorkOrders, fetchWorkOrders } = useWorkOrderData()
+  const { tableData, fetchWorkOrders } = useWorkOrderData()
 
   // 列表接口（部分后端版本会返回最新图片列表；失败时保留入参带过来的 imageList）
   async function refreshImageList(order) {
@@ -40,19 +40,22 @@ export function useOrderImages() {
     imageList.value = normalizeImageList(res.data?.data || [])
   }
 
-  // 图片增删后同步内存里的四份数据源，避免列表页仍显示旧图
+  // 图片增删后同步当前页数据源，避免列表页仍显示旧图。
+  //
+  // ⚠️ 变更-035 起列表是「服务端分页 + 服务端筛选」，前端只持有当前页（tableData）：
+  // 旧的 allWorkOrders / tableDataAll / filterWorkOrders 已随那次改造删除。
+  // 这里曾因继续解构这三个名字，在上传/删除成功后抛 TypeError —— 后端已成功、
+  // 前端却报「失败」，用户重试还会重复上传（2026-10-10 修复）。
   function updateOrderImages(images) {
     const normalizedImages = normalizeImageList(images)
-    const updateImages = (order) => {
+
+    tableData.value.forEach((order) => {
       if (String(order.orderNo) === String(currentOrderNo.value)) {
         order.imageList = normalizedImages
       }
-    }
+    })
 
-    allWorkOrders.value.forEach(updateImages)
-    tableDataAll.value.forEach(updateImages)
     imageList.value = normalizedImages
-    filterWorkOrders()
   }
 
   async function openImageDialog(order) {
@@ -103,7 +106,7 @@ export function useOrderImages() {
       } else {
         // 接口没回图片列表：重新拉工单，再从工单对象上取图片
         await fetchWorkOrders()
-        const currentOrder = allWorkOrders.value.find(
+        const currentOrder = tableData.value.find(
           (order) => String(order.orderNo) === String(currentOrderNo.value),
         )
         await refreshImageList(currentOrder)
