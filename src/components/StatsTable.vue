@@ -38,7 +38,7 @@ function cellClass(column) {
   if (column.wrap) return WRAP_CELL_CLASS[column.width] || DEFAULT_WRAP_CELL_CLASS
 
   if (column.align === 'right') {
-    const color = column.emphasis ? 'font-semibold text-emerald-700' : 'text-slate-600'
+    const color = column.emphasis ? 'font-semibold text-brand-deep' : 'text-slate-600'
     return `whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm ${color}`
   }
 
@@ -51,13 +51,13 @@ function getRowKey(item, index) {
 </script>
 
 <template>
-  <section class="rounded-card border border-slate-200 bg-white shadow-card">
+  <section class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
     <div class="overflow-x-auto">
       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
         <colgroup>
           <col v-for="column in columns" :key="column.key" :class="column.width" />
         </colgroup>
-        <thead class="bg-slate-50">
+        <thead class="bg-region">
           <tr>
             <th
               v-for="column in columns"
@@ -70,7 +70,7 @@ function getRowKey(item, index) {
             </th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-slate-100 bg-white">
+        <tbody class="divide-y divide-slate-100">
           <tr v-if="rows.length === 0">
             <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-500">
               {{ emptyText }}
@@ -79,7 +79,7 @@ function getRowKey(item, index) {
           <tr
             v-for="(item, index) in rows"
             :key="getRowKey(item, index)"
-            class="transition hover:bg-slate-50"
+            class="transition hover:bg-region"
           >
             <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
               {{ index + 1 }}

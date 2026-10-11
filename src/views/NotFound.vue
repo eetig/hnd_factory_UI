@@ -11,13 +11,13 @@ const router = useRouter()
   useRouter 的 replace 而非 push：404 是死路，不该留在历史里让后退键再撞一次。
 -->
 <template>
-  <!-- 三层与 Login.vue 同构（外壳本来就照抄它）：冷灰底 → 暖白纸 → 白色卡片。 -->
-  <main class="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+  <!-- 三层与 Login.vue 同构（外壳本来就照抄它）：桌面 desk → 场（glass-field）→ 白色卡片。 -->
+  <main class="flex min-h-screen items-center justify-center bg-desk p-4">
     <div
-      class="flex min-h-[calc(100vh-2rem)] w-full items-center justify-center rounded-card bg-canvas shadow-card"
+      class="glass-field flex min-h-[calc(100vh-2rem)] w-full items-center justify-center rounded-card bg-canvas shadow-card"
     >
       <div class="w-full max-w-md rounded-card border border-slate-200 bg-white p-8 shadow-card">
-        <p class="text-center text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700">
+        <p class="text-center text-sm font-semibold uppercase tracking-[0.2em] text-brand-deep">
           404
         </p>
 

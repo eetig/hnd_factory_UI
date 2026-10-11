@@ -40,9 +40,9 @@ const successCount = computed(() => images.value.filter((i) => i.status === 'suc
 const errorCount = computed(() => images.value.filter((i) => i.status === 'error').length)
 
 const dropZoneClass = computed(() => {
-  if (isFull.value) return 'border-slate-200 bg-slate-50 cursor-not-allowed'
-  if (dragActive.value) return 'border-emerald-600 bg-emerald-50'
-  return 'border-slate-300 hover:border-emerald-600 cursor-pointer'
+  if (isFull.value) return 'border-slate-200 bg-region cursor-not-allowed'
+  if (dragActive.value) return 'border-brand bg-brand-50'
+  return 'border-slate-300 hover:border-brand cursor-pointer'
 })
 
 function openFilePicker() {
@@ -500,7 +500,7 @@ function removeRow(image, row) {
 function inputClass(col) {
   return [
     'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
-    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-emerald-600 focus:bg-white',
+    'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-brand focus:bg-raised',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
 }
@@ -638,7 +638,7 @@ onUnmounted(() => {
     />
 
     <section
-      class="rounded-card border-2 border-dashed bg-white p-10 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+      class="rounded-card border-2 border-dashed bg-raised p-10 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
       :class="dropZoneClass"
       role="button"
       :tabindex="isFull ? -1 : 0"
@@ -692,10 +692,10 @@ onUnmounted(() => {
       {{ message }}
     </p>
 
-    <section v-if="images.length" class="rounded-card border border-slate-200 bg-white shadow-card">
+    <section v-if="images.length" class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
-          已选 <span class="font-semibold text-emerald-700">{{ images.length }}</span> /
+          已选 <span class="font-semibold text-brand-deep">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
         </p>
         <button
@@ -717,7 +717,7 @@ onUnmounted(() => {
           <img
             :src="image.url"
             :alt="image.name"
-            class="h-32 w-full bg-slate-50 object-cover"
+            class="h-32 w-full bg-region object-cover"
             loading="lazy"
             decoding="async"
           />
@@ -743,7 +743,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-xl bg-emerald-700 px-6 py-3 text-sm font-medium text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-xl bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -759,7 +759,7 @@ onUnmounted(() => {
       {{ materialLookupError }}（物料编码将全部留空，可手工填写）
     </p>
 
-    <section v-if="submitted.length" class="rounded-card border border-slate-200 bg-white shadow-card">
+    <section v-if="submitted.length" class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
@@ -776,7 +776,7 @@ onUnmounted(() => {
           :key="image.id"
           class="overflow-hidden rounded-card border border-slate-200"
         >
-          <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+          <header class="flex items-center gap-3 border-b border-slate-100 bg-region/60 px-4 py-3">
             <img
               :src="image.url"
               :alt="image.name"
@@ -804,7 +804,7 @@ onUnmounted(() => {
             <div class="px-4 pb-4">
               <table v-if="image.table?.rows.length" class="w-full border-collapse text-sm">
                 <thead>
-                  <tr class="bg-slate-50 text-slate-600">
+                  <tr class="bg-region text-slate-600">
                     <th
                       v-for="col in image.table.columns"
                       :key="col.key"
@@ -870,7 +870,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-brand-50 hover:text-brand-deep"
                           aria-label="搜索物料"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
@@ -938,7 +938,7 @@ onUnmounted(() => {
                 </tbody>
               </table>
 
-              <p v-else class="rounded-card bg-slate-50 px-3 py-2.5 text-sm text-slate-500">
+              <p v-else class="rounded-card bg-region px-3 py-2.5 text-sm text-slate-500">
                 暂无行项目，可点下方「增加一行」手工补充。
               </p>
 
@@ -947,7 +947,7 @@ onUnmounted(() => {
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
                   @click="addRow(image)"
                 >
                   <svg
@@ -992,7 +992,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1023,7 +1023,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-emerald-600"
+          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand"
           @input="handlePickerInput"
           @keyup.enter="runPickerSearch"
         />
@@ -1048,7 +1048,7 @@ onUnmounted(() => {
         <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
           <button
             type="button"
-            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-emerald-50"
+            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-brand-50"
             @click="selectMaterial(item)"
           >
             <span class="w-28 shrink-0 font-mono text-sm text-slate-900">{{ item.code }}</span>

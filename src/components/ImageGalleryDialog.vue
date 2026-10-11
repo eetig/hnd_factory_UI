@@ -71,7 +71,7 @@ function handleFileSelected(event) {
       </div>
     </template>
 
-    <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-card bg-slate-50 p-6">
+    <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-card bg-region p-6">
       <div v-if="currentImage" class="relative flex w-full items-center justify-center">
         <el-button
           v-if="images.length > 1"

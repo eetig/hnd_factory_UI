@@ -1,22 +1,22 @@
 /*
- * Element Plus 主题覆盖（使用方 2026-10-07 定：单一高亮色 + 大圆角）。
+ * Element Plus 主题覆盖（变更-043：高亮色从苹果蓝换到石墨黑）。
  *
  * ⚠️ 导入顺序是这份文件能不能生效的前提：必须排在 element-plus/dist/index.css **之后**。
  *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
  *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
  *
- * 高亮色 = Tailwind emerald-700（#047857），与手写 markup 同一个值。
- * 历史上这里是天蓝，且与 EP 自带的 #409eff 并存 —— 那个「手写 markup 一套蓝、
- * el-* 组件另一套蓝」的问题已经解决，现在全站只有一个高亮色。
+ * 高亮色 = Tailwind 的 `brand` #1D1D1F（石墨黑，macOS 风），手写 markup 与 EP 同一个值。
+ * 历史：天蓝（EP 原生 #409eff 并存期）→ 翡翠绿 emerald-700（变更-027~040）→ 苹果蓝（041）
+ * → 石墨黑（043）。每一代都是「整站只有一个高亮色」，这条不变量没变过。
  *
- * **取 -700 而不是 -600 是阈值决定的，不是偏好**：白字压 -600 只有 3.77:1，
- * 不到 AA 的 4.5；-700 是 5.48。EP 的 message / button / pagination 当前页
- * 都会用主色压白或压浅底，所以只能停在 -700。
+ * 043 的账比 041 简单：#1D1D1F 是**中性深灰**，白字压它 16.83:1（041 的主色 #0071E3
+ * 只有 4.70）——「白字过不过」在这代不再是悬念。041 的 brand-vivid (#0A84FF) 随蓝系
+ * 整键退役，tailwind.config.js 里也没有了。
  */
 
 :root {
-  /* ===== 高亮色：对齐 Tailwind emerald-700 ===== */
-  --el-color-primary: #047857;
+  /* ===== 高亮色：对齐 Tailwind brand #1D1D1F ===== */
+  --el-color-primary: #1d1d1f;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -26,16 +26,20 @@
    * 校验方法：EP 默认主色 #409eff 的 light-3 是 #79bbff，
    * 用同一条公式算 0.7×64+0.3×255 = 121 = 0x79 ✅ —— 公式与 EP 一致
    *
+   * 一个**同源交叉点**：dark-2（= 主色 ×0.8）算出来 #171719，与
+   * tailwind.config.js 里手挑的 `brand-deep` 是同一个值 —— 两条路径互相验证。
+   * spec 有一条同时钉两边（浅底文字用它、EP 的 dark-2 也是它）。
+   *
    * ⚠️ 改 --el-color-primary 就必须**六个一起重算**，漏一个会在分页当前页、
    *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
    *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #4fa189;
-  --el-color-primary-light-5: #82bcab;
-  --el-color-primary-light-7: #b4d7cd;
-  --el-color-primary-light-8: #cde4dd;
-  --el-color-primary-light-9: #e6f2ee;
-  --el-color-primary-dark-2: #036046;
+  --el-color-primary-light-3: #616162;
+  --el-color-primary-light-5: #8e8e8f;
+  --el-color-primary-light-7: #bbbbbc;
+  --el-color-primary-light-8: #d2d2d2;
+  --el-color-primary-light-9: #e8e8e9;
+  --el-color-primary-dark-2: #171719;
 
   /* ===== 大圆角（EP 2.14.5 默认：base 4px / small 2px / round 20px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */
@@ -55,6 +59,49 @@
    *    （`--el-border-radius-base` 与 `-small` 是真在 :root 上的，不用管。）
    */
   --el-border-radius-small: 6px; /* 勾选框：跟着大圆角走，但不能圆到看不出是方框 */
+
+  /*
+   * ===== 表面色：从「雾白」回到**纯中性**（变更-043）=====
+   *
+   * ⚠️ **这一组是量的结果，不是照着 EP 文档抄的。** 变更-037 时使用方圈着工作台的
+   * 分页行说「很多地方都是白色的」—— 分页那排数字不是手写的，是 Element Plus 画的，
+   * 所以改 Tailwind 的类名改不到它们（实机读回来：`.el-pager li` 是纯白、
+   * `.el-pagination button` 是冷灰、`.el-checkbox__inner` 是纯白）。
+   *
+   * 043 的决定：底场已经中性了（desk / canvas 几乎无彩），「空白填充」就是**纯白**
+   * （#FFFFFF = Tailwind `raised`）。下面 lighter / light / fill 是三档**纯中性**的灰
+   * （max−min ≤ 6）—— 041 的微蓝（B 通道略高）是当时「蓝底上白要偏冷才不脏」的补偿，
+   * 场一中性，那抹蓝就成了残渣，整组换掉。
+   *
+   * 这一组**必须写在 :root 上**（与上面那几条圆角相反）：EP 的填充变量本来就是在
+   * :root 上声明的，同一个选择器、同一处，谁在后谁赢；而圆角那几条是 EP 声明在
+   * **组件自己的类**上的，写 :root 会被就近覆盖 —— 两种情况的写法不一样，别互抄。
+   *
+   * 取值的对应关系（EP 原生那一列是它自己的默认值）：
+   *
+   *   --el-fill-color-blank    #ffffff → #FFFFFF    「空白填充」= 输入框 / 勾选框 /
+   *   --el-bg-color            #ffffff → #FFFFFF      plain 按钮 / 分页数字的底
+   *   --el-bg-color-overlay    #ffffff → #FFFFFF    弹层（dialog / popover / 下拉面板）
+   *   --el-fill-color-lighter  #fafafa → #F7F7F9
+   *   --el-fill-color-light    #f5f7fa → #F2F2F5
+   *   --el-fill-color          #f0f2f5 → #EEEEF1    分页的上一页/下一页、禁用态（= region）
+   *
+   * 前三档与 Tailwind `raised` 同值（纯白），后三档是纯中性的三个刻度 ——
+   * **相对次序没动**：六档从深到浅仍是 fill → light → lighter → blank/bg/overlay。
+   *
+   * ⚠️ 只管**面**，不管**字**：`--el-text-color-*` 一个没动。EP 的正文色
+   * （#303133 / #606266）压这几档白复算过，对比度只多不少。
+   *
+   * ⚠️ 是**全站**生效，`:root` 没有作用域可言。弹层、消息框、下拉会跟着变 ——
+   * 这是要的：`ElMessageBox` / `el-dialog` 是挂到 body 上的**系统级表面**，
+   * 出现在哪一页都该是同一种材质（现在是清水玻璃上抬起来的白面）。
+   */
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: #ffffff;
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-lighter: #f7f7f9;
+  --el-fill-color-light: #f2f2f5;
+  --el-fill-color: #eeeef1;
 }
 
 /*

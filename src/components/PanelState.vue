@@ -45,7 +45,7 @@ const emit = defineEmits(['action'])
     <button
       v-if="actionText"
       type="button"
-      class="mt-5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+      class="mt-5 rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
       @click="emit('action')"
     >
       {{ actionText }}

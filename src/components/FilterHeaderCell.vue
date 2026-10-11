@@ -14,8 +14,8 @@ const emit = defineEmits(['open', 'clear'])
   <span class="inline-flex items-center gap-1">
     <button
       type="button"
-      class="inline-flex items-center gap-1 rounded-xl transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-      :class="[maxWidthClass, selected ? 'text-emerald-700' : '']"
+      class="inline-flex items-center gap-1 rounded-xl transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+      :class="[maxWidthClass, selected ? 'text-brand-deep' : '']"
       :title="selected ? `已筛选：${selected}` : `点击选择${hint || label}`"
       @click="emit('open')"
     >

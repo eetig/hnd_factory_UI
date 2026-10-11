@@ -46,6 +46,7 @@ const PUBLIC_TAB_LABELS = [
   '月底储罐液位记录',
   '压力容器体积计算',
   '电费预提',
+  '采购进度跟踪',
 ]
 
 /**
@@ -652,23 +653,24 @@ describe('侧栏收起 / 展开', () => {
     // 落到该组第一个可见页；侧栏高亮与主区页签都由 activeTab 推导，天然同步
     expect(activeTabKey(wrapper)).toBe('weekly')
 
-    // 收起态**没有**「块底」—— 那层 emerald-50 + 光晕只在展开态有（40px 里套环会糊）。
-    // 当前组的标记落在图标块上：实心 emerald-700 + 白图标。
+    // 收起态**没有**「块底」—— 那层 bg-brand 胶囊 + 白描边环只在展开态有（40px 里套环会糊）。
+    // 当前组的标记落在图标块上：白色透块（bg-white/15）+ 白图标。
     // 顺带确认选中的确**转移**了，而不是两块一起亮
     const tools = groups.find((b) => b.attributes('aria-label') === '工具')
-    expect(stats.find('span').classes()).toContain('bg-emerald-700')
-    expect(tools.find('span').classes()).not.toContain('bg-emerald-700')
+    expect(stats.find('span').classes()).toContain('bg-white/15')
+    expect(tools.find('span').classes()).not.toContain('bg-white/15')
   })
 
-  it('展开态只有当前组带绿光晕（使用方 2026-10-07 提的「绿色光晕」）', () => {
-    // 光晕是这轮的需求本身，所以要有护栏：四块一样亮就分不出当前在哪一组了。
+  it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记，041 蓝胶囊 → 043 石墨胶囊 + 白描边环）', () => {
+    // 选中标记是这轮的需求本身，所以要有护栏：四块一样亮就分不出当前在哪一组了。
+    // 041 那圈 30% 的 shadow-glow 光晕已随 043 退役，标记改由石墨实底 + ring-white/20 承担。
     // 匿名态在「工具」组（visibleTabs[0] 是物料查询）
     const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
-    const glowing = groups.filter((b) => b.classes().includes('shadow-glow'))
+    const marked = groups.filter((b) => b.classes().includes('ring-white/20'))
 
-    expect(glowing).toHaveLength(1)
-    expect(glowing[0].text()).toContain('工具')
-    expect(glowing[0].classes()).toContain('bg-emerald-50')
+    expect(marked).toHaveLength(1)
+    expect(marked[0].text()).toContain('工具')
+    expect(marked[0].classes()).toContain('bg-brand')
   })
 
   it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {

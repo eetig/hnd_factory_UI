@@ -401,8 +401,8 @@ function handleBackToList() {
     />
 
     <section
-      class="relative cursor-pointer rounded-card border-2 border-dashed bg-white p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
-      :class="dragActive ? 'border-emerald-600 bg-emerald-50' : 'border-slate-300 hover:border-emerald-600'"
+      class="relative cursor-pointer rounded-card border-2 border-dashed bg-raised p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+      :class="dragActive ? 'border-brand bg-brand-50' : 'border-slate-300 hover:border-brand'"
       role="button"
       :tabindex="uploading ? -1 : 0"
       aria-labelledby="wo-import-drop-title wo-import-drop-hint"
@@ -421,7 +421,7 @@ function handleBackToList() {
           </p>
           <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
             <div
-              class="h-full rounded-full bg-emerald-600 transition-[width] duration-200 ease-out"
+              class="h-full rounded-full bg-brand transition-[width] duration-200 ease-out"
               :style="{ width: `${uploadPercent}%` }"
             ></div>
           </div>
@@ -446,10 +446,11 @@ function handleBackToList() {
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
-        <!-- 这里的 -600 是有意的：这是 48px 图标（纯图形，阈值 3:1，emerald-600 压白底 3.77 过），
-             不是文字。承载文字的实心按钮一律 -700（5.48），两者别互相「对齐」。 -->
+        <!-- 图标与实心按钮 043 起同一档：`brand`（石墨黑 #1D1D1F，白底 16.83）。
+             041 蓝时代「只有图形能用」的 `brand-vivid`（#0A84FF）已随蓝系整键退役，
+             本页不出现它。（更早 emerald-600 / emerald-700 的两档账同理退役。） -->
         <svg
-          class="h-12 w-12 text-emerald-600"
+          class="h-12 w-12 text-brand"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -460,10 +461,10 @@ function handleBackToList() {
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
         <p id="wo-import-drop-title" class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-emerald-700">点击选择文件</span>
+          将 Excel 文件拖到此处，或 <span class="text-brand-deep">点击选择文件</span>
         </p>
         <p id="wo-import-drop-hint" class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
-        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
+        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-region px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
           <span v-if="previewError" class="font-medium text-rose-700">解析失败</span>
@@ -484,12 +485,12 @@ function handleBackToList() {
       </div>
     </div>
 
-    <section v-if="previewList.length" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
+    <section v-if="previewList.length" class="mt-6 rounded-card border border-white/60 bg-raised/95 px-5 py-4 shadow-card backdrop-blur-xl">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
           v-if="workOrderType"
-          class="rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700"
+          class="rounded-full bg-brand-100 px-3 py-1 text-sm font-semibold text-brand-deep"
         >
           {{ workOrderType }}
         </span>
@@ -504,7 +505,7 @@ function handleBackToList() {
       <h3 class="text-sm font-semibold text-rose-700">
         文件校验失败行（共 {{ previewErrors.length }} 行），请修正文件后重新上传
       </h3>
-      <div class="mt-3 overflow-x-auto rounded-card bg-white">
+      <div class="mt-3 overflow-x-auto rounded-card">
         <table class="min-w-full divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
@@ -522,13 +523,13 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-slate-200 bg-white shadow-card">
+    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
       <div class="overflow-x-auto">
         <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
           <colgroup>
             <col v-for="column in columns" :key="column.key" :class="column.width" />
           </colgroup>
-          <thead class="bg-slate-50">
+          <thead class="bg-region">
             <tr>
               <th
                 v-for="column in columns"
@@ -541,8 +542,8 @@ function handleBackToList() {
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100 bg-white">
-            <tr v-for="(item, index) in displayTableData" :key="`${item?.orderNo}-${index}`" class="transition hover:bg-slate-50">
+          <tbody class="divide-y divide-slate-100">
+            <tr v-for="(item, index) in displayTableData" :key="`${item?.orderNo}-${index}`" class="transition hover:bg-region">
               <td
                 v-for="column in columns"
                 :key="column.key"
@@ -571,13 +572,13 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="imported" class="mt-6 rounded-card border border-slate-200 bg-white px-5 py-4 shadow-card">
+    <section v-if="imported" class="mt-6 rounded-card border border-white/60 bg-raised/95 px-5 py-4 shadow-card backdrop-blur-xl">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex h-8 w-8 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.success">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
-          新增 <span class="font-semibold text-emerald-700">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-emerald-700">{{ importSummary.updateCount }}</span> 条，
+          新增 <span class="font-semibold text-brand-deep">{{ importSummary.addCount }}</span> 条，
+          更新 <span class="font-semibold text-brand-deep">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>

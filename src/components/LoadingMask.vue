@@ -28,6 +28,13 @@ defineProps({
   display: flex;
   align-items: center;
   justify-content: center;
+  /*
+   * 蒙版取**纯白**（= `raised`，去 alpha 那一步），不是暖白 —— 变更-041。
+   * 它是「一块盖住内容的半透明面」，属于面不属于光：037 全站暖白时它跟着暖
+   * （rgba(253,250,244,.72)），041 全站回到白霜之后白色的面就是对的 ——
+   * 卡片是 raised/95，蒙版是 raised/72，同族同色、只差遮蔽强度。
+   * alpha 保持 0.72 不变：**这一轮只换色相，没动遮蔽强度**。
+   */
   background: rgba(255, 255, 255, 0.72);
 }
 

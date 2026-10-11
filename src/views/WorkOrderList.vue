@@ -81,6 +81,8 @@ const tabs = [
   // 将来要放开给非 admin 的维护员时只需给角色加权限位，不必动这里的结构。
   { key: 'equipment', label: '设备数据维护', perm: 'equipment:edit', group: 'maintain' },
   { key: 'electricity', label: '电费预提', group: 'tools' },
+  // 采购进度跟踪（2026-10-10）：使用方先要一个入口、功能内容待定 —— 先挂占位页，与电费预提同款。
+  { key: 'purchase', label: '采购进度跟踪', group: 'tools' },
   { key: 'import', label: '文件导入', perm: 'work_order:import', group: 'maintain' },
   // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
   { key: 'imageParse', label: '图片解析', perm: 'work_order:import', group: 'maintain' },
@@ -225,6 +227,17 @@ const sidebarGroups = computed(() =>
 
 /** 当前页标题（主区顶部） */
 const activeTabLabel = computed(() => tabs.find((tab) => tab.key === activeTab.value)?.label ?? '')
+
+/*
+ * 变更-038：四个汇总页签的滚动发生在**卡片内部**（表格区自己滚），其余页签仍在
+ * 玻璃栏里滚（模板里那个 `flex-1 min-h-0 overflow-y-auto`）。
+ *
+ * `.glass-scroll` 声明的 `--main-scroll` 是**三块玻璃边缘高光的来源**，它必须挂在
+ * 「当时真正在滚的那个元素」上 —— 挂在不动的那块上，高光就**冻住**：不报错、
+ * 不警告，只是不跟手。
+ */
+const INNER_SCROLL_TABS = ['workOrder', 'material', 'inbound', 'stock']
+const scrollsInsideCard = computed(() => INNER_SCROLL_TABS.includes(activeTab.value))
 
 /**
  * 切大类：落到该类第一个**可见**页。
@@ -1530,10 +1543,11 @@ watch(activeTab, (tab) => {
 <template>
   <el-config-provider :locale="zhCn">
     <!--
-      页面底色仍是冷调 slate-50；**暖白是卡片，不是背景**（使用方 2026-10-07 纠正）。
-
-      这两者只差一层嵌套，但看出来的东西完全不同：背景变暖是「整屏泛黄」，
-      卡片是「有一张纸，东西都放在纸上」。第一版做错成了前者。
+      页面底色 = **浅桌面灰 `desk`**（变更-043）。037 立的那条规矩没变、只换了颜色：
+      底与卡是两回事，只差一层嵌套却是两种读法 —— 底变暖是「整屏泛黄」，卡是
+      「有一张纸，东西都放在纸上」（第一版做错成了前者）。043 把最外圈从深夜蓝
+      翻到浅灰：它只在纸的四边露出那 16px，出的是「桌面」—— 场要比它**更亮**
+      才浮得起来；041 的蓝「夜」语义（深同伴衬托亮天穹）在这里反过来用。
 
       卡片四边留 16px，与侧栏浮动面板同一个数 —— 同一种留白不出现两个值。
       **高度写死 100vh − 上下各 16px（main 的 p-4），不是 min-h**（使用方 2026-10-07
@@ -1542,16 +1556,19 @@ watch(activeTab, (tab) => {
       （实测：主区栏 619 → 3157 → 3381px，整页多出一条滚动条）。
       定高之后纸正好是一整屏，页面自己不再滚动，滚动都在两块面板内部
       —— 这也是侧栏 `100vh − 4rem` 那个数终于「算得准」的前提。
-      内层的东西（侧栏面板、各页白色卡片）层级不变，只是现在压在暖白纸上而不是冷灰上。
+      内层的东西（侧栏面板、各页卡片）层级不变，只是这张纸 043 起成了**中性
+      柔光场**（`.glass-field`：浅灰渐变 + 两团极淡的中性光斑，配方与理由在
+      glass-effects.css）—— 041 那个「蓝底才有东西可吸」的载体换成了无彩的
+      亮度变化：一张平纸上 blur 依然无物可糊，这是 036 的老结论、043 照旧成立。
     -->
-    <main class="min-h-screen bg-slate-50 p-4">
+    <main class="min-h-screen bg-desk p-4">
       <!--
       外壳**不再限宽居中**（原先这里挂的是 mx-auto max-w-[1600px]，我早先加的）。
       留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
       跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
       主区不再被压到 1600：几个台账表格本来就宽，宽出来正好摊开列。
     -->
-      <div class="flex h-[calc(100vh-2rem)] rounded-card bg-canvas shadow-card">
+      <div class="glass-field flex h-[calc(100vh-2rem)] rounded-card bg-canvas shadow-card">
         <!--
         左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
 
@@ -1576,7 +1593,7 @@ watch(activeTab, (tab) => {
         面板**撑满可用高度**（使用方 2026-10-07 追加）：此前高度跟着内容走，
         aside 被 main 的 min-h-screen 撑满、面板却只有小半截，下面空出一条竖带。
 
-        这个高度是 100vh 减掉**四层** 16px。外层暖白卡片是后加的，从两层变四层，
+        这个高度是 100vh 减掉**四层** 16px。外层那张纸（043 起是中性柔光场）是后加的，从两层变四层，
         数字必须跟着改 —— 否则面板比它所在的那张卡片还高出 32px：
           main 的 p-4 (16) + 面板 m-4 (16) + 面板高 + m-4 (16) + p-4 (16) = 100vh
           ⇒ 面板高 = 100vh − 64px = 100vh − 4rem
@@ -1619,47 +1636,62 @@ watch(activeTab, (tab) => {
           :class="collapsed ? 'w-[88px]' : 'w-72'"
         >
           <!--
-          磨砂玻璃（使用方 2026-10-07 圈着侧栏与顶部导航条指定的三件事：
-          **背景半透明、模糊 24 像素、边缘用亮白描边**）。
+          侧栏玻璃（磨砂玻璃是变更-037 建的那一层；041 深烟、043 翻浅成轻纱 —— 第三版材质）。
 
-          ⚠️ **第一版只照这三个值做，使用方上线看到的是「没效果」。** 当场量过：
-          75% 白压在 `#fdfaf4` 的暖白纸上出来是 `#fffefc` —— 跟纸差 2~8 级、
-          跟纯白差 0~3 级，肉眼分不出；那条「亮白描边」也是白压白。模糊更无从表现：
-          **模糊一张纯色的纸，出来还是那张纸**（侧栏底下永远是那张纸，表格滑不过来）。
-          使用方当场加了第四条：**玻璃带一点色调** —— 见 tailwind.config 的 `glass`。
-          现在填充是 `bg-glass/55`：压出来 `#e5efe5`，与纸的亮度比 **1.132**（门槛 1.08，
-          第一版白玻璃 1.034）。**现行这块料是浅绿的**（使用方 2026-10-07 追加
-          「液态玻璃染成浅绿色」）—— 三版的经过与取值理由写在那个 token 的注释里，
-          别只看这里的结论。
+          病史先记着，不然下一个人看不出为什么现在做浅色：使用方 2026-10-07 圈着侧栏
+          与顶部导航条指定三件事 —— **背景半透明、模糊 24 像素、边缘用亮白描边**。
+          第一版只照这三个值做，上线看到的是「没效果」：75% 白压在暖白纸上还是白，
+          模糊一张纯色的纸还是那张纸。使用方当场加了第四条：**玻璃带一点色调** ——
+          于是有了 `glass` 色那一代。它解决了「看得见」，没解决「好看」：
+          2026-10-11 使用方再看：「配色还是不好看，参考苹果系统的液体玻璃做」。
+          根因不在玻璃、**在纸** —— 一张几乎纯色的纸，模糊无物可糊、saturate 无彩可提，
+          玻璃再调也是灰片。
 
-          · `backdrop-blur-[24px]` 写任意值，不写等价的 `backdrop-blur-xl`：
-            24 是这块面板的**规格数字**，写成数字，将来 Tailwind 调了档位它不会跟着飘。
-          · 描边必须是**不透明**的 `border-white`，不能跟着填充一起写 `/70`：
+          043 的两步（使用方看过 042 实机后原话「不要蓝色，做成透明」）：
+          ①纸换**中性柔光场**（浅灰渐变 + 白/冷灰两团极淡光斑，配方在
+          glass-effects.css）；②三块玻璃统一**清水档** —— 041 的深/浅二分退役，
+          侧栏改用「比场深一档」的灰纱 `veil` 压 55%。透明感靠「低填充 + 高模糊
+          + 边光学（042 保留）+ 柔光场」共同承担；这块料与场的分离比 ~1.11
+          （与 desk/canvas 那对同级，spec 钉 ≥1.08；白玻璃对白场那两对按 1.046）。
+
+          · `backdrop-blur-[32px]` 写任意值，不写档位名：32 是这块料的**规格数字**
+            （043 从 28 升到 32 —— 填充砍到 55% 之后，通透感要靠更厚的模糊稳住），
+            写成数字，将来 Tailwind 调了档位它不会跟着飘。
+            `backdrop-saturate` **整条退役**：场是无彩的，提饱和无处可提。
+          · 描边仍是**不透明**的 `border-white`，不能跟着填充一起写 `/70`：
             边框画在这块**自己背景之上**，`border-white/70` 压在填充上就是同一个像素 ——
-            等于没描边。只有比填充更亮，那道边才存在 —— 调了色调之后它才真的看得见。
-          · 透明度取 55%：再高面板与纸趋同（就是第一版那个「没效果」），
-            再低整块发闷、也吃掉了模糊还能透出来的那点余量。
+            等于没描边。只有比填充更亮，那道边才存在（清水档下填充只有 55%，
+            白描边的镜面感反而比 041 更清楚）。
+          · 选中指示是 **`bg-brand` 实底**（石墨 #1D1D1F + 纯白字 16.83:1）+ 一圈
+            `ring-1 ring-white/20` 描边；041 那圈 30% 的 `shadow-glow` 光晕**已退役**
+            —— 石墨实底自己撑得住，`shadow-glow` 这个 token 也删了。
           · **吸顶位置从 `top-4` 改成 `top-0`**（与主区那条导航条对齐，见那处注释）：
             sticky 的吸附基准是 **border box**，`m-4` 那 16px **不参与**吸顶 —— 实测
             滚到 900 时面板 top = 16（就是 `top-4` 的值），不是 32。所以静止态由
             `m-4` 给的 32px 不受影响，改的只是吸住之后那一条线：0，和导航条同一条。
 
-          ⚠️ **面板上的弱化文字跟着深了一级**（色调定案的连带项，漏掉就欠对比度）：
-          `slate-500` 压旧填充 `#fffefc` 是 4.72，压现在这块玻璃只剩 **4.04**，**跌破 AA**；
-          所以这块里所有 slate-500 的**文字**改 slate-600（实算 **6.43**），
-          分类标签从 slate-600 提到 slate-700（**8.78**），两级层次保住。
-          纯图标/控件（收起按钮、图标块、账号块）也一样是 slate-600 ——
-          本可按非文字元素的 3:1 留在 slate-500，但一块面板上两档灰并存只是噪音，索性收成一档。
-          面板上其余颜色也在玻璃上复算过一遍：选中态的名字 `emerald-800`（压玻璃 6.52，
-          它自己有 `emerald-50` 底、压底 7.29）、白图标压 `emerald-700` 图标块 5.48、
-          选中态底 `emerald-50` 上的 `emerald-700` 5.21 —— 都在 4.5 之上。
-          最紧的是 `emerald-700` 直接压玻璃的那处 —— 品牌英文小字（**4.65**），
-          过线但余量只剩 0.15，再深一档就不够（这个色调不能再往深里染）。
-          （变更-034：登录那处 emerald-700 文字收进了 emerald-800，压玻璃的只剩品牌一处。）
+          ⚠️ **浅纱上的文字整批翻深**（043 改动量最大的一处，漏一处就欠对比度）：
+          面板底色是 #D8D9DE 压 55% 出来的浅纱，041 的白字族压它全部破线 ——
+          字族换成 slate 深色四档：主标题 `text-slate-900`（压纱最坏 ~13.5）、
+          正文/身份行 `text-slate-700`、弱化行（提示 / 只读浏览）`text-slate-600`
+          （5.76 —— 排版分档，不是阈值压线）、图标块里的图形 slate-600。
+          白**只留在两处**：选中行底 `bg-brand` 实底**里面**（白字 16.83，
+          提示行转纯白也富余 —— 041 那种「只有纯白过线」的窘迫随石墨主色退役），
+          以及描边 `border-white`（光学件，不承载文字）。
+          **焦点环回到全站统一的 `ring-brand`**（石墨压浅纱 ~13:1）—— 041 那种
+          「全站唯一一处白环」的特殊待遇随深底一起退役。
+          未选中行底与图标块**翻成白色透块**：行 hover `bg-white/45`、图标块
+          `bg-white/40` + slate-600 图标；选中行里图标块转 `bg-white/15` + 白图标
+          （与选中胶囊同层，反白处理；白图标压石墨底 16.8，图形线富余）。
+          037 那条「未选中图标块一律 `bg-raised`」如今又轮到白色透块 ——
+          037 的前提（浅色面板）回来了，但取的是**半透明白**不是实白：
+          纱面比当年的暖白纸更灰，透块压纱既有形体又不刺眼（spec 复算钉着）。
+          （变更-034 / 036 两轮曾把登录文字与品牌小字从 emerald-700 收进 800 保对比度；
+          041 / 043 换主色后那套 emerald 对比账整页作废，slate 深字账写在这一段里。）
           -->
           <div
             id="app-sidebar"
-            class="sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-white bg-glass/55 backdrop-blur-[24px] shadow-card"
+            class="glass-refract glass-veil sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-white bg-veil/55 backdrop-blur-[32px] shadow-panel"
             :class="collapsed ? 'p-2' : 'p-4'"
           >
             <!--
@@ -1681,13 +1713,14 @@ watch(activeTab, (tab) => {
             >
               <p
                 v-show="!collapsed"
-                class="min-w-0 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"
+                class="min-w-0 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600"
               >
                 Factory Operations
               </p>
               <!--
-              焦点环全站统一到 emerald-600：压白底 3.77:1、压选中项的 emerald-50 是 3.58，
-              两边都过 1.4.11 对非文字元素要求的 3:1。
+              焦点环回到全站统一的 `ring-brand`（043）：石墨压浅纱 ~13:1，
+              041 那种「全站唯一一处白环」的特殊待遇随深底一起退役 ——
+              「全站一个环色」的规矩在浅纱上不再需要豁免。
 
               这处原先用的是 slate-500，理由是「导航项那批浅色环只有 1.67:1，
               别跟着抄」。那批环（含审计漏掉的 rose 两处、以及 slate-400 的 2.56:1）
@@ -1695,7 +1728,7 @@ watch(activeTab, (tab) => {
             -->
               <button
                 type="button"
-                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-slate-50 hover:text-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.98]"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                 :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
                 :aria-expanded="!collapsed"
                 aria-controls="app-sidebar"
@@ -1723,7 +1756,7 @@ watch(activeTab, (tab) => {
             <!-- 分区之间只用一条细分割线：面板本身已经浮起来了，
                再给每块画边框就成了「面板里套卡片」的双层轮廓，反而糊 -->
             <nav
-              class="mt-4 flex-1 space-y-1.5 border-t border-slate-100 pt-4"
+              class="mt-4 flex-1 space-y-1.5 border-t border-brand/10 pt-4"
               aria-label="功能分类"
             >
               <!--
@@ -1737,19 +1770,21 @@ watch(activeTab, (tab) => {
 
               —— 每个分组是一个**看得见的块**（使用方 2026-10-07：「每个块周围带绿色光晕」）。
               原先这里只是四行左对齐的文字浮在白底上，谈不上是「块」。现在图标进了一个
-              36px 的圆角方块（未选中白底 + slate-600 图标；选中 emerald-700 实心 +
-              白图标，5.48 过 AA），行才有形体 —— 面板下半部那片空白也因此读起来
-              是「列表到此为止」，而不是「列表没填满」。
+              36px 的圆角方块（未选中白色透块 + slate-600 图标；选中反白 + 白图标，
+              压在 brand 行底上 16.83），行才有形体 —— 面板下半部那片空白
+              也因此读起来是「列表到此为止」，而不是「列表没填满」。
 
-              未选中的图标块**必须是白**（原来是 slate-100）。侧栏改磨砂玻璃并带上色调
-              之后，面板从 #fffefc 沉到 #f1eee8，把 slate-100 的图标块追上了：
-              两者亮度比从 1.087 掉到 1.057，块与面板糊在一起。改成白是 1.158 ——
-              正好与那道**白描边**、与导航条的**白药丸**是同一个关系：这块料上，
-              抬起来的一律是白。由 visualTokens 那条「图标块一律用白」钉着。
+              未选中图标块 043 起是 **`bg-white/40` 白色透块**（041 的 `/12` 在浅纱上
+              会被纱吞掉）。037 那代它在 slate-100 与纯白 `bg-raised` 之间调过两轮
+              （面板沉下去把 slate-100 追上、改白又撞上使用方 2026-10-11 说的「刺眼」）——
+              043 的浅纱比 037 的暖白纸更灰，白透块压纱仍读得出来，也不刺眼。
+              规则一句话：「**这块料上，抬起来的一律是白色系**」—— 实白给浅底
+              （卡片 /95），白透块给纱面（图标块 /40、行 hover /45）。
 
-              光晕（shadow-glow + emerald-600/25 的描边）**只加在选中项**：
-              四块一样亮就分不出当前在哪一组了。收起态也不加 —— 40px 见方里再套一层环，
-              加上与按钮等大的实心图标块，会糊成一团。
+              选中项**只剩 `bg-brand` 实底 + `ring-1 ring-white/20` 描边**（043 删了
+              `shadow-glow` 光晕 —— 石墨实底自己撑得住）。四块一样亮就分不出当前在
+              哪一组，这条没变；收起态也不描边 —— 40px 见方里再套一层环，加上与按钮
+              等大的图标块，会糊成一团。
 
               图标在展开态也留着（与收起态同一个 20px 图标，只是换了底色）：
               收起后那四个图标才学得会 —— 否则它们就是四个陌生符号。
@@ -1764,15 +1799,15 @@ watch(activeTab, (tab) => {
               >
                 <button
                   type="button"
-                  class="rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.99]"
+                  class="rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
                   :class="[
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
                       : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left',
                     !collapsed && currentGroup === group.key
-                      ? 'bg-emerald-50 shadow-glow ring-1 ring-emerald-600/25'
+                      ? 'bg-brand ring-1 ring-white/20'
                       : '',
-                    !collapsed && currentGroup !== group.key ? 'hover:bg-slate-50' : '',
+                    !collapsed && currentGroup !== group.key ? 'hover:bg-white/45' : '',
                   ]"
                   :aria-label="collapsed ? group.label : undefined"
                   :aria-current="currentGroup === group.key ? 'true' : undefined"
@@ -1783,9 +1818,9 @@ watch(activeTab, (tab) => {
                     :class="[
                       collapsed ? 'h-10 w-10' : 'h-9 w-9',
                       currentGroup === group.key
-                        ? 'bg-emerald-700 text-white'
-                        : 'bg-white text-slate-600',
-                      collapsed && currentGroup !== group.key ? 'hover:bg-slate-200' : '',
+                        ? 'bg-white/15 text-white'
+                        : 'bg-white/40 text-slate-600',
+                      collapsed && currentGroup !== group.key ? 'hover:bg-white/55' : '',
                     ]"
                   >
                     <svg
@@ -1804,17 +1839,23 @@ watch(activeTab, (tab) => {
                       class="block text-sm"
                       :class="
                         currentGroup === group.key
-                          ? 'font-medium text-emerald-800'
-                          : 'text-slate-700'
+                          ? 'font-medium text-white'
+                          : 'text-slate-900'
                       "
                       >{{ group.label }}</span
                     >
                     <!-- truncate 是兜底：宽度已按最长的那条提示留足，正常情况下不会省略。
                        它防的是「以后有人把某条提示改长」—— 那时宁可省略号，也不要
                        四条里两条折行、行高变成两种。 -->
-                    <span class="mt-0.5 block truncate text-xs font-normal text-slate-600">{{
-                      group.hint
-                    }}</span>
+                    <!-- 提示行颜色：未选中 slate-600（压浅纱 5.76），选中态转纯白
+                       （压石墨胶囊 16.83 —— 043 之后两档都过得舒服，041 那种
+                       「只有纯白过线」的贴线账随石墨主色退役）。选中行的层次
+                       由字号（14/12）与字重（medium/normal）承担。 -->
+                    <span
+                      class="mt-0.5 block truncate text-xs font-normal"
+                      :class="currentGroup === group.key ? 'text-white' : 'text-slate-600'"
+                      >{{ group.hint }}</span
+                    >
                   </span>
                 </button>
               </el-tooltip>
@@ -1831,15 +1872,15 @@ watch(activeTab, (tab) => {
             别再往回加。
             未登录即可只读浏览；写入类功能按权限隐藏。
           -->
-            <div class="mt-3 border-t border-slate-100 pt-3 text-sm">
+            <div class="mt-3 border-t border-brand/10 pt-3 text-sm">
               <!--
               2026-10-07 使用方圈出这一块说「有点丑」，重做的思路是**对齐导航行的形体**：
-              上面四组都是「36px 白图标块 + 文字」的整行块，这里原先却是两行裸文字
+              上面四组都是「36px 图标块 + 文字」的整行块，这里原先却是两行裸文字
               （变更-028 重做导航时漏下了这块），于是它读起来像没做完。
 
               身份行**不可点**：它答的是「你是谁」（管理员 / 只读浏览），不是动作 ——
               图标块照给，只是不响应 hover。退出/登录是动作，**整行可点**：
-              hover 与导航行同一条（整行 bg-slate-50），图标块再转成 rose / emerald 实心，
+              hover 与导航行同一条（整行 bg-white/45），图标块再转成 rose / brand 实心，
               把「这一下会发生什么」讲清楚。
 
               收起态**不再另做一套**：行结构不变，文字 v-show 掉、图标块 36 → 40px，
@@ -1859,7 +1900,7 @@ watch(activeTab, (tab) => {
                     :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600"
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
                       :aria-label="collapsed ? `当前登录：${roleName}` : undefined"
@@ -1893,20 +1934,20 @@ watch(activeTab, (tab) => {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 active:scale-[0.98]"
+                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
-                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-slate-50'
+                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-white/45'
                     "
                     :aria-label="collapsed ? '退出登录' : undefined"
                     @click="handleLogout"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600 transition"
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600 transition"
                       :class="
                         collapsed
-                          ? 'h-10 w-10 group-hover:bg-slate-200'
+                          ? 'h-10 w-10 group-hover:bg-white/55'
                           : 'h-9 w-9 group-hover:bg-rose-600 group-hover:text-white'
                       "
                     >
@@ -1944,7 +1985,7 @@ watch(activeTab, (tab) => {
                     :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white text-slate-600"
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
                       :aria-label="collapsed ? '未登录，只读浏览' : undefined"
@@ -1975,17 +2016,17 @@ watch(activeTab, (tab) => {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 active:scale-[0.98]"
+                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
-                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-slate-50'
+                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-white/45'
                     "
                     :aria-label="collapsed ? '登录' : undefined"
                     @click="goLogin"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-emerald-700 text-white transition group-hover:bg-emerald-800"
+                      class="flex shrink-0 items-center justify-center rounded-xl bg-brand text-white transition group-hover:bg-brand-deep"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
                       <svg
@@ -2001,7 +2042,7 @@ watch(activeTab, (tab) => {
                         <path d="M15 12H3" />
                       </svg>
                     </span>
-                    <span v-show="!collapsed" class="text-sm font-medium text-emerald-800">
+                    <span v-show="!collapsed" class="text-sm font-medium text-slate-900">
                       登录
                     </span>
                   </button>
@@ -2023,7 +2064,7 @@ watch(activeTab, (tab) => {
           为什么是 `flex flex-col` + 下一条 `flex-1 min-h-0`，而不是给那块手算一个
           `h-[calc(100vh-…)]`：**导航条的高度不是常数**（页签换行、字体回退都会变），
           把它的高度减进 calc 里，改天导航条长高两行，主区就跟着错位。
-          交给 flex 分配：列高由暖白纸的**定高**给（`h-[calc(100vh-2rem)]`，与侧栏面板那个
+          交给 flex 分配：列高由纸（那张柔光场）的**定高**给（`h-[calc(100vh-2rem)]`，与侧栏面板那个
           100vh−4rem 是同一套数），导航条占它该占的，**剩下的全归玻璃栏** ——
           导航条长高多少，它就自动少多少。
 
@@ -2036,19 +2077,26 @@ watch(activeTab, (tab) => {
            页签从顶部横条挪到了这里（放上方而不是照示意图放底部）：切页不必先滚到最底。
            页签行沿用原来 Tab 条的横向滚动写法（见下方注释），只是把下划线换成了卡片态。
 
-           **这一条也包一张白卡片**（使用方 2026-10-07 追加）：此前标题与页签直接压在
-           暖白纸面上，而它下面的筛选/表格、左边的侧栏面板全是白的 —— 单这一条裸着，
-           就破了「东西都放在纸上」那层意思：**纸是底，白卡片才是内容**。
-           现在三层齐了：冷灰底 → 暖白纸 → 白卡片。
+           **这一条也包一张卡片**（使用方 2026-10-07 追加）：此前标题与页签直接压在
+           纸面上，而它下面的筛选/表格、左边的侧栏面板都是有底的 —— 单这一条裸着，
+           就破了「东西都放在纸上」那层意思：**纸是底，抬起来的卡片才是内容**。
+           043 之后三层齐了：**桌面（desk）→ 中性柔光场（canvas + 两团光斑）→
+           清水白玻璃（这一条）**。
 
-           **这一条与侧栏面板一起改磨砂玻璃**（使用方 2026-10-07 圈着导航条指定，
-           三个值同侧栏：背景半透明 / 模糊 24px / 亮白描边），**连色调一起共用**
-           —— 两块是同一层材质（`bg-glass/55`），理由与实测数字写在侧栏那段注释里。
-           写成 `border-white` 不写 `border-slate-200`：描边要压过填充才看得见。
-           页签里未选中的那几个是白药丸（`bg-white text-slate-600`），
-           压在带色调的这一条上正好立得起来 —— 比它原来是白压白的时候更清楚。
+           **这一条 043 起与侧栏不同料、两栏彼此同料**（玻璃两档见
+           glass-effects.css 头注）：`bg-white/55` + blur 30px（去 saturate），
+           描边仍是 `border-white`（压过填充才看得见）。填充从 /85 砍到 /55 是
+           「透明」的字面要求（描边压 55% 填充的白玻璃，镜面感反而比 041 更清楚）。
+           ⚠️ 它和主区栏**必须同串**（两块同料），spec 防「只调一块」。
+           ⚠️ 页签里**只有选中的那个有底色**（041 起 brand 实底 + 白字；043 起
+           brand 是石墨黑，白字 16.83 过 AA —— 041 时代 4.70 的贴线账退役），
+           未选中的是**透明的**（使用方 2026-10-11 定）。原来是白药丸
+           （`bg-white text-slate-600`）；改透明之后它们是**直接压在白玻璃上**的纯文字 +
+           描边 —— 顶上那一排五个白药丸正是使用方圈出来的「很多地方都是白色的」之一，
+           而且五个里四个是白的，读数上也是**只在选中项上花颜色**更省。
+           未选中的文字 slate-600 压白玻璃+浅场富余（spec 复算），摘掉白底不影响可读性。
 
-           **并且改成吸顶**（同一轮定的）。不吸顶的话它滚过去就没了，那块 24px 模糊
+           **并且改成吸顶**（同一轮定的）。不吸顶的话它滚过去就没了，那块 30px 模糊
            底下**永远没有东西经过**，毛玻璃等于白写；吸顶之后表格从它下面滑过，
            彩色内容经过时确实看得见（实测 3× 截图：一条 amber 色带从底下过，
            卡片上半段泛黄）。
@@ -2063,7 +2111,7 @@ watch(activeTab, (tab) => {
            `z-30`：吸顶后要压在下面的卡片上；el-dialog / el-select 那类是挂到 body 的
            2000+，不受影响。 -->
           <div
-            class="sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-white bg-glass/55 px-6 py-4 backdrop-blur-[24px] shadow-card"
+            class="glass-refract glass-frost sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-white bg-white/55 px-6 py-4 backdrop-blur-[30px] shadow-panel"
           >
             <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">
               {{ activeTabLabel }}
@@ -2085,11 +2133,11 @@ watch(activeTab, (tab) => {
                 :data-tab-key="tab.key"
                 type="button"
                 :aria-current="activeTab === tab.key ? 'page' : undefined"
-                class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none"
+                class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 :class="
                   activeTab === tab.key
-                    ? 'border-emerald-200 bg-emerald-50 font-medium text-emerald-700'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                    ? 'border-brand bg-brand font-medium text-white'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
                 "
                 @click="activeTab = tab.key"
               >
@@ -2114,24 +2162,59 @@ watch(activeTab, (tab) => {
           量了才知道没固定住。链条是四级：**纸定高 → 列 flex-col → 导航条 shrink-0
           → 栏 flex-1/min-h-0/overflow-y-auto**，缺一级整条就退化。
 
-          **与侧栏面板、导航条是同一块料**：同一个 `bg-glass/55` + `backdrop-blur-[24px]`
-          + 不透明的 `border-white` + `rounded-card` —— 三处一个 token，别再各调各的
-          （取值理由与实测数字写在 tailwind.config 的 `glass` 与侧栏那段注释里）。
-          里面那些白卡片（各页签的 `<section>`）压在带色调的玻璃上正好立得住 ——
-          与白描边、白药丸、白色图标块是同一个关系：**这块料上，抬起来的一律是白**。
+          **041 起与导航条同料，与侧栏分成两料（043 沿用）**：`glass-frost` + `bg-white/55`
+          + `backdrop-blur-[30px]`（无 saturate）+ 不透明的 `border-white`
+          + `rounded-card` —— 与导航条**必须同串**（spec 防「只调一块」），实算下限
+          与取值理由写在导航条那段注释里。里面那些卡片（各页签的 `<section>`）是
+          白霜的实心近亲（`bg-raised/95` + 白描边 + 自己的模糊）：**这块料上，
+          抬起来的一律是白**。
 
           ⚠️ **连带后果（要说实话）**：主区改成自己滚之后，**外面的页面不再滚动了**，
           于是导航条那条 `sticky top-0` 从此**是惰性的** —— 不会有内容从它下面过。
           仍然留着，两个理由：① 它是使用方上一轮（变更-030）为「让模糊有东西可糊」
           特意定的，去掉等于把那一轮的结论悄悄推翻；② 万一哪天主区又改回整页滚，
-          它立刻恢复作用。导航条的模糊现在靠**色调**立住（与侧栏面板同理）。
+          它立刻恢复作用。043 之后玻璃的模糊背后是**柔光场本身**（两团中性光斑会从它
+          下面透出来），不再只靠色调立住 —— 但这不构成拆掉 sticky 的理由，两条保留理由不变。
+          ⚠️ 变更-038 之后，四个汇总页签上连**这一栏**都不滚了（滚的是卡片里的表格区），
+          这条 sticky 于是更没有用武之地 —— 去留是个独立决定，本轮不动它。
+
+          ⚠️ **滚动时间线要跟着滚动容器走**（变更-038）：四个汇总页签改成「卡片撑满、
+          表格区自己滚」之后，这一栏在那四页上**不再滚动**了，`--main-scroll` 就不能
+          再挂死在它身上 —— 时间线挂在一个不动的东西上，三块玻璃的边缘高光会**停在
+          贴顶那一格**，不报错、只是不跟手（与 `.glass-field` 那段注释记的是同一种
+          失效）。所以 `glass-scroll` 从静态 class 挪到绑定上：本栏挂「不是那四页时」
+          的那一份，那四页各自的表格区挂自己那一份 —— **任何时刻只有一处声明**。
           -->
           <div
-            class="flex-1 min-h-0 overflow-y-auto rounded-card border border-white bg-glass/55 p-4 backdrop-blur-[24px] shadow-card"
+            class="glass-refract glass-frost flex-1 min-h-0 overflow-y-auto rounded-card border border-white bg-white/55 p-4 backdrop-blur-[30px] shadow-panel"
+            :class="{ 'glass-scroll': !scrollsInsideCard }"
           >
-            <div v-show="activeTab === 'workOrder'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
-                <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <div v-show="activeTab === 'workOrder'" class="flex h-full flex-col">
+              <!--
+              变更-038：四个汇总页签的卡片**撑满玻璃栏、自己管滚动**（使用方
+              2026-10-11：「翻页功能每页都不在一个位置，体验很差」）。
+
+              钉住分页行的道理：分页行是卡片的最后一个子元素，卡片多高它就多低。
+              而「产成品 / 物料名称」那几列是 `whitespace-normal break-words` 的，
+              每页折行的条数不一样 —— 卡片跟着内容一高一矮，分页行就一上一下。
+
+              链条：上一级（玻璃栏的 `flex-1` 定高）→ `h-full` 把定高传下来
+              → 卡片 `flex-1 min-h-0` 正好吃满 → 表格区 `flex-1 min-h-0
+              overflow-y-auto` 是**唯一的纵向滚动容器** → 分页行 `shrink-0` 钉在卡底。
+              翻页时折行条数变了，动的也只是表格区内部，分页行一动不动。
+
+              ⚠️ 两处 `min-h-0` 都不能省 —— 与上面 2122 那段是同一个坑：flex item
+              默认 `min-height:auto`，不写就不肯缩到内容以下，内容长的页会把卡片
+              （连带分页行）重新顶高，这一轮就白改了。
+              ⚠️ 表格区的纵向滚动是「白捡 + 显式」两笔：`overflow-x:auto` 本来就会把
+              `overflow-y` 的 `visible` 计算成 `auto`（它一直是纵向滚动容器，只是过去
+              没有高度约束、一直长高），显式写上 `overflow-y-auto` 是给下一个人看的。
+              其余三个汇总页签（物料 / 领料 / 库存）同一张方子，不重复注释。
+              -->
+              <section
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
+                <div class="flex shrink-0 items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="startDate"
@@ -2155,7 +2238,7 @@ watch(activeTab, (tab) => {
                   />
                 </div>
 
-                <div class="relative">
+                <div class="relative flex min-h-0 flex-1 flex-col">
                   <LoadingMask v-if="loading" />
 
                   <PanelState
@@ -2175,13 +2258,16 @@ watch(activeTab, (tab) => {
                     description="当前没有可展示的工单记录"
                   />
 
-                  <div v-else>
-                    <div class="overflow-x-auto">
+                  <div v-else class="flex min-h-0 flex-1 flex-col">
+                    <div
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
+                      :class="{ 'glass-scroll': activeTab === 'workOrder' }"
+                    >
                       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
                         <colgroup>
                           <col v-for="column in columns" :key="column.key" :class="column.width" />
                         </colgroup>
-                        <thead class="bg-slate-50">
+                        <thead class="bg-region">
                           <tr>
                             <th
                               v-for="column in columns"
@@ -2227,7 +2313,7 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100">
                           <tr v-if="tableData.length === 0">
                             <td
                               :colspan="columns.length"
@@ -2240,7 +2326,7 @@ watch(activeTab, (tab) => {
                             v-for="(order, index) in tableData"
                             :key="`${order.orderNo}-${index}`"
                             tabindex="0"
-                            class="cursor-pointer transition hover:bg-slate-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
+                            class="cursor-pointer transition hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
                             @click="openImageDialog(order)"
                             @keydown.enter.self.prevent="openImageDialog(order)"
                             @keydown.space.self.prevent="openImageDialog(order)"
@@ -2287,7 +2373,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
                       <el-pagination
                         v-model:current-page="pageNum"
                         :page-size="pageSize"
@@ -2328,9 +2414,13 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'material'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
-                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <div v-show="activeTab === 'material'" class="flex h-full flex-col">
+              <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
+                   完整理由见上面「工单汇总」那一段 -->
+              <section
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
+                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="pickStartDate"
@@ -2357,7 +2447,7 @@ watch(activeTab, (tab) => {
                   </span>
                 </div>
 
-                <div class="relative">
+                <div class="relative flex min-h-0 flex-1 flex-col">
                   <LoadingMask v-if="pickLoading" />
 
                   <PanelState
@@ -2379,8 +2469,11 @@ watch(activeTab, (tab) => {
                     "
                   />
 
-                  <div v-else>
-                    <div class="overflow-x-auto">
+                  <div v-else class="flex min-h-0 flex-1 flex-col">
+                    <div
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
+                      :class="{ 'glass-scroll': activeTab === 'material' }"
+                    >
                       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
                         <colgroup>
                           <col
@@ -2389,7 +2482,7 @@ watch(activeTab, (tab) => {
                             :class="column.width"
                           />
                         </colgroup>
-                        <thead class="bg-slate-50">
+                        <thead class="bg-region">
                           <tr>
                             <th
                               v-for="column in pickColumns"
@@ -2413,11 +2506,11 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100">
                           <tr
                             v-for="(record, index) in pickTableData"
                             :key="`${record.materialCode}-${record.pickDate}-${index}`"
-                            class="transition hover:bg-slate-50"
+                            class="transition hover:bg-region"
                           >
                             <td
                               class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
@@ -2445,7 +2538,7 @@ watch(activeTab, (tab) => {
                             </td>
                             <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                               <span
-                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                                 :role="canOpenImage(record) ? 'button' : undefined"
                                 :tabindex="canOpenImage(record) ? 0 : -1"
                                 :aria-label="
@@ -2476,7 +2569,7 @@ watch(activeTab, (tab) => {
                                   alt="领料单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2486,7 +2579,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
                       <el-pagination
                         v-model:current-page="pickPageNum"
                         :page-size="pickPageSize"
@@ -2502,7 +2595,7 @@ watch(activeTab, (tab) => {
 
               <el-dialog v-model="pickImageDialogVisible" width="70vw" align-center>
                 <div
-                  class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6"
+                  class="flex min-h-[400px] items-center justify-center rounded-card bg-region p-6"
                 >
                   <img
                     v-if="currentPickImage"
@@ -2522,9 +2615,13 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'inbound'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
-                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <div v-show="activeTab === 'inbound'" class="flex h-full flex-col">
+              <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
+                   完整理由见上面「工单汇总」那一段 -->
+              <section
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
+                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="inboundStartDate"
@@ -2551,7 +2648,7 @@ watch(activeTab, (tab) => {
                   </span>
                 </div>
 
-                <div class="relative">
+                <div class="relative flex min-h-0 flex-1 flex-col">
                   <LoadingMask v-if="inboundLoading" />
 
                   <PanelState
@@ -2573,8 +2670,11 @@ watch(activeTab, (tab) => {
                     "
                   />
 
-                  <div v-else>
-                    <div class="overflow-x-auto">
+                  <div v-else class="flex min-h-0 flex-1 flex-col">
+                    <div
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
+                      :class="{ 'glass-scroll': activeTab === 'inbound' }"
+                    >
                       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
                         <colgroup>
                           <col
@@ -2583,7 +2683,7 @@ watch(activeTab, (tab) => {
                             :class="column.width"
                           />
                         </colgroup>
-                        <thead class="bg-slate-50">
+                        <thead class="bg-region">
                           <tr>
                             <th
                               v-for="column in inboundColumns"
@@ -2607,11 +2707,11 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100">
                           <tr
                             v-for="(record, index) in inboundTableData"
                             :key="`${record.materialCode}-${record.inboundDate}-${index}`"
-                            class="transition hover:bg-slate-50"
+                            class="transition hover:bg-region"
                           >
                             <td
                               class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
@@ -2639,7 +2739,7 @@ watch(activeTab, (tab) => {
                             </td>
                             <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                               <span
-                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-slate-100 text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                                 :role="canOpenImage(record) ? 'button' : undefined"
                                 :tabindex="canOpenImage(record) ? 0 : -1"
                                 :aria-label="
@@ -2670,7 +2770,7 @@ watch(activeTab, (tab) => {
                                   alt="入库单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-white object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2680,7 +2780,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
                       <el-pagination
                         v-model:current-page="inboundPageNum"
                         :page-size="inboundPageSize"
@@ -2696,7 +2796,7 @@ watch(activeTab, (tab) => {
 
               <el-dialog v-model="inboundImageDialogVisible" width="70vw" align-center>
                 <div
-                  class="flex min-h-[400px] items-center justify-center rounded-card bg-slate-50 p-6"
+                  class="flex min-h-[400px] items-center justify-center rounded-card bg-region p-6"
                 >
                   <img
                     v-if="currentInboundImage"
@@ -2765,9 +2865,13 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'stock'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
-                <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+            <div v-show="activeTab === 'stock'" class="flex h-full flex-col">
+              <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
+                   完整理由见上面「工单汇总」那一段 -->
+              <section
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
+                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <!-- ⚠️ 查询改到服务端之后**只能回车才发请求**（清空也要发一次，好把结果还原回来）：
                        原先挂的是 @input（逐字实时过滤），那是「前端全量 + 本地 filter」时代的做法，
                        照搬到服务端就是「敲一个字打一次接口」。
@@ -2791,7 +2895,7 @@ watch(activeTab, (tab) => {
                   </span>
                 </div>
 
-                <div class="relative">
+                <div class="relative flex min-h-0 flex-1 flex-col">
                   <LoadingMask v-if="stockLoading" />
 
                   <PanelState
@@ -2815,10 +2919,13 @@ watch(activeTab, (tab) => {
                     "
                   />
 
-                  <div v-else>
+                  <div v-else class="flex min-h-0 flex-1 flex-col">
                     <!-- 9 列在窄窗口下会溢出：外层 overflow-x-auto + colgroup 定宽，
                    与领料 / 入库汇总那两张表同一套写法 -->
-                    <div class="overflow-x-auto">
+                    <div
+                      class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
+                      :class="{ 'glass-scroll': activeTab === 'stock' }"
+                    >
                       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
                         <colgroup>
                           <col
@@ -2827,7 +2934,7 @@ watch(activeTab, (tab) => {
                             :class="column.width"
                           />
                         </colgroup>
-                        <thead class="bg-slate-50">
+                        <thead class="bg-region">
                           <tr>
                             <th
                               v-for="column in stockColumns"
@@ -2840,11 +2947,11 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100 bg-white">
+                        <tbody class="divide-y divide-slate-100">
                           <tr
                             v-for="(record, index) in stockTableData"
                             :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
-                            class="transition hover:bg-slate-50"
+                            class="transition hover:bg-region"
                           >
                             <td
                               class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900"
@@ -2888,7 +2995,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
                       <el-pagination
                         v-model:current-page="stockPageNum"
                         :page-size="stockPageSize"
@@ -2904,7 +3011,7 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'weekly'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
                 <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
@@ -2953,7 +3060,7 @@ watch(activeTab, (tab) => {
                           <tr>
                             <th
                               colspan="5"
-                              class="border border-slate-300 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800"
+                              class="border border-slate-200 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800"
                             >
                               {{ weeklyTitle }}
                             </th>
@@ -2963,7 +3070,7 @@ watch(activeTab, (tab) => {
                               v-for="column in weeklyColumns"
                               :key="column.key"
                               scope="col"
-                              class="border border-slate-300 bg-cyan-100 py-3 text-sm font-semibold text-slate-700"
+                              class="border border-slate-200 bg-region py-3 text-sm font-semibold text-slate-600"
                               :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                             >
                               {{ column.label }}
@@ -2972,39 +3079,39 @@ watch(activeTab, (tab) => {
                         </thead>
                         <tbody>
                           <tr v-for="row in weeklyRows" :key="row.name">
-                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
                               {{ row.name }}
                             </td>
                             <td
-                              class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                              class="border border-slate-200 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
                             >
                               {{ row.pickQty }}
                             </td>
-                            <td class="border border-slate-300 p-0">
+                            <td class="border border-slate-200 p-0">
                               <input
                                 v-model="weeklyRemaining[row.materialCode]"
                                 type="text"
                                 placeholder="/"
                                 :aria-label="`车间剩余 ${row.name}`"
-                                class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-slate-50 focus:bg-white focus:ring-2 focus:ring-inset focus:ring-emerald-600"
+                                class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-region focus:bg-raised focus:ring-2 focus:ring-inset focus:ring-brand"
                               />
                             </td>
                             <td
-                              class="border border-slate-300 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                              class="border border-slate-200 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
                             >
                               {{ row.actualQty }}
                             </td>
-                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
                               {{ row.unitConsumption }} {{ row.unitLabel }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="border border-slate-300 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
                               {{ weeklyInboundRow.name }}
                             </td>
                             <td
                               colspan="4"
-                              class="border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                              class="border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
                             >
                               {{ weeklyInboundRow.value }}
                             </td>
@@ -3018,7 +3125,7 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'daily'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
                 <PanelState type="pending" title="日报表记录" description="功能建设中，敬请期待" />
               </section>
             </div>
@@ -3033,7 +3140,7 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'vessel'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
                 <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
                这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
                只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
@@ -3129,7 +3236,7 @@ watch(activeTab, (tab) => {
                           :class="
                             isVerticalVessel
                               ? 'px-0 pb-4 pt-5'
-                              : 'rounded-card border border-slate-200 bg-slate-50 px-6 py-4'
+                              : 'rounded-card border border-slate-200 bg-region px-6 py-4'
                           "
                         >
                           <span class="text-sm text-slate-500">体积变化</span>
@@ -3164,7 +3271,7 @@ watch(activeTab, (tab) => {
                         <!-- 起始液位：控件与其数据同列 -->
                         <div class="flex flex-col gap-3">
                           <div
-                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
                           >
                             <span
                               class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
@@ -3215,7 +3322,7 @@ watch(activeTab, (tab) => {
                               mm
                             </div>
                             <div>
-                              体积：<span class="font-semibold text-emerald-700">{{
+                              体积：<span class="font-semibold text-brand-deep">{{
                                 vesselStartVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselStartMass !== null"
@@ -3230,7 +3337,7 @@ watch(activeTab, (tab) => {
                         <!-- 终止液位：控件与其数据同列 -->
                         <div class="flex flex-col gap-3">
                           <div
-                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
                           >
                             <span
                               class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
@@ -3282,7 +3389,7 @@ watch(activeTab, (tab) => {
                               mm
                             </div>
                             <div>
-                              体积：<span class="font-semibold text-emerald-700">{{
+                              体积：<span class="font-semibold text-brand-deep">{{
                                 vesselEndVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselEndMass !== null"
@@ -3298,7 +3405,7 @@ watch(activeTab, (tab) => {
                   </div>
                 </div>
 
-                <div class="border-t border-slate-100 bg-slate-50/50 px-6 py-4">
+                <div class="border-t border-slate-100 bg-region/50 px-6 py-4">
                   <div class="mx-auto max-w-[900px] overflow-x-auto">
                     <p
                       class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500"
@@ -3369,7 +3476,7 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'electricity'">
-              <section class="rounded-card border border-slate-200 bg-white shadow-card">
+              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
                 <!-- 电价档位备注 -->
                 <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
                   <div class="flex items-start gap-3">
@@ -3381,19 +3488,19 @@ watch(activeTab, (tab) => {
                     <div class="min-w-0 flex-1">
                       <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
                       <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                        <div class="rounded-card border border-amber-200/70 bg-raised px-4 py-2.5">
                           <p class="text-xs text-slate-500">10 万度以内</p>
                           <p class="mt-1 text-lg font-semibold text-slate-900">
                             1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                           </p>
                         </div>
-                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                        <div class="rounded-card border border-amber-200/70 bg-raised px-4 py-2.5">
                           <p class="text-xs text-slate-500">20 万度以内</p>
                           <p class="mt-1 text-lg font-semibold text-slate-900">
                             0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
                           </p>
                         </div>
-                        <div class="rounded-card border border-amber-200/70 bg-white px-4 py-2.5">
+                        <div class="rounded-card border border-amber-200/70 bg-raised px-4 py-2.5">
                           <p class="text-xs text-slate-500">20 万度以上</p>
                           <p class="mt-1 text-lg font-semibold text-slate-900">
                             0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
@@ -3405,6 +3512,13 @@ watch(activeTab, (tab) => {
                 </div>
 
                 <PanelState type="pending" title="电费预提" description="功能建设中，敬请期待" />
+              </section>
+            </div>
+
+            <div v-show="activeTab === 'purchase'">
+              <!-- 采购进度跟踪：2026-10-10 只登记入口，功能内容与排期待使用方定 -->
+              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
+                <PanelState type="pending" title="采购进度跟踪" description="功能建设中，敬请期待" />
               </section>
             </div>
 
@@ -3438,7 +3552,29 @@ watch(activeTab, (tab) => {
   opacity: 0;
 }
 
-/* 软拟态（Soft UI）步进按钮：降低/升高液位 */
+/*
+ * 软拟态（Soft UI）步进按钮：降低/升高液位
+ *
+ * ⚠️ 这一块是**工作台里唯一没跟着设计系统走形态的地方**（037 / 041 / 043 都只换颜色）：
+ * 它自带的是一套**冷**色 —— 渐变 `#ffffff→#e8ecf1`、投影 `#a3b1c6`、输入框底 `#eef1f5`。
+ * 037 全站暖化时它跟着转暖（不然压在暖白卡上就是使用方说的「与周围颜色不搭配」），
+ * 041 全站回到冷调（天穹 + 白霜 + 苹果蓝），它**第二次跟着走**：
+ * 渐变 `#fbfcfe→#e9eef6`、投影 `rgba(90,110,150,…)`。
+ * 043 是**第三次**，但方向变了 —— 场与玻璃全部中性化之后，「跟着走」的定义回到
+ * 「冷/暖之外」：渐变两端换成**纯中性**（`#fbfbfd→#eaebee`，B−R ≤ 3），输入框的
+ * 静止底/聚焦底改为直接挂 token：`#edf2fc`→`#eeeef1`（= `--el-fill-color` = `region`
+ * 同值）、聚焦底 `#e6f1fc`→`#e8e8e9`（= `brand-50` 同值）。投影色**这一次不换**——
+ * `rgba(90,110,150,…)` 那点蓝在 35% 透明度下读不出来，强行中性化反而让投影发死。
+ *
+ * 三次都只把**颜色**换到当时那一族（渐变两端、投影色、输入框的静止底与聚焦底），
+ * **形态一个没动** —— 软拟态靠「面色与底色相同 + 光从左上来」成立，
+ * 底色既然是白卡，面色就得跟着走，否则这套凹凸关系自己就散了。
+ * 纯白的高光（`rgba(255,255,255,…)` 那两笔）**留着不动**：它是**光源色**不是面色，
+ * 与玻璃面板的 `inset 0 1px 0 rgba(255,255,255,.85)`、与 `border-white` 同性质。
+ *
+ * 要不要把这四个按钮改成系统里的 `rounded-xl` 扁平按钮，是**形态**上的决定，
+ * 不在这些轮的范围里 —— 真要改，连 `.vessel-canvas` 那套一起看。
+ */
 .vessel-step {
   display: inline-flex;
   width: 38px;
@@ -3447,7 +3583,7 @@ watch(activeTab, (tab) => {
   justify-content: center;
   border: none;
   border-radius: 50%;
-  background: linear-gradient(145deg, #ffffff, #e8ecf1);
+  background: linear-gradient(145deg, #fbfbfd, #eaebee);
   color: #475569;
   font-size: 19px;
   font-weight: 600;
@@ -3455,7 +3591,7 @@ watch(activeTab, (tab) => {
   cursor: pointer;
   user-select: none;
   box-shadow:
-    4px 4px 8px rgba(163, 177, 198, 0.45),
+    4px 4px 8px rgba(90, 110, 150, 0.35),
     -3px -3px 8px rgba(255, 255, 255, 0.9),
     inset 0 -2px 3px -1px rgba(0, 0, 0, 0.06),
     inset 0 2px 3px -1px rgba(255, 255, 255, 0.9);
@@ -3468,9 +3604,9 @@ watch(activeTab, (tab) => {
 
 .vessel-step:active {
   filter: blur(0.4px);
-  background: linear-gradient(145deg, #e8ecf1, #ffffff);
+  background: linear-gradient(145deg, #eaebee, #fbfbfd);
   box-shadow:
-    inset 4px 4px 8px rgba(163, 177, 198, 0.5),
+    inset 4px 4px 8px rgba(90, 110, 150, 0.4),
     inset -3px -3px 8px rgba(255, 255, 255, 0.95);
 }
 
@@ -3479,22 +3615,22 @@ watch(activeTab, (tab) => {
   border: none;
   border-radius: 12px;
   padding: 9px 14px;
-  background-color: #eef1f5;
+  background-color: #eeeef1;
   color: #0f172a;
   font-size: 14px;
   font-weight: 600;
   outline: none;
   box-shadow:
-    4px 4px 8px rgba(163, 177, 198, 0.45),
+    4px 4px 8px rgba(90, 110, 150, 0.35),
     -3px -3px 8px rgba(255, 255, 255, 0.9);
   transition: box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* 聚焦时呈"按入"质感的凹陷效果 */
 .vessel-level-input:focus {
-  background-color: #f5f8fb;
+  background-color: #e8e8e9;
   box-shadow:
-    inset 3px 3px 6px rgba(163, 177, 198, 0.4),
+    inset 3px 3px 6px rgba(90, 110, 150, 0.32),
     inset -3px -3px 6px rgba(255, 255, 255, 0.9);
 }
 
@@ -3529,12 +3665,13 @@ watch(activeTab, (tab) => {
   box-shadow: 0 0 0 1px rgb(148 163 184) inset;
 }
 
-/* 聚焦环跟随主色 emerald-600/100（变更-033：原先残留的是天蓝 500/100，
-   天蓝只留给 statusTones 的 info，正文界面不该出现） */
+/* 聚焦环跟随主色（变更-043：苹果蓝 brand/brand-100 → 石墨 brand/brand-100。
+   变更-033 起的规矩没变：正文界面的聚焦环一律用主色档，
+   天蓝（statusTones 的 info）不在这出现） */
 .vessel-select :deep(.el-select__wrapper.is-focused) {
   box-shadow:
-    0 0 0 1px rgb(5 150 105) inset,
-    0 0 0 3px rgb(209 250 229);
+    0 0 0 1px rgb(29 29 31) inset,
+    0 0 0 3px rgb(210 210 210);
 }
 
 /* 公式排版：衬线斜体变量 + 真分数 + 根号上划线 */

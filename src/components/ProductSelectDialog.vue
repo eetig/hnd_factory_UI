@@ -63,13 +63,13 @@ function handleSelect(item) {
         class="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm transition last:border-b-0"
         :class="
           item === selected
-            ? 'bg-emerald-50 font-medium text-emerald-700'
-            : 'text-slate-700 hover:bg-slate-50'
+            ? 'bg-brand-50 font-medium text-brand-deep'
+            : 'text-slate-700 hover:bg-region'
         "
         @click="handleSelect(item)"
       >
         <span class="break-words">{{ item }}</span>
-        <span v-if="item === selected" class="shrink-0 text-xs text-emerald-700">当前</span>
+        <span v-if="item === selected" class="shrink-0 text-xs text-brand-deep">当前</span>
       </button>
 
       <p v-if="!filteredOptions.length" class="px-4 py-10 text-center text-sm text-slate-500">

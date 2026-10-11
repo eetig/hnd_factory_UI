@@ -183,7 +183,7 @@ async function handleDrawingPicked(event) {
 </script>
 
 <template>
-  <section class="rounded-card border border-slate-200 bg-white shadow-card">
+  <section class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-slate-100 px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
@@ -216,7 +216,7 @@ async function handleDrawingPicked(event) {
 
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead class="bg-slate-50 text-xs text-slate-500">
+        <thead class="bg-region text-xs text-slate-500">
           <tr>
             <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>
             <th scope="col" class="px-4 py-2.5 text-left font-medium">位号</th>
@@ -240,7 +240,7 @@ async function handleDrawingPicked(event) {
             v-for="(row, index) in rows"
             :key="row.id"
             tabindex="0"
-            class="cursor-pointer border-t border-slate-100 hover:bg-slate-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
+            class="cursor-pointer border-t border-slate-100 hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
             :class="{ 'text-slate-500': row.enabled !== 1 }"
             @click="openEdit(row)"
             @keydown.enter.self.prevent="openEdit(row)"
