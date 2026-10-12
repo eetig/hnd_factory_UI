@@ -1,9 +1,11 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useMessage, useToast } from 'wot-design-uni'
+import PhotoGrid from './PhotoGrid.vue'
 import { resolveAssetUrl } from '../api/config'
 import { hasPerm } from '../api/auth'
 import { useTankLevelImages } from '../composables/useTankLevelImages'
+import { chooseImages } from '../utils/chooseImages'
 
 /**
  * 月底储罐液位记录的图据弹层（看大图 / 拍照上传 / 删除）。
@@ -11,11 +13,10 @@ import { useTankLevelImages } from '../composables/useTankLevelImages'
  * <p>开关与请求都在 useTankLevelImages（模块级单例），所以本组件没有 props ——
  * 面板只调 openImageDialog(record)，这里读同一份状态渲染（与电脑端同名组件对位）。
  *
- * <p>大图用页面根部那个全局 <ImageViewer>（本组件只 emit 出去）：
- * 弹层里可能有 transform 祖先，`position: fixed` 的浮层挂进去会跟着弹层定位。
+ * <p>看大图、勾选、滑动连选、批量删除都在 PhotoGrid 里（三处缩略图网格共用一份）。
+ * 大图走 uni.previewImage —— 平台自带的查看器可左右滑、可缩放、可长按保存，
+ * 而且不带 transform 祖先的问题（本组件原来 emit 给页面根部那个全局 <ImageViewer>）。
  */
-const emit = defineEmits(['preview'])
-
 const toast = useToast()
 const message = useMessage()
 
@@ -32,33 +33,26 @@ const {
 
 const canEdit = computed(() => hasPerm('tank_level:edit'))
 
-// 拇指图加载失败逐级降级：缩略图 → 原图 → 隐藏（露出底层的占位图标）。
-// 用 getAttribute('src') 比较：img.src 会被补成绝对 URL，与相对路径永远不相等
-const thumbFallbacks = ref({})
+const gridRef = ref(null)
+const batchDeleting = ref(false)
 
-function thumbSrc(image) {
-  const key = String(image.imageId || image.url)
-  return thumbFallbacks.value[key] || resolveAssetUrl(image.thumbnailUrl || image.url)
-}
-
-function handleThumbError(event, image) {
-  const el = event?.target
-  if (!el) return
-
-  const key = String(image.imageId || image.url)
-  const original = resolveAssetUrl(image.url)
-
-  if (original && el.getAttribute('src') !== original) {
-    thumbFallbacks.value = { ...thumbFallbacks.value, [key]: original }
-    return
-  }
-  el.style.display = 'none'
-}
-
-function handlePreview(index) {
-  if (!images.value.length) return
-  emit('preview', { urls: images.value.map((image) => image.url), index })
-}
+/**
+ * 交给网格的条目。
+ *
+ * ⚠️ 后端给的是相对路径，**必须在这一层 resolve 好**再传进去 —— 漏了的话
+ *    App / 小程序端白屏、H5 端反而正常，是最难在本地发现的一类问题。
+ *    缩略图加载失败的三级降级（缩略图 → 原图 → 隐藏）在 PhotoGrid 里。
+ *
+ * image 原样带上：网格会把选中的条目原封不动回传，删除要用它身上的 imageId。
+ */
+const gridItems = computed(() =>
+  images.value.map((image) => ({
+    key: String(image.imageId || image.url),
+    url: resolveAssetUrl(image.url),
+    thumb: resolveAssetUrl(image.thumbnailUrl || image.url),
+    image,
+  })),
+)
 
 /**
  * 拍照 / 从相册选。
@@ -66,11 +60,14 @@ function handlePreview(index) {
  * ⚠️ 刻意一次只给一个 sourceType：两个都给的话，App / 小程序会先弹平台自带的
  *    「拍摄 / 从相册选择」ActionSheet（系统 UI，样式改不了，各机型还不一样），
  *    所以这里摆成两个按钮，各自带单一来源（同图片解析页的做法）。
+ *
+ * <p>走 utils/chooseImages：「相册」这一支在 App 端去起手机自带的相册（见该文件），
+ * 拍照与 H5 / 小程序原样走框架。
  */
 function pickImage(source) {
   if (uploading.value) return
 
-  uni.chooseImage({
+  chooseImages({
     count: 3,
     sizeType: ['original', 'compressed'],
     sourceType: [source],
@@ -88,13 +85,28 @@ function pickImage(source) {
   })
 }
 
-async function handleDelete(image) {
-  if (deleting.value) return
+/**
+ * 网格里勾了一批点删除：**整批只确认一次**，然后逐张删。
+ *
+ * <p>单张删失败不中断整批（剩下的还是要删掉），最后一次性报失败张数，
+ * 比中途抛错留在半路的状态好收拾。
+ */
+async function deleteSelected(chosen) {
+  if (deleting.value || batchDeleting.value) return
+
+  // 没有 imageId 的删不动，先剔掉 —— 免得用户确认完却什么都没发生
+  const targets = chosen.map((item) => item.image).filter((image) => image?.imageId)
+  if (!targets.length) return
+
+  const count = targets.length
 
   try {
     await message.confirm({
       title: '确认删除照片',
-      msg: '删除后将无法在本条记录中查看该照片，是否继续？',
+      msg:
+        count > 1
+          ? `将删除所选的 ${count} 张照片，删除后无法在本条记录中查看，是否继续？`
+          : '删除后将无法在本条记录中查看该照片，是否继续？',
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',
     })
@@ -102,11 +114,29 @@ async function handleDelete(image) {
     return // 用户点了取消
   }
 
+  batchDeleting.value = true
+  let failed = 0
+
   try {
-    await deleteImage(image)
-    toast.success('照片已删除')
-  } catch (error) {
-    toast.error(error?.message || '照片删除失败，请稍后重试。')
+    for (const image of targets) {
+      try {
+        await deleteImage(image)
+      } catch {
+        failed += 1
+      }
+    }
+  } finally {
+    batchDeleting.value = false
+  }
+
+  gridRef.value?.clearSelection()
+
+  if (!failed) {
+    toast.success(count > 1 ? `已删除 ${count} 张照片` : '照片已删除')
+  } else if (failed < count) {
+    toast.error(`已删除 ${count - failed} 张，${failed} 张删除失败，请重试。`)
+  } else {
+    toast.error('照片删除失败，请稍后重试。')
   }
 }
 </script>
@@ -136,25 +166,15 @@ async function handleDelete(image) {
       </view>
 
       <scroll-view class="tli__body" scroll-y>
-        <view v-if="images.length" class="tli__grid">
-          <view v-for="(image, index) in images" :key="image.imageId || image.url" class="tli__item">
-            <image
-              class="tli__thumb"
-              :src="thumbSrc(image)"
-              mode="aspectFill"
-              @click="handlePreview(index)"
-              @error="handleThumbError($event, image)"
-            />
-            <view
-              v-if="canEdit"
-              class="tli__remove"
-              aria-label="删除这张照片"
-              @click.stop="handleDelete(image)"
-            >
-              <wd-icon name="close" size="12px" />
-            </view>
-          </view>
-        </view>
+        <PhotoGrid
+          v-if="images.length"
+          ref="gridRef"
+          :items="gridItems"
+          :selectable="canEdit"
+          :disabled="uploading || batchDeleting"
+          :delete-busy="batchDeleting"
+          @delete-selected="deleteSelected"
+        />
 
         <view v-else class="tli__empty">
           <text class="tli__empty-title">还没有上传照片</text>
@@ -242,39 +262,6 @@ async function handleDelete(image) {
     width: auto;
     border-top: 1px solid $ui-hairline;
     padding: 24rpx 32rpx;
-  }
-
-  &__grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 20rpx;
-  }
-
-  &__item {
-    position: relative;
-    width: 200rpx;
-    height: 200rpx;
-  }
-
-  &__thumb {
-    width: 100%;
-    height: 100%;
-    border-radius: $ui-radius-md;
-    background-color: $ui-raise-2;
-  }
-
-  &__remove {
-    position: absolute;
-    top: -10rpx;
-    right: -10rpx;
-    display: flex;
-    width: 40rpx;
-    height: 40rpx;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background-color: $ui-scrim;
-    color: $ui-text; // 跟 $ui-scrim 一样按主题翻转（写死 #fff 在浅色下是白字压浅底）
   }
 
   &__empty {

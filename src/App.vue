@@ -288,4 +288,81 @@ body.is-drawer-open {
   justify-content: center !important;
   gap: 10px;
 }
+
+/* ===== 分页停靠栏 =====
+   5 个列表（工单/领料/入库/物料/储罐液位）与文件导入预览的分页器，
+   容器统一挂 .pager-dock，贴屏幕底常驻。
+
+   起因：分页器原来在正常文档流里，纵向位置由表格总高决定；而 .dt__cell 没有
+   任何规则、行高全由内容撑开，9 列里只有「产成品」会折行（w-40 + break-words），
+   于是每页折行条数不同 → 表高不同 → 翻页按钮逐页跳动。真机反馈"每页按钮都在
+   不同位置"。固定到屏幕底部后，无论第几页、哪个 Tab，按钮位置恒定，
+   且不必滚到列表底部就能翻页。
+
+   ⚠️⚠️ 这里只加 position / z-index / 背景 / 内边距 ——
+   绝不能顺手加 transform / filter / backdrop-filter / will-change / contain：
+   它们会给后代 position: fixed 建**包含块**，底栏会被钉进 panel 的盒子里
+   （面板矮时被顶到屏幕中部），面板内的 DateField 弹层、ProductSelectDialog、
+   ImageViewer 会一起失灵。同一条坑的完整记录见 index.vue 的 .panel 注释。
+
+   ⚠️ 为什么除 --wot-* 之外都要 !important：与上面 .wd-pager 那两条同理 ——
+   wot 编译出来的是带作用域属性的选择器（`.` 开头的等效 0,2,0）。 */
+
+/* 底栏高度只在这里定义一次：
+     · .pager-dock 用它定高；
+     · index.vue 的 .page 用它算底部补白（否则列表最后一行会被底栏压住）。
+   必须挂在 page 上 —— 变量只能自上而下继承，定义在 .pager-dock 里 .page 读不到；
+   两边各写一个数字则会漂移。
+   用 px 不用 rpx：rpx 随屏宽缩放，底栏就不能"永远在同一个地方"了。 */
+page {
+  --ui-dock-h: 62px;
+}
+
+.pager-dock {
+  /* 贴屏幕底；宽屏下与 .page__shell（max-w-7xl = 1280px）左右边缘严格对齐。
+     ⚠️ 不写 inset 简写（WXSS 不支持）；box-sizing 必须显式给 ——
+        缺了它 left/right:0 定的是**内容盒**，内边距会撑出横向滚动条。 */
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* 必须 < 10：wd-popup 默认 z-index 就是 10（NavDrawer 用默认值，未传 z-index），
+     一旦 >= 10 会盖住抽屉那块**全透明遮罩** —— 而"点外面关抽屉"完全靠它接点击。
+     5 同时保证 LoadingMask(20) 能压住底栏、各弹层(90/95/99/100)都盖得住。 */
+  z-index: 5;
+  box-sizing: border-box;
+  max-width: 1280px;
+  margin: 0 auto;
+
+  /* 定高 + 垂直居中：翻页器内部行高怎么变都不带动这条栏。
+     安全区不占内容高度，垫在 padding 里（border-box 下两者相加不重复）。 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--ui-dock-h) + var(--ui-safe-bottom, 0px));
+  padding-bottom: var(--ui-safe-bottom, 0px);
+
+  /* --ui-surface-trans 是本仓为"没有模糊的浮层"准备的近不透明兜底，
+     深浅两套都有值（深 rgba(16,32,58,.92) / 浅 rgba(255,255,255,.94)）。
+     刻意不叠 backdrop-filter：① 小程序端不支持；② 它会造包含块（见上）。 */
+  background-color: $ui-surface-trans;
+  border-top: 1px solid $ui-hairline;
+  box-shadow: 0 -8px 24px -18px $ui-shadow-strong;
+
+  /* 把 wot 分页器压到能塞进这条栏。走 wot 自己的 CSS 变量（它编译出来就是
+     `padding: var(--wot-pagination-content-padding, ...)`，见 wd-pagination/index.scss），
+     靠自定义属性继承生效 —— 不用 !important 去抢优先级，也只作用于挂了
+     .pager-dock 的子树，不波及别处。变量名取自 wot 1.14.0，升级后失效不报错、
+     只会让内容顶到上下边缘（看得出来）。 */
+  --wot-pagination-content-padding: 2px 15px; /* 默认 10px 15px，省 16px */
+  --wot-pagination-message-padding: 0; /* 盖掉 themeVars 里的 2px 0 0 0 */
+  --wot-button-small-height: 36px; /* 默认 28px，把按钮抬到手指够得着 */
+}
+
+/* 翻页请求进行中：底栏留在原地（不闪），但不接第二次点击 ——
+   5 个 composable 都是"发请求 → 覆盖式写 tableData/total"，没有请求序号，
+   连续两次翻页谁后回谁作数，页码与表格就会对不上。 */
+.pager-dock.is-busy {
+  pointer-events: none;
+}
 </style>

@@ -21,7 +21,21 @@ import { computed, nextTick, ref, watch } from 'vue'
  * ⚠️ App 端的 Vue 跑在独立 JS 引擎里，**没有 window / document** ——
  *    取屏幕宽度只能用 uni.getSystemInfoSync()，别去碰 window。
  */
-const DRAWER_EDGE = 22 // 左缘起手区宽度（CSS px）
+/*
+ * ===== 为什么没有「从左缘右滑拉出抽屉」了（2026-10-10）=====
+ * 这里原来有一条 DRAWER_EDGE = 22 的左缘起手条带，父组件把 `.page` 上的触摸转发进来，
+ * 在屏幕左缘 22px 内起手右滑就能把抽屉拉出来。
+ *
+ * 使用方真机报：**系统「从两侧向内滑」的手势会把侧边栏拽出来** ——
+ * 两者抢的是同一段屏幕边缘，而应用内的 touch 处理器总是先吃到触摸，
+ * 只要这条起手区还在，系统手势在这条边上就永远拿不回控制权。
+ * 于是这段边缘**整个让给系统**：应用不再从边缘起手，抽屉的开合挂钩到返回事件上
+ * （pages/index 的 onBackPress：关着→开、开着→收，两侧内滑都能开），
+ * 触摸手势只留「抽屉已经开着时，在里面左滑把它推回去」这一种。
+ *
+ * ⚠️ 别再往页面边缘加起手区、也别再转发页面的 touch 进来：应用一旦自己吃边缘触摸，
+ *    系统返回手势就收不到那一下了 —— 而那个返回事件正是现在开抽屉的入口。
+ */
 const DRAWER_SNAP_MS = 260 // 松手吸附时长，与弹层上的 transition 保持一致
 const DRAWER_SNAP_P = 0.33 // 位移超过抽屉宽度的这个比例就吸附过去
 const DRAWER_FLING_V = 0.35 // 速度阈值（px/ms）；够快就不看位移
@@ -51,8 +65,8 @@ const visible = ref(false)
  */
 
 // ⚠️ 初值必须是 0：`progress` 描述的是"抽屉露出来多少"，关着时就是 0。
-//   曾经写成 1（想表达"打开时是全开"），结果是**单独点一下左缘**就能把抽屉打开 ——
-//   因为那次手势没定轴、没改过进度，松手时按初值 1 判定成了"展开"。
+//   曾经写成 1（想表达"打开时是全开"），结果是**任何没改过进度的手势**
+//   松手时都被按初值 1 判定成了"展开"。
 const progress = ref(0) // 1 = 完全展开，0 = 完全收起
 const dragging = ref(false) // 拖动中：关掉 transition，跟手
 const settling = ref(false) // 松手后的吸附动画进行中（这段时间仍由我们控制位移）
@@ -72,11 +86,10 @@ let drag = null
 // 用途见 innerMove：不在列表里的手势要挡掉默认行为，在列表里的要放行让它自己滚。
 let gestureInList = false
 
-function beginDrag(e, fromEdge) {
+function beginDrag(e) {
   const t = e.touches && e.touches[0]
   if (!t) return
   drag = {
-    fromEdge,
     x0: t.clientX,
     y0: t.clientY,
     axis: '', // '' 未定向 | 'x' 拖抽屉 | 'y' 交还给页面滚动
@@ -102,12 +115,6 @@ function moveDrag(e) {
       drag = null
       return
     }
-    if (drag.fromEdge) {
-      // 方向一确认就立刻把抽屉挂上。触摸事件的 target 在 touchstart 时就定死了，
-      // 所以后面的事件仍然归本元素，不会因为弹层出现而中断这次手势。
-      visible.value = true
-      progress.value = 0
-    }
     dragging.value = true
   }
 
@@ -118,7 +125,8 @@ function moveDrag(e) {
     drag.lastT = now
   }
 
-  const p = drag.fromEdge ? dx / drag.w : 1 + dx / drag.w
+  // 手势只可能从抽屉自己身上起手（它本来就是全开的，progress = 1），左滑把这个数推小
+  const p = 1 + dx / drag.w
   progress.value = p < 0 ? 0 : p > 1 ? 1 : p
 }
 
@@ -151,16 +159,12 @@ function endDrag(e) {
     const dy = t.clientY - drag.y0
     if (Math.abs(dx) > DRAWER_AXIS_MIN && Math.abs(dx) > Math.abs(dy)) {
       drag.axis = 'x'
-      if (drag.fromEdge) {
-        visible.value = true
-        progress.value = 0
-      }
-      const p = drag.fromEdge ? dx / drag.w : 1 + dx / drag.w
+      const p = 1 + dx / drag.w
       progress.value = p < 0 ? 0 : p > 1 ? 1 : p
     }
   }
 
-  const { fromEdge, v } = drag
+  const v = drag.v
   const wasTap = !drag.axis // 没定过轴 = 手指基本没动，这是一次点按
   const p = progress.value
   drag = null
@@ -177,23 +181,31 @@ function endDrag(e) {
    *    日期控件，弹出选择器）。
    *
    * ⚠️ 必须排除拖动（wasTap）：左滑收起那一下绝不能被当成"点按"又把抽屉叫回来。
-   * ⚠️ 排除 fromEdge：那是页面左缘起手的手势，不是点抽屉。
    */
-  if (wasTap && !fromEdge && p < 1) {
+  if (wasTap && p < 1) {
     open()
     return
   }
 
   // ⚠️ 变量名不能叫 open：同名的函数 open() 在上面那段里被调用，局部 const 的
   //    TDZ 会让那次调用直接抛 ReferenceError。
-  const willOpen = fromEdge
-    ? p > DRAWER_SNAP_P || v > DRAWER_FLING_V
-    : !(p < 1 - DRAWER_SNAP_P || v < -DRAWER_FLING_V)
+  // 手指往左划（v 为负）到一定程度松手 = 收起；往回划一点点（p 仍挨着 1）就留在打开态。
+  const willOpen = !(p < 1 - DRAWER_SNAP_P || v < -DRAWER_FLING_V)
 
   if (willOpen) {
     visible.value = true
     progress.value = 1
-    settle()
+    /*
+     * ⚠️ 没动过指头的点按（wasTap）不 settle() —— 抽屉本来就全开着，没有任何位移要补间。
+     *    而 settle() 会把 settling 置真 260ms，正好撞上 close() 里那条守卫
+     *    「settling && progress === 1 就先不受理关闭」（它防的是刚拉开就被遮罩收回）。
+     *    点导航项时事件顺序是 touchend 先跑、浏览器随后合成的 click 再跑（真机同序），
+     *    于是那一下 click 连同 selectTabFromMenu → closeMenu() → close() 一起被守卫吞掉 ——
+     *    使用方 2026-10-10 报的「点某个功能后抽屉不收回」就是这一条。
+     *    （鼠标点不经过 touchend、settling 一直是假，所以桌面上永远复现不出来。）
+     *    真拖动过（axis 定过向）才需要 settle() 把位移补到端点。
+     */
+    if (!wasTap) settle()
   } else {
     progress.value = 0
     settle()
@@ -244,21 +256,13 @@ function close() {
   unloadWhenClosed()
 }
 
-// ===== 暴露给调用方的三个入口 =====
-// 页面左缘起手（父组件的 .page 上绑着 touch 事件）与抽屉内起手都从这里进。
+// ===== 对外的入口 =====
 // 用命令式方法而不是把状态提到父组件：调用这些方法**不会**触发父组件重渲染，
 // 每帧的开销才被关在这个组件里 —— 这是这个组件存在的全部理由。
-function edgeStart(e) {
-  if (visible.value) return
-  const t = e.touches && e.touches[0]
-  if (!t || t.clientX > DRAWER_EDGE) return
-  beginDrag(e, true)
-}
-function edgeMove(e) {
-  if (drag && drag.fromEdge) moveDrag(e)
-}
+// 触摸那几个（innerStart / innerMove / endDrag）只绑在下面的模板上，父组件用的是
+// open / close / isOpen / setListGesture（见末尾 defineExpose）。
 function innerStart(e) {
-  beginDrag(e, false)
+  beginDrag(e)
 }
 function innerMove(e) {
   /*
@@ -274,7 +278,7 @@ function innerMove(e) {
    * overscroll-behavior: contain 负责（见 App.vue）。
    */
   if (visible.value && !gestureInList && e && e.preventDefault) e.preventDefault()
-  if (drag && !drag.fromEdge) moveDrag(e)
+  if (drag) moveDrag(e)
 }
 
 // 给父组件用：列表起手/松手时打标
@@ -282,7 +286,16 @@ function setListGesture(v) {
   gestureInList = v
 }
 
-defineExpose({ open, close, edgeStart, edgeMove, innerStart, innerMove, setListGesture, endDrag })
+/*
+ * 给父组件用：抽屉现在算不算"开着"（含收起动画那 260ms —— 那时 visible 仍是真，
+ * 而返回键那一下正好用来把它收干净）。
+ * App 端的返回键 / 系统内滑返回手势由 pages/index 的 onBackPress 读它。
+ */
+function isOpen() {
+  return visible.value
+}
+
+defineExpose({ open, close, isOpen, setListGesture })
 
 // 弹层的位移与过渡。拖动中关掉 transition（否则每帧都在补间，跟不上手）；
 // 松手后交回 transition，由它把抽屉吸附到端点。

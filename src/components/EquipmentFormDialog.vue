@@ -4,6 +4,7 @@ import { useToast } from 'wot-design-uni'
 import { hasPerm } from '../api/auth'
 import { resolveAssetUrl } from '../api/config'
 import { CONTAINER_TYPES, buildPayload, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
+import { chooseImages } from '../utils/chooseImages'
 
 // ===== 设备数据维护的编辑弹层（2026-10-06）=====
 //
@@ -100,12 +101,23 @@ async function handleSave() {
   }
 }
 
-async function handlePickDrawing() {
-  if (!canEdit.value) return
-  uni.chooseImage({
+/**
+ * 拍照 / 从相册选一张底图。
+ *
+ * ⚠️ 一次只给一个 sourceType：两个都给的话，App / 小程序会先弹平台自带的
+ *    「拍摄 / 从相册选择」ActionSheet（系统 UI，样式改不了、各机型还不一样），
+ *    所以摆成两个入口，各自带单一来源（同图据弹层、储罐新增弹层、图片解析页的做法）。
+ *
+ * <p>走 utils/chooseImages：「相册」这一支在 App 端去起手机自带的相册（见该文件），
+ * 拍照与 H5 / 小程序原样走框架。
+ */
+function handlePickDrawing(source) {
+  if (!canEdit.value || uploading.value) return
+
+  chooseImages({
     count: 1,
     sizeType: ['original'],
-    sourceType: ['album', 'camera'],
+    sourceType: [source],
     success: async (res) => {
       const filePath = res.tempFilePaths?.[0]
       if (!filePath) return
@@ -184,9 +196,14 @@ async function handlePickDrawing() {
           </view>
           <view class="eq-form__drawing-side">
             <text class="eq-form__value">{{ draft.imageFile || '—' }}</text>
-            <wd-button v-if="canEdit" size="small" :loading="uploading" @click="handlePickDrawing">
-              上传底图
-            </wd-button>
+            <view v-if="canEdit" class="eq-form__drawing-actions">
+              <wd-button size="small" :loading="uploading" @click="handlePickDrawing('camera')">
+                拍照
+              </wd-button>
+              <wd-button size="small" :loading="uploading" @click="handlePickDrawing('album')">
+                从相册
+              </wd-button>
+            </view>
             <text class="eq-form__hint">上传后服务端自动生成深色主题用的亮线版</text>
           </view>
         </view>
@@ -309,6 +326,12 @@ async function handlePickDrawing() {
   flex: 1;
   flex-direction: column;
   gap: 10rpx;
+}
+
+/* 拍照 / 从相册两个入口并排（一次只给一个 sourceType，理由见 handlePickDrawing） */
+.eq-form__drawing-actions {
+  display: flex;
+  gap: 12rpx;
 }
 
 .eq-form__foot {

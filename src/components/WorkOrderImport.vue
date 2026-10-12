@@ -632,23 +632,31 @@ function handleBackToList() {
         </table>
       </div>
 
-      <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明）：wd-pagination 的
-           .wd-pager 宽度只等于 show-message 那段文字，靠右排时按钮组会贴着它的右缘。 -->
-      <div class="flex justify-center border-t border-slate-100 px-6 py-4">
-        <!-- wd-pagination 的 change 传的是 `{ value: N }` 对象而非页码，
-             且它在 update:modelValue 之前触发（此时 pageNum 还是旧值），
-             所以必须显式取出新页码传进去，不能直接绑 getPageData。 -->
-        <wd-pagination
-          v-model="pageNum"
-          custom-style="max-width: 340px;"
-          :page-size="pageSize"
-          :total="total"
-          show-message
-          :hide-if-one-page="false"
-          @change="(event) => getPageData(event.value)"
-        />
-      </div>
     </section>
+
+    <!-- 分页停靠栏：形态同 index.vue 工单汇总那处（那边有完整说明）。
+         放在预览 section **之外**：那层有 overflow-hidden + relative，虽然按规范
+         不夹 position:fixed 的后代（包含块是视口），但没必要去赌这条。
+         ⚠️ 门槛用 previewList.length 而不是 total > 0：与上面预览 section 的
+            条件完全一致，保证底栏和表格同进同退。（total 是在拿到预览数据时
+            才写的，内容为空时它与 previewList 本就同真同假。）
+
+         这处**不做**翻页回顶（index.vue 那 5 处会做）：那是"整页换一批"的
+         Tab 面板，回顶即回到列表开头；而这个组件顶上还有选文件、解析状态
+         一大块，回顶会把人甩到文件选择器那里，比停在原地更迷惑。 -->
+    <div v-if="previewList.length" class="pager-dock">
+      <!-- wd-pagination 的 change 传的是 `{ value: N }` 对象而非页码，
+           且它在 update:modelValue 之前触发（此时 pageNum 还是旧值），
+           所以必须显式取出新页码传进去，不能直接绑 getPageData。 -->
+      <wd-pagination
+        v-model="pageNum"
+        :page-size="pageSize"
+        :total="total"
+        show-message
+        :hide-if-one-page="false"
+        @change="(event) => getPageData(event.value)"
+      />
+    </div>
 
     <section v-if="imported" class="mt-6 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
       <div class="flex flex-wrap items-center gap-3">

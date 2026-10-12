@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
+import PhotoGrid from './PhotoGrid.vue'
 import request from '../api/request'
 import { uploadFile } from '../api/upload'
-import { formatFileSize } from '../utils/format'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
 import {
@@ -12,6 +12,7 @@ import {
   mergeRowsByMaterialCode,
   parseQty,
 } from '../composables/useOcrConfirm'
+import { chooseImages } from '../utils/chooseImages'
 
 // 一次最多上传的张数（总数上限，不是单次选择上限）
 const MAX_COUNT = 5
@@ -53,6 +54,7 @@ const sourceSheetVisible = ref(false)
 // 从相册 / 相机选图。
 // 改造前是隐藏的 <input type="file" multiple> + .click()；App 与小程序端没有 DOM，
 // 改用 uni.chooseImage —— 三端统一，App/小程序端还能直接调相机。
+// 现在这一层换成了 utils/chooseImages（uni.chooseImage 的同名替身，见 pickImages）。
 //
 // ⚠️ 这里刻意**一次只给一个 sourceType**，是为了躲开平台自带的
 //    「拍摄 / 从相册选择 / 取消」ActionSheet：那是系统 UI，样式改不了，
@@ -72,11 +74,17 @@ function openFilePicker() {
   // #endif
 }
 
-/** 弹层里选定来源后真正调起选择器。source 只取一个值，理由见 openFilePicker */
+/**
+ * 弹层里选定来源后真正调起选择器。source 只取一个值，理由见 openFilePicker。
+ *
+ * <p>走 utils/chooseImages 而不是 uni.chooseImage：「相册」这一支在 App 端会去起
+ * 手机自带的相册（小米手机上就是小米相册：轻击看大图、按住右下角圆圈滑选），
+ * 替掉框架自己那个「完成(n/m) / 所有图片 / 原图」的选择界面。拍照与 H5 / 小程序原样走框架。
+ */
 function pickImages(source) {
   sourceSheetVisible.value = false
 
-  uni.chooseImage({
+  chooseImages({
     count: remaining.value,
     sizeType: ['original', 'compressed'],
     sourceType: [source],
@@ -87,8 +95,8 @@ function pickImages(source) {
       addFiles(
         paths.map((path, index) => ({
           filePath: path,
-          // uni.chooseImage 不保证给出原始文件名（App/小程序端根本没有这个信息）。
-          // 后端拿 fileName 辅助判断单据类型，所以有名字更好、没有也别因此失败。
+          // App 端走系统相册时能拿到相册里的原始文件名（Screenshot_2026… 这类名字对后端
+          // 判断单据类型有用）；框架那条路不保证有名字，缺了就用序号兜底。
           name: tempFiles[index]?.name || fileNameFromPath(path, index),
           size: Number(tempFiles[index]?.size) || 0,
           mime: 'image/*',
@@ -216,12 +224,18 @@ function releaseObjectUrl(image) {
   // #endif
 }
 
-function removeImage(id) {
-  const index = images.value.findIndex((image) => image.id === id)
-  if (index === -1) return
-
-  releaseObjectUrl(images.value[index])
-  images.value.splice(index, 1)
+/**
+ * 网格里勾了一批点删除：事件带回的是选中的原始 image 对象。
+ *
+ * ⚠️ 必须先 releaseObjectUrl 再过滤 —— H5 拖拽进来的是 createObjectURL 出来的 blob:，
+ *    不 revoke 会一直占着内存（一页能拖几十张）。
+ */
+function deleteSelected(chosen) {
+  const ids = new Set(chosen.map((image) => image.id))
+  images.value.forEach((image) => {
+    if (ids.has(image.id)) releaseObjectUrl(image)
+  })
+  images.value = images.value.filter((image) => !ids.has(image.id))
   message.value = ''
 }
 
@@ -829,36 +843,9 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <ul class="grid grid-cols-2 gap-4 p-6 sm:grid-cols-3 lg:grid-cols-5">
-        <li
-          v-for="image in images"
-          :key="image.id"
-          class="group relative overflow-hidden rounded-lg border border-slate-200"
-        >
-          <img
-            :src="image.url"
-            :alt="image.name"
-            class="h-32 w-full bg-slate-50 object-cover"
-            loading="lazy"
-            decoding="async"
-          />
-
-          <div class="border-t border-slate-100 px-2.5 py-2">
-            <p class="truncate text-xs text-slate-600" :title="image.name">{{ image.name }}</p>
-            <p class="text-xs text-slate-400">{{ formatFileSize(image.size) }}</p>
-          </div>
-
-          <button
-            type="button"
-            class="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-sm text-[#fff] opacity-0 transition hover:bg-rose-600 focus:opacity-100 group-hover:opacity-100"
-            :aria-label="`移除 ${image.name}`"
-            :disabled="submitting"
-            @click="removeImage(image.id)"
-          >
-            ×
-          </button>
-        </li>
-      </ul>
+      <view class="p-6">
+        <PhotoGrid :items="images" :disabled="submitting" @delete-selected="deleteSelected" />
+      </view>
     </section>
 
     <div class="flex justify-end">

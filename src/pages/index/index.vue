@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { onUnload, onPullDownRefresh } from '@dcloudio/uni-app'
+import { onBackPress, onUnload, onPullDownRefresh } from '@dcloudio/uni-app'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import request from '../../api/request'
@@ -78,6 +78,41 @@ const message = useMessage()
 // isLight 在这里多担一件事：储罐底图深浅两版是两个资源，按主题挑 src（见 VESSELS.imageDark）。
 const { isLight, themeClass, wotTheme, themeVars } = useTheme()
 
+/* 底部安全区（Home Indicator），喂给 App.vue 的 .pager-dock 与 .page 底部补白。
+   为什么走 JS 而不是 CSS 的 env(safe-area-inset-bottom)：
+     ① 本仓没有 env() 先例，App 端/小程序的 CSS 支持面一贯按最保守的来；
+     ② uni 在 H5 端**就是**把 env() 包成 getSystemInfoSync().safeAreaInsets
+        （造一个隐藏元素量它的 padding-bottom），取这个值等于取 env()；
+     ③ wd-popup 的底部安全区就是这么取的，本 App 每个底部弹层在三端都靠它
+        把按钮从白条上让开 —— 同一条已在真机跑通的路；
+     ④ 仓内已有先例：NavDrawer.vue 的 uni.getSystemInfoSync && uni.getSystemInfoSync()。
+   ⚠️ 取值顺序与 wot 相反：**先取 safeAreaInsets**。wot 在小程序用的
+      screenHeight - safeArea.bottom 在 H5 桌面浏览器（窗口比屏幕矮一大截）
+      会算出一个很大的假值，底栏会被凭空垫高。 */
+function readSafeAreaBottom() {
+  try {
+    const info = (uni.getSystemInfoSync && uni.getSystemInfoSync()) || {}
+    const insets = info.safeAreaInsets
+    if (insets && typeof insets.bottom === 'number') {
+      return Math.max(0, Math.round(insets.bottom))
+    }
+    // 老基础库没有 safeAreaInsets 时兜底（小程序这两个值都是屏幕坐标，可相减）
+    const area = info.safeArea
+    if (area && info.screenHeight) {
+      return Math.max(0, Math.round(info.screenHeight - (area.bottom || 0)))
+    }
+  } catch (e) {
+    // 取不到就按 0：退化成"不垫安全区"，与改造前一样，不会更差
+  }
+  return 0
+}
+
+const safeBottom = ref(readSafeAreaBottom())
+// 挂到 .page 上（不是 .pager-dock 上）：.page 是整棵树的祖先，
+// index.vue 与 WorkOrderImport.vue 两处的底栏都能继承到。
+// 用字符串形式：wot 的 config-provider 注入 --wot-* 用的就是字符串，三端都验过。
+const pageVars = computed(() => `--ui-safe-bottom: ${safeBottom.value}px;`)
+
 // Tab 元数据同时喂给三处：顶部栏（当前标题 + 说明）、抽屉菜单（图标 + 名称 + 说明）。
 // icon 取值必须来自 wot-design-uni 的图标字体，写错会渲染成空白方块。
 // adminOnly：台账明细，只给 admin（决策-004）。这 6 页背后的接口
@@ -145,8 +180,14 @@ const roleName = computed(() => getRoleName() || '已登录')
 // 会让每帧都重跑一次整页 render（12 个 Tab 的表格全部重新 patch），手感发涩。
 // 拆出去之后每帧只重渲染那个小壳。
 //
-// 这里只保留命令式入口，以及把页面左缘的触摸**转发**过去 ——
-// 转发是方法调用，不碰本组件的响应式状态，所以同样不会触发本组件重渲染。
+// 这里只保留命令式入口。
+//
+// ⚠️ 页面上的触摸**不再转发**给抽屉了（2026-10-10 去掉的）：原来这里把 `.page` 上的
+//    touchstart/move/end 转给 NavDrawer 的 edgeStart/edgeMove，从左缘 22px 起手右滑
+//    就能拉出抽屉 —— 而那正好是系统「从两侧向内滑」的手势的地盘，应用自己抢边缘
+//    只会把系统手势废掉，而且只能覆盖左边那 22px。
+//    边缘整个让给系统之后，「返回手势开抽屉」改由下面的 onBackPress 承担（两侧都能开），
+//    所以抽屉的入口是：顶栏菜单按钮 + 返回手势。理由见 NavDrawer 顶部那段。
 const navDrawer = ref(null)
 
 function openMenu() {
@@ -157,16 +198,31 @@ function closeMenu() {
   if (navDrawer.value) navDrawer.value.close()
 }
 
-// 页面左缘起手（是否落在起手条带内、以及整套跟手逻辑都在 NavDrawer 里）
-function onPageTouchStart(e) {
-  if (navDrawer.value) navDrawer.value.edgeStart(e)
-}
-function onPageTouchMove(e) {
-  if (navDrawer.value) navDrawer.value.edgeMove(e)
-}
-function onPageTouchEnd(e) {
-  if (navDrawer.value) navDrawer.value.endDrag(e)
-}
+/*
+ * 返回键 / 系统「从两侧向内滑」的返回手势 = 抽屉的开关（使用方 2026-10-10 定的口径）：
+ *   **抽屉关着时按一下 → 打开；开着时按一下 → 收回。**
+ *
+ * 为什么挂在返回事件上、而不是像以前那样在页面左缘自己划一条起手区：
+ *   ① 手指从左边滑、从右边滑，系统发下来的是**同一个返回事件** —— 挂在它上面，
+ *      两侧都能开抽屉；应用自己在页面边缘抢起手区只能覆盖左边那 22px；
+ *   ② 应用内的 touch 处理器永远先于系统手势拿到触摸，凡是应用自己抢边缘的方案，
+ *      系统手势在这条边上就废了（使用方上一轮报的冲突就是这么来的）。
+ *
+ * 返回 true = 不执行框架默认行为：首页那一下默认是"再按一次退出应用"（框架自带的
+ * quit），两个分支都要挡掉，否则开/合的同时还会蹦退出提示。
+ * ⚠️ 代价：返回手势不再能退出应用 —— 要退请用系统的方式（返回桌面 / 任务切换器）
+ *    或抽屉底部的「退出登录」。使用方明确要的就是这个口径，别再改回"返回退出"。
+ * ⚠️ 这个钩子只在 App 端触发，H5 / 小程序端不会调用（那边返回由浏览器/平台自己管）。
+ *    ⚠️ 别换成 onLastPageBackPress：本工程走的是 uni-app（非 uni-app x）的 Plus 运行时，
+ *    它只把 ON_BACK_PRESS 交给 invokeHook（安卓返回键 → backbutton → navigateBack），
+ *    ON_LAST_PAGE_BACK_PRESS 只在 uni.x.* 那几个运行时里用。
+ */
+onBackPress(() => {
+  if (!navDrawer.value) return false // 抽屉还没挂上（理论上只在首帧之前）：交回框架默认行为
+  if (navDrawer.value.isOpen()) closeMenu()
+  else openMenu()
+  return true
+})
 
 // 导航列表的起手/松手：告诉 NavDrawer"这次手势在列表里"，它才不会把默认行为挡掉。
 // （列表在插槽里，组件自己够不着，所以由这边打标。）
@@ -187,12 +243,21 @@ const activeTabMeta = computed(
     },
 )
 
+/* 回到页面顶部。
+   两处用：换 Tab（下面 handleTabChange）、翻页（各分页器的 @change）——
+   都是"整段内容换了一批"，停在原地会看到新一页中间的一截。
+   翻页尤其需要：分页栏已固定到屏幕底部（见 App.vue 的 .pager-dock），
+   按钮不再随内容移动，若不回顶，新一页落在第几行取决于上一页的滚动位置，不可预测。 */
+function scrollPageToTop() {
+  uni.pageScrollTo({ scrollTop: 0, duration: 260 })
+}
+
 function handleTabChange(key) {
   if (key === activeTab.value) return
 
   activeTab.value = key
   // 换 Tab 等价于换页：回到顶部，避免停在上一页的滚动位置
-  uni.pageScrollTo({ scrollTop: 0, duration: 260 })
+  scrollPageToTop()
 }
 
 // 抽屉里点某一项：先收起抽屉再切面板 —— 抽屉的收起动画与面板入场动画重叠，观感更顺
@@ -439,13 +504,9 @@ function openTankLevelCreate() {
   openTankLevelForm(null)
 }
 
-// 图据弹层的开关与请求都在 useTankLevelImages（模块级单例）里，这里直接用它的入口
+// 图据弹层的开关与请求都在 useTankLevelImages（模块级单例）里，这里直接用它的入口。
+// 弹层里的大图走 uni.previewImage（在 PhotoGrid 里），不用页面上这个全局查看器。
 const { openImageDialog: openTankLevelImages } = useTankLevelImages()
-
-/** 图据弹层里点了某张：交给页面根部那个全局全屏查看器 */
-function handleTankLevelImagePreview({ urls = [], index = 0 } = {}) {
-  openImageViewerList(urls, index)
-}
 
 // ===== 列表里的图据缩略图 =====
 // 与领料 / 入库那套同一个思路（缩略图 → 原图 → 隐藏，露出底层占位图标），
@@ -793,27 +854,12 @@ const pickColumns = [
 // 小程序与 App 端没有「同源」这个概念。
 const imageViewerVisible = ref(false)
 const imageViewerUrls = ref([])
-// 打开时先看第几张（月底储罐液位记录的图据是多张，点哪张先看哪张）
 const imageViewerIndex = ref(0)
 
 function openImageViewer(url) {
   if (!url) return
   imageViewerUrls.value = [resolveAssetUrl(url)]
   imageViewerIndex.value = 0
-  imageViewerVisible.value = true
-}
-
-/**
- * 一次看多张（月底储罐液位记录的图据）。
- * 传进来的是后端给的相对路径，这里统一过 resolveAssetUrl ——
- * 与单图入口同一个道理，查看器只认能直接加载的地址。
- */
-function openImageViewerList(urls, index = 0) {
-  const list = (Array.isArray(urls) ? urls : [urls]).filter(Boolean).map(resolveAssetUrl)
-  if (!list.length) return
-
-  imageViewerUrls.value = list
-  imageViewerIndex.value = Math.min(Math.max(Number(index) || 0, 0), list.length - 1)
   imageViewerVisible.value = true
 }
 
@@ -1757,6 +1803,44 @@ function levelBottomPercent(level, geometry, bounds, scale) {
   return (level / geometry.diameter) * 100
 }
 
+// 上面那个映射的**逆**：液面在罐体盒子里的高度百分比（0 = 罐底、100 = 罐顶）→ 液位（mm）。
+// 拖动液位滑块时用它把手指的位置换回液位。
+// ⚠️ 与 levelBottomPercent 是一对：改分段映射（或底图的口径）必须同时改这里，
+//    不然会出现「手柄拖到哪、液面不在哪」。验证脚本拿两者做往返换算（逐罐型抽样）。
+function levelFromBottomPercent(percent, geometry, bounds, scale) {
+  if (geometry.type !== 'vertical') return (percent / 100) * geometry.diameter
+
+  const bottom = bounds.bottom * scale
+  const tangent = bounds.tangent * scale
+  const apex = bounds.top * scale
+  const y = bottom - (percent / 100) * (bottom - apex)
+
+  // 与正向映射同一套分段（见上）：平底罐没有下封头那一段；cyl 为 0 的退化情况直接跳过该段
+  const hasBottomHead =
+    geometry.bottomHeadDepth > 0 && bounds.tangentBottom !== undefined
+  const bottomHead = hasBottomHead ? geometry.bottomHeadDepth : 0
+  const tangentBottom = hasBottomHead ? bounds.tangentBottom * scale : bottom
+
+  if (bottomHead > 0 && y >= tangentBottom && bottom > tangentBottom) {
+    // 下封头段：液位自罐底最低点（下封头顶点）量起
+    return (bottomHead * (bottom - y)) / (bottom - tangentBottom)
+  }
+  if (y >= tangent && tangentBottom > tangent) {
+    // 筒体段
+    return (
+      bottomHead +
+      (geometry.cylinderHeight * (tangentBottom - y)) / (tangentBottom - tangent)
+    )
+  }
+  if (!(tangent > apex)) return bottomHead + geometry.cylinderHeight
+  // 上封头段：y 越过顶点时算出来会大于量程，由调用方钳到 maxLevel
+  return (
+    bottomHead +
+    geometry.cylinderHeight +
+    (geometry.headDepth * (tangent - y)) / (tangent - apex)
+  )
+}
+
 // 水波瓦片数：一格「拱」≈ 半个波长，取整是为了让平铺到罐宽正好是整数格
 //（非整数会在右端留下半截拱，动画循环处也会跳一下）。
 function vesselWaveTiles(tankWidth) {
@@ -1891,6 +1975,16 @@ const vesselDiagram = computed(() => {
       height: `${Math.abs(startPct - endPct).toFixed(4)}%`,
     },
     startStyle,
+    // 液位滑块轨道（贴在罐体左缘、盖在图纸之上那条）：纵向与罐体盒子同高，
+    // 所以它的百分比刻度与上面几个液位百分比（startPct / endPct）**同一把尺** ——
+    // 手柄的 bottom% 可以直接用，拖动时反过来也能用它把手指位置换算成液位（见 railPercentOfY）。
+    sliderStyle: {
+      left: tankStyle.left,
+      top: tankStyle.top,
+      height: tankStyle.height,
+    },
+    sliderTopPct: (top / H) * 100,
+    sliderHeightPct: (tankHeight / H) * 100,
     hasDelta,
     hasStart,
     calloutTone: tone,
@@ -1934,6 +2028,98 @@ const vesselDiagram = computed(() => {
 const vesselWaveSwatch = computed(() => ({
   backgroundImage: vesselWavePattern(vesselGeometry.value.liquid.line),
 }))
+
+// ===== 液位滑块（图纸左缘的轨道 + 两个玻璃手柄）=====
+// 手柄贴着自己的液面：位置取液位的**显示值**（缓动中的那个），于是用 ± 按钮步进时
+// 手柄跟着液面一起滑，不是「数字跳、手柄等」。刻度就是 levelBottomPercent 的输出。
+//
+// 两个液位挨得很近时手柄会叠在一起，完全重合就只能抓到上面那个 —— 所以「没被拖的那个」
+// 要让开一点。⚠️ 让开的只是手柄的**画法**，不动液位：
+//   · 拖动中（vesselRailDragWhich 不为空）被拖的那个永远画在自己的真实刻度上；
+//   · 起手那一下液位也不跳 —— 拖动映射的是手指位移，见 moveRailDrag 里的 pct0 锚点。
+//
+// 让开的量按**像素**算、不按百分比：手柄是固定屏幕尺寸的胶囊（24px 高），轨道高度却随罐型
+// 与屏幕在 ~100px（卧式罐在手机上）到 ~250px（立式罐）之间变 —— 固定百分比在矮轨道上只让开
+// 几像素，两个胶囊照样叠着（2026-10-10 真机截图撞见的正是这个）。
+const RAIL_HANDLE_MIN_PX = 32 // 两个手柄中心至少隔这么多 px（胶囊 24px + 一点缝）
+
+// 轨道在屏幕上的高度（px）。手柄是固定屏幕像素、让开量按像素算，所以得知道轨道多高；
+// 而轨道高度 = 图纸高 × sliderHeightPct，图纸高只能在运行期量（见 measureVesselRailHeight）。
+// 量到之前是 0：那时不推，两个手柄先按真实刻度画（面板没显示过，本来就没人看得见）。
+const vesselRailHeightPx = ref(0)
+
+// 正在被拖的手柄（'' | 'start' | 'end'）：驱动「另一个让开」与手柄的高亮/置顶样式。
+// 拖动会话本身是普通对象、不进响应式，见下面的 vesselRailDrag。
+const vesselRailDragWhich = ref('')
+
+function clampRailPercent(value) {
+  return Math.max(0, Math.min(100, value))
+}
+
+// 两个手柄各自的「让开」量（px，正数 = 往上让），作用在手柄的 margin-bottom 上。
+// 位置本身仍是真实刻度的百分比：让开的只是画法，液位与数字都不动。
+function railHandleOffsets(start, end, active) {
+  const offsets = { start: 0, end: 0 }
+  const height = vesselRailHeightPx.value
+  if (!(height > 0)) return offsets
+
+  const need = RAIL_HANDLE_MIN_PX - (Math.abs(start - end) / 100) * height
+  if (!(need > 0)) return offsets // 本来就离得够开，谁也不让
+
+  // 刻度高的那个往上让、低的往下让。被拖的那个不动、另一个让开全部；
+  // 谁都没拖则各让一半 —— 于是「拖起来一个」时总间距与没拖时一样，不会先合再分。
+  const upWhich = start >= end ? 'start' : 'end'
+  const downWhich = upWhich === 'start' ? 'end' : 'start'
+  const upPct = upWhich === 'start' ? start : end
+  const downPct = downWhich === 'start' ? start : end
+  const roomUp = Math.max(0, ((100 - upPct) / 100) * height)
+  const roomDown = Math.max(0, (downPct / 100) * height)
+
+  let upPx = Math.min(active === downWhich ? need : active === upWhich ? 0 : need / 2, roomUp)
+  let downPx = Math.min(active === upWhich ? need : active === downWhich ? 0 : need / 2, roomDown)
+  // 有一边顶到轨道端头了（两个液位都在量程顶端这种），让另一边多让一点补上；
+  // 补不满也就算了 —— 两个手柄都贴在端点时物理上展不开，只能叠着。
+  const deficit = need - upPx - downPx
+  if (deficit > 0) {
+    const extraDown = Math.min(deficit, roomDown - downPx)
+    downPx += extraDown
+    upPx += Math.min(deficit - extraDown, roomUp - upPx)
+  }
+
+  offsets[upWhich] = upPx
+  offsets[downWhich] = -downPx
+  return offsets
+}
+
+const vesselRailHandles = computed(() => {
+  const geometry = vesselGeometry.value
+  const bounds = geometry.imageBounds
+  const scale = VESSEL_IMAGE_WIDTH / bounds.width
+  const start = clampRailPercent(levelBottomPercent(vesselStartDisplay.value, geometry, bounds, scale))
+  const end = clampRailPercent(levelBottomPercent(vesselEndDisplay.value, geometry, bounds, scale))
+  const offsets = railHandleOffsets(start, end, vesselRailDragWhich.value)
+
+  return [
+    {
+      which: 'start',
+      label: '起始液位滑块',
+      class: 'vessel-rail__handle--start',
+      percent: start,
+      offsetPx: offsets.start,
+      value: Math.round(vesselStartDisplay.value),
+      swatchStyle: null,
+    },
+    {
+      which: 'end',
+      label: '终止液位滑块',
+      class: 'vessel-rail__handle--end',
+      percent: end,
+      offsetPx: offsets.end,
+      value: Math.round(vesselEndDisplay.value),
+      swatchStyle: vesselWaveSwatch.value, // 与控件列那个小标、图纸里的波峰带同一份图案
+    },
+  ]
+})
 
 // 液体体积（mm³）：壳体液位体积 − 液面以下换热管所占体积。
 // 两项的实现都在 utils/vesselVolume.js（两套前端共用同一份内容），这里只做调用：
@@ -2197,56 +2383,6 @@ function animateVesselTo(which, target) {
   startVesselLoop()
 }
 
-// 步进调节液位（配合软拟态按钮）
-function stepVesselLevel(which, direction, step = 10) {
-  const targetRef = levelTargetRef(which)
-  const next = Number(targetRef.value || 0) + direction * step
-  targetRef.value = Math.max(0, Math.min(vesselGeometry.value.maxLevel, next))
-}
-
-// 按住按钮时连续调节：先响应一次，停顿 320ms 后进入连发，步长加大以便快速扫过
-let vesselStepDelayTimer = null
-let vesselStepRepeatTimer = null
-
-function stopStepHold() {
-  if (vesselStepDelayTimer) {
-    clearTimeout(vesselStepDelayTimer)
-    vesselStepDelayTimer = null
-  }
-  if (vesselStepRepeatTimer) {
-    clearInterval(vesselStepRepeatTimer)
-    vesselStepRepeatTimer = null
-  }
-}
-
-function startStepHold(which, direction) {
-  stopStepHold()
-  stepVesselLevel(which, direction)
-
-  vesselStepDelayTimer = setTimeout(() => {
-    vesselStepRepeatTimer = setInterval(() => stepVesselLevel(which, direction, 25), 40)
-  }, 320)
-}
-
-// 液位按钮的按下/抬起必须同时覆盖触摸与鼠标：
-//   · 小程序端与 App 真机只有 touch 事件；
-//   · H5 桌面端只有 mouse 事件 —— 只绑 @touchstart 的话，鼠标点一下完全没反应。
-// 两边都绑就得防「一次操作走两格」：触摸屏上浏览器会在 touchend 之后补发一套 mouse
-// 兼容事件。touchstart 的 .prevent 通常会抑制它们，但个别 webview 不保证，所以再用
-// 时间窗兜一道：刚发生过触摸，短时间内来的 mouse 按下直接丢弃。
-let vesselLastTouchAt = 0
-const VESSEL_TOUCH_DEDUPE_MS = 700
-
-function startStepHoldByTouch(which, direction) {
-  vesselLastTouchAt = Date.now()
-  startStepHold(which, direction)
-}
-
-function startStepHoldByMouse(which, direction) {
-  if (Date.now() - vesselLastTouchAt < VESSEL_TOUCH_DEDUPE_MS) return
-  startStepHold(which, direction)
-}
-
 function clampAndAnimateLevel(which, value) {
   const maxLevel = vesselGeometry.value.maxLevel
   const clamped = Math.max(0, Math.min(maxLevel, Number(value) || 0))
@@ -2261,6 +2397,178 @@ function clampAndAnimateLevel(which, value) {
 
 watch(vesselStartLevel, (value) => clampAndAnimateLevel('start', value))
 watch(vesselEndLevel, (value) => clampAndAnimateLevel('end', value))
+
+// ===== 液位滑块：拖动 =====
+// 手柄沿轨道上下拖，直接改写对应的液位。三件事决定了这么写：
+//   ① **映射的是手指位移、不是手指落点**：手柄有高度、手指不可能正好按在它的中线上，
+//      按落点算的话碰到手柄的一瞬间液位就跳；两个手柄被推开时（RAIL_HANDLE_MIN_PX）跳得更明显。
+//      所以起手先记「液位在轨道上的真实刻度」与「起手那一点的刻度」，之后只累加位移。
+//   ② **轨道有多高、在哪只能量**：宽度一变（横竖屏、分屏、切罐换底图）它就跟变，
+//      所以每次起手量一次（一次 createSelectorQuery，约一帧）。量到之前收到的 move 丢掉再量。
+//   ③ **拖动期间不跑缓动**：display 与 target 一起写成手指算出来的值 ——
+//      target 那条既有 watcher 拿到「等于显示值」的目标，会走「没有变化」那条分支，
+//      不起缓动、也不会有人跟手指抢着写 display。
+let vesselRailDrag = null // 拖动会话（普通对象，不进响应式）
+const RAIL_MEASURE_TRIES = 3 // 量不到图纸 rect 时的重试上限
+
+// 触摸点 / 鼠标点的屏幕 Y。优先 clientY：两端 boundingClientRect 给的都是
+// 「相对显示区域」的坐标（App/H5 就是 getBoundingClientRect，小程序同理），同一个坐标系，
+// 不需要再拿 scrollOffset 换算。
+function railPointerY(event) {
+  const point =
+    (event.touches && event.touches[0]) ||
+    (event.changedTouches && event.changedTouches[0]) ||
+    event // 鼠标事件（H5 桌面端）直接用
+  const y = point && point.clientY
+  return typeof y === 'number' ? y : null
+}
+
+// 屏幕 Y → 轨道上的百分比（0 = 罐底，100 = 罐顶）。
+// 轨道挂在图纸里，位置与高度都是图纸高的百分比（sliderTopPct / sliderHeightPct）。
+function railPercentOfY(rect, y) {
+  const railHeight = (vesselDiagram.value.sliderHeightPct / 100) * rect.height
+  if (!railHeight) return null
+  const railTop = rect.top + (vesselDiagram.value.sliderTopPct / 100) * rect.height
+  return (1 - (y - railTop) / railHeight) * 100
+}
+
+// 液位（mm）→ 轨道百分比：与 vesselRailHandles 画手柄用的是同一个映射
+function railPercentOfLevel(level) {
+  const geometry = vesselGeometry.value
+  const bounds = geometry.imageBounds
+  return levelBottomPercent(level, geometry, bounds, VESSEL_IMAGE_WIDTH / bounds.width)
+}
+
+// 轨道百分比 → 液位（mm）：钳到量程内并取整。算不出有限值就返回 null（不动液位）
+function vesselLevelAtRailPercent(percent) {
+  const geometry = vesselGeometry.value
+  const bounds = geometry.imageBounds
+  const level = levelFromBottomPercent(
+    Math.max(0, Math.min(100, percent)),
+    geometry,
+    bounds,
+    VESSEL_IMAGE_WIDTH / bounds.width,
+  )
+  if (!Number.isFinite(level)) return null
+  return Math.max(0, Math.min(geometry.maxLevel, Math.round(level)))
+}
+
+function setVesselLevelFromRail(which, level) {
+  vesselTransitions[which] = null // 缓动停手，别再往 display 里写
+  levelDisplayRef(which).value = level
+  levelTargetRef(which).value = level
+}
+
+// 量图纸的盒子。页面级查询：本页不是自定义组件，不需要 PhotoGrid 里那句 .in(instance.proxy)。
+// 量不到（还没渲染 / 端上限制）就把 rect 记成 null，由调用方决定怎么办，绝不抛。
+function measureVesselDiagram(callback) {
+  try {
+    const query = uni.createSelectorQuery()
+    query.select('.vessel-diagram').boundingClientRect()
+    query.exec((result) => callback(Array.isArray(result) ? result[0] : null))
+  } catch (error) {
+    callback(null)
+  }
+}
+
+// 量轨道在屏幕上的高度，喂给 railHandleOffsets（它按像素算「让开多少」）。
+// 只在面板真的显示着的时候量：面板是 v-show 常驻的，隐藏时整盒是 0，量了会把 0 记进去。
+function measureVesselRailHeight() {
+  if (!vesselImageReady.value || activeTab.value !== 'vessel') return
+  measureVesselDiagram((rect) => {
+    if (!rect || !rect.height) return
+    vesselRailHeightPx.value = (vesselDiagram.value.sliderHeightPct / 100) * rect.height
+  })
+}
+
+// 切 Tab / 换储罐都会让图纸换尺寸，得等到 DOM 落地之后再量（v-show 的显示状态、新罐的宽高比
+// 都发生在这一刻之后）—— 所以统一用 setTimeout，而不是同步量。
+// （转屏 / 改窗口同理，但没有再挂一个 resize 监听：起手拖手柄时会顺手重量一次，
+//   而那个值只影响「让开多少」这条画法，量到之前与实际差一点也看不出来。）
+function scheduleVesselRailMeasure(delay = 0) {
+  setTimeout(measureVesselRailHeight, delay)
+}
+
+function startRailDrag(which, event) {
+  const y = railPointerY(event)
+  if (y === null) return
+
+  vesselRailDrag = { which, y0: y, rect: null, pct0: null, fingerPct0: 0, tries: 1 }
+  vesselRailDragWhich.value = which
+  measureVesselDiagram((rect) => {
+    if (vesselRailDrag && vesselRailDrag.which === which) vesselRailDrag.rect = rect
+    // 顺手把「轨道多高」刷新一遍（同一只盒子，不多花一次查询）——
+    // 拖过一次之后让开量就是按当前屏幕算的了
+    if (rect && rect.height) vesselRailHeightPx.value = (vesselDiagram.value.sliderHeightPct / 100) * rect.height
+  })
+}
+
+function moveRailDrag(event) {
+  const drag = vesselRailDrag
+  if (!drag) return
+  const y = railPointerY(event)
+  if (y === null) return
+
+  if (!drag.rect) {
+    if (drag.tries < RAIL_MEASURE_TRIES) {
+      drag.tries += 1
+      measureVesselDiagram((rect) => {
+        if (vesselRailDrag === drag && !drag.rect) drag.rect = rect
+      })
+    }
+    return
+  }
+
+  if (drag.pct0 === null) {
+    // 锚点：起手时液位所在的真实刻度 + 起手那一点的刻度。两者之差就是「手指位移」，
+    // 于是第一下 move 算出来的液位仍然等于起手时的液位 —— 液位不跳，手柄才开始跟手。
+    const anchorPct = railPercentOfLevel(levelDisplayRef(drag.which).value)
+    const fingerPct = railPercentOfY(drag.rect, drag.y0)
+    if (fingerPct === null) return
+    drag.pct0 = anchorPct
+    drag.fingerPct0 = fingerPct
+  }
+
+  const fingerPct = railPercentOfY(drag.rect, y)
+  if (fingerPct === null) return
+  const level = vesselLevelAtRailPercent(drag.pct0 + (fingerPct - drag.fingerPct0))
+  if (level !== null) setVesselLevelFromRail(drag.which, level)
+}
+
+function endRailDrag() {
+  if (!vesselRailDrag) return
+  vesselRailDrag = null
+  vesselRailDragWhich.value = ''
+}
+
+// 触摸端起手时挡一下随后补发的 mouse 事件（触摸屏上浏览器会在 touchend 之后补一套 mouse 兼容事件）
+let railLastTouchAt = 0
+const RAIL_TOUCH_DEDUPE_MS = 700
+
+function startRailDragByTouch(which, event) {
+  railLastTouchAt = Date.now()
+  startRailDrag(which, event)
+}
+
+// 鼠标拖出胶囊也要继续跟手，所以 move / up 挂在 window 上（只有 H5 桌面端会走到这里，
+// 真机与小程序端没有 mouse 事件；页面内那三个 @touch 事件本来就跟元素走）。
+function handleRailMouseMove(event) {
+  moveRailDrag(event)
+}
+
+function stopRailMouseDrag() {
+  window.removeEventListener('mousemove', handleRailMouseMove)
+  window.removeEventListener('mouseup', stopRailMouseDrag)
+  endRailDrag()
+}
+
+function startRailDragByMouse(which, event) {
+  if (Date.now() - railLastTouchAt < RAIL_TOUCH_DEDUPE_MS) return
+  startRailDrag(which, event)
+  if (!vesselRailDrag) return
+  window.addEventListener('mousemove', handleRailMouseMove)
+  window.addEventListener('mouseup', stopRailMouseDrag)
+}
 
 // 切换储罐：液位按新罐径钳制、底图按需切换
 // （底图交给 <image> 自己加载 —— src 一换就重新取图；这里只负责让面板淡出淡入，
@@ -2283,6 +2591,11 @@ watch(vesselKey, () => {
   setTimeout(() => {
     vesselSwitching.value = false
   }, 330)
+
+  // 换罐换底图 → 图纸宽高比变 → 轨道高度变，让开量要按新的算。
+  // 等 360ms 是因为 .vessel-diagram 的 aspect-ratio 自己带了 320ms 过渡：
+  // 刚换完那一刻量到的还是**旧**罐子的高度，立式↔卧式差了 100 多像素。
+  scheduleVesselRailMeasure(360)
 })
 
 // 离开页面时的清理。
@@ -2290,7 +2603,13 @@ watch(vesselKey, () => {
 // 而 H5/App 端 Vue 的 onUnmounted 也会触发（两边都调一次也无妨，清理函数是幂等的）。
 function cleanupVessel() {
   stopVesselLoop()
-  stopStepHold()
+  // 拖到一半离开页面：把挂在 window 上的那两个鼠标监听摘掉、把会话丢掉。
+  // typeof 这一问是给小程序端的 —— 那边没有 window，而 cleanup 每条路径都会走到。
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('mousemove', handleRailMouseMove)
+    window.removeEventListener('mouseup', stopRailMouseDrag)
+  }
+  endRailDrag()
 }
 
 onMounted(() => {
@@ -2309,6 +2628,8 @@ watch(activeTab, (tab) => {
     vesselImageReady.value = true
     // 切回来时若还有没跑完的缓动，接上帧循环
     if (vesselTransitions.start || vesselTransitions.end) startVesselLoop()
+    // 面板刚显示出来才量得到轨道的实际高度（隐藏时整盒是 0）
+    scheduleVesselRailMeasure()
   } else {
     stopVesselLoop()
   }
@@ -2407,14 +2728,13 @@ onPullDownRefresh(async () => {
   <!-- 改造前这里套了一层 <el-config-provider :locale="zhCn"> 只为给 Element Plus 注入
        中文 locale。wot-design-uni 默认就是中文，不需要这层包裹，直接去掉。
        原来写死在这层的 Tailwind 布局类（min-h-screen / px-4 py-8 …）
-       挪到 .page 里 —— 顶部还要叠加状态栏高度，Tailwind 表达不了 calc(var())。 -->
+       挪到 .page 里 —— 顶部还要叠加状态栏高度，Tailwind 表达不了 calc(var())。
+       ⚠️ 这一层原先还绑着 touchstart/move/end 三个把页面手势转发给抽屉的监听，
+       2026-10-10 全部去掉：那段屏幕边缘要留给系统的内滑返回手势（见上面 onBackPress 那段）。 -->
   <view
     class="page"
     :class="themeClass"
-    @touchstart="onPageTouchStart"
-    @touchmove="onPageTouchMove"
-    @touchend="onPageTouchEnd"
-    @touchcancel="onPageTouchEnd"
+    :style="pageVars"
   >
     <!-- 主题统一交给 wot-design-uni 的 config-provider：
          日期选择器、弹层、Toast、MessageBox 这些组件不用逐个改色。
@@ -2550,27 +2870,33 @@ onPullDownRefresh(async () => {
             </view>
           </div>
 
-          <!-- 分页器各调用点统一按这个形态写（其余几处照抄本节）：
-               容器只负责"上分隔线 + 内边距"，居中由 App.vue 里那条全局规则
-               .wd-pager__content 做（wot 默认是 flex-start）。
-               2026-10-09 前这里还挂着 custom-style="max-width: 340px" 靠限宽间接居中，
-               但那会把下面那行页码说明一起限宽、与按钮组对不齐；现在限宽已移除。 -->
-          <div class="flex justify-center border-t border-slate-100 px-6 py-3">
-            <!-- wd-pagination 的 change 事件传的是 `{ value: N }` 对象，不是页码本身
-                 （el-pagination 传的是数字，迁移时直接绑函数会拿到对象）。
-                 而 change 又在 update:modelValue 之前触发，此时 pageNum 还是旧值，
-                 所以必须把新的页码显式取出来传进去，不能靠 v-model 已更新。 -->
-            <wd-pagination
-              v-model="pageNum"
-              :total="total"
-              :page-size="pageSize"
-              show-message
-              :hide-if-one-page="false"
-              @change="(event) => loadWorkOrderPage(event.value)"
-            />
-          </div>
         </div>
           </div>
+
+        <!-- 分页停靠栏：各调用点统一按这个形态写（其余几处照抄本节）。
+             容器只用 .pager-dock 一个类 —— 样式（贴屏幕底、玻璃底、高度与安全区）
+             全在 App.vue 里那一份，居中由它的 flex 负责。
+             ⚠️ 必须放在 v-if/v-else 之外：留在里面的话翻页时 loading 置真会把它
+                整个卸载，底栏就每翻一页闪一下（它现在常驻屏幕，闪一下非常显眼）。
+             ⚠️ 门槛 total > 0：composable 只在请求成功时写总条数、出错时置 0，
+                所以翻页过程中恒 > 0（不闪），首次进入/报错/空结果时整条消失 ——
+                那三种状态下本来就没有"页"可翻。
+             ⚠️ 翻页要顺带回顶（scrollPageToTop）：按钮已固定不动，不回顶的话新一页
+                停在第几行取决于上一页的滚动位置，反而更难预期。 -->
+        <div v-if="total > 0" class="pager-dock" :class="{ 'is-busy': loading }">
+          <!-- wd-pagination 的 change 事件传的是 `{ value: N }` 对象，不是页码本身
+               （el-pagination 传的是数字，迁移时直接绑函数会拿到对象）。
+               而 change 又在 update:modelValue 之前触发，此时 pageNum 还是旧值，
+               所以必须把新的页码显式取出来传进去，不能靠 v-model 已更新。 -->
+          <wd-pagination
+            v-model="pageNum"
+            :total="total"
+            :page-size="pageSize"
+            show-message
+            :hide-if-one-page="false"
+            @change="(event) => { loadWorkOrderPage(event.value); scrollPageToTop() }"
+          />
+        </div>
         </section>
 
       <!-- 单张工单的图片查看器。
@@ -2769,20 +3095,21 @@ onPullDownRefresh(async () => {
                 </view>
               </div>
 
-              <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
-              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
-                <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
-                <wd-pagination
-              v-model="pickPageNum"
-              :total="pickTotal"
-              :page-size="pickPageSize"
-              show-message
-              :hide-if-one-page="false"
-              @change="(event) => loadPickPage(event.value)"
-            />
-              </div>
             </div>
           </div>
+
+        <!-- 分页停靠栏：形态同工单汇总那处（那边有完整说明） -->
+        <div v-if="pickTotal > 0" class="pager-dock" :class="{ 'is-busy': pickLoading }">
+          <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
+          <wd-pagination
+            v-model="pickPageNum"
+            :total="pickTotal"
+            :page-size="pickPageSize"
+            show-message
+            :hide-if-one-page="false"
+            @change="(event) => { loadPickPage(event.value); scrollPageToTop() }"
+          />
+        </div>
         </section>
 
         <!-- 领料单据大图：同上 —— 原来的居中卡片弹窗（.simple-viewer__img 没有任何样式，
@@ -2892,20 +3219,21 @@ onPullDownRefresh(async () => {
                 </view>
               </div>
 
-              <!-- 居中 + 限宽，同工单汇总那处分页（那边有完整说明） -->
-              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
-                <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
-                <wd-pagination
-              v-model="inboundPageNum"
-              :total="inboundTotal"
-              :page-size="inboundPageSize"
-              show-message
-              :hide-if-one-page="false"
-              @change="(event) => loadInboundPage(event.value)"
-            />
-              </div>
             </div>
           </div>
+
+        <!-- 分页停靠栏：形态同工单汇总那处（那边有完整说明） -->
+        <div v-if="inboundTotal > 0" class="pager-dock" :class="{ 'is-busy': inboundLoading }">
+          <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
+          <wd-pagination
+            v-model="inboundPageNum"
+            :total="inboundTotal"
+            :page-size="inboundPageSize"
+            show-message
+            :hide-if-one-page="false"
+            @change="(event) => { loadInboundPage(event.value); scrollPageToTop() }"
+          />
+        </div>
         </section>
 
         <!-- 入库单据大图：原来的居中卡片弹窗（图片走 uni <image> 默认的 320×240、
@@ -3153,18 +3481,21 @@ onPullDownRefresh(async () => {
                 </view>
               </div>
 
-              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
-                <wd-pagination
-                  v-model="stockPageNum"
-                  :total="stockTotal"
-                  :page-size="stockPageSize"
-                  show-message
-                  :hide-if-one-page="false"
-                  @change="(event) => getStockPageData(event.value)"
-                />
-              </div>
             </div>
           </div>
+
+        <!-- 分页停靠栏：形态同工单汇总那处（那边有完整说明） -->
+        <div v-if="stockTotal > 0" class="pager-dock" :class="{ 'is-busy': stockLoading }">
+          <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
+          <wd-pagination
+            v-model="stockPageNum"
+            :total="stockTotal"
+            :page-size="stockPageSize"
+            show-message
+            :hide-if-one-page="false"
+            @change="(event) => { getStockPageData(event.value); scrollPageToTop() }"
+          />
+        </div>
         </section>
       </div>
 
@@ -3489,33 +3820,36 @@ onPullDownRefresh(async () => {
                   </view>
                 </view>
               </div>
-
-              <div class="flex justify-center border-t border-slate-100 px-6 py-3">
-                <wd-pagination
-                  v-model="tankLevelPageNum"
-                  :total="tankLevelTotal"
-                  :page-size="tankLevelPageSize"
-                  show-message
-                  :hide-if-one-page="false"
-                  @change="(event) => getTankLevelPageData(event.value)"
-                />
-              </div>
             </div>
           </div>
 
-          <!-- 记录说明：与线下台账表尾、电脑端一字不差 -->
+          <!-- 记录说明：与线下台账表尾、电脑端一字不差。
+               分页停靠栏已不占文档流（见下方 .pager-dock），这块自然上移贴住表格。 -->
           <div class="border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
             <p>记录说明：</p>
             <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
             <p>2. 记录时间为每月月底下午3点</p>
           </div>
+
+        <!-- 分页停靠栏：形态同工单汇总那处（那边有完整说明） -->
+        <div v-if="tankLevelTotal > 0" class="pager-dock" :class="{ 'is-busy': tankLevelLoading }">
+          <!-- 事件载荷是 { value: N }，同工单汇总那处分页 -->
+          <wd-pagination
+            v-model="tankLevelPageNum"
+            :total="tankLevelTotal"
+            :page-size="tankLevelPageSize"
+            show-message
+            :hide-if-one-page="false"
+            @change="(event) => { getTankLevelPageData(event.value); scrollPageToTop() }"
+          />
+        </div>
         </section>
 
         <!-- 表单弹层（新增 / 编辑 / 只读详情）与图据弹层。
              图据弹层的开关在 useTankLevelImages 里，这里不用绑 v-model；
-             大图交给页面根部的 <ImageViewer />，见 handleTankLevelImagePreview。 -->
+             弹层里的大图走 uni.previewImage（在 PhotoGrid 里），不用页面根部那个查看器。 -->
         <TankLevelFormDialog v-model="tankLevelFormVisible" :record="tankLevelFormRecord" />
-        <TankLevelImageDialog @preview="handleTankLevelImagePreview" />
+        <TankLevelImageDialog />
 
         <!-- 属地 / 所属两个下拉都复用物料选择弹层：选项都是短字符串列表，
              底部弹层 + 搜索的形态在手机上比浮层好用（见 DropdownMenu 的适用范围说明） -->
@@ -3658,12 +3992,47 @@ onPullDownRefresh(async () => {
                       </view>
                     </view>
                   </view>
+
+                  <!-- 液位滑块：轨道贴罐体左缘、与罐体同高（同一个液位刻度），两个玻璃手柄
+                       一上一下 —— 起始液位与终止液位。层在图纸与引线标注之上（使用方
+                       2026-10-10 要求「在图层上方」）。
+                       只绑 touch/mouse：小程序端没有 mouse 事件，H5 桌面端没有 touch，
+                       两条都给（与下面 ± 按钮同一个理由）。 -->
+                  <view
+                    v-if="selectedVessel"
+                    class="vessel-rail"
+                    :style="vesselDiagram.sliderStyle"
+                  >
+                    <view class="vessel-rail__track"></view>
+                    <view
+                      v-for="handle in vesselRailHandles"
+                      :key="handle.which"
+                      class="vessel-rail__handle"
+                      :class="[handle.class, { 'is-dragging': vesselRailDragWhich === handle.which }]"
+                      :style="{ bottom: `${handle.percent.toFixed(4)}%`, marginBottom: `${handle.offsetPx.toFixed(2)}px` }"
+                      :aria-label="handle.label"
+                      @touchstart.stop.prevent="startRailDragByTouch(handle.which, $event)"
+                      @touchmove.stop.prevent="moveRailDrag"
+                      @touchend="endRailDrag"
+                      @touchcancel="endRailDrag"
+                      @mousedown.stop.prevent="startRailDragByMouse(handle.which, $event)"
+                    >
+                      <!-- 小标与控件列那两个一模一样：起始 = 起始虚线，终止 = 波峰液面 -->
+                      <view
+                        class="vessel-legend"
+                        :class="`vessel-legend--${handle.which}`"
+                        :style="handle.swatchStyle"
+                      ></view>
+                      <text class="vessel-num vessel-num--level vessel-rail__num">{{ handle.value }}</text>
+                    </view>
+                  </view>
                 </template>
               </view>
             </div>
 
             <div :class="isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'">
-            <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
+            <!-- 横版：体积变化在左、两个液位的读数在右；竖版：体积变化居中在上、读数在下
+                 （排不下时读数自己换行，见下面那格的 min-w） -->
             <div
               class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
               :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-100 px-6 pt-5'"
@@ -3692,62 +4061,24 @@ onPullDownRefresh(async () => {
             </div>
             </div>
 
-            <!-- 液位控件列：竖版罐原来是写死的两列，小屏上每列只有 ~125px，
-                 而一个液位控件（标签 + 两个 38px 圆钮 + 80px 输入框）本身就要 ~240px，
-                 必然横向溢出卡片。改成窄屏一列、≥640px 两列。 -->
+            <!-- 两个液位的读数：一格一个液位。
+                 2026-10-10 使用方要求删掉液位的输入框与 ± 按钮 —— 液位改成直接拖图纸左缘那两个
+                 玻璃手柄来设，这一列只留读数（手柄上那个数字也是同一个 display 值，两处一致）。
+                 每格多宽、怎么换行，全在下面 .vessel-readout 那条 scss 里（flex: 1 1 200px + min-width: 0，
+                 不用 min-w-[200px] 的原因也写在那一处）—— 360~375px 的手机上两格落成一列，宽屏并排。
+                 同理标签也不加 whitespace-nowrap —— 极窄时让中文自己换行，别撑宽整页。 -->
             <div
-                class="gap-x-6 gap-y-5"
-                :class="
-                  isVerticalVessel
-                    ? 'grid w-full grid-cols-1 px-0 sm:grid-cols-2'
-                    : 'flex flex-wrap gap-x-6'
-                "
-              >
-              <!-- 起始液位：控件与其数据同列 -->
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
-                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                    <span class="vessel-legend vessel-legend--start" aria-hidden="true"></span>
-                    起始液位
-                  </span>
-                  <div class="flex items-center gap-3">
-                    <!-- touch 与 mouse 两组都要绑，缺一组就有一端按不动（见 startStepHoldByTouch 的注释） -->
-                    <button
-                      class="vessel-step"
-                      aria-label="降低起始液位"
-                      @touchstart.prevent="startStepHoldByTouch('start', -1)"
-                      @touchend="stopStepHold"
-                      @touchcancel="stopStepHold"
-                      @mousedown.prevent="startStepHoldByMouse('start', -1)"
-                      @mouseup="stopStepHold"
-                      @mouseleave="stopStepHold"
-                    >
-                      −
-                    </button>
-                    <input
-                      v-model.number="vesselStartLevel"
-                      type="number"
-                      min="0"
-                      :max="vesselGeometry.maxLevel"
-                      step="10"
-                      class="vessel-level-input w-20 min-w-0 text-right"
-                    />
-                    <button
-                      class="vessel-step"
-                      aria-label="升高起始液位"
-                      @touchstart.prevent="startStepHoldByTouch('start', 1)"
-                      @touchend="stopStepHold"
-                      @touchcancel="stopStepHold"
-                      @mousedown.prevent="startStepHoldByMouse('start', 1)"
-                      @mouseup="stopStepHold"
-                      @mouseleave="stopStepHold"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+              class="flex flex-wrap gap-x-6 gap-y-3"
+              :class="isVerticalVessel ? 'w-full' : ''"
+            >
+              <!-- 起始液位：图例与图纸里那条起始虚线、手柄上的小标同一份画法 -->
+              <div class="vessel-readout flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span class="flex items-center gap-2 text-sm text-slate-700">
+                  <span class="vessel-legend vessel-legend--start" aria-hidden="true"></span>
+                  起始液位
+                </span>
 
-                <div class="space-y-1 pl-1 text-sm text-slate-500">
+                <div class="space-y-1 text-sm text-slate-500">
                   <div>
                     液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselStartDisplay) }}</span> mm
                   </div>
@@ -3757,54 +4088,18 @@ onPullDownRefresh(async () => {
                 </div>
               </div>
 
-              <!-- 终止液位：控件与其数据同列 -->
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]">
-                  <span class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700">
-                    <span
-                      class="vessel-legend vessel-legend--end"
-                      :style="vesselWaveSwatch"
-                      aria-hidden="true"
-                    ></span>
-                    终止液位
-                  </span>
-                  <div class="flex items-center gap-3">
-                    <button
-                      class="vessel-step"
-                      aria-label="降低终止液位"
-                      @touchstart.prevent="startStepHoldByTouch('end', -1)"
-                      @touchend="stopStepHold"
-                      @touchcancel="stopStepHold"
-                      @mousedown.prevent="startStepHoldByMouse('end', -1)"
-                      @mouseup="stopStepHold"
-                      @mouseleave="stopStepHold"
-                    >
-                      −
-                    </button>
-                    <input
-                      v-model.number="vesselEndLevel"
-                      type="number"
-                      min="0"
-                      :max="vesselGeometry.maxLevel"
-                      step="10"
-                      class="vessel-level-input w-20 min-w-0 text-right"
-                    />
-                    <button
-                      class="vessel-step"
-                      aria-label="升高终止液位"
-                      @touchstart.prevent="startStepHoldByTouch('end', 1)"
-                      @touchend="stopStepHold"
-                      @touchcancel="stopStepHold"
-                      @mousedown.prevent="startStepHoldByMouse('end', 1)"
-                      @mouseup="stopStepHold"
-                      @mouseleave="stopStepHold"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+              <!-- 终止液位：图例用与图纸里那片波峰液面同一份图案（颜色随介质走） -->
+              <div class="vessel-readout flex flex-col gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <span class="flex items-center gap-2 text-sm text-slate-700">
+                  <span
+                    class="vessel-legend vessel-legend--end"
+                    :style="vesselWaveSwatch"
+                    aria-hidden="true"
+                  ></span>
+                  终止液位
+                </span>
 
-                <div class="space-y-1 pl-1 text-sm text-slate-500">
+                <div class="space-y-1 text-sm text-slate-500">
                   <div>
                     液位：<span class="vessel-num vessel-num--level font-semibold text-slate-900">{{ Math.round(vesselEndDisplay) }}</span> mm
                   </div>
@@ -4067,7 +4362,11 @@ onPullDownRefresh(async () => {
 .page {
   box-sizing: border-box;
   min-height: 100vh;
-  padding: calc(var(--status-bar-height, 0px) + 28px) 16px 40px;
+  /* 底部补白 = 停靠栏高度 + 安全区 + 20px 呼吸 —— 两个都是变量，改底栏高度只需改
+     App.vue 里的 --ui-dock-h，这里自动跟上。底栏是 fixed、不占文档流，
+     不留这段补白，列表最后一行就会被它压住。 */
+  padding: calc(var(--status-bar-height, 0px) + 28px) 16px
+    calc(var(--ui-dock-h) + var(--ui-safe-bottom, 0px) + 20px);
   // 场景先于玻璃：深墨蓝底 + 3 个大半径柔光光斑，纯 CSS、不引图片、不加 DOM。
   // 画法与 token 都在 uni.scss 的 @mixin scene-bg 里（两套主题各一套值）。
   @include scene-bg;
@@ -4880,6 +5179,91 @@ onPullDownRefresh(async () => {
   @include vessel-start-line;
 }
 
+/* ===== 液位滑块：轨道 + 玻璃手柄（盖在图纸之上，见模板）=====
+   轨道贴罐体左缘、与罐体盒子同高 —— 于是它的刻度与液面同一把尺（0 = 罐底、100 = 罐顶），
+   手柄的 bottom% 直接就是 levelBottomPercent 算出来的那个数。
+   只有手柄是固定屏幕尺寸（手指要抓得住、数字要看得清），轨道与手柄的位置全走百分比，
+   跟着图纸缩放。
+
+   材质用抽屉 / 顶栏那套「液态玻璃」（@mixin glass）—— 使用方 2026-10-10 点名要这个材质。
+   ⚠️ glass 里刻意不写 position（见 uni.scss 那条注释），定位一律在外面写，别搬进去。 */
+.vessel-rail {
+  position: absolute;
+  z-index: 3; /* 压住底图、液体与引线标注 */
+  width: 10px;
+  margin-left: -5px; /* 轨道中心线落在罐体左缘上 */
+  touch-action: none; /* 手柄上的滑动不参与页面滚动 */
+}
+
+/* 轨道本身也是一条玻璃（同一处材质说明见上面的段落注释），只是窄。
+   描边比 mixin 默认那档重一级：10px 宽的条子上，默认的 15% 白在深色卡片上基本看不出来，
+   2026-10-10 的第一版截图里整条轨道就是"消失"的。 */
+.vessel-rail__track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  @include glass($radius: $ui-radius-pill);
+  border-color: $ui-glass-line-hover;
+  /* 三层大投影在窄条上有一半落在条子外面、看着像脏边，换成一条贴身晕影 */
+  box-shadow: 0 2px 10px $ui-glass-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* 手柄：从轨道中心线向右伸出（罐体左侧那条空白太窄，手机上放不下一个胶囊）。
+   纵向位置由模板内联的 bottom% 给，translateY(50%) 让中心压在液面上。
+   left/top/bottom 都不参与 transition：跟手要 1:1，中间不能再插一层动画。 */
+.vessel-rail__handle {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 6px;
+  transform: translateY(50%);
+  border-radius: $ui-radius-pill;
+  cursor: grab;
+  user-select: none;
+  /* 拦页面滚动的主力：把手势的判定提前到合成器，不会因为「浏览器已经决定要滚」
+     甩一个 touchcancel 过来把手势打断（同 PhotoGrid 的圆圈）。touch-action 不继承，
+     所以必须写在手柄自己身上 —— 光写在 .vessel-rail 上，手柄读到的还是 auto。 */
+  touch-action: none;
+  @include glass($radius: $ui-radius-pill);
+  /* 大尺寸的 $ui-glass-elev 在小胶囊上太重，换成一条贴身投影 + 顶边受光 */
+  box-shadow: 0 5px 16px $ui-glass-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform 160ms $ui-ease, box-shadow 160ms $ui-ease;
+}
+
+/* 小标缩窄：胶囊少盖一点罐体（控制列那两个保持 20px 不动） */
+.vessel-rail__handle .vessel-legend {
+  width: 12px;
+}
+
+/* 手感区：胶囊只有 24px 高，上下各撑 10px 凑够 44px。
+   伪元素不是事件目标（touch 落在它上面照样冒泡到手柄），所以只扩热区、不动外观。 */
+.vessel-rail__handle::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: 0;
+  bottom: -10px;
+  left: 0;
+}
+
+/* 拖动中：提亮、微放大、压到另一个手柄之上（两个叠在一起时拖的一定是被按住的这个） */
+.vessel-rail__handle.is-dragging {
+  z-index: 1;
+  transform: translateY(50%) scale(1.08);
+  box-shadow: 0 10px 26px $ui-glass-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.vessel-rail__num {
+  color: $ui-text;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ===== 液位控件前的两个图例小标 =====
    两个都按图纸里对应的那一层画，避免「小标是一套、图纸是另一套」：
      起始 = 那条起始虚线（与 .vessel-diagram__start 共用 @mixin vessel-start-line）
@@ -4901,6 +5285,21 @@ onPullDownRefresh(async () => {
   height: 4px;
   background-repeat: repeat;
   background-size: 14px 100%;
+}
+
+/* ===== 两个液位的读数格 =====
+   每格 200px 起步（约等于「体积：12.86 m³（38.5 t）」那句的宽度）：200+200+24 放不下就换行，
+   放得下 grow 平分 —— 360~375px 的手机上两格落成一列，宽屏并排。
+
+   为什么是这行 scss 而不是 min-w-[200px]：
+     · min-width 挡不住「父级比它窄」——立式罐那张图纸（displayWidth 可能 700 多 px）会把旁边
+       这一列挤到只剩十几 px，格子就会横向溢出、连整页一起撑宽；flex-basis + min-width:0 允许
+       它缩到任意窄，页面不会被读数格撑宽。
+     · 也别指望 Tailwind 的 basis-52 —— H5 端 rpx 会被编译成 rem，根字号随视口走
+       （900px 宽时 1rem = 38.4px，basis-52 = 13rem = 499.2px），只有写死 px 才各屏一致。 */
+.vessel-readout {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 /* ===== 逐帧滚动的数值：定宽槽（液位读数 + 引线标注共用）=====
@@ -5008,78 +5407,6 @@ onPullDownRefresh(async () => {
   align-items: baseline;
   gap: 4px;
   white-space: nowrap;
-}
-
-/* 软拟态（Soft UI）步进按钮：降低/升高液位。
-   深色下是「暗面 + 亮边」，浅色下是「白面 + 灰影」—— 两种形态都靠
-   --ui-soft-a/b + --ui-soft-shadow/light 这组变量切换（见 App.vue 的 .theme-light）。 */
-.vessel-step {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid $ui-hairline;
-  border-radius: 50%;
-  background: linear-gradient(145deg, $ui-soft-a, $ui-soft-b);
-  color: $ui-text-2;
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  user-select: none;
-  box-shadow:
-    6px 6px 14px $ui-soft-shadow,
-    -3px -3px 10px $ui-soft-light;
-  transition: all 260ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.vessel-step:hover {
-  color: $ui-text;
-}
-
-.vessel-step:active {
-  filter: blur(0.4px);
-  background: linear-gradient(145deg, $ui-soft-b, $ui-soft-a);
-  box-shadow:
-    inset 5px 5px 10px $ui-soft-shadow,
-    inset -3px -3px 10px $ui-soft-light;
-}
-
-/* 液位输入框：软拟态外观 + 隐藏原生上下箭头 */
-.vessel-level-input {
-  border: 1px solid $ui-hairline;
-  border-radius: 12px;
-  padding: 9px 14px;
-  background-color: $ui-surface-2;
-  color: $ui-text;
-  font-size: 14px;
-  font-weight: 600;
-  outline: none;
-  box-shadow:
-    6px 6px 14px $ui-soft-shadow,
-    -3px -3px 10px $ui-soft-light;
-  transition: box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-/* 聚焦时呈"按入"质感的凹陷效果 */
-.vessel-level-input:focus {
-  background-color: $ui-surface-3;
-  box-shadow:
-    inset 4px 4px 10px $ui-soft-shadow,
-    inset -3px -3px 8px $ui-soft-light;
-}
-
-.vessel-level-input::-webkit-outer-spin-button,
-.vessel-level-input::-webkit-inner-spin-button {
-  margin: 0;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.vessel-level-input {
-  -moz-appearance: textfield;
-  appearance: textfield;
 }
 
 /* 储罐选择器：按标题样式呈现。

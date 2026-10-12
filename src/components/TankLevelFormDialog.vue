@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useMessage, useToast } from 'wot-design-uni'
 import DateField from './DateField.vue'
+import PhotoGrid from './PhotoGrid.vue'
 import { hasPerm } from '../api/auth'
 import { useEquipmentLedger } from '../composables/useEquipmentLedger'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
@@ -11,6 +12,7 @@ import {
   useTankLevelData,
 } from '../composables/useTankLevelData'
 import { useTankLevelImages } from '../composables/useTankLevelImages'
+import { chooseImages } from '../utils/chooseImages'
 
 /**
  * 月底储罐液位记录的新增 / 编辑表单（底部弹层）。
@@ -144,23 +146,30 @@ const pendingPhotos = ref([]) // uni.chooseImage 给的临时路径
  * ⚠️ 一次只给一个 sourceType：两个都给的话，App / 小程序会先弹平台自带的
  *    「拍摄 / 从相册选择」ActionSheet（系统 UI，样式改不了，各机型还不一样），
  *    所以摆成两个入口，各自带单一来源（同图据弹层、图片解析页的做法）。
+ *
+ * <p>走 utils/chooseImages：「相册」这一支在 App 端去起手机自带的相册（见该文件），
+ * 拍照与 H5 / 小程序原样走框架。
  */
 function pickPhotos(source) {
-  uni.chooseImage({
+  chooseImages({
     count: 3,
     sizeType: ['original', 'compressed'],
     sourceType: [source],
     success: (res) => {
       const paths = res.tempFilePaths || []
       if (paths.length) {
-        pendingPhotos.value = [...pendingPhotos.value, ...paths]
+        // 按路径去重：同一个临时路径进来两次，网格的 :key 会撞车（相册里连点两下就会）
+        const merged = [...pendingPhotos.value, ...paths]
+        pendingPhotos.value = merged.filter((path, i) => merged.indexOf(path) === i)
       }
     },
   })
 }
 
-function removePendingPhoto(index) {
-  pendingPhotos.value = pendingPhotos.value.filter((_, i) => i !== index)
+/** 网格里勾了一批点「移除」：事件带回的是选中的临时路径 */
+function removePhotos(paths) {
+  const removing = new Set(paths)
+  pendingPhotos.value = pendingPhotos.value.filter((path) => !removing.has(path))
 }
 
 function clearPendingPhotos() {
@@ -443,12 +452,11 @@ async function handleDelete() {
             </view>
 
             <view v-if="pendingPhotos.length" class="tlf__thumbs">
-              <view v-for="(path, index) in pendingPhotos" :key="`${path}-${index}`" class="tlf__thumb">
-                <image class="tlf__thumb-img" :src="path" mode="aspectFill" />
-                <view class="tlf__thumb-remove" @click="removePendingPhoto(index)">
-                  <wd-icon name="close" size="10px" />
-                </view>
-              </view>
+              <PhotoGrid
+                :items="pendingPhotos"
+                delete-text="移除"
+                @delete-selected="removePhotos"
+              />
             </view>
 
             <view class="tlf__photo-actions">
@@ -677,38 +685,9 @@ async function handleDelete() {
     font-size: 22rpx;
   }
 
+  // 网格样式全在 PhotoGrid 里，这里只留外边距
   &__thumbs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16rpx;
     padding: 16rpx 0 4rpx;
-  }
-
-  &__thumb {
-    position: relative;
-    width: 140rpx;
-    height: 140rpx;
-  }
-
-  &__thumb-img {
-    width: 100%;
-    height: 100%;
-    border-radius: $ui-radius-md;
-    background-color: $ui-raise-2;
-  }
-
-  &__thumb-remove {
-    position: absolute;
-    top: -10rpx;
-    right: -10rpx;
-    display: flex;
-    width: 36rpx;
-    height: 36rpx;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background-color: $ui-scrim;
-    color: $ui-text; // 跟 $ui-scrim 一样按主题翻转（写死 #fff 在浅色下是白字压浅底）
   }
 
   &__photo-actions {
