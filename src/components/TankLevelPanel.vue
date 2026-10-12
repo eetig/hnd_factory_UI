@@ -25,9 +25,17 @@ import { useTankLevelImages } from '../composables/useTankLevelImages'
 
 // 月底储罐液位记录（变更-004 只读落地 → 变更-008 加行内编辑 → 变更-011 图据改多张）
 //
-// 数据层是模块级单例（项目约定 4），所以本组件不需要 props：
+// 数据层是模块级单例（项目约定 4），所以数据不需要 props：
 // 「首次进 Tab 才加载」交给 WorkOrderList 的 watch(activeTab) —— 面板是 v-show 常驻的，
 // 挂载时机和 Tab 切换不是一回事。
+//
+// 变更-044：唯一的 prop `active` 是给渲染用的 —— 「卡片内滚」的页签 v-show 常驻，
+// 各自的表格区都留在 DOM 里；而 `.glass-scroll`（`--main-scroll` 的来源）按 038
+// 定下的规矩**任何时刻只有一处声明**，所以由激活状态决定挂不挂（四个汇总页签用
+// `activeTab === 'x'` 表达同一件事，这里是它的 prop 版）。
+defineProps({
+  active: { type: Boolean, default: false },
+})
 const {
   tankLevelTableData,
   tankLevelPageNum,
@@ -298,14 +306,21 @@ function handleThumbError(event, image) {
 </script>
 
 <template>
-  <section class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
-    <div class="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
+  <!--
+    变更-044：分页行钉在卡底 —— 与 038 的四个汇总页签同方子（完整链条注释见
+    WorkOrderList.vue 里 workOrder 页签那段）。使用方 2026-10-11：「翻页组件位置
+    变化，体验不好」：第 4 页只剩 1 行时，文档流里的分页行从卡底跳到第 31 行下面。
+    现在表格区是唯一的纵向滚动容器（`flex-1` + `min-h-0`），分页行（连带「新增一行」
+    与记录说明）`shrink-0` 钉死，翻页 / 筛选怎么变都不动。
+  -->
+  <section class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+    <div class="flex shrink-0 flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
       <h2 class="text-base font-semibold text-slate-900">月底车间各储罐液位记录</h2>
       <span class="text-xs text-slate-500">数据来源：hnd_factory /api/tank-level/list</span>
     </div>
 
     <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
-    <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+    <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
       <span class="shrink-0 text-xs text-slate-500">起始日期</span>
       <el-date-picker
         v-model="tankLevelStartDate"
@@ -387,7 +402,7 @@ function handleThumbError(event, image) {
       </span>
     </div>
 
-    <div class="relative">
+    <div class="relative flex min-h-0 flex-1 flex-col">
       <LoadingMask v-if="tankLevelLoading" />
 
       <PanelState
@@ -411,8 +426,11 @@ function handleThumbError(event, image) {
         "
       />
 
-      <div v-else>
-        <div class="overflow-x-auto">
+      <div v-else class="flex min-h-0 flex-1 flex-col">
+        <div
+          class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
+          :class="{ 'glass-scroll': active }"
+        >
           <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
             <colgroup>
               <col v-for="column in columns" :key="column.key" :class="column.width" />
@@ -752,7 +770,7 @@ function handleThumbError(event, image) {
 
       <!-- 录入入口：放在状态分支之外 —— 空表时也要在，否则空态提示里那句
            「点下方『新增一行』开始录入」下面什么都没有 -->
-      <div v-if="canCreate" class="flex items-center gap-3 border-t border-slate-100 px-6 py-3">
+      <div v-if="canCreate" class="flex shrink-0 items-center gap-3 border-t border-slate-100 px-6 py-3">
         <button
           type="button"
           class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
@@ -776,7 +794,7 @@ function handleThumbError(event, image) {
         </span>
       </div>
 
-      <div v-if="tankLevelHasRows" class="flex justify-end border-t border-slate-100 px-6 py-3">
+      <div v-if="tankLevelHasRows" class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
         <el-pagination
           v-model:current-page="tankLevelPageNum"
           :page-size="tankLevelPageSize"
@@ -789,7 +807,7 @@ function handleThumbError(event, image) {
     </div>
 
     <!-- 记录说明：与线下台账表尾的说明一字不差，避免两处口径不同 -->
-    <div class="border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
+    <div class="shrink-0 border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
       <p>记录说明：</p>
       <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
       <p>2. 记录时间为每月月底下午3点</p>

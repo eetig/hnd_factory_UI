@@ -37,7 +37,7 @@ const ARROW_SELECTOR = '.arrow-left, .arrow-right, .d-arrow-left, .d-arrow-right
 
 /*
  * 三个手感常数，嫌快 / 嫌慢就调这里：
- *   FLIP_MS      —— 单程时长（与 WorkOrderList 的 .vessel-step 260ms 同档）
+ *   FLIP_MS      —— 单程时长（与 WorkOrderList 的 .vessel-level-input 260ms 同档）
  *   FLIP_EASING  —— easeOutQuint：起步快、收尾极缓，「丝滑」感主要来自它
  *   CLEANUP_SLACK —— 兜底定时器余量（面板被 v-show 藏起 / 后台 tab 时间线节流时，
  *                    finished 可能迟到，兜底负责收尾）

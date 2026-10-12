@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
-import { ElDialog, ElImage } from 'element-plus'
+import { ElDatePicker, ElDialog, ElImage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
 import { STATUS_TEXT, STATUS_TONE } from '../constants/statusTones'
@@ -9,9 +9,22 @@ import {
   BILL_TYPE_INBOUND,
   BILL_TYPE_PICK,
   confirmDocument,
+  documentRowsToTableRows,
+  fetchDocumentDetail,
   mergeRowsByMaterialCode,
   parseQty,
 } from '../composables/useOcrConfirm'
+
+/**
+ * 确认入库**成功且有实际写入**后通知调用方（WorkOrderList.vue 的
+ * `@confirmed="handleOcrConfirmed"`）。
+ *
+ * ⚠️ 这个事件此前是**死绑定**：本文件全文没有 `defineEmits` / `emit`，而 WorkOrderList.vue
+ * 一直挂着 `@confirmed` —— 表现与手机端修过的那个坑完全一样（「入库成功了、领料/入库
+ * 汇总却不刷新」，见 WorkOrderList.vue 里 handleOcrConfirmed 上的注释）。
+ * 变更-047 两套前端同批，一并补上。
+ */
+const emit = defineEmits(['confirmed'])
 
 // 一次最多上传的张数（总数上限，不是单次选择上限）
 const MAX_COUNT = 5
@@ -101,7 +114,16 @@ function addFiles(files) {
       status: 'idle',
       result: null,
       table: null,
-      // 确认入库状态：null | { status: 'submitting'|'done'|'error', message }
+      // 'ocr' 显示识别结果待入库 | 'edit' 已「载入编辑」库中单据（变更-047）
+      mode: 'ocr',
+      // 单据号核对：null 未核对 | 'checking' 核对中 | detail 结果对象 | { error }（变更-047）
+      docCheck: null,
+      // 核对请求序号与防抖计时器：单据号改得快时丢弃过期响应（变更-047）
+      checkToken: 0,
+      checkTimer: null,
+      // 「载入编辑」时库中行数，保存时作为 expectedRowCount 带回（并发校验，变更-047）
+      expectedRowCount: null,
+      // 确认入库状态：null | { status: 'submitting'|'done'|'error'|'skipped', message }
       confirm: null,
       error: '',
     })
@@ -180,6 +202,14 @@ async function submit() {
     image.result = null
     image.table = null
     image.error = ''
+    // 重识别 = 重来一遍：编辑态、核对结果、上次的入库结果全部作废（变更-047），
+    // 也把在途的单据号核对作废（checkToken +1），免得旧响应落到新识别结果上
+    image.mode = 'ocr'
+    image.expectedRowCount = null
+    image.docCheck = null
+    image.confirm = null
+    clearTimeout(image.checkTimer)
+    image.checkToken = (image.checkToken || 0) + 1
   })
 
   // 并发发起：单张约 1.5~4.5s，串行 5 张会逼近 20s，用户会以为卡死
@@ -203,6 +233,22 @@ async function submit() {
       .filter((image) => image.status === 'success')
       .map((image) => enrichMaterials(image)),
   )
+
+  // 识别出单据号的成功卡片立刻核对一次库中是否已有该单据（变更-047）：
+  // 存在 → 卡片横幅给出「载入编辑 / 整单跳过」；不存在 → 直接可入库。
+  // 不 await：核对是旁路，卡片先以「核对中」渲染，结果回来自行更新。
+  //
+  // ⚠️ 这一段不能省（第一版漏了）：确认入库的预检是 fail-closed 的 —— 没核对过
+  // 一律不放行，而「重试」按钮只在核对**失败**的分支里渲染。少了这一次自动核对，
+  // 刚识别出来的卡片会停在「尚未核对该单据号」上，且没有任何可点的出路，
+  // 只有去改一次单据号（change）才解得开。
+  images.value
+    .filter((image) => image.status === 'success')
+    .forEach((image) => {
+      if (String(image.table?.doc.documentNo || '').trim()) {
+        checkDocument(image)
+      }
+    })
 
   submitting.value = false
 }
@@ -365,11 +411,15 @@ function resolveDocKind(documentType) {
 }
 
 // 各口径的列定义，对齐列表页的领料汇总 / 入库汇总；
-// 差异只有时间与数量两列的标题，以及未知类型退化为通用列
+// 差异只有时间与数量两列的标题，以及未知类型退化为通用列。
+//
+// 变更-047 起：**单据号不再是列**（它是单据级的，只该在单据信息区有一份，
+// 改一处全表同步；逐行渲染会让人以为「每行各有一个单号」），
+// **日期从单据级下沉到每一行**（D4：日期是行身份的一部分）——
+// 于是「序号」后面紧跟「日期」，与手机端同一个顺序。
 const PICK_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '领料时间' },
+  { key: 'date', label: '领料时间', align: 'center' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '领料数量', align: 'right' },
@@ -380,8 +430,7 @@ const PICK_COLUMNS = [
 
 const INBOUND_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '入库时间' },
+  { key: 'date', label: '入库时间', align: 'center' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '入库数量', align: 'right' },
@@ -392,8 +441,7 @@ const INBOUND_COLUMNS = [
 
 const UNKNOWN_COLUMNS = [
   { key: 'index', label: '序号', align: 'center' },
-  { key: 'documentNo', label: '单据号' },
-  { key: 'date', label: '日期' },
+  { key: 'date', label: '日期', align: 'center' },
   { key: 'materialName', label: '物料名称' },
   { key: 'materialCode', label: '物料编码' },
   { key: 'quantity', label: '数量', align: 'right' },
@@ -402,20 +450,31 @@ const UNKNOWN_COLUMNS = [
 
 const COLUMNS = { pick: PICK_COLUMNS, inbound: INBOUND_COLUMNS, unknown: UNKNOWN_COLUMNS }
 
+/** 单据信息区里「统一设置日期」那一项的标题，跟着单据口径走（与列定义的日期列同名） */
+function dateLabel(kind) {
+  if (kind === 'pick') return '领料时间'
+  if (kind === 'inbound') return '入库时间'
+  return '日期'
+}
+
 /**
- * 把识别结果摊成表格：单据头字段（单据号 / 日期）下放到每一行。
+ * 把识别结果摊成表格：单据头字段（单据号）单独一份，行里只有行项目。
  *
  * <p>行项目来自识别结果，所以「一行」= 识别出的一条物料。
  * 单位不识别（见变更-003 字段范围：单位由业务方按物料编码查主数据带出），故留空待人工补。
  *
- * <p>单据号与日期单独放在 {@code doc} 而不是每行各存一份：它们属于整张单据，
- * 逐行存会让同一张单出现两个单号。表格里仍按列渲染，但改一处全表同步。
+ * <p>单据号属于整张单据，放在 {@code doc} 里只渲染一份；日期自变更-047 起<b>下沉到每一行</b>
+ * —— 它是行身份的一部分（D4），识别到的单据日期只作为每行的初值。单据头那格日期
+ * 降级为批量快捷（写入所有行，见 applyBulkDate），当前值存在 {@code bulkDate}。
  *
  * <p>返回的是<b>可编辑副本</b>，{@code image.result} 保留识别原始值不动 ——
  * 人工校准后仍需能对照「模型原本给了什么」。
  */
 function buildTable(result) {
   const kind = resolveDocKind(result?.documentType)
+
+  // 识别到的单据日期：每行的日期初值，也是「统一设置日期」的起点
+  const docDate = fieldText(result?.docDate)
 
   const rows = (result?.items || []).map((item) => ({
     ...blankRow(),
@@ -425,6 +484,7 @@ function buildTable(result) {
     // （实测出现过 materialCode="不存在"、"2.260813"）。留着它只会让人误以为是真编码。
     // 识别原值仍保留在 image.result 里，需要追溯时看得到。
     quantity: fieldText(item.quantity),
+    date: docDate,
   }))
 
   const table = {
@@ -432,8 +492,9 @@ function buildTable(result) {
     columns: COLUMNS[kind],
     doc: {
       documentNo: fieldText(result?.documentNo),
-      date: fieldText(result?.docDate),
     },
+    // 「统一设置日期」的当前值（只做批量快捷，不是每行的真值）
+    bulkDate: docDate,
     rows,
   }
   renumber(table)
@@ -457,10 +518,15 @@ function blankRow() {
   return {
     key: ++rowUid,
     index: 0, // 由 renumber 统一编
+    // 库中行主键（变更-047）：「载入编辑」带出的行走这里带 id，保存时随 payload 回传，
+    // 后端据此保住行身份（D2）；新行恒为 null
+    id: null,
     materialName: '',
     materialCode: '',
     quantity: '',
     unit: '',
+    // 行日期 yyyy-MM-dd（变更-047）：日期是行身份的一部分（D4），提交时不允许为空
+    date: '',
     // 该行的物料候选（由 enrichMaterials 填充），供「查不到时人工选」
     candidates: [],
   }
@@ -481,7 +547,11 @@ function renumber(table) {
  */
 function addRow(image) {
   clearConfirm(image)
-  image.table.rows.push(blankRow())
+  const row = blankRow()
+  // 日期初值取「统一设置日期」那一格（变更-047）：手工补的行多半是识别漏掉的本单行，
+  // 日期与本单一致；留空不但多一次点击，还会先被「有 N 行日期为空」拦一道
+  row.date = image.table.bulkDate || ''
+  image.table.rows.push(row)
   renumber(image.table)
 }
 
@@ -526,6 +596,178 @@ function statusClass(image) {
 }
 
 // ------------------------------------------------------------------
+// 单据号核对与「载入 / 跳过」（变更-047）
+//
+// 单据号是单据的身份。库中已有同号单据时如果直接入库，等于把老单据当新单据再写一遍
+// —— 卡片上必须给出路（D1）：载入编辑 / 整单跳过 / （识别错了就）改单据号重查。
+// 识别结果【不】与库中数据合并（D5）：载入编辑后表格里只有库中行，能改能删能加。
+// ------------------------------------------------------------------
+
+/** 单据号核对（防抖 300ms —— 逐字改单号时不该每个字符都打一次接口） */
+const CHECK_DEBOUNCE_MS = 300
+
+/** 单据口径 → 后端单据大类（与 Excel 导入 / 落库同一套取值） */
+function billTypeOf(image) {
+  return image.table?.kind === 'inbound' ? BILL_TYPE_INBOUND : BILL_TYPE_PICK
+}
+
+/** 查这张卡的单据号在库中是否存在，结果落到 image.docCheck */
+async function checkDocument(image) {
+  const documentNo = String(image.table?.doc.documentNo || '').trim()
+  // 记下「核对的就是这个单据号」：onDocumentNoChange 靠它识别「值没变」的空转
+  image.checkedDocNo = documentNo
+  if (!documentNo) {
+    image.docCheck = null
+    return
+  }
+
+  // 请求序号守卫：单据号改得快时先发的请求可能后回来，过期响应直接丢
+  const token = (image.checkToken || 0) + 1
+  image.checkToken = token
+  image.docCheck = 'checking'
+  try {
+    const detail = await fetchDocumentDetail({ billType: billTypeOf(image), documentNo })
+    if (token !== image.checkToken) return
+    image.docCheck = detail
+  } catch (error) {
+    if (token !== image.checkToken) return
+    image.docCheck = { error: error?.message || '查询失败' }
+  }
+}
+
+/**
+ * 单据号改了：作废在途核对、退出编辑态，防抖后重查（换号 = 换了一张单据）。
+ *
+ * <p>这里挂的是 `@change`（模板里注明）：电脑端是真 DOM 输入框，`change` 在
+ * 「值确实变了 + 失焦」时正常触发 —— 手机端那边因为 uni 的 `<input>` 两端都不发
+ * change 才必须改挂 `@blur`（见手机端同文件里的注释），**不是**电脑端也要照抄。
+ *
+ * <p>守卫：值没变就原地返回。`change` 只在值变时来，但「确认入库」前的自动重查
+ * （见 submitConfirm）也会走 checkDocument，两处都不能把「载入编辑」刚拉进来的
+ * 库中行踢回识别态、把整单跳过的状态抹掉。
+ */
+function onDocumentNoChange(image) {
+  clearTimeout(image.checkTimer)
+  const documentNo = String(image.table?.doc.documentNo || '').trim()
+  if (documentNo === (image.checkedDocNo || '')) {
+    return
+  }
+
+  clearConfirm(image)
+  // 退出编辑态要连表格一起还原：只翻 mode 不还原本行的话，横幅已经在说「新单据，
+  // 可直接入库」，表格里留着的却还是上一张单据的库中行（连它的行 id 一起）——
+  // 两处指的不是一张单据。那些带 id 的行提交上去会被后端按「第X行已不存在」409 拦住
+  // （不会写错数据，但对着「新单据」的横幅没法读）。立住这条等式：
+  // **mode='ocr' ⟺ 表格是识别结果**。
+  // 只还原行，单据头的单据号不动 —— 那是人刚改的值（防「改正误读的号」被识别原值盖回去）；
+  // 也只在 edit 时还原 —— 识别态里人工修过的行不能被一次失焦清掉。
+  if (image.mode === 'edit' && image.table) {
+    image.table.rows = buildTable(image.result).rows
+    // 还原出来的行没有物料编码（buildTable 一律留空、等主数据反查），要跟识别完成时
+    // 一样再补一遍；不 await —— 补码期间按钮被「缺物料编码」拦住，回来才放行。
+    // matchMaterial 自己吞异常，这里不会产生 unhandled rejection。
+    enrichMaterials(image)
+  }
+  image.mode = 'ocr'
+  image.expectedRowCount = null
+  image.checkToken = (image.checkToken || 0) + 1
+
+  if (!documentNo) {
+    image.docCheck = null
+    return
+  }
+  // 防抖这 300ms 里也得摆出「核对中」：docCheck 不能还留着上一个单据号的结论，
+  // 否则「改完单号立刻点确认入库」会拿旧结论放行（confirmBlockReason 读的就是它）
+  image.docCheck = 'checking'
+  image.checkTimer = setTimeout(() => checkDocument(image), CHECK_DEBOUNCE_MS)
+}
+
+/** 「载入编辑」：把库中该单据的全部明细填进表格（D1/D5：本次识别结果不合并进来） */
+function loadDocument(image) {
+  const detail = image.docCheck
+  if (!detail?.exists) {
+    return
+  }
+  // blankRow() 补 key / 序号 / 候选等本地字段；documentRowsToTableRows 带出 id 与数据
+  const rows = documentRowsToTableRows(detail.rows).map((row) => ({ ...blankRow(), ...row }))
+  image.table.rows = rows
+  renumber(image.table)
+  image.mode = 'edit'
+  // 载入时的库中行数：保存时作为 expectedRowCount 带回（严格模式 + 并发校验）
+  image.expectedRowCount = detail.rowCount ?? rows.length
+  clearConfirm(image)
+}
+
+/** 「整单跳过」：本次一个字节都不写（不发请求、不 emit），可撤销（D1） */
+function skipDocument(image) {
+  clearTimeout(image.checkTimer)
+  image.checkToken = (image.checkToken || 0) + 1 // 跳过之后不再需要核对答案
+  image.mode = 'ocr'
+  image.expectedRowCount = null
+  image.confirm = { status: 'skipped', message: '' }
+}
+
+/** 撤销跳过：回到待入库状态，顺手重新核对一次单据号 */
+function undoSkip(image) {
+  image.confirm = null
+  checkDocument(image)
+}
+
+/** 「统一设置日期」：选中的日期写进所有行（只是批量快捷，逐行仍可各改各的） */
+function applyBulkDate(image, date) {
+  clearConfirm(image)
+  image.table.rows.forEach((row) => {
+    row.date = date
+  })
+}
+
+/** 横幅是否要「醒目态」：单据号已存在且还没选出路（载入编辑 / 整单跳过） */
+function isDocCheckAttention(image) {
+  return Boolean(image.docCheck?.exists) && image.mode !== 'edit' && image.confirm?.status !== 'skipped'
+}
+
+/** 横幅底色：已存在且没选出路 → 琥珀（要人做决定）；已载入编辑 → 绿（已就位）；其余灰 */
+function docCheckClass(image) {
+  if (isDocCheckAttention(image)) return 'border-amber-200 bg-amber-50'
+  if (image.mode === 'edit' && image.docCheck?.exists) return 'border-emerald-200 bg-emerald-50'
+  return 'border-slate-100 bg-region/40'
+}
+
+/** 横幅里库中单据的物料名摘要：前 3 个（供人工核对是不是同一张单） */
+function docCheckNames(image) {
+  const rows = image.docCheck?.rows || []
+  const names = rows.slice(0, 3).map((row) => row.materialName).filter(Boolean)
+  if (!names.length) {
+    return ''
+  }
+  return names.join('、') + (rows.length > names.length ? ' 等' : '')
+}
+
+/**
+ * 横幅缩略图地址：`/thumbs/x.jpg`、`/files/x.jpg` 这类相对路径**原样用**——
+ * 开发期由 vite 代理转给 img-service（见 vite.config.js 的 /files、/thumbs），
+ * 生产由 Nginx 同源路由，两端都不必加工（与 vesselImageUrl 同口径）。
+ */
+function docCheckThumb(image) {
+  return image.docCheck?.thumbnailUrl || image.docCheck?.imageUrl || ''
+}
+
+/** 整单删除的二次确认（变更-047 三重闸门的第一重），返回是否确认 */
+async function confirmWholeDelete(count) {
+  try {
+    await ElMessageBox.confirm(
+      count ? `确定删除该单据全部 ${count} 行？删除后不可恢复。` : '确定删除该单据全部明细？删除后不可恢复。',
+      '删除整单',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+    )
+    return true
+  } catch {
+    // 取消 / 关闭弹窗（Element Plus 用 reject 表示「没确认」）
+    return false
+  }
+}
+
+// ------------------------------------------------------------------
 // 确认入库
 // ------------------------------------------------------------------
 
@@ -541,18 +783,47 @@ function clearConfirm(image) {
  *
  * <p>只是「提前告知」，不是校验规则的二次实现 —— 真正的闸门是后端的
  * `XxxImportUtil.validate`，这里的必填项与它保持一致，好让人在点之前就知道缺什么。
+ *
+ * <p>变更-047 追加四道闸：① 单据号核对没出结果（核对中 / 失败 / 未核对）不放行 ——
+ * fail-closed，宁可让人点「重试」，也不能在「不知道库中有没有」的状态下写库；
+ * ② 单据号已存在时必须先选「载入编辑」或「整单跳过」；③ 每行日期非空
+ * （日期是行身份的一部分，后端同样整单拒绝）；④ 行内「物料编码 + 日期」不得重复
+ * （同一天同一物料只能一行，重复多半是模型把一行拆成了两行，让人自己确认删哪行）。
  */
 function confirmBlockReason(image) {
   if (!image.table) {
     return '无解析结果'
   }
+  if (image.confirm?.status === 'skipped') {
+    return '已整单跳过，本次不写入库'
+  }
   if (!String(image.table.doc.documentNo || '').trim()) {
     return '单据号为空，无法入库'
   }
+  if (image.mode !== 'edit') {
+    if (image.docCheck === 'checking') {
+      return '正在核对该单据号，请稍候…'
+    }
+    if (!image.docCheck) {
+      return '尚未核对该单据号，请稍候或点「重试」'
+    }
+    if (image.docCheck.error) {
+      return `单据号核对失败（${image.docCheck.error}），可点「重试」`
+    }
+    if (image.docCheck.exists) {
+      return '单据号已存在：请先选「载入编辑」或「整单跳过」'
+    }
+  }
 
-  // 行可以删到 0（增删入口允许这么做），但 0 行的单据没有意义，别让它提交上去
-  if (!image.table.rows.length) {
+  // 行可以删到 0：新识别的单据删到 0 没有意义（拦住）；「载入编辑」删到 0 = 整单删除，
+  // 是合法操作（走 submitConfirm 的弹框确认 + allowEmpty）
+  if (!image.table.rows.length && image.mode !== 'edit') {
     return '没有可入库的明细行，请至少保留一行'
+  }
+
+  const missingDate = image.table.rows.filter((row) => !String(row.date || '').trim())
+  if (missingDate.length) {
+    return `有 ${missingDate.length} 行日期为空，请先补齐（日期是行身份的一部分）`
   }
 
   const bad = image.table.rows.filter(
@@ -560,6 +831,16 @@ function confirmBlockReason(image) {
   )
   if (bad.length) {
     return `有 ${bad.length} 行缺物料编码、或数量无法解析，请先补齐`
+  }
+
+  const seen = new Map()
+  for (const row of image.table.rows) {
+    const key = `${String(row.materialCode || '').trim()}\u0001${String(row.date || '').trim()}`
+    const at = seen.get(key)
+    if (at) {
+      return `第${at}行：与第${row.index}行「物料编码 + 日期」重复，同一单据下同物料同日期只能有一行`
+    }
+    seen.set(key, row.index)
   }
   return ''
 }
@@ -570,35 +851,80 @@ async function submitConfirm(image) {
     return
   }
 
-  image.confirm = { status: 'submitting', message: '' }
-
+  const isEdit = image.mode === 'edit'
+  const billType = billTypeOf(image)
+  const documentNo = String(image.table.doc.documentNo).trim()
   const { rows: merged, merges } = mergeRowsByMaterialCode(image.table.rows)
-  const billType = image.table.kind === 'inbound' ? BILL_TYPE_INBOUND : BILL_TYPE_PICK
+
+  // 「载入编辑」删到 0 行 = 整单删除：先弹二次确认（三重闸门的第一重），
+  // 确认后才带 allowEmpty=true 提交；取消则一个字节都不发
+  let allowEmpty = false
+  if (isEdit && !merged.length) {
+    if (!(await confirmWholeDelete(image.expectedRowCount ?? 0))) {
+      return
+    }
+    allowEmpty = true
+  }
+
+  image.confirm = { status: 'submitting', message: '' }
 
   try {
     const data = await confirmDocument({
       billType,
-      documentNo: String(image.table.doc.documentNo).trim(),
-      date: String(image.table.doc.date || '').trim(),
+      documentNo,
+      // document 模式（变更-047）：行 id 保行身份、行日期是身份的一部分。
+      // 不带单据级 date —— 那是 legacy 口径，日期已下沉到行。
+      mode: 'document',
+      // edit 带 expectedRowCount = 严格模式（并发校验 + 允许删除）；
+      // 新识别单据不带 = append（只增改跳，**永不删除**）
+      expectedRowCount: isEdit ? image.expectedRowCount ?? undefined : undefined,
+      allowEmpty: allowEmpty || undefined,
       rows: merged.map((row) => ({
+        id: row.id ?? undefined,
         seqNo: row.seqNo,
         materialName: row.materialName,
         materialCode: row.materialCode,
         qty: String(row.qty),
         unit: row.unit,
+        date: row.date,
       })),
+      // 单据图随 payload 一起 multipart 提交（后端存进 file_name，汇总列表的
+      // 「线下单据」列靠它回溯）。edit 模式也照传：后端惰性取图，没有实际写入时
+      // 一张都不会落对象 —— 理由见 useOcrConfirm.js 里 confirmDocument 的说明。
       file: image.file,
     })
+
+    const written = (data.addCount || 0) + (data.updateCount || 0) + (data.deleteCount || 0)
     image.confirm = { status: 'done', message: buildConfirmMessage(data, merges) }
+    // 保存完成 = 这张卡回到起点：库中数据已与界面一致，重新核对一次单据号，
+    // 横幅随即变成「已存在 → 载入编辑 / 整单跳过」（本次识别的行不再参与）
+    image.mode = 'ocr'
+    image.expectedRowCount = null
+    await checkDocument(image)
+    // 落库成功了**且有实际写入**才通知父组件（失败不通知：那会让页面白刷一次；
+    // 整单跳过更不算写入）
+    if (written > 0) {
+      emit('confirmed', { billType, documentNo })
+    }
   } catch (error) {
     image.confirm = { status: 'error', message: error?.message || '入库失败' }
+    // 409 = 别人动过这张单据（行数变了 / 某行被删了）：本地的 expectedRowCount 已不可信，
+    // 退出编辑态并重查，让人看到库中最新数据再决定（后端文案已给出处置指引）
+    if (error?.businessCode === 409) {
+      image.mode = 'ocr'
+      image.expectedRowCount = null
+      checkDocument(image)
+    }
   }
 }
 
 function buildConfirmMessage(data, merges) {
   const parts = [`新增 ${data.addCount ?? 0} 条`, `更新 ${data.updateCount ?? 0} 条`]
+  if (data.deleteCount) {
+    parts.push(`删除 ${data.deleteCount} 条`)
+  }
   if (data.skipCount) {
-    parts.push(`跳过 ${data.skipCount} 条（库中已有且数量相同）`)
+    parts.push(`跳过 ${data.skipCount} 条（与库中相同，未改动）`)
   }
   if (merges.length) {
     // 合并必须显式报出来：模型有把一行拆成两行的情况，相加后会变成双倍数量，
@@ -613,16 +939,26 @@ function buildConfirmMessage(data, merges) {
 }
 
 function confirmButtonText(image) {
-  if (image.confirm?.status === 'submitting') return '入库中…'
-  // 成功后仍可再提交：后端按「单据号+物料编码+数量」去重，
-  // 数据没变会整行跳过，改过数量则走更新，所以重提是安全的
+  if (image.confirm?.status === 'submitting') {
+    return image.mode === 'edit' ? '保存中…' : '入库中…'
+  }
+  if (image.confirm?.status === 'skipped') return '已跳过'
+  // 成功后仍可再提交：document 模式按行差量，数据没变整行跳过，改动过的走更新，
+  // 所以重提是安全的（核对横幅会先把「载入编辑 / 整单跳过」摆出来）
   if (image.confirm?.status === 'done') return '重新入库'
+  if (image.mode === 'edit') {
+    // 载入编辑删到 0 行 = 整单删除，按钮上直说，让人点之前就知道要发生什么
+    return image.table?.rows.length ? '保存更新' : '删除整单'
+  }
   return '确认入库'
 }
 
 onUnmounted(() => {
   clearTimeout(pickerSearchTimer)
-  images.value.forEach((image) => URL.revokeObjectURL(image.url))
+  images.value.forEach((image) => {
+    clearTimeout(image.checkTimer)
+    URL.revokeObjectURL(image.url)
+  })
 })
 </script>
 
@@ -794,14 +1130,114 @@ onUnmounted(() => {
           </header>
 
           <template v-if="image.status === 'success'">
-            <p class="px-4 pb-3 pt-4 text-sm text-slate-600">
-              单据类型
-              <span class="ml-1 font-medium text-slate-900">
-                {{ fieldText(image.result.documentType) || '未识别' }}
+            <!-- 单据信息：整张单据一份。单据号属于单据本身，放这里只有一份、改一处全表同步
+                 （改造前它是逐行重复的表格列）；日期自变更-047 起下沉到每一行
+                 （日期是行身份的一部分，D4），头部这格降级为批量快捷 -->
+            <div
+              class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 bg-region/40 px-4 py-2.5"
+            >
+              <span class="text-sm text-slate-600">
+                单据类型
+                <span class="ml-1 font-medium text-slate-900">
+                  {{ fieldText(image.result.documentType) || '未识别' }}
+                </span>
               </span>
-            </p>
 
-            <div class="px-4 pb-4">
+              <span class="flex items-center gap-2 text-sm text-slate-600">
+                单据号
+                <!-- 这里挂 @change：电脑端是真 DOM 输入框，「值确实变了 + 失焦」时正常触发。
+                     手机端那边必须先改挂 @blur —— uni 的 <input> 在两端都不发 change
+                     （见 hnd_factory_UI_uni_APP 同文件里的实测说明），两边不是一回事 -->
+                <input
+                  v-model="image.table.doc.documentNo"
+                  type="text"
+                  placeholder="—"
+                  aria-label="单据号"
+                  class="w-40 rounded-xl border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-brand"
+                  @change="onDocumentNoChange(image)"
+                />
+              </span>
+
+              <span class="flex items-center gap-2 text-sm text-slate-600">
+                {{ dateLabel(image.table.kind) }}
+                <el-date-picker
+                  v-model="image.table.bulkDate"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  placeholder="统一设置"
+                  :aria-label="`统一设置${dateLabel(image.table.kind)}`"
+                  :first-day-of-week="1"
+                  style="width: 9.5rem"
+                  @change="applyBulkDate(image, $event)"
+                />
+                <span class="text-xs text-slate-500">选一次写入所有行，逐行仍可单独改</span>
+              </span>
+            </div>
+
+            <!-- 单据号核对横幅（变更-047）：这张卡的单据号在库中是否已存在。
+                 已存在 → 必须二选一：「载入编辑」（把库中行拉进表格改）或
+                 「整单跳过」（本次一个字节都不写），不允许直接入库。 -->
+            <div
+              v-if="image.docCheck"
+              class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5 text-sm"
+              :class="docCheckClass(image)"
+            >
+              <template v-if="image.confirm?.status === 'skipped'">
+                <span class="text-slate-600">已整单跳过：本次不写库</span>
+                <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="undoSkip(image)">撤销跳过</button>
+              </template>
+
+              <template v-else-if="image.docCheck === 'checking'">
+                <span class="text-slate-500">正在核对该单据号…</span>
+              </template>
+
+              <template v-else-if="image.docCheck.error">
+                <span class="text-rose-600">单据号核对失败：{{ image.docCheck.error }}</span>
+                <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="checkDocument(image)">重试</button>
+              </template>
+
+              <template v-else-if="image.docCheck.exists">
+                <span class="font-medium text-amber-800">
+                  单据号已存在：库中 {{ image.docCheck.rowCount }} 行
+                  <template v-if="docCheckNames(image)">（{{ docCheckNames(image) }}）</template>
+                </span>
+                <el-image
+                  v-if="docCheckThumb(image)"
+                  :src="docCheckThumb(image)"
+                  :preview-src-list="[docCheckThumb(image)]"
+                  :preview-teleported="true"
+                  fit="cover"
+                  class="h-8 w-8 shrink-0 rounded-xl border border-slate-200"
+                  alt="库中单据图"
+                />
+                <template v-if="image.mode === 'edit'">
+                  <span class="text-xs text-slate-600">
+                    已载入库中数据：本张图片的识别结果不会合并进来，请直接增删改
+                  </span>
+                  <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
+                    整单跳过
+                  </button>
+                </template>
+                <template v-else>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-xl bg-brand px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-deep"
+                    @click="loadDocument(image)"
+                  >
+                    载入编辑
+                  </button>
+                  <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
+                    整单跳过
+                  </button>
+                </template>
+              </template>
+
+              <template v-else>
+                <span class="text-slate-500">新单据（库中不存在），可直接入库</span>
+              </template>
+            </div>
+
+            <div class="px-4 pb-4 pt-4">
               <table v-if="image.table?.rows.length" class="w-full border-collapse text-sm">
                 <thead>
                   <tr class="bg-region text-slate-600">
@@ -839,22 +1275,20 @@ onUnmounted(() => {
                         {{ row.index }}
                       </span>
 
-                      <!-- 单据号 / 日期：整张单据共用一个值，改一处即全表同步 -->
-                      <input
-                        v-else-if="col.key === 'documentNo'"
-                        v-model="image.table.doc.documentNo"
-                        type="text"
-                        placeholder="—"
-                        :aria-label="col.label"
-                        :class="inputClass(col)"
-                      />
-                      <input
+                      <!-- 日期（变更-047）：每行独立，是行身份的一部分（D4）。
+                           面板默认挂到 body，不会被单元格裁切；翻月 / 翻年由
+                           utils/datePickerFlip.js 的全局委托兜住。
+                           日期改了清掉上次的入库结果（旧结果不再代表当前内容）。 -->
+                      <el-date-picker
                         v-else-if="col.key === 'date'"
-                        v-model="image.table.doc.date"
-                        type="text"
+                        v-model="row.date"
+                        type="date"
+                        value-format="YYYY-MM-DD"
                         placeholder="—"
                         :aria-label="col.label"
-                        :class="inputClass(col)"
+                        :first-day-of-week="1"
+                        style="width: 9.5rem"
+                        @change="clearConfirm(image)"
                       />
 
                       <!-- 物料名称：改完重查一次编码；右侧搜索图标可手工挑物料（选中后名称与编码一起回填） -->
@@ -964,7 +1398,7 @@ onUnmounted(() => {
                   增加一行
                 </button>
                 <p class="text-xs text-slate-500">
-                  对着原图核对行数，多行点该行的「−」删除，改完再点「确认入库」
+                  对着原图核对行数，多行点该行的「−」删除，每行日期可单独改，改完再点「确认入库」
                 </p>
               </div>
 

@@ -40,6 +40,8 @@ import {
   ElOption,
   ElPagination,
   ElSelect,
+  // 变更-045：体积计算页的液位滑块（工作台首次用 slider）
+  ElSlider,
   // 收起态的图标条没有文字，靠 tooltip 报出组名（全仓第一处 tooltip）。
   // 本项目没有 app.use(ElementPlus)，一律按文件显式 import。
   ElTooltip,
@@ -231,12 +233,14 @@ const activeTabLabel = computed(() => tabs.find((tab) => tab.key === activeTab.v
 /*
  * 变更-038：四个汇总页签的滚动发生在**卡片内部**（表格区自己滚），其余页签仍在
  * 玻璃栏里滚（模板里那个 `flex-1 min-h-0 overflow-y-auto`）。
+ * 变更-044：月底储罐液位记录（TankLevelPanel）加入同一张方子 —— 它的滚动容器
+ * 在子组件里，激活状态用 `:active` 传进去，由那边的表格区自己挂 `glass-scroll`。
  *
  * `.glass-scroll` 声明的 `--main-scroll` 是**三块玻璃边缘高光的来源**，它必须挂在
  * 「当时真正在滚的那个元素」上 —— 挂在不动的那块上，高光就**冻住**：不报错、
  * 不警告，只是不跟手。
  */
-const INNER_SCROLL_TABS = ['workOrder', 'material', 'inbound', 'stock']
+const INNER_SCROLL_TABS = ['workOrder', 'material', 'inbound', 'stock', 'tankLevel']
 const scrollsInsideCard = computed(() => INNER_SCROLL_TABS.includes(activeTab.value))
 
 /**
@@ -1127,6 +1131,12 @@ function animateVesselTo(which, target) {
   startVesselLoop()
 }
 
+// 变更-045 定的两处墨色，变更-046 把「差值语义色」也收拢成常量：
+// 起始 = 图上虚线（#1e293b = slate-800，与图例 border-slate-800 同一只墨）；
+// 差值一对墨 = 消耗玫红 / 增加翡翠 —— 画布剖面线 + 引线标注 + 滑块钮间色带三处共用。
+const VESSEL_START_INK = '#1e293b'
+const VESSEL_DELTA_COLOR = { consume: '#e11d48', increase: '#059669' }
+
 // 底图：卧式椭圆封头储罐图纸
 // 罐体在底图中的像素边界（由图像分析 + 轮廓叠加验证得出，横纵比例尺一致：0.28567 px/mm）
 
@@ -1308,7 +1318,7 @@ function renderVessel() {
 
       // 斜线剖面线
       ctx.globalAlpha = 0.4
-      ctx.strokeStyle = isDecrease ? '#e11d48' : '#059669'
+      ctx.strokeStyle = isDecrease ? VESSEL_DELTA_COLOR.consume : VESSEL_DELTA_COLOR.increase
       ctx.lineWidth = 1.4
       ctx.beginPath()
       for (let offset = -bandHeight; offset < bandWidth; offset += 11) {
@@ -1334,7 +1344,7 @@ function renderVessel() {
     // 差值区引线标注（绘制在裁剪区之外）
     if (Math.abs(levelDelta) > 1) {
       const isDecrease = levelDelta > 0
-      const color = isDecrease ? '#e11d48' : '#059669'
+      const color = isDecrease ? VESSEL_DELTA_COLOR.consume : VESSEL_DELTA_COLOR.increase
 
       // 画布会被 CSS 缩放显示，字号按缩放比例反向补偿，保证屏幕上大小恒定
       const displayWidth = canvas.clientWidth || IMAGE_W
@@ -1390,41 +1400,56 @@ function renderVessel() {
   }
 }
 
-// 步进调节液位（配合软拟态按钮）
-function stepVesselLevel(which, direction, step = 10) {
-  const targetRef = levelTargetRef(which)
-  const next = Number(targetRef.value || 0) + direction * step
-  targetRef.value = Math.max(0, Math.min(vesselGeometry.value.maxLevel, next))
+// 滑块调节液位（变更-045）：拖动/点击要的是**跟手** —— 直接落到目标值，不走缓动。
+// 缓动（animateVesselTo，700~2000ms）留给键入、罐型切换这类「变化事件」的表演；
+// 拖动若走缓动，液面会一直拖着一条明显的尾巴，滑块就没法用来扫值了。
+// 清掉进行中的补间后，watcher 随后跑的那次会因 delta≈0 走进 animateVesselTo 的落位分支。
+function setVesselLevelImmediate(which, value) {
+  const clamped = Math.max(0, Math.min(vesselGeometry.value.maxLevel, Number(value) || 0))
+  levelTargetRef(which).value = clamped
+  vesselTransitions[which] = null
+  levelDisplayRef(which).value = clamped
+  renderVessel()
 }
 
-// 按住按钮时连续调节：先响应一次，停顿 320ms 后进入连发，步长加大以便快速扫过
-let vesselStepDelayTimer = null
-let vesselStepRepeatTimer = null
+// 滑块工具提示：值 + 单位（液位一律 mm）
+const formatVesselLevelTooltip = (value) => `${Math.round(value)} mm`
 
-function stopStepHold() {
-  if (vesselStepDelayTimer) {
-    clearTimeout(vesselStepDelayTimer)
-    vesselStepDelayTimer = null
+// ── 变更-046：一根竖轨两个钮（EP vertical + range）────────────────────────────
+// 起始 / 终止是两个独立值、允许倒挂（倒挂即为「消耗」），而 range 模式两钮**不许交叉**：
+// EP 把下钮的 max 钉在上钮、上钮的 min 钉在下钮。于是轨道收的是**排好序**的一对 [低, 高]；
+// 「哪个钮是起始」由 startIsLower 映射。倒挂态想再往交叉方向拉 —— 走数字框键入（watcher 照常缓动）。
+const startIsLower = computed(() => vesselStartLevel.value <= vesselEndLevel.value)
+
+const vesselLevelPair = computed(() =>
+  startIsLower.value
+    ? [vesselStartLevel.value, vesselEndLevel.value]
+    : [vesselEndLevel.value, vesselStartLevel.value],
+)
+
+// 下钮 / 上钮的可访问名跟着映射走（倒挂时下钮是终止）
+const vesselLevelRangeLabels = computed(() =>
+  startIsLower.value ? ['起始液位滑块', '终止液位滑块'] : ['终止液位滑块', '起始液位滑块'],
+)
+
+// 钮环 = 该钮代表的读数在图上那根线的墨色；钮间色带 = 差值语义色，与画布剖面线同一对值
+const vesselLevelSliderStyle = computed(() => ({
+  '--el-slider-main-bg-color':
+    vesselVolumeDelta.value >= 0 ? VESSEL_DELTA_COLOR.increase : VESSEL_DELTA_COLOR.consume,
+  '--v-thumb-lower': startIsLower.value ? VESSEL_START_INK : vesselGeometry.value.liquid.line,
+  '--v-thumb-upper': startIsLower.value ? vesselGeometry.value.liquid.line : VESSEL_START_INK,
+}))
+
+function setVesselLevelPair([lower, upper]) {
+  // 方向快照就在 if 处一次取定：两次 setVesselLevelImmediate 之间 refs 会变，
+  // 若中途重判 startIsLower，会把两钮的值对调。
+  if (startIsLower.value) {
+    setVesselLevelImmediate('start', lower)
+    setVesselLevelImmediate('end', upper)
+  } else {
+    setVesselLevelImmediate('end', lower)
+    setVesselLevelImmediate('start', upper)
   }
-  if (vesselStepRepeatTimer) {
-    clearInterval(vesselStepRepeatTimer)
-    vesselStepRepeatTimer = null
-  }
-  window.removeEventListener('pointerup', stopStepHold)
-  window.removeEventListener('pointercancel', stopStepHold)
-}
-
-function startStepHold(which, direction) {
-  stopStepHold()
-  stepVesselLevel(which, direction)
-
-  vesselStepDelayTimer = setTimeout(() => {
-    vesselStepRepeatTimer = setInterval(() => stepVesselLevel(which, direction, 25), 40)
-  }, 320)
-
-  // 在按钮外松开鼠标也能停止
-  window.addEventListener('pointerup', stopStepHold)
-  window.addEventListener('pointercancel', stopStepHold)
 }
 
 function clampAndAnimateLevel(which, value) {
@@ -1492,7 +1517,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopVesselLoop()
-  stopStepHold()
 })
 
 // 切到压力容器 Tab 时按需加载底图 + 启动波纹动画，离开时停帧
@@ -1804,9 +1828,7 @@ watch(activeTab, (tab) => {
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
                       : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left',
-                    !collapsed && currentGroup === group.key
-                      ? 'bg-brand ring-1 ring-white/20'
-                      : '',
+                    !collapsed && currentGroup === group.key ? 'bg-brand ring-1 ring-white/20' : '',
                     !collapsed && currentGroup !== group.key ? 'hover:bg-white/45' : '',
                   ]"
                   :aria-label="collapsed ? group.label : undefined"
@@ -1838,9 +1860,7 @@ watch(activeTab, (tab) => {
                     <span
                       class="block text-sm"
                       :class="
-                        currentGroup === group.key
-                          ? 'font-medium text-white'
-                          : 'text-slate-900'
+                        currentGroup === group.key ? 'font-medium text-white' : 'text-slate-900'
                       "
                       >{{ group.label }}</span
                     >
@@ -2420,7 +2440,9 @@ watch(activeTab, (tab) => {
               <section
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
               >
-                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                <div
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                >
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="pickStartDate"
@@ -2621,7 +2643,9 @@ watch(activeTab, (tab) => {
               <section
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
               >
-                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                <div
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                >
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="inboundStartDate"
@@ -2871,7 +2895,9 @@ watch(activeTab, (tab) => {
               <section
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
               >
-                <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+                <div
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                >
                   <!-- ⚠️ 查询改到服务端之后**只能回车才发请求**（清空也要发一次，好把结果还原回来）：
                        原先挂的是 @input（逐字实时过滤），那是「前端全量 + 本地 filter」时代的做法，
                        照搬到服务端就是「敲一个字打一次接口」。
@@ -3011,7 +3037,9 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'weekly'">
-              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
+              <section
+                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
                 <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
@@ -3125,13 +3153,20 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'daily'">
-              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
+              <section
+                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
                 <PanelState type="pending" title="日报表记录" description="功能建设中，敬请期待" />
               </section>
             </div>
 
-            <div v-show="activeTab === 'tankLevel'">
-              <TankLevelPanel />
+            <!--
+              变更-044：与四个汇总页签同一张 038 方子（完整链条注释见 workOrder
+              页签那段）—— 卡片撑满、表格区自己滚、分页行钉卡底。使用方 2026-10-11：
+              「翻页组件位置变化，体验不好」（第 4 页只剩 1 行时分页行跳到表格下面）。
+            -->
+            <div v-show="activeTab === 'tankLevel'" class="flex h-full flex-col">
+              <TankLevelPanel :active="activeTab === 'tankLevel'" />
             </div>
 
             <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
@@ -3140,7 +3175,9 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'vessel'">
-              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
+              <section
+                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
                 <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
                这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
                只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
@@ -3260,18 +3297,26 @@ watch(activeTab, (tab) => {
                         </div>
                       </div>
 
+                      <!-- 起始 / 竖轨 / 终止 三段并排（变更-046：滑块从两柱各配一根
+                           收成中间一根竖轨；竖版原来这里是 2×2 的 grid，三件不齐整） -->
                       <div
                         class="gap-x-6 gap-y-5"
                         :class="
                           isVerticalVessel
-                            ? 'grid w-full grid-cols-2 px-0'
-                            : 'flex flex-wrap gap-x-6'
+                            ? 'flex w-full items-center px-0'
+                            : 'flex flex-1 flex-wrap items-center gap-x-6'
                         "
                       >
-                        <!-- 起始液位：控件与其数据同列 -->
-                        <div class="flex flex-col gap-3">
+                        <!-- 起始液位：数字框保留精确录入（变更-045 定的分工）；
+                             拖动在中间那根竖轨上（变更-046：一根轨、两个钮）。
+                             横版列宽下限 220（045 原为 240）：横版控制区实测约 561 宽，
+                             240 时三段并排差 9px 放不下，终止柱会被挤到第二行（实机踩过） -->
+                        <div
+                          class="flex flex-col gap-3"
+                          :class="isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'"
+                        >
                           <div
-                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                            class="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
                           >
                             <span
                               class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
@@ -3282,36 +3327,15 @@ watch(activeTab, (tab) => {
                               ></span>
                               起始液位
                             </span>
-                            <div class="flex items-center gap-3">
-                              <button
-                                type="button"
-                                class="vessel-step"
-                                aria-label="降低起始液位"
-                                @pointerdown.prevent="startStepHold('start', -1)"
-                                @keydown.enter.prevent="stepVesselLevel('start', -1)"
-                                @keydown.space.prevent="stepVesselLevel('start', -1)"
-                              >
-                                −
-                              </button>
-                              <input
-                                v-model.number="vesselStartLevel"
-                                type="number"
-                                min="0"
-                                :max="vesselGeometry.maxLevel"
-                                step="10"
-                                class="vessel-level-input w-20 min-w-0 text-right"
-                              />
-                              <button
-                                type="button"
-                                class="vessel-step"
-                                aria-label="升高起始液位"
-                                @pointerdown.prevent="startStepHold('start', 1)"
-                                @keydown.enter.prevent="stepVesselLevel('start', 1)"
-                                @keydown.space.prevent="stepVesselLevel('start', 1)"
-                              >
-                                +
-                              </button>
-                            </div>
+                            <input
+                              v-model.number="vesselStartLevel"
+                              type="number"
+                              min="0"
+                              :max="vesselGeometry.maxLevel"
+                              step="10"
+                              aria-label="起始液位（毫米）"
+                              class="vessel-level-input w-20 min-w-0 text-right"
+                            />
                           </div>
 
                           <div class="space-y-1 pl-1 text-sm text-slate-500">
@@ -3326,7 +3350,7 @@ watch(activeTab, (tab) => {
                                 vesselStartVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselStartMass !== null"
-                                ><span class="ml-1 text-slate-500"
+                                ><span class="ml-1 whitespace-nowrap text-slate-500"
                                   >（{{ vesselStartMass.toFixed(2) }} t）</span
                                 ></template
                               >
@@ -3334,10 +3358,37 @@ watch(activeTab, (tab) => {
                           </div>
                         </div>
 
-                        <!-- 终止液位：控件与其数据同列 -->
-                        <div class="flex flex-col gap-3">
+                        <!-- 液位滑块（变更-046）：一根竖轨两个钮，上高下低 —— 钮环色 = 该钮
+                             代表的读数在图上那根线的墨色（起始虚线 / 终止液面线），钮间色带 =
+                             消耗·增加语义色（与画布剖面线同一对值）。range 两钮不许交叉：
+                             倒挂（消耗）只能走数字框键入 —— 滑块收的是排序过的一对，
+                             startIsLower 负责把两个数再映射回起始 / 终止，见 setVesselLevelPair -->
+                        <div class="flex h-[260px] shrink-0 items-center justify-center">
+                          <el-slider
+                            class="vessel-level-slider"
+                            vertical
+                            range
+                            height="260px"
+                            :model-value="vesselLevelPair"
+                            :min="0"
+                            :max="vesselGeometry.maxLevel"
+                            :step="1"
+                            placement="right"
+                            :format-tooltip="formatVesselLevelTooltip"
+                            :range-start-label="vesselLevelRangeLabels[0]"
+                            :range-end-label="vesselLevelRangeLabels[1]"
+                            :style="vesselLevelSliderStyle"
+                            @input="setVesselLevelPair"
+                          />
+                        </div>
+
+                        <!-- 终止液位：数字框保留精确录入（变更-045 定的分工） -->
+                        <div
+                          class="flex flex-col gap-3"
+                          :class="isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'"
+                        >
                           <div
-                            class="flex items-center gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                            class="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
                           >
                             <span
                               class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
@@ -3349,36 +3400,15 @@ watch(activeTab, (tab) => {
                               ></span>
                               终止液位
                             </span>
-                            <div class="flex items-center gap-3">
-                              <button
-                                type="button"
-                                class="vessel-step"
-                                aria-label="降低终止液位"
-                                @pointerdown.prevent="startStepHold('end', -1)"
-                                @keydown.enter.prevent="stepVesselLevel('end', -1)"
-                                @keydown.space.prevent="stepVesselLevel('end', -1)"
-                              >
-                                −
-                              </button>
-                              <input
-                                v-model.number="vesselEndLevel"
-                                type="number"
-                                min="0"
-                                :max="vesselGeometry.maxLevel"
-                                step="10"
-                                class="vessel-level-input w-20 min-w-0 text-right"
-                              />
-                              <button
-                                type="button"
-                                class="vessel-step"
-                                aria-label="升高终止液位"
-                                @pointerdown.prevent="startStepHold('end', 1)"
-                                @keydown.enter.prevent="stepVesselLevel('end', 1)"
-                                @keydown.space.prevent="stepVesselLevel('end', 1)"
-                              >
-                                +
-                              </button>
-                            </div>
+                            <input
+                              v-model.number="vesselEndLevel"
+                              type="number"
+                              min="0"
+                              :max="vesselGeometry.maxLevel"
+                              step="10"
+                              aria-label="终止液位（毫米）"
+                              class="vessel-level-input w-20 min-w-0 text-right"
+                            />
                           </div>
 
                           <div class="space-y-1 pl-1 text-sm text-slate-500">
@@ -3393,7 +3423,7 @@ watch(activeTab, (tab) => {
                                 vesselEndVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselEndMass !== null"
-                                ><span class="ml-1 text-slate-500"
+                                ><span class="ml-1 whitespace-nowrap text-slate-500"
                                   >（{{ vesselEndMass.toFixed(2) }} t）</span
                                 ></template
                               >
@@ -3476,7 +3506,9 @@ watch(activeTab, (tab) => {
             </div>
 
             <div v-show="activeTab === 'electricity'">
-              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
+              <section
+                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
                 <!-- 电价档位备注 -->
                 <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
                   <div class="flex items-start gap-3">
@@ -3517,8 +3549,14 @@ watch(activeTab, (tab) => {
 
             <div v-show="activeTab === 'purchase'">
               <!-- 采购进度跟踪：2026-10-10 只登记入口，功能内容与排期待使用方定 -->
-              <section class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card">
-                <PanelState type="pending" title="采购进度跟踪" description="功能建设中，敬请期待" />
+              <section
+                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+              >
+                <PanelState
+                  type="pending"
+                  title="采购进度跟踪"
+                  description="功能建设中，敬请期待"
+                />
               </section>
             </div>
 
@@ -3553,7 +3591,7 @@ watch(activeTab, (tab) => {
 }
 
 /*
- * 软拟态（Soft UI）步进按钮：降低/升高液位
+ * 软拟态（Soft UI）液位控件：数字输入框 + 滑块
  *
  * ⚠️ 这一块是**工作台里唯一没跟着设计系统走形态的地方**（037 / 041 / 043 都只换颜色）：
  * 它自带的是一套**冷**色 —— 渐变 `#ffffff→#e8ecf1`、投影 `#a3b1c6`、输入框底 `#eef1f5`。
@@ -3566,48 +3604,82 @@ watch(activeTab, (tab) => {
  * 同值）、聚焦底 `#e6f1fc`→`#e8e8e9`（= `brand-50` 同值）。投影色**这一次不换**——
  * `rgba(90,110,150,…)` 那点蓝在 35% 透明度下读不出来，强行中性化反而让投影发死。
  *
- * 三次都只把**颜色**换到当时那一族（渐变两端、投影色、输入框的静止底与聚焦底），
- * **形态一个没动** —— 软拟态靠「面色与底色相同 + 光从左上来」成立，
- * 底色既然是白卡，面色就得跟着走，否则这套凹凸关系自己就散了。
- * 纯白的高光（`rgba(255,255,255,…)` 那两笔）**留着不动**：它是**光源色**不是面色，
- * 与玻璃面板的 `inset 0 1px 0 rgba(255,255,255,.85)`、与 `border-white` 同性质。
+ * 变更-045 **第一次动到形态**：使用方要求「把输入框形式改成滑块」——
+ * 两个软拟态步进圆钮（−/+）整体退役，改为同一套光影配方的轨道 + 圆钮滑块；
+ * 数字输入框保留（865 / 1525 这类非整十的实测读数要能直接键入，滑块扫值、键盘录值）。
+ * 圆钮的渐变与投影沿用上面那套（面色跟底色、光从左上来），轨道则是它的反面：
+ * **压进去的凹槽**（inset 光影）—— 一颗实物钮推着凹槽走，凹凸关系才自洽。
  *
- * 要不要把这四个按钮改成系统里的 `rounded-xl` 扁平按钮，是**形态**上的决定，
- * 不在这些轮的范围里 —— 真要改，连 `.vessel-canvas` 那套一起看。
+ * 变更-046 **收了形态**：使用方看过 045 实机截图后定稿「竖放 + 一根轨两个钮」——
+ * 两根横轨收成一根竖轨（EP vertical + range）。凹槽 / 钮的光影配方原样沿用：竖过来
+ * 光仍是左上来，inset 方向不用翻；竖轨的 bar 要盖掉 EP `.is-vertical` 的 `0 0 3px 3px`
+ * 方角。钮环改用 `--v-thumb-lower` / `--v-thumb-upper`（使用处按「该钮代表哪个读数」
+ * 注入语义色 —— 与起止解耦，倒挂时环色跟着换边）；钮的 border 从「2px 主色」改成
+ * 「2px transparent + 分钮着色」，box-sizing: border-box，几何一字不差。
+ *
+ * 三次配色迁移 + 两次形态迁移都不动的两条：纯白的高光（`rgba(255,255,255,…)`）
+ * 是**光源色**不是面色（与玻璃面板的 `inset 0 1px 0 rgba(255,255,255,.85)`、
+ * 与 `border-white` 同性质）；`.vessel-canvas` 那套也不在本轮的轮里。
  */
-.vessel-step {
-  display: inline-flex;
-  width: 38px;
-  height: 38px;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: linear-gradient(145deg, #fbfbfd, #eaebee);
-  color: #475569;
-  font-size: 19px;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
-  user-select: none;
+.vessel-level-slider {
+  --el-slider-height: 10px;
+  --el-slider-button-size: 22px;
+  --el-slider-button-wrapper-size: 30px;
+  /* 钮座在轨道上的横向对中量 =（轨厚 − 钮座）/ 2 =（10 − 30）/ 2。EP 出厂按
+     （6 − 36）/ 2 = −15px 写死这个变量；045 改了轨厚与钮座却没跟它，钮一直偏 5px ——
+     046 竖过来放大了这个偏心（左右偏），一并校正 */
+  --el-slider-button-wrapper-offset: -10px;
+}
+
+.vessel-level-slider :deep(.el-slider__runway) {
+  border-radius: 9999px;
+  background-color: #e8e8e9;
   box-shadow:
-    4px 4px 8px rgba(90, 110, 150, 0.35),
-    -3px -3px 8px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 5px rgba(90, 110, 150, 0.32),
+    inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+}
+
+/* 拖动要**即时跟手**（液面同步落位），所以钮与轨道都禁掉 CSS 过渡 ——
+   留着的话钮会以 ~0.2s 自己滑过去，而液面是瞬移，二者肉眼可见地错位 */
+.vessel-level-slider :deep(.el-slider__bar),
+.vessel-level-slider :deep(.el-slider__button-wrapper) {
+  transition: none;
+}
+
+/* 钮间色带 = 差值语义色（消耗玫红 / 增加翡翠），由使用处经 --el-slider-main-bg-color
+   注入，与画布剖面线共用 VESSEL_DELTA_COLOR；两根线各自的墨色改走钮环（见下） */
+.vessel-level-slider :deep(.el-slider__bar) {
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+
+.vessel-level-slider :deep(.el-slider__button) {
+  /* border-box：2px 环占钮径内圈，换成 transparent 只是「先不画」，几何与 045 一字不差 */
+  border: 2px solid transparent;
+  background: linear-gradient(145deg, #fbfbfd, #eaebee);
+  box-shadow:
+    3px 3px 6px rgba(90, 110, 150, 0.35),
+    -2px -2px 6px rgba(255, 255, 255, 0.9),
     inset 0 -2px 3px -1px rgba(0, 0, 0, 0.06),
     inset 0 2px 3px -1px rgba(255, 255, 255, 0.9);
-  transition: all 260ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.vessel-step:hover {
-  color: #0f172a;
+/* 钮环 = 该钮代表的读数色。range 模式下轨道子的 DOM 序 = [bar, 下钮, 上钮]：
+   nth-child(2) 是下钮、nth-child(3) 是上钮 —— 与值的高低走，与起止解耦 */
+.vessel-level-slider
+  :deep(.el-slider__runway > .el-slider__button-wrapper:nth-child(2) .el-slider__button) {
+  border-color: var(--v-thumb-lower);
 }
 
-.vessel-step:active {
-  filter: blur(0.4px);
-  background: linear-gradient(145deg, #eaebee, #fbfbfd);
-  box-shadow:
-    inset 4px 4px 8px rgba(90, 110, 150, 0.4),
-    inset -3px -3px 8px rgba(255, 255, 255, 0.95);
+.vessel-level-slider
+  :deep(.el-slider__runway > .el-slider__button-wrapper:nth-child(3) .el-slider__button) {
+  border-color: var(--v-thumb-upper);
+}
+
+/* 键盘聚焦：EP 自带的焦点表现落在被上面覆写的钮上，这里显式补一圈（石墨深，同 043 主色） */
+.vessel-level-slider :deep(.el-slider__button-wrapper:focus-visible .el-slider__button) {
+  outline: 2px solid #171719;
+  outline-offset: 2px;
 }
 
 /* 液位输入框：软拟态外观 + 隐藏原生上下箭头 */

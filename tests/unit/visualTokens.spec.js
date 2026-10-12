@@ -161,7 +161,11 @@ const underlayList =
         ['最深端', FIELD_STOPS[2]],
         [
           '白斑处',
-          composite('#FFFFFF', Number.isFinite(FIELD_WHITE_ALPHA) ? FIELD_WHITE_ALPHA : 0, FIELD_STOPS[0]),
+          composite(
+            '#FFFFFF',
+            Number.isFinite(FIELD_WHITE_ALPHA) ? FIELD_WHITE_ALPHA : 0,
+            FIELD_STOPS[0],
+          ),
         ],
       ]
     : []
@@ -336,10 +340,12 @@ describe('禁用类名不得回流', () => {
     /*
      * 图上 Δ 的**数据色**是唯一例外：rose=降 / emerald=升 是数据语义（液位差
      * 剖面线、引线标注），041 的验收口径也把它划在配色改动之外 —— 改它会改变
-     * 读数，不是改样式。放行的只有这一条三元表达式本身（它同时是「rose 归数据、
-     * 绿留成功」两个语义的汇合点，写死它能防顺手把两支颜色都换掉）。
+     * 读数，不是改样式。046 把这两支色收进 VESSEL_DELTA_COLOR 常量（画布剖面线、
+     * 引线标注、滑块钮间色带三处共用），于是放行的精确串就是**常量定义那一行**
+     * —— 写死它同样能防顺手把两支颜色都换掉，且裸字面量收敛到只剩这一处
+     * （§18 再钉它的唯一性）。
      */
-    const DATA_COLOR = /isDecrease \? '#e11d48' : '#059669'/
+    const DATA_COLOR = /VESSEL_DELTA_COLOR = \{ consume: '#e11d48', increase: '#059669' \}/
     const offenders = []
     for (const file of SOURCE_FILES) {
       stripComments(read(file))
@@ -470,7 +476,7 @@ describe('HEX 表与 statusTones.js 注释里的比值一致', () => {
      * 浅场 + 55% 白玻璃 + 95% 白卡在白斑处叠出来（四舍五入）就是纯白，
      * 三行回到白底那一列 —— statusTones.js 的注释同步写得也是这一列。
      */
-    'text-rose-600': 4.70,
+    'text-rose-600': 4.7,
     'text-emerald-700': 5.48,
     'text-amber-700': 5.02,
   }
@@ -844,7 +850,10 @@ describe('Element Plus 主色与派生色同步', () => {
     const lighter = declaredValue('--el-fill-color-lighter')
     const light = declaredValue('--el-fill-color-light')
     const fill = declaredValue('--el-fill-color')
-    expect(lighter && light && fill, 'theme.css 缺 --el-fill-color-lighter/light/fill 之一').toBeTruthy()
+    expect(
+      lighter && light && fill,
+      'theme.css 缺 --el-fill-color-lighter/light/fill 之一',
+    ).toBeTruthy()
     expect(luminance(lighter)).toBeGreaterThan(luminance(light))
     expect(luminance(light)).toBeGreaterThan(luminance(fill))
   })
@@ -904,7 +913,10 @@ describe('焦点环必须过 1.4.11 的 3:1', () => {
       const color = entry.ring.match(/ring-(.+)$/)[1]
       const name = color.split('/')[0]
       const hex = hexOfColor(name)
-      expect(hex, `${entry.ring} 用到的 ${name} 不在 HEX 表 / token 里，先补上再算比值`).toBeTruthy()
+      expect(
+        hex,
+        `${entry.ring} 用到的 ${name} 不在 HEX 表 / token 里，先补上再算比值`,
+      ).toBeTruthy()
       expect(contrast(hex, HEX.white), `${entry.ring}：${entry.why}`).toBeGreaterThanOrEqual(3)
       if (name === 'brand') {
         // 043 侧栏翻浅之后 ring-brand 也画在轻纱上 —— 顺带把每一段纱面的账一起算
@@ -1106,7 +1118,10 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
 
     // 两团光斑：白（顶左）+ 冷灰（中右）。两团都要在，且都必须以「同色 0 α」
     // 收尾（下面一条 `transparent` 禁令）—— 0 也不许，光斑是给玻璃吸的，不是可选项。
-    expect(FIELD_BLOBS.filter((b) => b.alpha === 0), '两团光斑各自的 0 α 收尾').toHaveLength(2)
+    expect(
+      FIELD_BLOBS.filter((b) => b.alpha === 0),
+      '两团光斑各自的 0 α 收尾',
+    ).toHaveLength(2)
     // α 是**硬上限**（详见 glass-effects.css 头注）：再亮，纱与场、霜与场的分离比
     // 会跌破下限（纱/场 1.08、霜/场 1.046，两对都在 describe 12 实算钉着）。
     expect(FIELD_WHITE_ALPHA).toBeGreaterThan(0)
@@ -1116,7 +1131,9 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
     ).toBeLessThanOrEqual(0.45)
     const gray = FIELD_BLOBS[2]
     expect(gray && gray.alpha).toBeGreaterThan(0)
-    expect(gray && gray.alpha, '冷灰斑 α 超过 0.35 —— 它压深的是场的亮度下限').toBeLessThanOrEqual(0.35)
+    expect(gray && gray.alpha, '冷灰斑 α 超过 0.35 —— 它压深的是场的亮度下限').toBeLessThanOrEqual(
+      0.35,
+    )
     // 光斑收尾用同色的 0 α，不用 transparent 关键字（防某个实现按非预乘插值中途发灰）
     expect(fieldBlock).not.toMatch(/transparent/)
 
@@ -1367,7 +1384,9 @@ describe('霜面（变更-043）：卡片走 raised/95，工作台不再有裸 b
       'bg-raised/95 必须与 border-white/60 + backdrop-blur-xl 同串出现：' +
         '这是「白霜的实心近亲」配方（描边要可见、模糊要有 —— 卡片下面就是玻璃）。',
     ).toEqual([])
-    expect(count, 'bg-raised/95 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整').toBe(17)
+    expect(count, 'bg-raised/95 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整').toBe(
+      17,
+    )
   })
 
   it('表头带不许消失：region 压白卡 ≥ 1.046（实算 1.16）', () => {
@@ -1657,7 +1676,10 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
   const MAIN_EL = tokensOf((WORKBENCH.match(/<main class="([^"]*)"/) || ['', ''])[1])
   // 纸：`<main>` 之后的第一个 <div class="…">（中间那段注释里没有 class=）
   const PAPER = tokensOf(
-    (WORKBENCH.slice(WORKBENCH.indexOf('<main class="')).match(/<div class="([^"]*)"/) || ['', ''])[1],
+    (WORKBENCH.slice(WORKBENCH.indexOf('<main class="')).match(/<div class="([^"]*)"/) || [
+      '',
+      '',
+    ])[1],
   )
   // 主区列：`</aside>` 之后的第一个 class 属性
   const COLUMN = tokensOf(
@@ -1776,7 +1798,9 @@ describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜
      */
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
     const attrs = classAttrsOf(stripComments(asideBlock))
-    expect(attrs.length, '没在 <aside> 里解析出 class 属性 —— 锚点断了，先修这条').toBeGreaterThan(5)
+    expect(attrs.length, '没在 <aside> 里解析出 class 属性 —— 锚点断了，先修这条').toBeGreaterThan(
+      5,
+    )
     const tokens = attrs.flatMap((a) => a.tokens)
 
     // 字号/对齐类不是颜色：只认「色系名（+ 档位）」这个形态
@@ -1908,7 +1932,9 @@ describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜
       '页签选中态不是「border-brand bg-brand font-medium text-white」',
     ).toBe(true)
     expect(
-      WORKBENCH.includes("'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'"),
+      WORKBENCH.includes(
+        "'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'",
+      ),
       '页签未选中态不是 slate-600 那串（霜面上不许 slate-500，见上一条）',
     ).toBe(true)
   })
@@ -1990,10 +2016,10 @@ describe('Tailwind token 命名不得与颜色名撞车', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 15. 四个汇总页签的卡片定高链（变更-038）
+// 15. 卡片内滚页签的定高链（变更-038 四个汇总 + 变更-044 储罐液位）
 // ---------------------------------------------------------------------------
 
-describe('四个汇总页签：卡片撑满玻璃栏、表格区自己滚、分页行钉底（变更-038）', () => {
+describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻璃栏、表格区自己滚、分页行钉底（变更-038 / 044）', () => {
   /*
    * 使用方 2026-10-11 拿工单汇总的第 1 / 2 / 4 页截图，圈着分页行说：
    * 「翻页功能每页都不在一个位置，体验很差。」
@@ -2012,15 +2038,27 @@ describe('四个汇总页签：卡片撑满玻璃栏、表格区自己滚、分�
    *
    * 取法照上面那条的规矩：**走 class 属性，不走行文本** —— 这几段源码的注释里就
    * 写着 `min-h-0`、`h-full`、`overflow-y-auto`（讲道理用的），按行扫会把注释当代码。
+   *
+   * 变更-044：月底储罐液位记录（TankLevelPanel）接上同一张方子 —— 使用方
+   * 2026-10-11 对这个页签说的是同一句话「翻页组件位置变化，体验不好」，038 的
+   * 台账当时就点名过它「是同一个毛病、同一张方子能治」（另有设备保养、文件导入
+   * 预览表，仍未动）。它的链在**面板文件**里，包装层与 `:active` 还在 WorkOrderList
+   * —— 所以第三条用例扫的是面板源码，时间线那条账也改成五份对账。
    */
   const TABS = ['workOrder', 'material', 'inbound', 'stock']
+  const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
   const classAttr = (tab) =>
     WORKBENCH.match(new RegExp(`<div v-show="activeTab === '${tab}'" class="([^"]*)"`))?.[1] ?? ''
-  const CLASS_ATTRS = [...WORKBENCH.matchAll(/(:?)class="([^"]*)"/g)].map((m) => ({
-    bound: m[1] === ':',
-    value: m[2],
-  }))
+  const classAttrsIn = (src) =>
+    [...src.matchAll(/(:?)class="([^"]*)"/g)].map((m) => ({
+      bound: m[1] === ':',
+      value: m[2],
+    }))
+  const CLASS_ATTRS = classAttrsIn(WORKBENCH)
+  const TANK_CLASS_ATTRS = classAttrsIn(TANK_PANEL)
   const countStatic = (text) => CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
+  const countStaticTank = (text) =>
+    TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
 
   it('四个页签的定高链一级不少：包装层 h-full → 卡片 flex-1/min-h-0 → 表格区是唯一滚动容器', () => {
     expect(
@@ -2075,6 +2113,44 @@ describe('四个汇总页签：卡片撑满玻璃栏、表格区自己滚、分�
     ).toBe(TABS.length)
   })
 
+  it('储罐液位同一张方子（变更-044）：链在面板文件里，定高由包装层传下来', () => {
+    expect(
+      tokensOf(classAttr('tankLevel')),
+      '储罐液位的包装层少了 flex/h-full/flex-col：卡片拿不到定高，分页行会退回' +
+        '「跟着内容跑」—— 使用方 2026-10-11 报的就是它：第 4 页只剩 1 行时，' +
+        '分页行从卡底跳到第 31 行下面。',
+    ).toEqual(expect.arrayContaining(['flex', 'h-full', 'flex-col']))
+
+    expect(
+      countStaticTank(
+        'flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl',
+      ),
+      '储罐卡片没有转成「撑满 + 纵向 flex + min-h-0」：不写 min-h-0 的后果与' +
+        '四个汇总页签同款 —— 卡片被内容顶高，分页行一页一个位置。',
+    ).toBe(1)
+
+    expect(
+      countStaticTank('relative flex min-h-0 flex-1 flex-col'),
+      '储罐卡片主体（div.relative）没有转成纵向 flex：高度传不到表格区',
+    ).toBe(1)
+
+    expect(
+      countStaticTank('flex min-h-0 flex-1 flex-col'),
+      '储罐分页行的兄弟层（v-else）没有转成纵向 flex：表格区与分页行分不到高度',
+    ).toBe(1)
+
+    expect(
+      countStaticTank('min-h-0 flex-1 overflow-x-auto overflow-y-auto'),
+      '储罐表格区不是「自己滚」的那一层：表格区一旦不滚，滚的就是玻璃栏，' +
+        '卡片退回跟着内容长，分页行又跑起来了。',
+    ).toBe(1)
+
+    expect(
+      countStaticTank('flex shrink-0 justify-end border-t border-slate-100 px-6 py-3'),
+      '储罐分页行没有带 shrink-0：空间不够时 flex 会先压它',
+    ).toBe(1)
+  })
+
   it('滚动时间线的来源跟着滚动容器走 —— 不再挂死在玻璃栏上', () => {
     /*
      * `--main-scroll` 是**三块玻璃边缘高光的来源**（glass-effects.css 里
@@ -2106,14 +2182,30 @@ describe('四个汇总页签：卡片撑满玻璃栏、表格区自己滚、分�
       '四个汇总页签的表格区没有各自声明滚动时间线 —— 这四个页签上高光会冻住',
     ).toEqual(TABS)
 
-    // 脚本里的名单与模板上的四处绑定必须对得上（两本平行账，钉在一起）
-    const list = WORKBENCH.match(/const INNER_SCROLL_TABS = \[([^\]]*)\]/)?.[1] ?? ''
+    // 储罐液位（变更-044）：绑定在面板文件里、认的是 `active` prop（子组件拿不到
+    // activeTab），由 WorkOrderList 那只 `:active` 把它的页签名对进同一本账。
     expect(
-      [...list.matchAll(/'(\w+)'/g)].map((m) => m[1]),
-      'INNER_SCROLL_TABS 与模板里挂 glass-scroll 的那四个页签对不上 —— ' +
+      TANK_CLASS_ATTRS.filter((a) => a.bound && a.value.includes("'glass-scroll': active")).length,
+      'TankLevelPanel 的表格区没挂 glass-scroll 的 active 绑定 —— 储罐页签上高光会冻住',
+    ).toBe(1)
+    expect(
+      TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value.includes('glass-scroll')).map(
+        (a) => a.value,
+      ),
+      'glass-scroll 出现在 TankLevelPanel 的静态 class 上 —— v-show 常驻，它会与激活' +
+        '页签的声明同时存在，时间线归属成未定义行为。',
+    ).toEqual([])
+
+    // 脚本里的名单与模板上的绑定必须对得上（两本平行账，钉在一起）。
+    // 变更-044 起名单是五份：四个汇总页签在里面绑、储罐液位在外面绑，靠 `:active` 对账。
+    const list = WORKBENCH.match(/const INNER_SCROLL_TABS = \[([^\]]*)\]/)?.[1] ?? ''
+    const panelTab = WORKBENCH.match(/<TankLevelPanel :active="activeTab === '(\w+)'"/)?.[1]
+    expect(
+      [...boundTabs, panelTab],
+      'INNER_SCROLL_TABS 与模板上真正挂 glass-scroll 的页签对不上 —— ' +
         '多一个（那个页签其实在玻璃栏里滚，时间线却挂在了不动的表格区上）、' +
         '少一个（那个页签表格区在滚，时间线却留在玻璃栏上），两边都是「高光冻住」。',
-    ).toEqual(TABS)
+    ).toEqual([...list.matchAll(/'(\w+)'/g)].map((m) => m[1]))
   })
 })
 
@@ -2229,10 +2321,11 @@ describe('边缘光学与真折射样张（变更-042）', () => {
   const INTRO = read(join(SRC, 'views', 'Intro.vue'))
   const FILTER_FRAG = (INTRO.match(/<filter[\s\S]*?<\/filter>/) || [''])[0]
   const FILTER_TAG = (FILTER_FRAG.match(/<filter[\s\S]*?>/) || [''])[0]
-  const HIDDEN_SVG = (
-    INTRO.match(/<svg\s+class="pointer-events-none absolute h-0 w-0 overflow-hidden"[\s\S]*?>/) || ['']
-  )[0]
-  const SAMPLE_CLASS = (INTRO.match(/id="glass-sample"[\s\S]{0,600}?class="([^"]*)"/) || [])[1] || ''
+  const HIDDEN_SVG = (INTRO.match(
+    /<svg\s+class="pointer-events-none absolute h-0 w-0 overflow-hidden"[\s\S]*?>/,
+  ) || [''])[0]
+  const SAMPLE_CLASS =
+    (INTRO.match(/id="glass-sample"[\s\S]{0,600}?class="([^"]*)"/) || [])[1] || ''
   const SAMPLE_CSS = (GLASS_CSS.match(/\.glass-sample\s*\{([\s\S]*?)\}/) || [])[1] || ''
   // 切到 `@media` 的**关键帧形式**为止 —— 裸的 'prefers-reduced-transparency' 会先命中
   // 150 行颗粒注释里的同一个词，切出来是空段（这正是它第一次写错并被红掉的样子）
@@ -2284,11 +2377,19 @@ describe('边缘光学与真折射样张（变更-042）', () => {
   it('锚点活着 —— panel token / Intro 滤镜段 / 样张 class 都解析出来了', () => {
     // 下面十条断言的全是解析出来的片段：配置读不到、模板改形、正则过时，
     // 它们会**照样绿**（空串对空断言）。所以先钉住「确实拿到了东西」。
-    expect(typeof PANEL === 'string' && PANEL.length > 0, '没从 tailwind.config.js 读到 boxShadow.panel').toBe(true)
-    expect(splitTop('a(b,c),d'), '切分器坏了：rgba(…) 里的逗号被当成了段界').toEqual(['a(b,c)', 'd'])
+    expect(
+      typeof PANEL === 'string' && PANEL.length > 0,
+      '没从 tailwind.config.js 读到 boxShadow.panel',
+    ).toBe(true)
+    expect(splitTop('a(b,c),d'), '切分器坏了：rgba(…) 里的逗号被当成了段界').toEqual([
+      'a(b,c)',
+      'd',
+    ])
     expect(FILTER_FRAG, 'Intro.vue 里没找到 <filter>…</filter> 段').toContain('<feImage')
     expect(SAMPLE_CLASS, 'Intro.vue 里没解析到 #glass-sample 的 class').toContain('glass-sample')
-    expect(SAMPLE_CSS, 'glass-effects.css 里没解析到 .glass-sample 的基础规则').toContain('backdrop-filter')
+    expect(SAMPLE_CSS, 'glass-effects.css 里没解析到 .glass-sample 的基础规则').toContain(
+      'backdrop-filter',
+    )
   })
 
   it('panel 恰好 7 段、043 三笔逐位在案（外投影 + 顶白镜面 + 底深厚度）', () => {
@@ -2306,7 +2407,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     expect(geomOf(outer)).toEqual([0, 12, 32])
     const iWhite = segIndexOf(segs, 255, 255, 255, 0.85)
     const iDark = segIndexOf(segs, 24, 24, 30, 0.1)
-    expect(iWhite, '041 的顶缘白镜面线（inset 0 1px rgba(255,255,255,0.85)）不在了').toBeGreaterThan(-1)
+    expect(
+      iWhite,
+      '041 的顶缘白镜面线（inset 0 1px rgba(255,255,255,0.85)）不在了',
+    ).toBeGreaterThan(-1)
     expect(iDark, '043 的底缘深线（inset 0 -1px rgba(24,24,30,0.10)）不在了').toBeGreaterThan(-1)
     expect(geomOf(segs[iWhite]), '白镜面线必须还是 1px 贴顶').toEqual([0, 1, 0])
     expect(geomOf(segs[iDark]), '底深线必须还是 1px 贴底').toEqual([0, -1, 0])
@@ -2344,7 +2448,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
       右暖: segIndexOf(segs, 255, 180, 175, 0.28),
     }
     for (const [label, i] of Object.entries(at)) {
-      expect(i, `${label}线不在了（顶/左=rgba(150,190,255)、底/右=rgba(255,180,175) 各一）`).toBeGreaterThan(-1)
+      expect(
+        i,
+        `${label}线不在了（顶/左=rgba(150,190,255)、底/右=rgba(255,180,175) 各一）`,
+      ).toBeGreaterThan(-1)
     }
     // 位置：顶/底让出第 1px 给 041 的白/深，色散线落在第 2px；左/右只有一条，落在第 1px
     expect(geomOf(segs[at.顶冷]), '顶冷线该在 y=2px（第 1px 是白镜面线）').toEqual([0, 2, 0])
@@ -2371,7 +2478,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     // 每条的「为什么」在 Intro.vue 模板滤镜注释里；失败样子都是「不报错、只是没效果」
     expect(FILTER_TAG, 'filter 起始标签没解析到').toContain('filterUnits="objectBoundingBox"')
     for (const attr of ['x="0"', 'y="0"', 'width="1"', 'height="1"']) {
-      expect(FILTER_TAG, `滤镜区域缺 ${attr} —— 默认 -10%/120% 外边距会把贴图缩成中间一小块`).toContain(attr)
+      expect(
+        FILTER_TAG,
+        `滤镜区域缺 ${attr} —— 默认 -10%/120% 外边距会把贴图缩成中间一小块`,
+      ).toContain(attr)
     }
     expect(
       FILTER_TAG,
@@ -2383,9 +2493,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
       stripComments(INTRO),
       '出现 primitiveUnits —— Blink 对它的百分比解析有坑（svgwg #1012）',
     ).not.toContain('primitiveUnits')
-    expect(FILTER_FRAG, 'feImage 缺 preserveAspectRatio="none"（初始值 xMidYMid meet 会等比留白）').toMatch(
-      /<feImage[^>]*preserveAspectRatio="none"/,
-    )
+    expect(
+      FILTER_FRAG,
+      'feImage 缺 preserveAspectRatio="none"（初始值 xMidYMid meet 会等比留白）',
+    ).toMatch(/<feImage[^>]*preserveAspectRatio="none"/)
     expect(
       HIDDEN_SVG,
       '隐藏 svg 容器丢了 pointer-events-none absolute h-0 w-0 overflow-hidden 四件套',
@@ -2400,16 +2511,30 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     // 28/32/36 不是拍的（详见本 describe 注释与 _runlogs/refract-tune.mjs 的实测表）。
     // 改这三个数 = 重新做过那组实测，不在编辑器里顺手调。
     const scales = [...FILTER_FRAG.matchAll(/scale="(\d+)"/g)].map((m) => Number(m[1]))
-    expect(scales, '色散链的 scale 值变了 —— 改动前先重跑 _runlogs/refract-tune.mjs').toEqual([28, 32, 36])
+    expect(scales, '色散链的 scale 值变了 —— 改动前先重跑 _runlogs/refract-tune.mjs').toEqual([
+      28, 32, 36,
+    ])
     const spread = (scales[2] - scales[0]) / scales[1]
-    expect(spread >= 0.15 && spread <= 0.3, `spread=(c−a)/b=${spread} 出了 [0.15,0.3]（平台起点 0.25）`).toBe(true)
+    expect(
+      spread >= 0.15 && spread <= 0.3,
+      `spread=(c−a)/b=${spread} 出了 [0.15,0.3]（平台起点 0.25）`,
+    ).toBe(true)
     // 折叠：位移场最大斜率 = scale × 0.01907（0.03113 编码系数 × 14.7·1.5/36 的贴图最大梯度），
     // 斜率到 1 内容就翻折（scale≈52）。要求余量 ≥15%。
     const fold = Math.max(...scales) * 0.01907
-    expect(fold <= 0.85, `scale 上限 ${Math.max(...scales)} 的位移场斜率 ${fold.toFixed(2)} 逼近褶皱阈值 1`).toBe(true)
+    expect(
+      fold <= 0.85,
+      `scale 上限 ${Math.max(...scales)} 的位移场斜率 ${fold.toFixed(2)} 逼近褶皱阈值 1`,
+    ).toBe(true)
     // 通道选择器：贴图语义 R=x / G=y，三条都要
-    expect([...FILTER_FRAG.matchAll(/xChannelSelector="R"/g)], 'xChannelSelector 不全').toHaveLength(3)
-    expect([...FILTER_FRAG.matchAll(/yChannelSelector="G"/g)], 'yChannelSelector 不全').toHaveLength(3)
+    expect(
+      [...FILTER_FRAG.matchAll(/xChannelSelector="R"/g)],
+      'xChannelSelector 不全',
+    ).toHaveLength(3)
+    expect(
+      [...FILTER_FRAG.matchAll(/yChannelSelector="G"/g)],
+      'yChannelSelector 不全',
+    ).toHaveLength(3)
   })
 
   it('三条 feColorMatrix 精确隔离单通道（第 4 行 0 0 0 1 0 保 alpha）+ 两次 screen 合成', () => {
@@ -2428,7 +2553,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
       ).toBe(true)
     }
     const blends = [...FILTER_FRAG.matchAll(/<feBlend\b[^>]*mode="([^"]*)"/g)].map((m) => m[1])
-    expect(blends, '两次 feBlend 都必须是 screen（通道不相交 → screen≈加）').toEqual(['screen', 'screen'])
+    expect(blends, '两次 feBlend 都必须是 screen（通道不相交 → screen≈加）').toEqual([
+      'screen',
+      'screen',
+    ])
   })
 
   it('?inline 导入 + 两个 id 全仓各恰好一处', () => {
@@ -2440,7 +2568,10 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     )
     for (const id of ['lg-refract', 'glass-sample']) {
       const hits = scan(new RegExp(`id="${id}"`))
-      expect(hits.length, `id="${id}" 应该在 src/ 里恰好出现 1 次，实为 ${hits.length} 次：${hits.join('、')}`).toBe(1)
+      expect(
+        hits.length,
+        `id="${id}" 应该在 src/ 里恰好出现 1 次，实为 ${hits.length} 次：${hits.join('、')}`,
+      ).toBe(1)
     }
   })
 
@@ -2459,7 +2590,9 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     ).toBe(true)
     // 两条都带 -webkit- 前缀（WebKit 的级联同样要两行）
     expect(SAMPLE_CSS).toContain('-webkit-backdrop-filter: blur(10px) saturate(1.4)')
-    expect(SAMPLE_CSS).toContain('-webkit-backdrop-filter: url(#lg-refract) blur(10px) saturate(1.4)')
+    expect(SAMPLE_CSS).toContain(
+      '-webkit-backdrop-filter: url(#lg-refract) blur(10px) saturate(1.4)',
+    )
   })
 
   it('样张的三条底线：底填充 α ≤ 0.2、class 不带 glass-refract、两条降级路径都认它', () => {
@@ -2475,18 +2608,286 @@ describe('边缘光学与真折射样张（变更-042）', () => {
     expect(tokens, '样张 class 串不得出现 glass-refract').not.toContain('glass-refract')
     expect(tokens, '样张 class 串必须含 glass-sample（CSS 挂点）').toContain('glass-sample')
     // 样张穿的是 panel token（042-A/B 的交汇点：色散镶边也在样张自己的边缘上）
-    expect(tokens, '样张丢了 shadow-panel —— 边缘的冷暖镶边是它的一半观感').toContain('shadow-panel')
+    expect(tokens, '样张丢了 shadow-panel —— 边缘的冷暖镶边是它的一半观感').toContain(
+      'shadow-panel',
+    )
     // 两条降级路径都要认它：①不支持 backdrop-filter → 近实心雾白；②「减少透明度」→ 实心 + 关滤镜
-    expect(SUPPORTS_NOT_BLOCK, '①`@supports not (backdrop-filter…)` 块丢了 .glass-sample 的近实心兜底').toContain(
-      '.glass-sample',
-    )
+    expect(
+      SUPPORTS_NOT_BLOCK,
+      '①`@supports not (backdrop-filter…)` 块丢了 .glass-sample 的近实心兜底',
+    ).toContain('.glass-sample')
     expect(SUPPORTS_NOT_BLOCK).toContain('rgb(248 248 250 / 0.72)')
-    expect(REDUCED_TRANSPARENCY_BLOCK, '②`prefers-reduced-transparency` 块丢了 .glass-sample').toContain(
-      '.glass-sample',
-    )
+    expect(
+      REDUCED_TRANSPARENCY_BLOCK,
+      '②`prefers-reduced-transparency` 块丢了 .glass-sample',
+    ).toContain('.glass-sample')
     expect(REDUCED_TRANSPARENCY_BLOCK).toMatch(
       /\.glass-sample\s*\{[^}]*background-color:\s*rgb\(248 248 250\)/,
     )
     expect(REDUCED_TRANSPARENCY_BLOCK).toMatch(/\.glass-sample\s*\{[^}]*backdrop-filter:\s*none/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 18. 体积计算的液位控件：一根竖轨两钮（变更-045 起，变更-046 定形）
+// ---------------------------------------------------------------------------
+describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖动即时落位、钮环与色带随语义', () => {
+  /*
+   * 045 先把「数字框 + −/+ 步进圆钮」改成了两根横放的滑块；使用方拿实机截图看过后
+   * 一句话定形：「我希望滑块是竖放的，而且 1 个滑块上有 2 个可以滑的按钮 ——
+   * 一个代表起始液位，一个代表终止液位」。
+   *
+   * 成形是一根 **EP vertical + range** 的竖轨：上高下低（与液面方向一致），
+   * 两个钮各代表一个读数；数字框仍并存（865 / 1525 这类实测读数落不到步长格点上，
+   * 「扫值」（拖）与「录值」（键入）是两种手势）。
+   *
+   * 这一节能静默回归的，是四条边：
+   *
+   *   ① **结构只有一根竖轨**：range 两钮是同一个 el-slider 的两个 button。
+   *      若有人把「两根横轨各自 @input」的旧形态搬回来，就是形态倒车 ——
+   *      钉精确串，回流即红。
+   *   ② **两钮不许交叉 → 映射必须在**：EP range 把下钮的 max 钉在上钮、上钮的
+   *      min 钉在下钮，而起始 / 终止是两个**独立读数、允许倒挂**（倒挂 = 消耗）。
+   *      所以轨道收的是**排序过的一对** [低, 高]，startIsLower 负责映射回起止；
+   *      映射若丢（比如有人直接绑 vesselStartLevel），倒挂态一拖就错位。
+   *      setVesselLevelPair 里「方向快照必须在第一次写入之前取定」也要钉住 ——
+   *      写第一个 ref 之后 startIsLower 就翻了，中途重判会把两钮的值对调。
+   *   ③ **颜色语义三层、与画布共用同一对常量**：钮环 = 该钮代表读数的墨色
+   *      （起始虚线 #1e293b = slate-800、终止 vesselGeometry.liquid.line）；
+   *      钮间色带 = 消耗玫红 / 增加翡翠（判据 `>= 0` 与画布引线标注同源）。
+   *      `#e11d48` / `#059669` 两个裸字面量**只许出现在常量定义那一处** ——
+   *      画布剖面线、引线标注、滑块色带三处共用 VESSEL_DELTA_COLOR。
+   *   ④ **两条调节路径必须还是两条**（045 的规矩原样）：拖动走
+   *      setVesselLevelImmediate 直写、清补间；键入走 watcher 缓动；
+   *      vessel-step 家族在 src 全量零残留。
+   *
+   * 取法照全文件的规矩：**先过 stripComments**（这段注释自己就写着这些精确串），
+   * 再按精确串计数；列宽那类走 class 属性。
+   */
+  const SRC_TEXT = stripComments(WORKBENCH)
+  // 唯一的一根竖轨（自闭合、非贪婪；块内不会再嵌滑块）
+  const SLIDER_BLOCKS = [...SRC_TEXT.matchAll(/<el-slider[\s\S]*?\/>/g)].map((m) => m[0])
+
+  it('结构：一根竖轨两钮（vertical + range）、值走 model-value + @input、旧的两根横轨无残留', () => {
+    expect(
+      SLIDER_BLOCKS.length,
+      '不是「一根竖轨」—— 解析出 ' +
+        SLIDER_BLOCKS.length +
+        ' 块 el-slider；锚点失效（写法又变了？）先在这里红',
+    ).toBe(1)
+
+    const slider = SLIDER_BLOCKS[0]
+    expect(slider, '滑块没竖过来 —— range 一根轨的前提是 vertical').toMatch(/\n\s*vertical\n/)
+    expect(slider, '两个钮共轨 —— 必须是 range 模式').toMatch(/\n\s*range\n/)
+    expect(slider, '竖轨高度（EP 的 height prop 要求带单位）').toContain('height="260px"')
+    expect(slider, '轨道必须收「排序过的一对」，见 startIsLower 映射').toContain(
+      ':model-value="vesselLevelPair"',
+    )
+    expect(slider, '滑块的量程必须跟着罐体几何走').toContain(':max="vesselGeometry.maxLevel"')
+    expect(slider, '滑块步长必须是 1 —— 液位是连续实测值，精确录入归数字框').toContain(':step="1"')
+    expect(slider, '竖轨的工具提示必须放右侧（默认 top 会顶到钮上）').toContain('placement="right"')
+    expect(slider, '工具提示（值 + mm 单位）没了').toContain(
+      ':format-tooltip="formatVesselLevelTooltip"',
+    )
+    expect(slider, '两钮的 aria 名必须按映射走（倒挂时下钮是终止）').toContain(
+      ':range-start-label="vesselLevelRangeLabels[0]"',
+    )
+    expect(slider).toContain(':range-end-label="vesselLevelRangeLabels[1]"')
+    expect(slider, '颜色注入（钮环 + 钮间色带）的 :style 没了').toContain(
+      ':style="vesselLevelSliderStyle"',
+    )
+    expect(slider, '拖动的唯一入口').toContain('@input="setVesselLevelPair"')
+    expect(
+      slider,
+      'range 滑块出现了 v-model —— 它会把值送回 watcher、走 clampAndAnimateLevel 的缓动路径，' +
+        '拖动就不再跟手（液面拖着尾巴）。必须保持 :model-value + @input 单一写入。',
+    ).not.toContain('v-model="')
+
+    // 旧形态无残留：两根横轨各自的 @input、模板里的裸 aria-label
+    expect(SRC_TEXT, '旧的两根横轨 @input 回流了 —— 一根竖轨两钮（046）才是定形').not.toContain(
+      "setVesselLevelImmediate('start', v)",
+    )
+    expect(SRC_TEXT).not.toContain("setVesselLevelImmediate('end', v)")
+    expect(
+      SRC_TEXT,
+      '模板里的裸 aria-label 回流了 —— 两钮名现在走 :range-start-label / :range-end-label 映射',
+    ).not.toContain('aria-label="起始液位滑块"')
+
+    // 竖轨的定高柱（EP 竖版根是 height:100%，父柱不定高会塌）+ 两根读数柱的列宽
+    expect(
+      SRC_TEXT,
+      '竖轨的定高柱没了 —— 竖版 el-slider 根是 height:100%，父柱不定高就塌成一条',
+    ).toContain('flex h-[260px] shrink-0 items-center justify-center')
+    // 这一行是三段并排：竖版曾是 2×2 grid，加进竖轨后三件会摆成 L 形（实机踩过）
+    expect(
+      SRC_TEXT,
+      '读数柱与竖轨不在同一行 —— 竖版这一行必须是 flex（旧的 2×2 grid 摆不下三件）',
+    ).toContain("'flex w-full items-center px-0'")
+    expect(
+      SRC_TEXT,
+      '旧的竖版 2×2 grid 回流了 —— 三件（起始/竖轨/终止）会被摆成 L 形',
+    ).not.toContain('grid w-full grid-cols-2 px-0')
+    expect(SRC_TEXT, '横向罐型这一行也要 items-center —— 读数柱要对着 260 高的竖轨居中').toContain(
+      "'flex flex-1 flex-wrap items-center gap-x-6'",
+    )
+    expect(
+      SRC_TEXT.split("isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'").length - 1,
+      '两根读数柱的列宽不对（横向罐型下限 220 是实测值：240 时控制区三段并排放不下、终止柱坠行）',
+    ).toBe(2)
+  })
+
+  it('两钮映射：轨道收 [低, 高] 一对，startIsLower 负责映射回起始/终止，方向快照先于写入', () => {
+    expect(SRC_TEXT, 'startIsLower 的判据（等值算「起始在下」）').toContain(
+      'const startIsLower = computed(() => vesselStartLevel.value <= vesselEndLevel.value)',
+    )
+    expect(SRC_TEXT, '升序对（起始更低 —— 常规消耗态）').toContain(
+      '[vesselStartLevel.value, vesselEndLevel.value]',
+    )
+    expect(SRC_TEXT, '升序对（起始更高 —— 倒挂/增加态）').toContain(
+      '[vesselEndLevel.value, vesselStartLevel.value]',
+    )
+    expect(SRC_TEXT, '两钮 aria 名的映射').toContain(
+      "startIsLower.value ? ['起始液位滑块', '终止液位滑块'] : ['终止液位滑块', '起始液位滑块']",
+    )
+
+    expect(SRC_TEXT, '映射函数的签名（收的是解构出来的一对）').toContain(
+      'function setVesselLevelPair([lower, upper])',
+    )
+    const at = SRC_TEXT.indexOf('function setVesselLevelPair')
+    const body = SRC_TEXT.slice(at, SRC_TEXT.indexOf('\n}', at))
+    const snapshot = body.indexOf('if (startIsLower.value)')
+    expect(snapshot, '方向快照没了').toBeGreaterThan(-1)
+    expect(
+      snapshot,
+      '方向快照必须在第一次 setVesselLevelImmediate 之前取定 —— 写第一个 ref 之后 startIsLower 就翻了，' +
+        '中途重判会把两钮的值对调（真实回归：拖起来两钮互换）。',
+    ).toBeLessThan(body.indexOf('setVesselLevelImmediate('))
+    for (const call of [
+      "setVesselLevelImmediate('start', lower)",
+      "setVesselLevelImmediate('end', upper)",
+      "setVesselLevelImmediate('end', lower)",
+      "setVesselLevelImmediate('start', upper)",
+    ]) {
+      expect(body, `缺了映射分支：${call}`).toContain(call)
+    }
+    expect(
+      body,
+      '拖动路径（经映射函数）不得缓动 —— 缓动是键入/切罐型这类「变化事件」的表演，拖动要的是即时；' +
+        '两条路径混了，滑块就没法用来扫值。',
+    ).not.toContain('animateVesselTo')
+
+    // 045 的两条路径分工原样保留：拖动直写（清补间 + 直写显示值）
+    const atImm = SRC_TEXT.indexOf('function setVesselLevelImmediate')
+    expect(atImm, 'setVesselLevelImmediate 不见了 —— 拖动路径的入口').toBeGreaterThan(-1)
+    const immBody = SRC_TEXT.slice(atImm, SRC_TEXT.indexOf('\n}', atImm))
+    expect(
+      immBody,
+      '补间没清 —— 拖动时 watcher 里现存的缓动会把液面接着往下拖，跟手感就没了',
+    ).toContain('vesselTransitions[which] = null')
+    expect(immBody, '显示值没直写 —— 液面不会当帧就位').toContain(
+      'levelDisplayRef(which).value = clamped',
+    )
+    // 键入路径原样：两个 watcher 仍过 clampAndAnimateLevel（这条不许被「统一」掉）
+    expect(SRC_TEXT).toContain(
+      "watch(vesselStartLevel, (value) => clampAndAnimateLevel('start', value))",
+    )
+    expect(SRC_TEXT).toContain(
+      "watch(vesselEndLevel, (value) => clampAndAnimateLevel('end', value))",
+    )
+    expect(SRC_TEXT, '工具提示的格式（整数 + mm）变了').toContain(
+      'const formatVesselLevelTooltip = (value) => `${Math.round(value)} mm`',
+    )
+  })
+
+  it('颜色语义三层：钮环 = 读数色、色带 = 消耗/增加，与画布共用同一对常量（裸字面量只许一处）', () => {
+    expect(SRC_TEXT, '起始墨色的常量没了').toContain("const VESSEL_START_INK = '#1e293b'")
+    expect(
+      tailwindColors.slate[800].toLowerCase(),
+      '起始墨色与 slate-800 脱钩了 —— 图例虚线是 border-slate-800，两处必须同一只墨',
+    ).toBe('#1e293b')
+    expect(SRC_TEXT, '差值一对墨的常量没了').toContain(
+      "const VESSEL_DELTA_COLOR = { consume: '#e11d48', increase: '#059669' }",
+    )
+
+    // 裸字面量只许出现在常量定义那一处：画布剖面线 + 画布引线标注 + 滑块钮间色带三处共用常量
+    for (const ink of ['#e11d48', '#059669']) {
+      expect(
+        SRC_TEXT.split(`'${ink}'`).length - 1,
+        `${ink} 有裸引用 —— 画布与滑块必须共用 VESSEL_DELTA_COLOR（一处改、三处看）`,
+      ).toBe(1)
+    }
+    expect(
+      SRC_TEXT.split('VESSEL_DELTA_COLOR.consume').length - 1,
+      '常量的消耗色用点不是 3 处（画布剖面线 + 画布引线标注 + 滑块钮间色带）',
+    ).toBe(3)
+    expect(
+      SRC_TEXT.split('VESSEL_DELTA_COLOR.increase').length - 1,
+      '常量的增加色用点不是 3 处（画布剖面线 + 画布引线标注 + 滑块钮间色带）',
+    ).toBe(3)
+
+    expect(SRC_TEXT, '钮间色带的语义映射没了（判据须与画布引线标注同源：>= 0 增加）').toContain(
+      'vesselVolumeDelta.value >= 0 ? VESSEL_DELTA_COLOR.increase : VESSEL_DELTA_COLOR.consume',
+    )
+    expect(SRC_TEXT, '下钮环色必须绑 startIsLower（倒挂时低位读数换成终止的液面线色）').toContain(
+      "'--v-thumb-lower': startIsLower.value ? VESSEL_START_INK : vesselGeometry.value.liquid.line",
+    )
+    expect(SRC_TEXT, '上钮环色是下钮的镜像').toContain(
+      "'--v-thumb-upper': startIsLower.value ? vesselGeometry.value.liquid.line : VESSEL_START_INK",
+    )
+  })
+
+  it('竖轨的软拟态配方：凹槽、盖掉 EP 竖版方角、钮座对中量校正、分钮环色走 border', () => {
+    expect(SRC_TEXT).toContain('.vessel-level-slider :deep(.el-slider__runway)')
+    expect(
+      SRC_TEXT,
+      '轨道的凹槽光影没了 —— 只剩一条浅灰槽，「实心钮推着凹槽走」的凹凸关系就不成立',
+    ).toContain('inset 2px 2px 5px rgba(90, 110, 150, 0.32)')
+    expect(
+      SRC_TEXT,
+      '钮座对中量没校正 —— EP 出厂按（6−36）/2 = −15px 写死，我们的轨厚 10 / 钮座 30 需要' +
+        '（10−30）/2 = −10px，写错则钮在轨道上偏心 5px',
+    ).toContain('--el-slider-button-wrapper-offset: -10px')
+    expect(
+      SRC_TEXT,
+      '竖版 bar 没盖掉 EP `.is-vertical` 的 `0 0 3px 3px` 方角 —— 凹槽会缺一个圆头',
+    ).toMatch(
+      /\.vessel-level-slider :deep\(\.el-slider__bar\)\s*\{[\s\S]{0,120}border-radius: 9999px/,
+    )
+    expect(SRC_TEXT, '圆钮的浮面渐变没了 —— 与全站软拟态按钮的配方脱钩').toContain(
+      'linear-gradient(145deg, #fbfbfd, #eaebee)',
+    )
+    expect(
+      SRC_TEXT,
+      '钮环没走 border（transparent 基底 + 分钮着色；box-sizing: border-box，几何与 045 一致）',
+    ).toContain('border: 2px solid transparent')
+    expect(SRC_TEXT, '下钮环（nth-child(2) = 低位钮）没接 --v-thumb-lower').toMatch(
+      /nth-child\(2\)[\s\S]{0,80}--v-thumb-lower/,
+    )
+    expect(SRC_TEXT, '上钮环（nth-child(3) = 高位钮）没接 --v-thumb-upper').toMatch(
+      /nth-child\(3\)[\s\S]{0,80}--v-thumb-upper/,
+    )
+    expect(SRC_TEXT, '钮/轨道没禁 CSS 过渡 —— 钮会自己滑过去而液面是瞬移，肉眼可见地错位').toMatch(
+      /\.vessel-level-slider :deep\(\.el-slider__bar\)[\s\S]{0,120}transition: none/,
+    )
+    expect(SRC_TEXT, '滑块的键盘聚焦环（石墨深）没了 —— EP 默认环被覆写后必须显式补').toContain(
+      'outline: 2px solid #171719',
+    )
+  })
+
+  it('步进圆钮（−/+）继续退役：vessel-step 家族全仓零残留；数字输入框原样保留', () => {
+    // 全 src 过 stripComments 后扫：注释里提旧名字（解释为什么删）不红，真代码回流才红
+    const LEFTOVER = /vessel-step|stepVesselLevel|startStepHold|stopStepHold/
+    const hits = SOURCE_FILES.filter((f) => LEFTOVER.test(stripComments(read(f)))).map(rel)
+    expect(
+      hits,
+      'vessel-step 家族回流了 —— 步进圆钮已整体退役（变更-045），滑块 + 输入框并存就是全部控件；' +
+        '旧的样式块/处理函数（含长按连发的定时器那套）一律不许粘回来',
+    ).toEqual([])
+
+    expect(
+      SRC_TEXT.split('class="vessel-level-input w-20 min-w-0 text-right"').length - 1,
+      '数字输入框不是两个都在 —— 非整十的实测读数（865 / 1525）要能直接键入，' +
+        '这是有意保留、不是漏删',
+    ).toBe(2)
   })
 })
