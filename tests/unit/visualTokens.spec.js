@@ -2661,6 +2661,17 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
    *      setVesselLevelImmediate 直写、清补间；键入走 watcher 缓动；
    *      vessel-step 家族在 src 全量零残留。
    *
+   * 048 又动了一次形态（使用方拿实机截图定：「红色框选部分不要了，相应的信息通过
+   * 引线指向滑块按钮」）：**两根读数柱整个撤掉**，读数改成挂在钮上的引线标注。
+   * 这一节因此加的第 ⑥ 条边：
+   *
+   *   ⑥ **标注只许挂在钮上**：两根读数柱的列宽串（min-w-[220px] / min-w-0 flex-1）
+   *      与卡片配方（border-slate-200/70 bg-raised）必须零残留 —— 回流就是形态倒车；
+   *      标注 top 必须由 vesselCalloutTops 注入（钮心 = 柱高 − 值/量程 × 柱高，
+   *      换算在 vesselKnobY），两个标注有下限间距（钮叠一起时不叠字）；
+   *      引线（polyline + circle）与标注同场，墨色 = 读数墨（起始 VESSEL_START_INK /
+   *      终止 liquid.line）—— 三条一起才叫「引线指向滑块按钮」。
+   *
    * 取法照全文件的规矩：**先过 stripComments**（这段注释自己就写着这些精确串），
    * 再按精确串计数；列宽那类走 class 属性。
    */
@@ -2713,27 +2724,87 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
       '模板里的裸 aria-label 回流了 —— 两钮名现在走 :range-start-label / :range-end-label 映射',
     ).not.toContain('aria-label="起始液位滑块"')
 
-    // 竖轨的定高柱（EP 竖版根是 height:100%，父柱不定高会塌）+ 两根读数柱的列宽
+    // 竖轨的定高柱（EP 竖版根是 height:100%，父柱不定高会塌成一条）——
+    // 048 起柱宽 = 轨 42 + 标注栏 250：标注入列，柱心才是整组的视觉中心
     expect(
       SRC_TEXT,
-      '竖轨的定高柱没了 —— 竖版 el-slider 根是 height:100%，父柱不定高就塌成一条',
-    ).toContain('flex h-[260px] shrink-0 items-center justify-center')
-    // 这一行是三段并排：竖版曾是 2×2 grid，加进竖轨后三件会摆成 L 形（实机踩过）
+      '竖轨的定高柱没了（或宽度丢了标注栏那一份）—— 竖版 el-slider 根是 height:100%，' +
+        '父柱不定高就塌成一条；宽度收成只剩轨宽则标注会压到相邻内容上',
+    ).toContain('relative flex h-[260px] w-[292px] shrink-0 items-center')
+    expect(SRC_TEXT, '旧定高柱（无标注栏宽度的那版）回流了 —— 标注栏是 048 的地基').not.toContain(
+      'flex h-[260px] shrink-0 items-center justify-center',
+    )
+    // 这一行是「竖轨 + 标注」同行：竖版曾是 2×2 grid（三件摆成 L 形，实机踩过）
     expect(
       SRC_TEXT,
-      '读数柱与竖轨不在同一行 —— 竖版这一行必须是 flex（旧的 2×2 grid 摆不下三件）',
-    ).toContain("'flex w-full items-center px-0'")
+      '读数标注与竖轨不在同一行 —— 竖版这一行必须是 flex（旧的 2×2 grid 摆不下）',
+    ).toContain("'flex w-full items-center justify-center px-0'")
     expect(
       SRC_TEXT,
       '旧的竖版 2×2 grid 回流了 —— 三件（起始/竖轨/终止）会被摆成 L 形',
     ).not.toContain('grid w-full grid-cols-2 px-0')
-    expect(SRC_TEXT, '横向罐型这一行也要 items-center —— 读数柱要对着 260 高的竖轨居中').toContain(
-      "'flex flex-1 flex-wrap items-center gap-x-6'",
+    expect(SRC_TEXT, '横向罐型这一行也要 items-center —— 标注栏要对着 260 高的竖轨居中').toContain(
+      "'flex flex-1 flex-wrap items-center justify-center gap-x-6'",
+    )
+    // 048：两根读数柱整个退役（列宽串 + 卡片配方都零残留）——回流即形态倒车
+    expect(SRC_TEXT, '读数柱的列宽串回流了 —— 048 起读数只挂在钮上，柱已整个撤掉').not.toContain(
+      "isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'",
     )
     expect(
-      SRC_TEXT.split("isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'").length - 1,
-      '两根读数柱的列宽不对（横向罐型下限 220 是实测值：240 时控制区三段并排放不下、终止柱坠行）',
-    ).toBe(2)
+      SRC_TEXT,
+      '读数柱的卡片配方（border-slate-200/70 bg-raised）回流了 —— 使用方要撤的就是这两只框',
+    ).not.toContain('border-slate-200/70 bg-raised')
+  })
+
+  it('读数标注挂在钮上：位置由值换算、同高时不叠字、引线与读数同墨', () => {
+    // 标注本体：两个、各带 :style（top 由脚本注入）+ 起止两个修饰类（下划线墨相用）
+    expect(SRC_TEXT.split('class="vessel-level-callout ').length - 1, '引线标注不是两个').toBe(2)
+    expect(SRC_TEXT).toContain('vessel-level-callout vessel-level-callout-start')
+    expect(SRC_TEXT).toContain('vessel-level-callout vessel-level-callout-end')
+    expect(SRC_TEXT.split(':style="vesselStartCalloutStyle"').length - 1).toBe(1)
+    expect(SRC_TEXT.split(':style="vesselEndCalloutStyle"').length - 1).toBe(1)
+
+    // 引线层：同一只 260 定高柱的坐标系（无 viewBox）+ 折线 + 起点圆点；装饰性、不进可访问树
+    expect(SRC_TEXT, '引线层没了 —— 引线是第一诉求').toContain('<svg')
+    expect(SRC_TEXT).toContain('class="vessel-level-leader"')
+    expect(SRC_TEXT.split('<polyline').length - 1, '两条读数引线').toBe(2)
+    // 圆点按绑定计数（模板里另有若干图标 svg 自带 <circle，数标签数会被误伤）
+    expect(SRC_TEXT.split(':fill="vesselLeaders.').length - 1, '两个起点圆点').toBe(2)
+    expect(SRC_TEXT, '引线层没有 overflow: visible —— 线伸不出定高柱，指不到标注栏').toMatch(
+      /\.vessel-level-leader \{[\s\S]{0,200}?overflow: visible/,
+    )
+
+    // 位置换算：钮心 = 柱高 − 值/量程 × 柱高（值先夹 0~1）；两钮同高时标注不许叠
+    expect(SRC_TEXT, '钮心换算没了 —— 标注位置不再跟着钮走，引线就指不到钮上').toContain(
+      'return VESSEL_RAIL_HEIGHT * (1 - ratio)',
+    )
+    expect(SRC_TEXT, '量的夹取（越界值不许把标注带出柱外）').toContain(
+      'const ratio = Math.max(0, Math.min(1, level / maxLevel))',
+    )
+    expect(
+      SRC_TEXT,
+      '两个标注的下限间距没了 —— 两个钮叠在一起时（起止等值）标注会互相压字',
+    ).toContain('if (Math.abs(start - end) < VESSEL_CALLOUT_GAP)')
+    expect(SRC_TEXT, '标注 top 的注入').toContain('top: `${vesselCalloutTops.value[0]}px`')
+    expect(SRC_TEXT).toContain('top: `${vesselCalloutTops.value[1]}px`')
+
+    // 墨色：起始 = 起始墨常量、终止 = 液面线色 —— 与钮环、图例三处同源
+    expect(SRC_TEXT, '起始引线的墨色脱钩了').toContain(
+      'start: leader(vesselStartLevel.value, startTop, VESSEL_START_INK)',
+    )
+    expect(SRC_TEXT, '终止引线的墨色脱钩了').toContain(
+      'end: leader(vesselEndLevel.value, endTop, vesselGeometry.value.liquid.line)',
+    )
+    expect(SRC_TEXT, '标注内的墨（数字下划线用）没注入').toContain(
+      "'--v-callout-ink': VESSEL_START_INK",
+    )
+    expect(SRC_TEXT).toContain("'--v-callout-ink': vesselGeometry.value.liquid.line")
+
+    // 标注不带过渡：钮与液面都是瞬移，标注自己滑会跟钮错开
+    expect(SRC_TEXT, '标注加了过渡 —— 钮瞬移、标注缓动，引线圆点就对不上钮了').toMatch(
+      /\.vessel-level-callout \{[\s\S]{0,200}?transform: translateY\(-50%\)/,
+    )
+    expect(SRC_TEXT.split('left: 76px').length - 1, '标注栏左缘与脚本常量脱钩了').toBe(1)
   })
 
   it('两钮映射：轨道收 [低, 高] 一对，startIsLower 负责映射回起始/终止，方向快照先于写入', () => {
@@ -2885,9 +2956,19 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
     ).toEqual([])
 
     expect(
-      SRC_TEXT.split('class="vessel-level-input w-20 min-w-0 text-right"').length - 1,
+      SRC_TEXT.split('class="vessel-level-input min-w-0 text-right"').length - 1,
       '数字输入框不是两个都在 —— 非整十的实测读数（865 / 1525）要能直接键入，' +
-        '这是有意保留、不是漏删',
+        '这是有意保留、不是漏删（048 撤的是外框，不是「录值」这条路）',
     ).toBe(2)
+    // 048：数字框不再画框 —— 静止态是「带下划线的数字」，下划线墨相分起止
+    expect(SRC_TEXT, '数字框的软拟态外框回流了 —— 048 起静止态只有下划线').not.toContain(
+      'border-radius: 12px',
+    )
+    expect(SRC_TEXT, '下划线没接 --v-callout-ink（读数墨）').toContain(
+      'border-bottom: 1px dashed var(--v-callout-ink)',
+    )
+    expect(SRC_TEXT, '终止的下划线没改成实线（与图上那根实线液面同相）').toContain(
+      '.vessel-level-callout-end .vessel-level-input',
+    )
   })
 })

@@ -1440,6 +1440,74 @@ const vesselLevelSliderStyle = computed(() => ({
   '--v-thumb-upper': startIsLower.value ? vesselGeometry.value.liquid.line : VESSEL_START_INK,
 }))
 
+// ── 变更-048：读数引线标注（挂在钮上）────────────────────────────────────────
+// 两根读数柱退役，读数改挂到**钮**上。钮心位置是算出来的，不是量的：
+// EP 竖版把钮座的 bottom 写成「值的百分比」（bottom: p% + translateY(50%) ⇒
+// 钮心恰好落在读数刻度上），所以以定高柱顶为原点，钮心 y = 柱高 − 值/量程 × 柱高。
+// 三个数（柱高 260 / 轨宽 42 = 16 + 10 + 16 / 标注栏左缘 76）与模板和 CSS 里
+// 那几处字面量是同一只数，改一处必须三处一起改。
+const VESSEL_RAIL_HEIGHT = 260
+const VESSEL_RAIL_KNOB_X = 21 // 轨心：16（EP 竖版 runway 的左右 margin） + 10 / 2
+const VESSEL_CALLOUT_LEFT = 76 // 与 .vessel-level-callout 的 left 同一只数
+// 两个标注的下限间距 = 标注两行的高度 + 余量：两个钮靠得再近，标注也不叠
+const VESSEL_CALLOUT_GAP = 52
+
+function vesselKnobY(level) {
+  const maxLevel = vesselGeometry.value.maxLevel || 1
+  const ratio = Math.max(0, Math.min(1, level / maxLevel))
+  return VESSEL_RAIL_HEIGHT * (1 - ratio)
+}
+
+// 标注的 top：先钉在自己的钮心上；两个靠得太近时向两边让开（只在柱内挪，柱外不许）——
+// 让位只动标注，引线的折角负责把「标注挪了位」画回来。等值（两钮叠一起）时
+// start <= end 成立，自然拆成「起始在上、终止在下」。
+const vesselCalloutTops = computed(() => {
+  const half = VESSEL_CALLOUT_GAP / 2
+  const pad = 25 // 标注半高 + 1：柱口之内留得下整个标注
+  const clampTop = (value) => Math.max(pad, Math.min(VESSEL_RAIL_HEIGHT - pad, value))
+  const start = clampTop(vesselKnobY(vesselStartLevel.value))
+  const end = clampTop(vesselKnobY(vesselEndLevel.value))
+
+  if (Math.abs(start - end) < VESSEL_CALLOUT_GAP) {
+    const upper = Math.max(
+      pad,
+      Math.min((start + end) / 2 - half, VESSEL_RAIL_HEIGHT - pad - VESSEL_CALLOUT_GAP),
+    )
+    return start <= end ? [upper, upper + VESSEL_CALLOUT_GAP] : [upper + VESSEL_CALLOUT_GAP, upper]
+  }
+  return [start, end]
+})
+
+// 引线（折线 + 起点圆点），坐标系与定高柱一致：圆点钉在钮心，横出到标注栏前，
+// 折角指到标注的垂直中心 —— 与画布差值标注同一套语言（圆点 → 横出 → 折角）
+const vesselLeaders = computed(() => {
+  const [startTop, endTop] = vesselCalloutTops.value
+  const leader = (level, top, color) => {
+    const y = Math.round(vesselKnobY(level) * 10) / 10
+    return {
+      color,
+      x: VESSEL_RAIL_KNOB_X,
+      y,
+      points: `${VESSEL_RAIL_KNOB_X},${y} ${VESSEL_CALLOUT_LEFT - 18},${y} ${VESSEL_CALLOUT_LEFT - 5},${top}`,
+    }
+  }
+  return {
+    start: leader(vesselStartLevel.value, startTop, VESSEL_START_INK),
+    end: leader(vesselEndLevel.value, endTop, vesselGeometry.value.liquid.line),
+  }
+})
+
+// 标注的 top 走内联 style（值驱动）；--v-callout-ink 把该读数的墨带进标注内部 ——
+// 数字框的下划线用它（起始虚线 / 终止实线，与画布那两根线、钮环三处同相）
+const vesselStartCalloutStyle = computed(() => ({
+  top: `${vesselCalloutTops.value[0]}px`,
+  '--v-callout-ink': VESSEL_START_INK,
+}))
+const vesselEndCalloutStyle = computed(() => ({
+  top: `${vesselCalloutTops.value[1]}px`,
+  '--v-callout-ink': vesselGeometry.value.liquid.line,
+}))
+
 function setVesselLevelPair([lower, upper]) {
   // 方向快照就在 if 处一次取定：两次 setVesselLevelImmediate 之间 refs 会变，
   // 若中途重判 startIsLower，会把两钮的值对调。
@@ -3297,73 +3365,99 @@ watch(activeTab, (tab) => {
                         </div>
                       </div>
 
-                      <!-- 起始 / 竖轨 / 终止 三段并排（变更-046：滑块从两柱各配一根
-                           收成中间一根竖轨；竖版原来这里是 2×2 的 grid，三件不齐整） -->
+                      <!-- 竖轨 + 两根读数引线（变更-048，使用方 2026-10-12 拿实机截图定：
+                           「红色框选部分不要了，相应的信息通过引线指向滑块按钮」）——
+                           两根读数柱撤成**挂在钮上的引线标注**：钮在轨道上到哪，标注跟到哪；
+                           引线走画布差值标注同一套折线语言（圆点 → 横出 → 折角），
+                           墨色 = 该读数的墨（起始虚线 / 终止液面线），与钮环、图例三处同源 -->
                       <div
                         class="gap-x-6 gap-y-5"
                         :class="
                           isVerticalVessel
-                            ? 'flex w-full items-center px-0'
-                            : 'flex flex-1 flex-wrap items-center gap-x-6'
+                            ? 'flex w-full items-center justify-center px-0'
+                            : 'flex flex-1 flex-wrap items-center justify-center gap-x-6'
                         "
                       >
-                        <!-- 起始液位：数字框保留精确录入（变更-045 定的分工）；
-                             拖动在中间那根竖轨上（变更-046：一根轨、两个钮）。
-                             横版列宽下限 220（045 原为 240）：横版控制区实测约 561 宽，
-                             240 时三段并排差 9px 放不下，终止柱会被挤到第二行（实机踩过） -->
-                        <div
-                          class="flex flex-col gap-3"
-                          :class="isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'"
-                        >
-                          <div
-                            class="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                        <!-- 竖轨的定高柱（EP 竖版根是 height:100%，父柱不定高就塌成一条）：
+                             宽 = 轨 42 + 右侧标注栏 250 —— 标注入列，柱心才是整组的视觉中心 -->
+                        <div class="relative flex h-[260px] w-[292px] shrink-0 items-center">
+                          <!-- 引线层：画在同一只 260 定高柱的坐标系里（无 viewBox，
+                               用户单位即 px），overflow: visible 让线伸出柱外指到标注 -->
+                          <svg
+                            class="vessel-level-leader"
+                            width="42"
+                            height="260"
+                            aria-hidden="true"
+                            focusable="false"
                           >
-                            <span
-                              class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
+                            <polyline
+                              :points="vesselLeaders.start.points"
+                              :stroke="vesselLeaders.start.color"
+                              stroke-width="1.5"
+                              fill="none"
+                            />
+                            <circle
+                              :cx="vesselLeaders.start.x"
+                              :cy="vesselLeaders.start.y"
+                              r="3.4"
+                              :fill="vesselLeaders.start.color"
+                            />
+                            <polyline
+                              :points="vesselLeaders.end.points"
+                              :stroke="vesselLeaders.end.color"
+                              stroke-width="1.5"
+                              fill="none"
+                            />
+                            <circle
+                              :cx="vesselLeaders.end.x"
+                              :cy="vesselLeaders.end.y"
+                              r="3.4"
+                              :fill="vesselLeaders.end.color"
+                            />
+                          </svg>
+
+                          <!-- 起始读数标注：数字仍可键入（865 / 1525 的实测读数，045 定的分工），
+                               只是不再画框 —— 见 .vessel-level-input 的「带下划线的数字」配方 -->
+                          <div
+                            class="vessel-level-callout vessel-level-callout-start"
+                            :style="vesselStartCalloutStyle"
+                          >
+                            <div
+                              class="flex items-center gap-1.5 whitespace-nowrap text-sm text-slate-700"
                             >
                               <span
                                 class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800"
                                 aria-hidden="true"
                               ></span>
                               起始液位
-                            </span>
-                            <input
-                              v-model.number="vesselStartLevel"
-                              type="number"
-                              min="0"
-                              :max="vesselGeometry.maxLevel"
-                              step="10"
-                              aria-label="起始液位（毫米）"
-                              class="vessel-level-input w-20 min-w-0 text-right"
-                            />
-                          </div>
-
-                          <div class="space-y-1 pl-1 text-sm text-slate-500">
-                            <div>
-                              液位：<span class="font-semibold text-slate-900">{{
-                                Math.round(vesselStartDisplay)
-                              }}</span>
-                              mm
+                              <input
+                                v-model.number="vesselStartLevel"
+                                type="number"
+                                min="0"
+                                :max="vesselGeometry.maxLevel"
+                                step="10"
+                                aria-label="起始液位（毫米）"
+                                class="vessel-level-input min-w-0 text-right"
+                              />
+                              <span class="text-slate-500">mm</span>
                             </div>
-                            <div>
+                            <div class="mt-0.5 text-sm text-slate-500">
                               体积：<span class="font-semibold text-brand-deep">{{
                                 vesselStartVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselStartMass !== null"
-                                ><span class="ml-1 whitespace-nowrap text-slate-500"
+                                ><span class="ml-1 whitespace-nowrap"
                                   >（{{ vesselStartMass.toFixed(2) }} t）</span
                                 ></template
                               >
                             </div>
                           </div>
-                        </div>
 
-                        <!-- 液位滑块（变更-046）：一根竖轨两个钮，上高下低 —— 钮环色 = 该钮
-                             代表的读数在图上那根线的墨色（起始虚线 / 终止液面线），钮间色带 =
-                             消耗·增加语义色（与画布剖面线同一对值）。range 两钮不许交叉：
-                             倒挂（消耗）只能走数字框键入 —— 滑块收的是排序过的一对，
-                             startIsLower 负责把两个数再映射回起始 / 终止，见 setVesselLevelPair -->
-                        <div class="flex h-[260px] shrink-0 items-center justify-center">
+                          <!-- 液位滑块（变更-046）：一根竖轨两个钮，上高下低 —— 钮环色 = 该钮
+                               代表的读数在图上那根线的墨色（起始虚线 / 终止液面线），钮间色带 =
+                               消耗·增加语义色（与画布剖面线同一对值）。range 两钮不许交叉：
+                               倒挂（消耗）只能走数字框键入 —— 滑块收的是排序过的一对，
+                               startIsLower 负责把两个数再映射回起始 / 终止，见 setVesselLevelPair -->
                           <el-slider
                             class="vessel-level-slider"
                             vertical
@@ -3380,18 +3474,14 @@ watch(activeTab, (tab) => {
                             :style="vesselLevelSliderStyle"
                             @input="setVesselLevelPair"
                           />
-                        </div>
 
-                        <!-- 终止液位：数字框保留精确录入（变更-045 定的分工） -->
-                        <div
-                          class="flex flex-col gap-3"
-                          :class="isVerticalVessel ? 'min-w-0 flex-1' : 'min-w-[220px] flex-1'"
-                        >
+                          <!-- 终止读数标注 -->
                           <div
-                            class="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-raised px-3 py-2.5 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]"
+                            class="vessel-level-callout vessel-level-callout-end"
+                            :style="vesselEndCalloutStyle"
                           >
-                            <span
-                              class="flex items-center gap-2 whitespace-nowrap text-sm text-slate-700"
+                            <div
+                              class="flex items-center gap-1.5 whitespace-nowrap text-sm text-slate-700"
                             >
                               <span
                                 class="inline-block h-0 w-5 border-t-2"
@@ -3399,31 +3489,23 @@ watch(activeTab, (tab) => {
                                 aria-hidden="true"
                               ></span>
                               终止液位
-                            </span>
-                            <input
-                              v-model.number="vesselEndLevel"
-                              type="number"
-                              min="0"
-                              :max="vesselGeometry.maxLevel"
-                              step="10"
-                              aria-label="终止液位（毫米）"
-                              class="vessel-level-input w-20 min-w-0 text-right"
-                            />
-                          </div>
-
-                          <div class="space-y-1 pl-1 text-sm text-slate-500">
-                            <div>
-                              液位：<span class="font-semibold text-slate-900">{{
-                                Math.round(vesselEndDisplay)
-                              }}</span>
-                              mm
+                              <input
+                                v-model.number="vesselEndLevel"
+                                type="number"
+                                min="0"
+                                :max="vesselGeometry.maxLevel"
+                                step="10"
+                                aria-label="终止液位（毫米）"
+                                class="vessel-level-input min-w-0 text-right"
+                              />
+                              <span class="text-slate-500">mm</span>
                             </div>
-                            <div>
+                            <div class="mt-0.5 text-sm text-slate-500">
                               体积：<span class="font-semibold text-brand-deep">{{
                                 vesselEndVolume.toFixed(2)
                               }}</span>
                               m³<template v-if="vesselEndMass !== null"
-                                ><span class="ml-1 whitespace-nowrap text-slate-500"
+                                ><span class="ml-1 whitespace-nowrap"
                                   >（{{ vesselEndMass.toFixed(2) }} t）</span
                                 ></template
                               >
@@ -3617,6 +3699,12 @@ watch(activeTab, (tab) => {
  * 注入语义色 —— 与起止解耦，倒挂时环色跟着换边）；钮的 border 从「2px 主色」改成
  * 「2px transparent + 分钮着色」，box-sizing: border-box，几何一字不差。
  *
+ * 变更-048 **撤掉两根读数柱**（使用方拿实机截图定：「红色框选部分不要了，相应的信息
+ * 通过引线指向滑块按钮」）：读数改成**挂在钮上的引线标注**（`.vessel-level-callout`，
+ * 位置由脚本按「钮心 = 柱高 − 值/量程 × 柱高」注入），引线走画布差值标注那套折线；
+ * 数字框不再画框、退成「带下划线的数字」（下划线即该读数的墨相），
+ * 悬停 / 聚焦的软拟态手感照留。滑块本体（凹槽 / 钮 / 钮环 / 色带）一字未动。
+ *
  * 三次配色迁移 + 两次形态迁移都不动的两条：纯白的高光（`rgba(255,255,255,…)`）
  * 是**光源色**不是面色（与玻璃面板的 `inset 0 1px 0 rgba(255,255,255,.85)`、
  * 与 `border-white` 同性质）；`.vessel-canvas` 那套也不在本轮的轮里。
@@ -3682,28 +3770,65 @@ watch(activeTab, (tab) => {
   outline-offset: 2px;
 }
 
-/* 液位输入框：软拟态外观 + 隐藏原生上下箭头 */
+/* 引线层：与定高柱同一坐标系（无 viewBox，用户单位即 px）。
+   overflow: visible —— 引线要从柱里伸出去指到标注栏 */
+.vessel-level-leader {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* 读数标注：绝对定位在标注栏里，top 由使用处按「钮心」注入（见 vesselCalloutTops），
+   translateY(-50%) 让标注以钮心为中轴。**刻意不给过渡** —— 钮与液面都是瞬移
+   （046 的规矩），标注自己滑会跟钮错开，引线圆点就对不上了 */
+.vessel-level-callout {
+  position: absolute;
+  left: 76px;
+  width: 216px;
+  transform: translateY(-50%);
+}
+
+/* 液位数字：仍可键入（865 / 1525 这类实测读数落不到步长格点上，「扫值」与
+   「录值」是两种手势 —— 045 定的分工）；048 起**不再画框**，退成「带下划线的数字」：
+   下划线即该读数的墨相（起始虚线 / 终止实线，与画布那两根线、钮环同一只墨，
+   经外层的 --v-callout-ink 带进来）。悬停亮出输入底、聚焦压入 —— 软拟态的
+   「按进去录值」手感照留，只是静止态不再占一张卡片的位置 */
 .vessel-level-input {
   border: none;
-  border-radius: 12px;
-  padding: 9px 14px;
-  background-color: #eeeef1;
+  border-bottom: 1px dashed var(--v-callout-ink);
+  border-radius: 6px;
+  padding: 1px 4px;
+  width: 3.75rem;
+  background-color: transparent;
   color: #0f172a;
   font-size: 14px;
   font-weight: 600;
   outline: none;
-  box-shadow:
-    4px 4px 8px rgba(90, 110, 150, 0.35),
-    -3px -3px 8px rgba(255, 255, 255, 0.9);
-  transition: box-shadow 260ms cubic-bezier(0.23, 1, 0.32, 1);
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* 终止的下划线是实线 —— 与它在图上那根实线液面同相 */
+.vessel-level-callout-end .vessel-level-input {
+  border-bottom-style: solid;
+}
+
+.vessel-level-input:hover {
+  background-color: #eeeef1;
 }
 
 /* 聚焦时呈"按入"质感的凹陷效果 */
 .vessel-level-input:focus {
   background-color: #e8e8e9;
+  border-bottom-color: transparent;
   box-shadow:
-    inset 3px 3px 6px rgba(90, 110, 150, 0.32),
-    inset -3px -3px 6px rgba(255, 255, 255, 0.9);
+    inset 2px 2px 4px rgba(90, 110, 150, 0.32),
+    inset -2px -2px 4px rgba(255, 255, 255, 0.9);
 }
 
 .vessel-level-input::-webkit-outer-spin-button,
