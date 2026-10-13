@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { formatMonthDay, getToday } from '../utils/format'
 
 // 日期选择字段（企业微信-会议同款的底部日历弹层）。
@@ -9,7 +9,9 @@ import { formatMonthDay, getToday } from '../utils/format'
 //   · 顶部灰底胶囊里嵌着当前选择，右侧是强调色的「确定」；
 //   · 下面是「日一二三四五六」星期行 + 按自然月铺开的月历；
 //   · 每月 1 号位显示「n月」而不是数字，滚动时一眼能看出月份分界；
-//   · 今天 / 选中用强调色圆点标出。
+//   · 今天 / 选中用强调色圆点标出；
+//   · 点那颗胶囊切出**年月面板**（‹ 年 › + 12 个月），用来一步跳到很早/很晚的年月
+//     —— 月历一次只铺 9 个月，光靠滚要到几年前得来回翻好几轮（使用方 2026-10-13 反馈）。
 //
 // 为什么手写网格，而不用 wot-design-uni 的 wd-calendar / wd-calendar-view：
 //   那两者的外观是「标题 + 年/月面板 + 今天标签」，要还原上面这套观感就得大量
@@ -38,11 +40,12 @@ const emit = defineEmits(['update:modelValue', 'change'])
 
 const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
-// 月度窗口：选中月往前 6 个月、往后 2 个月，共 9 个月。
+// 月度窗口：锚点月往前 6 个月、往后 2 个月，共 9 个月。
 // 为什么是有限窗口而不是"无限滚动"：小程序端一次渲染的节点越多越慢，
 // 9 个月约 780 个节点，是「够用（报表默认取本月 / 上周，回看也就几个月）」
-// 与「小程序渲染开销」之间的折中。窗口每次打开都以当前选中月为锚点重建，
-// 所以连着往更早的月份翻几次也能到达任意历史月份。想放宽改这两个常量即可。
+// 与「小程序渲染开销」之间的折中。
+// 窗口之外的月份由年月面板直接跳（改造前是靠"滚到最早一个月点一天 → 窗口跟着重建"
+// 一点点往回蹭，走到 2024 年得点好几轮；面板出来后这条路就不需要了）。想放宽改这两个常量即可。
 const MONTHS_BEFORE = 6
 const MONTHS_AFTER = 2
 
@@ -56,6 +59,25 @@ const sheetVisible = ref(false)
 const draft = ref('')
 const scrollTop = ref(0)
 
+// 年月面板是否盖在日历上（点顶部胶囊切换）。
+// 它只负责「跳到哪个月」，**不改选中值** —— 选哪天仍然只能在月历里点，
+// 免得"从年月面板进来看一眼"就把选择改掉了。
+const ymVisible = ref(false)
+// 面板里正在浏览的年份（‹ › 改它，点某个「n月」才真正跳走）
+const ymYear = ref(new Date().getFullYear())
+
+// 年月面板的年份上下限：只防手滑走到离谱的年份。
+// 为什么要有：Date 把 0~99 当 1900+ 处理，真翻到那儿显示会错乱；
+// 本项目的报表数据都在近几年，1970~2100 足够，想放开改这两个常量即可。
+const MIN_YEAR = 1970
+const MAX_YEAR = 2100
+
+// 月历窗口的锚点月（'YYYY-MM'），以它为轴往前 6 / 往后 2 铺 9 个月。
+// ⚠️ 刻意**不跟着 draft 走**（改造前是跟的）：点某一天只该换选中圆点，
+//    列表不能在脚下重排 —— 从前点一个远一点的日期，9 个月窗口会当场挪位，
+//    滚动位置就指到别的月份上去了。现在只有两处会换锚点：打开弹层、年月面板里跳月。
+const anchorMonthKey = ref('')
+
 const pad2 = (value) => String(value).padStart(2, '0')
 
 // 'YYYY-MM-DD' → 本地零点的 Date；非法返回 null。
@@ -67,6 +89,21 @@ function parseDate(value) {
   if (!year || !month || !day) return null
   const date = new Date(year, month - 1, day)
   return Number.isNaN(date.getTime()) ? null : date
+}
+
+// 'YYYY-MM' → 该月 1 号（本地零点）；非法返回 null
+function parseMonth(value) {
+  const [year, month] = String(value ?? '')
+    .split('-')
+    .map(Number)
+  if (!year || !month) return null
+  const date = new Date(year, month - 1, 1)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+// Date → 'YYYY-MM'（与 buildMonth 里造 key 用的是同一套写法）
+function monthKeyOf(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`
 }
 
 // 一个月 → 一块网格（前置空格 + 自然日）。行数按内容算，和系统日历一样是 4~6 行。
@@ -103,7 +140,8 @@ function buildMonth(first, todayKey) {
 }
 
 const months = computed(() => {
-  const anchor = parseDate(draft.value) || new Date()
+  // 锚点还没设过（弹层没开过）时按今天铺一份，保证首帧就有内容
+  const anchor = parseMonth(anchorMonthKey.value) || new Date()
   const todayKey = getToday()
   const list = []
   for (let offset = -MONTHS_BEFORE; offset <= MONTHS_AFTER; offset += 1) {
@@ -122,26 +160,44 @@ const chipText = computed(() => {
   return date.getFullYear() === currentYear ? text : `${date.getFullYear()}年${text}`
 })
 
-// 选中月之前的月份总共占多高 → scroll-top。
+// 锚点月之前的月份总共占多高 → scroll-top。
 // 行数由网格自己决定，所以这里用同一份 months 数据算，不写死行数。
-function scrollOffsetOf(value) {
-  const date = parseDate(value) || new Date()
-  const key = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`
+// ⚠️ 必须在锚点已经落定之后再调（它读的是 months，而 months 认锚点）。
+function scrollOffsetOf(monthKey) {
   let offset = 0
   for (const month of months.value) {
-    if (month.key === key) break
+    if (month.key === monthKey) break
     offset += MONTH_PADDING_RPX + Math.ceil(month.cells.length / 7) * CELL_HEIGHT_RPX
   }
   // uni.upx2px：三端都有的 rpx → px 换算，基准与样式里的 rpx 一致
   return uni.upx2px(offset)
 }
 
+// 滚到指定位置。
+// scroll-view 只在 scroll-top **变化**时才动 —— 目标值和当前值刚好相同时（典型场景：
+// 在日历里滚远了，点开年月面板又选了同一个月份），直接设值等于什么都没发生，
+// 看着就像点了个死键。所以先挪 1px 再挪回去，让"回到这个月"这件事永远有效。
+function scrollTo(offset) {
+  if (scrollTop.value === offset) {
+    scrollTop.value = offset - 1
+    nextTick(() => {
+      scrollTop.value = offset
+    })
+    return
+  }
+  scrollTop.value = offset
+}
+
 function openSheet() {
   draft.value = props.modelValue || getToday()
+  const date = parseDate(draft.value) || new Date()
   // 打开前先算好 scroll-top：它跟着首帧一起生效，不会出现"弹层先停在顶部、
   // 动画结束后再跳一下"。这里不用 scroll-into-view —— wd-popup 的内容是懒渲染的，
   // 节点要等动画中间态才存在，"先设值再找节点"的写法在小程序端并不可靠。
-  scrollTop.value = scrollOffsetOf(draft.value)
+  anchorMonthKey.value = monthKeyOf(date)
+  scrollTo(scrollOffsetOf(anchorMonthKey.value))
+  ymVisible.value = false // 每次打开都从月历开始，年月面板不留在上次的状态
+  ymYear.value = date.getFullYear()
   sheetVisible.value = true
 }
 
@@ -150,9 +206,51 @@ function pick(cell) {
   draft.value = cell.key
 }
 
-// 点头部胶囊：回到当前选择所在的月份（滚远了顺手点一下）
-function backToDraftMonth() {
-  scrollTop.value = scrollOffsetOf(draft.value)
+/**
+ * 点头部胶囊：切出 / 收起年月面板。
+ *
+ * 它替掉了改造前那句「回到当前选择所在的月份」—— 原来叫得动这条路的只有
+ * "滚远了想点回来"，而那件事在年月面板里点一下高亮的月份就能做，还能顺带跳到别的年月。
+ */
+function toggleYm() {
+  if (!ymVisible.value) {
+    // 面板打开时定位到「正在看的那个月」所在的年：翻着看的时候，
+    // 直接跳到选中日期的年份会让人一愣（正在看 2024-03，弹出来却是 2026 年）
+    const viewing = parseMonth(anchorMonthKey.value) || parseDate(draft.value) || new Date()
+    ymYear.value = viewing.getFullYear()
+  }
+  ymVisible.value = !ymVisible.value
+}
+
+const canPrevYear = computed(() => ymYear.value > MIN_YEAR)
+const canNextYear = computed(() => ymYear.value < MAX_YEAR)
+
+function shiftYear(step) {
+  ymYear.value = Math.min(MAX_YEAR, Math.max(MIN_YEAR, ymYear.value + step))
+}
+
+/** 年月面板里点某个月：收起面板，把月历滚到那个月（选中值不动） */
+async function jumpToMonth(month) {
+  const key = `${ymYear.value}-${pad2(month)}`
+  ymVisible.value = false
+  anchorMonthKey.value = key
+  // ⚠️ 顺序不能反过来：换锚点会把 9 个月**整块重建**（每块的 key 都变了），
+  //    必须等这次 DOM 换完再设 scroll-top —— 设早了浏览器会先滚到位、紧接着内容被替换，
+  //    滚动位置被重置回 0，人看到的是"点了月份，日历还停在原来的地方"。
+  //    （2026-10-13 H5 无头实测：先设值的话 scrollTop 停在 0，目标月落在可视区外 1.5 屏。）
+  await nextTick()
+  scrollTo(scrollOffsetOf(key))
+}
+
+// 年月面板里的状态标记：与月历同一套约定（今天 → 淡填充，选中 → 实心强调色）
+function isCurrentMonth(month) {
+  const now = new Date()
+  return now.getFullYear() === ymYear.value && now.getMonth() + 1 === month
+}
+
+function isSelectedMonth(month) {
+  const date = parseDate(draft.value)
+  return Boolean(date) && date.getFullYear() === ymYear.value && date.getMonth() + 1 === month
 }
 
 function confirm() {
@@ -185,45 +283,90 @@ function confirm() {
     >
       <view class="date-sheet">
         <view class="date-sheet__head">
-          <!-- 灰底轨道里嵌着当前选择，右侧是「确定」—— 对齐企业微信会议那版 -->
-          <view class="date-sheet__track" @click="backToDraftMonth">
-            <view class="date-sheet__chip">{{ chipText }}</view>
+          <!-- 灰底轨道里嵌着当前选择，右侧是「确定」—— 对齐企业微信会议那版。
+               胶囊末尾那颗小箭头＝「这里点得开年月面板」，点它切出 ‹ 年 › + 12 个月。 -->
+          <view class="date-sheet__track" @click="toggleYm">
+            <view class="date-sheet__chip">
+              <text>{{ chipText }}</text>
+              <wd-icon name="caret-down" size="12px" />
+            </view>
           </view>
           <view class="date-sheet__confirm" @click="confirm">确定</view>
         </view>
 
-        <view class="date-sheet__week">
-          <view v-for="label in WEEK_LABELS" :key="label" class="date-sheet__week-item">
-            {{ label }}
-          </view>
-        </view>
-
-        <!-- 滚动必须交给 scroll-view：小程序的 view 上写 overflow 不会滚
-             （与 ProductSelectDialog / ImageParse 的选择器同一个原因） -->
-        <scroll-view
-          class="date-sheet__scroll"
-          scroll-y
-          scroll-with-animation
-          :scroll-top="scrollTop"
-        >
-          <view v-for="month in months" :key="month.key" class="date-sheet__month">
-            <view
-              v-for="cell in month.cells"
-              :key="cell.key"
-              class="date-sheet__day"
-              :class="{
-                'is-lead': cell.lead,
-                'is-month': cell.monthStart,
-                'is-today': cell.today,
-                'is-selected': cell.selected,
-                'is-disabled': cell.disabled,
-              }"
-              @click="pick(cell)"
-            >
-              <text class="date-sheet__num">{{ cell.label }}</text>
+        <!-- 星期行 + 月历包一层，好让年月面板绝对定位盖住它们俩。
+             面板开着时给这层打上 is-ym：底下的日历会被藏起来（见样式里那段说明） -->
+        <view class="date-sheet__body" :class="{ 'is-ym': ymVisible }">
+          <view class="date-sheet__week">
+            <view v-for="label in WEEK_LABELS" :key="label" class="date-sheet__week-item">
+              {{ label }}
             </view>
           </view>
-        </scroll-view>
+
+          <!-- 滚动必须交给 scroll-view：小程序的 view 上写 overflow 不会滚
+               （与 ProductSelectDialog / ImageParse 的选择器同一个原因） -->
+          <scroll-view
+            class="date-sheet__scroll"
+            scroll-y
+            scroll-with-animation
+            :scroll-top="scrollTop"
+          >
+            <view v-for="month in months" :key="month.key" class="date-sheet__month">
+              <view
+                v-for="cell in month.cells"
+                :key="cell.key"
+                class="date-sheet__day"
+                :class="{
+                  'is-lead': cell.lead,
+                  'is-month': cell.monthStart,
+                  'is-today': cell.today,
+                  'is-selected': cell.selected,
+                  'is-disabled': cell.disabled,
+                }"
+                @click="pick(cell)"
+              >
+                <text class="date-sheet__num">{{ cell.label }}</text>
+              </view>
+            </view>
+          </scroll-view>
+
+          <!-- 年月面板：一步跳到任意年月（月历一次只铺 9 个月，光靠滚要到几年前得翻好几轮）。
+               它是一层**盖在日历上的**覆盖层而不是替换内容 —— 这样底层 scroll-view 始终挂载，
+               点完月份把新的 scroll-top 设进去就能立即生效。
+               面板自己没有背景色：底下的日历已经用 visibility 藏了（见样式），
+               留空才和弹层其它地方一模一样、看不出这里叠了一层。 -->
+          <view v-if="ymVisible" class="date-sheet__ym">
+            <view class="date-sheet__ym-bar">
+              <view
+                class="date-sheet__ym-nav"
+                :class="{ 'is-disabled': !canPrevYear }"
+                @click="shiftYear(-1)"
+              >
+                <wd-icon name="arrow-left" size="16px" />
+              </view>
+              <text class="date-sheet__ym-year">{{ ymYear }}年</text>
+              <view
+                class="date-sheet__ym-nav"
+                :class="{ 'is-disabled': !canNextYear }"
+                @click="shiftYear(1)"
+              >
+                <wd-icon name="arrow-right" size="16px" />
+              </view>
+            </view>
+
+            <view class="date-sheet__ym-grid">
+              <view
+                v-for="month in 12"
+                :key="month"
+                class="date-sheet__ym-cell"
+                :class="{ 'is-today': isCurrentMonth(month), 'is-selected': isSelectedMonth(month) }"
+                @click="jumpToMonth(month)"
+              >
+                <text class="date-sheet__ym-num">{{ month }}月</text>
+              </view>
+            </view>
+          </view>
+        </view>
       </view>
     </wd-popup>
   </view>
@@ -294,6 +437,7 @@ function confirm() {
     flex: 1;
     align-items: center;
     justify-content: center;
+    gap: 8rpx; // 文字与那颗「点得开年月面板」的小箭头之间
     padding: 12rpx 32rpx;
     border-radius: $ui-radius-pill;
     // 深色下 $ui-surface-3 比轨道更亮（选中填充）；浅色下由文件末尾那条覆盖成纯白
@@ -315,6 +459,23 @@ function confirm() {
     &:active {
       opacity: 0.6;
     }
+  }
+
+  // 星期行 + 月历的公共容器：年月面板要绝对定位盖在它们上面，所以得有个定位基准
+  &__body {
+    position: relative;
+  }
+
+  // 年月面板打开时把日历藏起来。
+  // 为什么是 visibility 而不是别的：
+  //   · v-if / v-show(display:none) 都会让 scroll-view 丢掉布局或整块重挂，
+  //     滚动位置随之被清零 —— 而"点完月份要立刻滚到那个月"正依赖它保持挂载；
+  //   · visibility 只是不画，布局与滚动位置都原样留着。
+  // 为什么要藏：弹层底色是玻璃膜（--ui-glass-fill＝5% 白），面板若只靠一层半透明盖上去，
+  // 日历的数字会从面板里透出来（2026-10-13 H5 无头实测，截图里两层数字叠在一起）。
+  &__body.is-ym &__week,
+  &__body.is-ym &__scroll {
+    visibility: hidden;
   }
 
   &__week {
@@ -384,6 +545,98 @@ function confirm() {
   }
 
   &__day.is-selected &__num {
+    background-color: $ui-accent;
+    color: $ui-on-accent;
+    font-weight: 600;
+  }
+
+  /* ===== 年月面板 =====
+     盖在「星期行 + 月历」上的覆盖层，用来一步跳到任意年月。 */
+  &__ym {
+    position: absolute;
+    // 四边都写：inset 简写在小程序端老一些的 WebView 上不一定认
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    // 刻意不写背景：日历已经被上面的 is-ym 规则藏了，这里透出的就是弹层自己的底色
+    // （写一层半透明的玻璃膜反而会花：那是"再盖一层"，不是"换成它"）
+  }
+
+  &__ym-bar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    padding: 12rpx 0; // 让 ‹ 2026年 › 这行的中线与「当前选择」胶囊大致齐平
+  }
+
+  &__ym-nav {
+    display: flex;
+    width: 64rpx;
+    height: 64rpx;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: $ui-text-2;
+
+    &:active {
+      background-color: $ui-surface-2;
+    }
+
+    // 到顶 / 到底的年份箭头：还是可以点（点了也不会越界），只是看得出"到头了"
+    &.is-disabled {
+      color: $ui-text-3;
+      opacity: 0.4;
+    }
+  }
+
+  &__ym-year {
+    min-width: 200rpx;
+    color: $ui-text;
+    font-size: 32rpx;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  &__ym-grid {
+    display: flex;
+    flex: 1; // 撑满面板剩下的高度，4 行月份才分布得开
+    flex-wrap: wrap;
+    align-content: space-evenly;
+  }
+
+  &__ym-cell {
+    display: flex;
+    flex: 0 0 33.3333%; // 3 列 × 4 行 = 一整年
+    height: 96rpx; // 与日期格同高，两层的疏密看起来是一套
+    align-items: center;
+    justify-content: center;
+    color: $ui-text;
+    font-size: 30rpx;
+  }
+
+  // 月份胶囊（比日期的圆点宽，好放下「10月」两个字）
+  &__ym-num {
+    display: flex;
+    width: 148rpx;
+    height: 76rpx;
+    align-items: center;
+    justify-content: center;
+    border-radius: $ui-radius-pill;
+    transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+  }
+
+  // ⚠️ 同上面日期格那套：后写的赢。顺序 = 今天 → 选中。
+  &__ym-cell.is-today &__ym-num {
+    background-color: $ui-accent-soft;
+    color: $ui-accent-text;
+    font-weight: 600;
+  }
+
+  &__ym-cell.is-selected &__ym-num {
     background-color: $ui-accent;
     color: $ui-on-accent;
     font-weight: 600;

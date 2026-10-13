@@ -2038,10 +2038,10 @@ const vesselWaveSwatch = computed(() => ({
 //   · 拖动中（vesselRailDragWhich 不为空）被拖的那个永远画在自己的真实刻度上；
 //   · 起手那一下液位也不跳 —— 拖动映射的是手指位移，见 moveRailDrag 里的 pct0 锚点。
 //
-// 让开的量按**像素**算、不按百分比：手柄是固定屏幕尺寸的胶囊（24px 高），轨道高度却随罐型
+// 让开的量按**像素**算、不按百分比：手柄是固定屏幕尺寸的胶囊（28px 高），轨道高度却随罐型
 // 与屏幕在 ~100px（卧式罐在手机上）到 ~250px（立式罐）之间变 —— 固定百分比在矮轨道上只让开
 // 几像素，两个胶囊照样叠着（2026-10-10 真机截图撞见的正是这个）。
-const RAIL_HANDLE_MIN_PX = 32 // 两个手柄中心至少隔这么多 px（胶囊 24px + 一点缝）
+const RAIL_HANDLE_MIN_PX = 36 // 两个手柄中心至少隔这么多 px（胶囊 28px 画出来 30px + 6px 缝）
 
 // 轨道在屏幕上的高度（px）。手柄是固定屏幕像素、让开量按像素算，所以得知道轨道多高；
 // 而轨道高度 = 图纸高 × sliderHeightPct，图纸高只能在运行期量（见 measureVesselRailHeight）。
@@ -2049,6 +2049,7 @@ const RAIL_HANDLE_MIN_PX = 32 // 两个手柄中心至少隔这么多 px（胶�
 const vesselRailHeightPx = ref(0)
 
 // 正在被拖的手柄（'' | 'start' | 'end'）：驱动「另一个让开」与手柄的高亮/置顶样式。
+// 从落点到第一下 move（认领）之间还是 ''，这段时间不给任何高亮。
 // 拖动会话本身是普通对象、不进响应式，见下面的 vesselRailDrag。
 const vesselRailDragWhich = ref('')
 
@@ -2489,18 +2490,44 @@ function scheduleVesselRailMeasure(delay = 0) {
   setTimeout(measureVesselRailHeight, delay)
 }
 
-function startRailDrag(which, event) {
+// 起手：整条轨道（含热区条与胶囊）都从这里进。落点**不**预先指定手柄 —— which 先空着，
+// 第一下 move 量到 rect 之后按「落点离哪个手柄画出来的位置近」认领（nearestRailHandle）。
+// 认领推迟到那时是因为认领要比屏幕像素距离，得先知道图纸 rect（异步一帧）。
+function startRailDrag(event) {
   const y = railPointerY(event)
   if (y === null) return
 
-  vesselRailDrag = { which, y0: y, rect: null, pct0: null, fingerPct0: 0, tries: 1 }
-  vesselRailDragWhich.value = which
+  const drag = { which: '', y0: y, rect: null, pct0: null, fingerPct0: 0, tries: 1 }
+  vesselRailDrag = drag
+  vesselRailDragWhich.value = ''
   measureVesselDiagram((rect) => {
-    if (vesselRailDrag && vesselRailDrag.which === which) vesselRailDrag.rect = rect
+    // ⚠️ 这条守卫比的是会话对象本身，不能比 which：落到轨道上起手时 which 还是 ''，
+    //    第一下 move 认领之后才变成 'start'/'end'，比 which 会把刚量到的 rect 丢掉。
+    if (vesselRailDrag === drag) drag.rect = rect
     // 顺手把「轨道多高」刷新一遍（同一只盒子，不多花一次查询）——
     // 拖过一次之后让开量就是按当前屏幕算的了
     if (rect && rect.height) vesselRailHeightPx.value = (vesselDiagram.value.sliderHeightPct / 100) * rect.height
   })
+}
+
+// 屏幕 Y 离哪个手柄「画出来的位置」更近（含让开偏移，见 railHandleOffsets）。
+// 两个手柄挨着时，胶囊上缘外几像素起手会落到旁边那个胶囊的热区里 ——
+// 认领按落点算，认的是「手指在哪」，这类误抓就没了。
+function nearestRailHandle(y, rect) {
+  const railHeight = (vesselDiagram.value.sliderHeightPct / 100) * rect.height
+  const railBottom = rect.top + ((vesselDiagram.value.sliderTopPct + vesselDiagram.value.sliderHeightPct) / 100) * rect.height
+  let best = 'start'
+  let bestDist = Infinity
+  for (const handle of vesselRailHandles.value) {
+    // 胶囊中心 = 轨道底 − 刻度高度 − 让开量（bottom% + margin-bottom 把盒底推到那儿，translateY(50%) 再把中心压上去）
+    const centerY = railBottom - (handle.percent / 100) * railHeight - handle.offsetPx
+    const dist = Math.abs(y - centerY)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = handle.which
+    }
+  }
+  return best
 }
 
 function moveRailDrag(event) {
@@ -2517,6 +2544,13 @@ function moveRailDrag(event) {
       })
     }
     return
+  }
+
+  if (drag.which === '') {
+    // 落到轨道（不是胶囊）上起的拖：按落点认领一个手柄。
+    // 认领之后走的是与直接抓胶囊完全相同的那条路 —— 锚点仍按认领到的液位算，液位不跳。
+    drag.which = nearestRailHandle(drag.y0, drag.rect)
+    vesselRailDragWhich.value = drag.which
   }
 
   if (drag.pct0 === null) {
@@ -2545,9 +2579,9 @@ function endRailDrag() {
 let railLastTouchAt = 0
 const RAIL_TOUCH_DEDUPE_MS = 700
 
-function startRailDragByTouch(which, event) {
+function startRailDragByTouch(event) {
   railLastTouchAt = Date.now()
-  startRailDrag(which, event)
+  startRailDrag(event)
 }
 
 // 鼠标拖出胶囊也要继续跟手，所以 move / up 挂在 window 上（只有 H5 桌面端会走到这里，
@@ -2562,9 +2596,9 @@ function stopRailMouseDrag() {
   endRailDrag()
 }
 
-function startRailDragByMouse(which, event) {
+function startRailDragByMouse(event) {
   if (Date.now() - railLastTouchAt < RAIL_TOUCH_DEDUPE_MS) return
-  startRailDrag(which, event)
+  startRailDrag(event)
   if (!vesselRailDrag) return
   window.addEventListener('mousemove', handleRailMouseMove)
   window.addEventListener('mouseup', stopRailMouseDrag)
@@ -2616,6 +2650,14 @@ onMounted(() => {
   fetchAdminOnlyData()
   fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
+})
+
+// 补拉登录后的 admin 明细：登录页是 navigateTo 进去、saveAuth 后 navigateBack 回来的，
+// 首页不重建、onMounted 不再跑（挂载那一次被 fetchAdminOnlyData 里的 isAdmin() 挡掉了）。
+// 于是「未登录进首页 → 登录 → 工单/领料/入库/货物移动几页有权限却一直空着」。
+// authState 是响应式的，权限一到就补拉，取的四个数据集与挂载时完全一致。
+watch(() => isAdmin(), (admin) => {
+  if (admin) fetchAdminOnlyData()
 })
 
 onUnmounted(cleanupVessel)
@@ -3996,13 +4038,25 @@ onPullDownRefresh(async () => {
                   <!-- 液位滑块：轨道贴罐体左缘、与罐体同高（同一个液位刻度），两个玻璃手柄
                        一上一下 —— 起始液位与终止液位。层在图纸与引线标注之上（使用方
                        2026-10-10 要求「在图层上方」）。
-                       只绑 touch/mouse：小程序端没有 mouse 事件，H5 桌面端没有 touch，
-                       两条都给（与下面 ± 按钮同一个理由）。 -->
+                       起手事件挂整条轨道上、两条都给（小程序端没有 mouse、H5 桌面端没有
+                       touch，同下面 ± 按钮的理由）：胶囊、轨道、热区条上按下的都会冒泡到
+                       这里。落点不预先指定手柄，第一下 move 按「离谁画出来的位置近」认领
+                       —— 见 startRailDrag / nearestRailHandle（2026-10-13，手机端反馈
+                       失触概率高：原来只有胶囊本体 ±10px 能接到手指）。 -->
                   <view
                     v-if="selectedVessel"
                     class="vessel-rail"
                     :style="vesselDiagram.sliderStyle"
+                    @touchstart.stop.prevent="startRailDragByTouch($event)"
+                    @touchmove.stop.prevent="moveRailDrag"
+                    @touchend="endRailDrag"
+                    @touchcancel="endRailDrag"
+                    @mousedown.stop.prevent="startRailDragByMouse($event)"
                   >
+                    <!-- 起手热区：轨道只有 10px 宽，手指很难正落在上面。这条看不见的
+                         （左右各 11px，共 32px）把「摸轨道」也算起手。画在最底层：
+                         轨道与胶囊是后面的兄弟节点，各自的命中照旧压在上面。 -->
+                    <view class="vessel-rail__grab"></view>
                     <view class="vessel-rail__track"></view>
                     <view
                       v-for="handle in vesselRailHandles"
@@ -4011,11 +4065,6 @@ onPullDownRefresh(async () => {
                       :class="[handle.class, { 'is-dragging': vesselRailDragWhich === handle.which }]"
                       :style="{ bottom: `${handle.percent.toFixed(4)}%`, marginBottom: `${handle.offsetPx.toFixed(2)}px` }"
                       :aria-label="handle.label"
-                      @touchstart.stop.prevent="startRailDragByTouch(handle.which, $event)"
-                      @touchmove.stop.prevent="moveRailDrag"
-                      @touchend="endRailDrag"
-                      @touchcancel="endRailDrag"
-                      @mousedown.stop.prevent="startRailDragByMouse(handle.which, $event)"
                     >
                       <!-- 小标与控件列那两个一模一样：起始 = 起始虚线，终止 = 波峰液面 -->
                       <view
@@ -5192,7 +5241,20 @@ onPullDownRefresh(async () => {
   z-index: 3; /* 压住底图、液体与引线标注 */
   width: 10px;
   margin-left: -5px; /* 轨道中心线落在罐体左缘上 */
-  touch-action: none; /* 手柄上的滑动不参与页面滚动 */
+  touch-action: none; /* 轨道上的滑动不参与页面滚动 */
+}
+
+/* 起手热区：看不见、只是把轨道左右各撑宽 11px（10px 轨道 → 32px 加宽区）。
+   落在它上面的触摸冒泡到 .vessel-rail 的起手处理，按落点认领手柄（见模板里的说明）。
+   画在最底层（它是 .vessel-rail 的第一个子节点）：轨道与胶囊的命中照旧优先。
+   touch-action 不继承（同下面手柄那条注释），所以这里也得自己写一份。 */
+.vessel-rail__grab {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -11px;
+  right: -11px;
+  touch-action: none;
 }
 
 /* 轨道本身也是一条玻璃（同一处材质说明见上面的段落注释），只是窄。
@@ -5208,6 +5270,7 @@ onPullDownRefresh(async () => {
   border-color: $ui-glass-line-hover;
   /* 三层大投影在窄条上有一半落在条子外面、看着像脏边，换成一条贴身晕影 */
   box-shadow: 0 2px 10px $ui-glass-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  touch-action: none; /* 同手柄：摸到轨道上起手，别让页面抢着滚 */
 }
 
 /* 手柄：从轨道中心线向右伸出（罐体左侧那条空白太窄，手机上放不下一个胶囊）。
@@ -5217,7 +5280,7 @@ onPullDownRefresh(async () => {
   position: absolute;
   left: 50%;
   display: flex;
-  height: 24px;
+  height: 28px;
   align-items: center;
   gap: 4px;
   padding: 0 8px 0 6px;
@@ -5240,15 +5303,17 @@ onPullDownRefresh(async () => {
   width: 12px;
 }
 
-/* 手感区：胶囊只有 24px 高，上下各撑 10px 凑够 44px。
-   伪元素不是事件目标（touch 落在它上面照样冒泡到手柄），所以只扩热区、不动外观。 */
+/* 手感区：胶囊 28px（画出来 30px，含 1px 玻璃描边）在手机上还是窄 —— 上下各再撑 14px
+   （合 58px），左边 8px 把轨道那侧搭上，右边 14px 兜住手指偏出胶囊的情形。
+   伪元素不是事件目标（touch 落在它上面照样冒泡到 .vessel-rail 的起手处理），只扩热区、不动外观。
+   2026-10-13 由 ±10px 扩到这里：手机端反馈「失触概率高」——原来的热区外 4px 就摸不到了。 */
 .vessel-rail__handle::before {
   content: '';
   position: absolute;
-  top: -10px;
-  right: 0;
-  bottom: -10px;
-  left: 0;
+  top: -14px;
+  right: -14px;
+  bottom: -14px;
+  left: -8px;
 }
 
 /* 拖动中：提亮、微放大、压到另一个手柄之上（两个叠在一起时拖的一定是被按住的这个） */

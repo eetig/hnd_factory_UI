@@ -1192,11 +1192,18 @@ onUnmounted(() => {
         >
           <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
             <!-- 缩略图本身就是「看原图」的入口：整张单据只有这一张图，
-                 点开进平台原生的图片查看器（可缩放可保存） -->
-            <img
+                 点开进平台原生的图片查看器（可缩放可保存）。
+
+                 ⚠️ 这里必须是 uni 的 <image>，**不能写原生 `<img>`**：拍照（以及框架自己弹
+                 ActionSheet 那条相册路）给的临时路径是 `_doc/uniapp_temp_<时间戳>/camera/xxx.jpg`
+                 这种**相对**地址，全仓只有 uni 的那套（<image> 组件与 previewImage / uploadFile 等
+                 API，App 端是同一个 wc()）会把它转成 file:// 绝对地址，原生 `<img>` 会被 WebView
+                 当成「相对当前页面」去拼 → 真机上「已选」网格里有图（那是 PhotoGrid 的 <image>），
+                 同一张图的这张缩略图却是裂的（2026-10-13 手机端实测，包 1.0.3）。 -->
+            <image
               :src="image.url"
-              :alt="image.name"
-              class="h-10 w-10 shrink-0 rounded border border-slate-200 object-cover"
+              class="result__thumb shrink-0"
+              mode="aspectFill"
               @click="previewImage(image.url)"
             />
             <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
@@ -1859,6 +1866,17 @@ $parse-breakpoint: 768px;
   flex-direction: column;
   gap: 16px;
   padding: 16px;
+}
+
+/* 卡片表头那张缩略图（也是「看原图」的入口）。
+   尺寸写死在类里而不是用 Tailwind 的 h-10/w-10：<image> 自带 320×240 的基础样式，
+   这里跟 .doccheck__thumb 一套写法，省得为压过框架默认尺寸去掰扯优先级。 */
+.result__thumb {
+  width: 40px;
+  height: 40px;
+  border: 1px solid $ui-border;
+  border-radius: $ui-radius-sm;
+  overflow: hidden;
 }
 
 /* ---- 单据信息：整张单据一份 ---- */
