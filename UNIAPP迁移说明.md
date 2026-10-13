@@ -723,8 +723,8 @@ App 的 APK 也会白白胖一圈。
   「打包前确认 `APP_ENV=remote`」这条既有规矩顺带把底图也管住了。
 - `npm run build:{h5,app,mp-weixin}` 构建后都会跑 `resources/strip-vessel-images.mjs`：
   `remote` 下把**三端**产物里的 8 张底图剔掉（只剔小程序的话，App 的 APK 会白带 2.4 MB）；
-  `local` 下跳过。忘了跑的后果是**包变大**，不是包坏掉
-  （remote 下图片地址本来就是绝对的 https）。
+  `local` 下跳过。忘了跑的后果通常是**包变大**，不是包坏掉（remote 下图片地址本来就是绝对的 https）——
+  但小程序端**包一大就直接传不上去**：2026-10-13 首次上传实测主包 2.9 MB，微信 IDE 报 `80051` 拒收。
 
 **运维侧要做一次**（只这一件事）：
 
@@ -756,7 +756,7 @@ App 的 APK 也会白白胖一圈。
 
 ### 6.2 小程序 appid 与合法域名
 
-- `src/manifest.json` 的 `mp-weixin.appid` 目前为空，需填实际 appid；
+- `src/manifest.json` 的 `mp-weixin.appid` = `wx6fba5838f0f75df7`（2026-10-13 首次上传已在用）；
 - 后端地址已收敛到 `src/api/env.js` 的两套预设（`local` / `remote`），
   **打包前必须确认 `APP_ENV === 'remote'`**（值为 `https://hbhnd.cloud`）——
   切换方式、服务清单与实测记录见第 10 节；
@@ -1078,6 +1078,15 @@ export const APP_ENV = 'local'
 >   否则打出来的就是「新壳 + 旧 JS」，装到手机上照样连开发机（复盘见 10.5）。
 > - **小程序端没有这道闸门**：`check-app-env` 只查 App 侧那四类产物，不查 `mp-weixin`。
 >   要让小程序连线上，同样先切 `remote`，但只能人工核对（变更-018 记过这一条）。
+> - **小程序上传前必须用 `npm run build:mp-weixin` 构建**（2026-10-13 首次上传踩过，报 `80051`）：
+>   这条命令末尾会跑 `strip-vessel-images` 把 8 张底图（2.3 MB）剔出主包；用别的构建入口，
+>   产物带着图 = 主包 ≈ 2.9 MB 超微信 2 MB 上限、直接传不上去。传前瞄一眼
+>   `dist/build/mp-weixin/static/` 应为空；已经带图的旧产物**不用重编**，
+>   `npm run strip:vessel-images` 一条命令补救。
+> - ⚠️ **最常踩的入口是 HBuilderX**：从 HBuilderX 里发起的打包**不执行 npm 脚本**
+>   —— 2026-10-13 晚两次上传失败都是这么打出来的包（npm 日志无记录、产物与正式包
+>   逐字节同源、只差剔图一步）。传前务必亲眼确认 `dist/build/mp-weixin/static/` 为空。
+>   根治方向（待做）：把剔图从 npm 脚本挪进构建配置本身，任何入口都跑得到。
 
 ### 10.3 远程四路由实测（2026-10-01，开发机直连公网）
 
