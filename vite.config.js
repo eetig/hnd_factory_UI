@@ -7,6 +7,10 @@ import autoprefixer from 'autoprefixer'
 // 这样「前端切环境」和「H5 代理切环境」不会各切一半 —— 那种错配只在 H5 上暴露，
 // App / 小程序端反而正常，很难第一时间发现。
 import { ACTIVE_ENV, APP_ENV } from './src/api/env.js'
+// 构建期硬闸：剔底图 + 环境自检（正式包里不许出现开发机地址 / 不许带 2.4 MB 底图）。
+// ⚠️ 刻意挂在 vite 配置上、而不是 npm 脚本链尾：**HBuilderX 发起的构建不跑 npm 脚本**
+//    （修复-007 的 80051 事故就是这么来的），只有进到 vite 里才能保证任何入口都跑得到。
+import buildGuard from './resources/build-guard.mjs'
 
 // 小程序端才有必要跑 weapp-tailwindcss：
 // 它负责把 Tailwind 生成的非法选择器改写成 WXSS 能接受的形态
@@ -61,7 +65,8 @@ function buildProxy() {
 }
 
 export default defineConfig({
-  plugins: [uni(), ...(isMiniProgram ? [uvtw()] : [])],
+  // buildGuard 放最后：它的 closeBundle 要在所有产物写盘之后才跑（不然可能剔了个空）
+  plugins: [uni(), ...(isMiniProgram ? [uvtw()] : []), buildGuard()],
 
   // postcss 配置内联在此，不用 postcss.config.js。
   // 原因：本项目 package.json 未声明 "type": "module"（跟随 uni-app 官方模板），

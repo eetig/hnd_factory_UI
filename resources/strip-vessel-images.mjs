@@ -19,7 +19,10 @@
 //
 // 用法：
 //   npm run build:{h5,app,mp-weixin}   构建后自动跑（见 package.json）
-//   npm run strip:vessel-images        单独复验
+//   npm run strip:vessel-images        单独复验 / 补救（误导入了别的构建入口时）
+//
+// ⚠️ 2026-10-13 起这件事已由**构建期硬闸**（resources/build-guard.mjs，挂在 vite 配置上）
+//    自动完成 —— 连不跑 npm 脚本的 HBuilderX 入口也覆盖。本脚本保留作独立复验与补救。
 //
 // 退出码：0 = 通过（已剔，或本来就该保留）；2 = remote 却没配取图地址（坏包，必须拦住）。
 
@@ -27,6 +30,8 @@ import { readdirSync, rmSync, statSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { APP_ENV, VESSEL_IMAGE_ORIGIN } from '../src/api/env.js'
+// 命名约定与构建期硬闸共用一处，防两处口径漂移
+import { VESSEL_IMAGE_RE } from './build-guard.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 /**
@@ -36,9 +41,6 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url))
  * （远端模式下 App 也是从服务器取图的，包内那份纯属死重量）。
  */
 const BUILD_DIRS = ['mp-weixin', 'app', 'h5'].map((p) => join(ROOT, 'dist', 'build', p, 'static'))
-// 底图在 static/ 下的命名约定：都以 vessel 开头。`compress-vessel-images.py`
-// 产出的就是这些名字（含 -dark 与 -product150 之类的后缀）
-const VESSEL_IMAGE_RE = /^vessel.*\.png$/i
 
 function dirSizeKb(dir, names) {
   let bytes = 0

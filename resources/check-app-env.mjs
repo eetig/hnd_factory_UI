@@ -5,10 +5,12 @@
 //   打错一次环境，包就是错的，而且症状是「装得上、打得开、就是连不上后端」，现场极难判断。
 //   已经真实踩过一次，复盘见 `UNIAPP迁移说明.md` 第 10.5 节。
 //
-// 为什么扫四个产物、而不是只扫一个：
+// 为什么扫五类产物、而不是只扫一个：
 //   真正装到手机上的是 dist/release/apk/*.apk，热更新用 dist/cache/wgt，
 //   dist/build/app 只是「编译结果」。只查 dist/build/app 会出现
 //   「检查通过、但错包照样发出去」—— 这正是上一版检查的漏洞。
+//   小程序产物（dist/build/mp-weixin）2026-10-13 起纳入：那天真机反馈过小程序包
+//   连的仍是开发机（`url not in domain list:192.168.3.2`），而当时这里根本不看小程序。
 //
 // 用法：
 //   npm run check:app-env      独立复验（装上手机前最后一道闸）
@@ -21,13 +23,11 @@ import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
 import { APP_ENV, ACTIVE_ENV } from '../src/api/env.js'
+// 检测常量与构建期硬闸共用一处（vite.config.js 挂的 build-guard.mjs 是同一套口径）
+import { LAN_RE, readTextTree } from './build-guard.mjs'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const rel = (p) => relative(ROOT, p).split(sep).join('/')
-
-// RFC1918 私网地址：产物里出现即说明开发机地址被内联进去了
-const LAN_RE =
-  /(?<![0-9.])(?:10[.][0-9]{1,3}|172[.](?:1[6-9]|2[0-9]|3[01])|192[.]168)[.][0-9]{1,3}[.][0-9]{1,3}(?![0-9])/g
 
 const isRemote = APP_ENV === 'remote'
 const expectedHost = ACTIVE_ENV.apiOrigin ? new URL(ACTIVE_ENV.apiOrigin).hostname : ''
@@ -60,6 +60,10 @@ function collect() {
   fileCase('App 产物', join(ROOT, 'dist/build/app/app-service.js'))
   fileCase('App-Plus 产物', join(ROOT, 'dist/build/app-plus/app-service.js'))
   for (const f of walk(join(ROOT, 'dist/cache/wgt'), (n) => n === 'app-service.js')) fileCase('wgt 缓存', f)
+  // 小程序产物：整目录合并扫描 —— 环境常量可能落在 api/env.js、common/vendor.js
+  // 或任意页面 chunk 里，挑单个文件看会漏。目录不在 = 这次没打小程序包（text=null 跳过）
+  const mpDir = join(ROOT, 'dist/build/mp-weixin')
+  list.push({ label: '小程序产物', file: mpDir, text: readTextTree(mpDir) })
   return { list, apkDir: join(ROOT, 'dist/release/apk') }
 }
 
@@ -119,6 +123,8 @@ async function main() {
     lines.push('     2) npm run build:app        （构建后会自动再跑本自检）')
     lines.push('     3) HBuilderX → 发行 → 原生App-云打包，重新打 APK（CLI 不能打 APK）')
     lines.push('     4) npm run check:app-env    （装上手机前的最后一道闸）')
+    lines.push('   小程序：npm run build:mp-weixin 重打后，在开发者工具重新上传')
+    lines.push('           （构建期硬闸同样复验小程序产物，见 resources/build-guard.mjs）')
     lines.push('   涉及产物：' + bad.join(' / '))
   } else {
     lines.push('✅ 通过：所有产物都不含开发机地址，且带线上域名。')
