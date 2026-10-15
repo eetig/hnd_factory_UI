@@ -69,7 +69,7 @@ EP 与 Tailwind 两侧同值，是这套令牌最容易漂移也最容易守住�
 |---|---|---|
 | **删除** | `src/glass-effects.css`（307 行） | 渐变场、两团光斑、顶部柔光条、115° 斜光带、跟滚动的高光、颗粒层、真折射样张 —— 全是 pack 点名的反模式（gradient blobs / glassmorphism） |
 | **删除** | `src/linear-theme.css` | x-ai 那条分支的深色覆盖（`#010102 !important`），与本分支相反 |
-| **新增** | `src/minimal-field.css` | 「纸」= 纯白 + **一道 α=0.035 的暖径向** + `.minimal-figure`（原来放真折射样张的位置改成一张带发丝线的平图） |
+| **新增** | `src/minimal-field.css` | 「纸」= 纯白 + **一道 α=0.035 的暖径向**。⚠️ 原文这里还写了 `.minimal-figure`，但该挂点随折射链一起删掉了、代码里从来没存在过 —— 契约测试（spec §17）反过来**硬断言它零出现**，所以这句属文档漂移，2026-10-15 移除（变更-066）。 |
 | **改** | 三块面板（侧栏/导航条/主区栏） | `glass-refract glass-veil/frost + bg-*/55 + blur 32/30 + border-white + shadow-panel` → **不透明面 + `border-line`**，无模糊、无阴影 |
 | **改** | 卡片配方 ×17 | `bg-raised/95 border-white/60 backdrop-blur-xl` → `bg-raised border-line` |
 | **改** | `src/style.css` 字体栈 | **去掉 Inter**（pack 点名的反模式），换系统人文无衬线（拉丁 Segoe UI Variable → 中文 PingFang SC / 微软雅黑）；不引入 webfont（内网离线、体积、首屏） |

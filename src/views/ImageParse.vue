@@ -356,7 +356,7 @@ async function runPickerSearch() {
  * 原先挂的是 `@input`（原生事件在组字期间照样发），选词过程中的拼音串会变成一次查询；
  * 换成 `watch(pickerKeyword)` 之后只在落字时触发 —— 与另外三个查询框统一。
  */
-const { flush: flushPickerSearch, cancel: cancelPickerSearch } = useLiveQuery(
+const { flush: flushPickerSearch, cancel: cancelPickerSearch, sync: syncPickerSearch } = useLiveQuery(
   pickerKeyword,
   runPickerSearch,
 )
@@ -367,6 +367,10 @@ async function openMaterialPicker(row, image) {
   pickerKeyword.value = row.materialName || ''
   // 先用自动匹配时已取到的候选，打开即有内容；为空再立刻查一次（不必等防抖）
   pickerResults.value = row.candidates?.length ? [...row.candidates] : []
+  // ⚠️ 上面那次赋值会触发 watch 排一次防抖：不同步签名的话，250ms 后它会拿
+  // /api/material/search 的结果**盖掉刚 seed 的候选**（与"打开即有内容"正相反），
+  // 而且多打一次参数相同的请求。sync() 只同步签名、不发请求（变更-066）。
+  syncPickerSearch()
   pickerVisible.value = true
 
   if (!pickerResults.value.length) {

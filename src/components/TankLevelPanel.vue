@@ -68,7 +68,17 @@ const {
  * 为什么走 watch 而不是给 el-input 挂 @input：组字期间 v-model 不更新（Element Plus
  * 与 Vue 对原生 input 都跳过组字中间态），拼音串不会变成一次查询。
  */
-const { flush: flushTankLevelQuery } = useLiveQuery(tankLevelKeyword, reloadTankLevelRecords)
+const { flush: flushTankLevelQuery, sync: syncTankLevelQuery } = useLiveQuery(
+  tankLevelKeyword,
+  reloadTankLevelRecords,
+)
+
+/**
+ * 已经有行、又正在查（实时查询的「细化」阶段）：表格不换遮罩，只在计数处提示。
+ * 物料查询那处（WorkOrderList.vue 的 stockRefining）先立的规矩，这里补齐 ——
+ * 遮罩收敛成"只盖首屏"之后，打字期间屏上必须还有一个"在查"的信号（变更-066）。
+ */
+const tankLevelRefining = computed(() => tankLevelLoading.value && tankLevelTableData.value.length > 0)
 
 // 图据（可多张）的弹窗状态与请求都在这个 composable 里，本组件只负责触发与渲染
 const { openImageDialog, uploadImagesForRecord } = useTankLevelImages()
@@ -406,12 +416,13 @@ function handleThumbError(event, image) {
       <button
         type="button"
         class="rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-region"
-        @click="resetTankLevelFilters"
+        @click="resetTankLevelFilters(); syncTankLevelQuery()"
       >
         重置
       </button>
       <span class="ml-auto text-sm text-slate-500">
-        共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录
+        <template v-if="tankLevelRefining">查询中…</template>
+        <template v-else>共 <span class="font-semibold text-slate-900">{{ tankLevelTotal }}</span> 条记录</template>
       </span>
     </div>
 

@@ -2322,7 +2322,7 @@ watch(activeTab, (tab) => {
 
           **x-minimalist：与导航条同料、与侧栏分成两料** —— `bg-raised`（纯白）
           + `border-line` + `rounded-card`，与导航条**必须同串**（spec 防「只调一块」）。
-          043 那版的 `glass-frost + bg-white/55 + backdrop-blur-[30px] + border-white`
+          043 那版的 `glass-frost + bg-white/55 + backdrop-blur（任意值 30px）+ border-white`
           已随玻璃整组退役。里面那些卡片（各页签的 `<section>`）是同一张白面
           （`bg-raised` + `border-line`）：**这块料上，抬起来的一律是白 + 一道发丝线**。
 

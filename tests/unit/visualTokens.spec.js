@@ -64,6 +64,21 @@ const SOURCE_FILES = walk(SRC).filter((f) => /\.(vue|js|css)$/.test(f))
  * 这不是放宽任何判据 —— 被断言的字符一个没少，只是不再把"这台机器的行尾"当成契约。
  */
 const read = (file) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+
+/**
+ * 取包含某段标记的那个标签（从它前面的最后一个 `<` 到它后面的第一个 `>`）。
+ *
+ * 用来做**标签级**的接线断言：原先写 `not.toContain('@input="applyStockFilter"')`，
+ * 换个函数名（`onKeywordInput` / `search`）就拦不住了（变更-066）。
+ * 现在断言的是"这个输入框的标签里不许出现 @input"，与实际函数名无关。
+ */
+const inputTagWith = (src, marker) => {
+  const at = src.indexOf(marker)
+  if (at < 0) return ''
+  const start = src.lastIndexOf('<', at)
+  const end = src.indexOf('>', at)
+  return start < 0 || end < 0 ? '' : src.slice(start, end + 1)
+}
 const rel = (file) => relative(ROOT, file).replace(/\\/g, '/')
 
 /** 逐行扫描，返回 `路径:行号` 列表（便于断言失败时直接跳过去） */
@@ -3018,7 +3033,6 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
  */
 describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响应护栏', () => {
   const WORKBENCH_SRC = read(join(SRC, 'views', 'WorkOrderList.vue'))
-  const STOCK_SRC = read(join(SRC, 'composables', 'useMaterialStockData.js'))
   const DEBOUNCE_SRC = read(join(SRC, 'utils', 'debounce.js'))
 
   it('节流器的三个动作都在：延迟执行 / flush 立刻执行 / cancel 撤销', () => {
@@ -3037,34 +3051,27 @@ describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响
     expect(WORKBENCH_SRC, '清空没走立刻查（清空要把结果还原回来）').toContain(
       '@clear="flushStockFilter"',
     )
-    expect(WORKBENCH_SRC, '输入框上还挂着逐字直发 —— 那是敲一个字打一次接口').not.toContain(
-      '@input="applyStockFilter"',
-    )
+    // 标签级断言：关键词输入框这个 <el-input> 标签里不得出现 @input（换任何函数名都拦得住）
+    expect(
+      inputTagWith(WORKBENCH_SRC, 'v-model="stockKeyword"'),
+      '输入框上还挂着逐字直发 —— 那是敲一个字打一次接口',
+    ).not.toContain('@input')
   })
 
-  it('公共接线（useLiveQuery）把该做的做全：watch + 防抖 + 去重 + 卸载撤销', () => {
-    const LIVE_SRC = read(join(SRC, 'composables', 'useLiveQuery.js'))
-    expect(LIVE_SRC, '接线的 watch 没了 —— 挂 @input 会在输入法组字期间也触发').toContain(
-      'watch(source, () => soon())',
-    )
-    expect(LIVE_SRC, '接线没走防抖').toContain('debounce(runIfChanged, delay)')
-    expect(LIVE_SRC, '接线卸载时不撤销 —— 卸载后待发的那次会写进已销毁的组件').toContain(
-      'onUnmounted(() => soon.cancel())',
-    )
-    expect(LIVE_SRC, '同一个筛选条件仍然会重复发请求').toContain('if (current === lastKey) return')
-    // 筛选条件不止关键词时，签名必须带上其余的（否则改开关会被误判成"没变"）
-    expect(WORKBENCH_SRC, '物料的筛选签名漏了「只看有库存」').toContain(
-      'keyOf: () => `${stockKeyword.value.trim()}|${stockOnlyInStock.value}`',
-    )
-  })
-
-  it('过期响应整段丢弃：慢的那次不许盖掉新结果，也不许关掉新请求的 loading', () => {
-    expect(STOCK_SRC, '请求序号护栏没了 —— 并发响应会互相覆盖').toContain('stockRequestSeq')
-    expect(STOCK_SRC, '过期响应没有被丢弃').toContain('if (seq !== stockRequestSeq) return')
-    expect(STOCK_SRC, 'loading 没按序号判断 —— 旧请求结束会把新请求的 loading 提前关掉').toContain(
-      'if (seq === stockRequestSeq) stockLoading.value = false',
-    )
-  })
+  /*
+   * ⚠️ 机制（防抖 / 签名去重 / 过期响应护栏）的断言**不在这里**（变更-066）。
+   *
+   * 这一节原先用 `toContain('if (current === lastKey) return')`、
+   * `toContain('if (seq !== stockRequestSeq) return')` 这类**源码字符串镜像**钉机制，
+   * 而它们抓不到任何东西：那句护栏在文件里出现 2 次（try 与 catch 各一条），
+   * `toContain` 分不清 2 与 1 —— 删掉 catch 那条、断言照样绿，而过期请求的失败
+   * 就会覆盖新结果（正是那条断言名字宣称防住的那一刻）。
+   *
+   * 现在改为行为测试（已做变异检验：拆掉护栏就会红）：
+   *   · tests/unit/useLiveQuery.spec.js        —— 防抖 / 去重 / flush / cancel / 卸载 / 签名维度 / sync
+   *   · tests/unit/liveQueryStaleGuard.spec.js —— 三个数据层的过期响应护栏（deferred 让"先发后回"成为确定事实）
+   * 本节只留"接线是否真的接上了"这一类只能从源码看的东西。
+   */
 
   it('遮罩只盖首屏：已经有行时改在计数处提示，避免打字时结果反复消失又出现', () => {
     expect(WORKBENCH_SRC, '遮罩又变成只看 loading 了（打字时整块结果会闪）').toContain(
@@ -3085,17 +3092,16 @@ describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响
  */
 describe('四个查询框共用一套边打边查接线（变更-060）', () => {
   const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
-  const TANK_DATA = read(join(SRC, 'composables', 'useTankLevelData.js'))
   const LEDGER_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
-  const LEDGER_DATA = read(join(SRC, 'composables', 'useEquipmentLedgerData.js'))
   const OCR = read(join(SRC, 'views', 'ImageParse.vue'))
 
   it('四个框都接同一个接线（不许再出现第二套实现）', () => {
-    expect(TANK_PANEL, '储罐液位没接公共接线').toContain(
-      'useLiveQuery(tankLevelKeyword, reloadTankLevelRecords)',
+    // 用正则而不是整行字面量：换行与缩进不该让断言失效（曾经就因为把调用拆成多行而误红）
+    expect(TANK_PANEL, '储罐液位没接公共接线').toMatch(
+      /useLiveQuery\(\s*tankLevelKeyword,\s*reloadTankLevelRecords/,
     )
-    expect(LEDGER_PANEL, '设备台账没接公共接线').toContain(
-      'useLiveQuery(keyword, applyLedgerFilters)',
+    expect(LEDGER_PANEL, '设备台账没接公共接线').toMatch(
+      /useLiveQuery\(\s*keyword,\s*applyLedgerFilters/,
     )
     expect(OCR, '图片解析没接公共接线').toContain('flush: flushPickerSearch')
     // 手写的那套（含它留下的清理点）必须消失
@@ -3114,37 +3120,35 @@ describe('四个查询框共用一套边打边查接线（变更-060）', () => 
     expect(OCR, '选料回车没走 flush').toContain('@keyup.enter="flushPickerSearch"')
   })
 
-  it('不许再出现「逐字直发」（@input 直接绑查询函数）', () => {
-    for (const [name, text] of [
-      ['储罐液位', TANK_PANEL],
-      ['设备台账', LEDGER_PANEL],
-      ['图片解析', OCR],
+  it('不许再出现「逐字直发」：关键词输入框的标签里不得出现 @input（与函数名无关）', () => {
+    for (const [name, text, marker] of [
+      ['储罐液位', TANK_PANEL, 'v-model="tankLevelKeyword"'],
+      ['设备台账', LEDGER_PANEL, 'v-model="keyword"'],
+      ['图片解析', OCR, 'v-model="pickerKeyword"'],
     ]) {
-      expect(text, `${name} 的输入框又挂上了 @input 直发查询`).not.toMatch(
-        /@input="(reload|apply|run)/,
-      )
+      const tag = inputTagWith(text, marker)
+      expect(tag, `${name} 的关键词输入框标签没找到（选择器写错了？）`).not.toBe('')
+      expect(tag, `${name} 的输入框又挂上了 @input 直发查询`).not.toContain('@input')
     }
   })
 
-  it('两个新加的过期响应护栏在位（含「过期请求的失败也不算数」）', () => {
-    expect(TANK_DATA, '储罐液位没有请求序号护栏').toContain('tankLevelRequestSeq')
-    expect(TANK_DATA, '储罐液位的过期响应没被丢弃').toContain(
-      'if (seq !== tankLevelRequestSeq) return',
-    )
-    expect(TANK_DATA, '储罐液位的 loading 没按序号判断').toContain(
-      'if (seq === tankLevelRequestSeq) tankLevelLoading.value = false',
-    )
-    expect(LEDGER_DATA, '设备台账没有请求序号护栏').toContain('ledgerRequestSeq')
-    expect(LEDGER_DATA, '台账的过期响应没被丢弃').toContain('if (seq !== ledgerRequestSeq) return')
-    expect(LEDGER_DATA, '台账的 loading 没按序号判断').toContain(
-      'if (seq === ledgerRequestSeq) loading.value = false',
-    )
-  })
+  /*
+   * ⚠️ 这两处过期响应护栏的**机制**断言已移到 tests/unit/liveQueryStaleGuard.spec.js（变更-066）：
+   * 原先是 `toContain('if (seq !== tankLevelRequestSeq) return')` 这类源码字符串镜像，
+   * 而同样的句子在文件里出现两次（数据路径与 catch 路径各一条），toContain 分不清 2 与 1 ——
+   * 删掉 catch 那条、断言照样绿。那里改成用 deferred 让"先发的请求后回来"成为确定事实，
+   * 逐条断言数据 / 错误 / loading 三个通道都不被旧响应写。
+   */
 
-  it('遮罩只盖首屏：储罐液位也改成「有行就不换遮罩」', () => {
+  it('遮罩只盖首屏 + 细化阶段有「查询中…」提示（两个面板都补齐，与物料同一套规矩）', () => {
     expect(TANK_PANEL, '储罐液位的遮罩又变成只看 loading 了').toContain(
       '<LoadingMask v-if="tankLevelLoading && !tankLevelTableData.length" />',
     )
+    expect(TANK_PANEL, '储罐液位细化阶段没有「在查」的信号').toContain('tankLevelRefining')
+    expect(TANK_PANEL, '储罐液位的提示没落在计数那一行').toContain('查询中…')
+
+    expect(LEDGER_PANEL, '台账细化阶段没有「在查」的信号').toContain('ledgerRefining')
+    expect(LEDGER_PANEL, '台账的提示没落在计数那一行').toContain('查询中…')
   })
 
   it('vite 忽略原子写的临时目录（否则改一行代码就把 dev server 打死）', () => {

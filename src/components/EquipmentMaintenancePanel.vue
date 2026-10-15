@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElCheckbox,
@@ -56,6 +56,13 @@ const {
  * 「刷新」按钮仍走 `loadLedger`（纯强制重取），回车/清空走 `flushLedgerQuery`（先取消待发再查）。
  */
 const { flush: flushLedgerQuery } = useLiveQuery(keyword, applyLedgerFilters)
+
+/**
+ * 已经有行、又正在查（实时查询的「细化」阶段）：只在计数处提示"查询中…"。
+ * 台账原先完全没有细化阶段的信号 —— 遮罩只盖首屏（`v-if="loading && !rows.length"`），
+ * 于是打字期间屏上一点"在查"的迹象都没有（变更-066）。
+ */
+const ledgerRefining = computed(() => loading.value && rows.value.length > 0)
 
 /**
  * 封头深度一列显示「上 / 下」。用一个列而不是两列：表格已经 14 列了，
@@ -201,7 +208,8 @@ async function handleDrawingPicked(event) {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-line px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
-        逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条
+        <template v-if="ledgerRefining">查询中…</template>
+        <template v-else>逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条</template>
       </p>
       <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
         <!-- 关键字**边打边查**（变更-060）：停 250ms 就发，不用回车；回车/清空 = 立刻发。

@@ -216,11 +216,17 @@ export default {
    *    「已经全仓确认零用法」的退役名 —— spec §1「禁用类名不得回流」扫的是
    *    src 文本，两边重复但角度不同：那条防"有人写回 markdown"，这条防
    *    "扫描器把它生成出来"。加新名字前先全仓 grep 一遍。
+   *
+   * ⚠️⚠️ 匹配是**精确候选串**（Tailwind 内部 `notClassCache.has(candidate)`），不是前缀：
+   *    · `'backdrop-blur-'` 这种前缀**永远匹配不到任何候选**，是死条目（已删）；
+   *    · 带任意值的形态（`backdrop-blur-[30px]`）与带 variant 的形态必须**逐个列出来** ——
+   *      曾经漏了这一个，产物里一直带着 `.backdrop-blur-\[30px\]`（变更-066 修，
+   *      生产者在 WorkOrderList.vue 的**注释**里：Tailwind 扫原始文本，注释也算）。
    */
   blocklist: [
     // 玻璃时代的材质名（043 及更早，全部已退役）
     'backdrop-blur',
-    'backdrop-blur-',
+    'backdrop-blur-[30px]',
     'backdrop-filter',
     'backdrop-saturate',
     'blur-xl',
