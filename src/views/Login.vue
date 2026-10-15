@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '../api/request'
@@ -57,14 +57,14 @@ async function handleLogin() {
   <!--
     三层与工作台同构（使用方 2026-10-07 定：登录页也要「跑在那张纸上」；
     043 起那张纸是中性柔光场）：
-      桌面（desk）→ 场（rounded-card bg-canvas + `.glass-field` 光斑）→ 白色表单卡片。
+      桌面（desk）→ 场（rounded-card bg-canvas + `.minimal-field` 光斑）→ 白色表单卡片。
     白表单卡浮在浅场上天然成立（白压 canvas ≈1.2；字是 slate-900 家族压白 16+）——
     这一页**不做玻璃**：表单需要的是安静的底，不必再吸光。
     高度取 100vh − 上下各 16px，与工作台那张纸同一个算式，短内容也不会多出滚动条。
   -->
   <main class="flex min-h-screen items-center justify-center bg-desk p-4">
     <div
-      class="glass-field flex min-h-[calc(100vh-2rem)] w-full items-center justify-center rounded-card bg-canvas shadow-card"
+      class="minimal-field flex min-h-[calc(100vh-2rem)] w-full items-center justify-center rounded-card border border-line bg-canvas"
     >
       <div class="w-full max-w-md rounded-card border border-slate-200 bg-white p-8 shadow-card">
         <div class="mb-8 text-center">

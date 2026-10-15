@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 /**
  * 内部推广落地页（2026-10-07）。
  *
@@ -127,9 +127,9 @@ const STATS_DETAIL = [
     桌面（`desk`，p-4）→ **白纸**（rounded-card bg-white）→ 页内的白色分区。
     041 那一代全站纸是天穹、唯独这一页保持白纸（长页正文，蓝底读长文是受罪）；
     043 全站纸换成浅中性场之后，这条例外**换了个说法继续成立**：工作台那三页的纸
-    是 `.glass-field` 柔光场（有玻璃要吸光），而这一页是**纯白纸**（内容全是不透明
+    是 `.minimal-field` 柔光场（有玻璃要吸光），而这一页是**纯白纸**（内容全是不透明
     分区，没有玻璃）—— 差异由 spec 白名单显式表达（「页面根 bg-desk」三页都成立，
-    「纸 = .glass-field」只对工作台 / 登录 / 404 成立，落地页禁挂）。
+    「纸 = .minimal-field」只对工作台 / 登录 / 404 成立，落地页禁挂）。
   -->
   <div class="min-h-screen bg-desk p-4 text-slate-900">
     <!--
@@ -246,8 +246,8 @@ const STATS_DETAIL = [
             （backdrop root 会被截断，折射会「看不到背景」而不是报错）。
             -->
             <div
-              id="glass-sample"
-              class="glass-sample absolute bottom-[9%] right-[7%] aspect-[300/190] w-[300px] max-w-[62%] select-none rounded-card shadow-panel"
+              id="minimal-figure"
+              class="minimal-figure absolute bottom-[9%] right-[7%] aspect-[300/190] w-[300px] max-w-[62%] select-none rounded-card"
               aria-hidden="true"
             >
               <div class="flex h-full flex-col items-center justify-center gap-2.5">
@@ -313,7 +313,7 @@ const STATS_DETAIL = [
       </section>
 
       <!--
-      真折射样张的滤镜定义（变更-042）。给 #glass-sample 的 backdrop-filter 用。
+      真折射样张的滤镜定义（变更-042）。给 #minimal-figure 的 backdrop-filter 用。
       ⚠️ 六条硬规矩，每条都对应一个「不报错、只是没效果」的坑：
       1. filterUnits/x/y/width/height = 滤镜区域**必须**钉成元素边框盒
          （objectBoundingBox 0,0,1,1）。留默认的 -10%/120% 外边距，贴图会被

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
@@ -183,7 +183,7 @@ async function handleDrawingPicked(event) {
 </script>
 
 <template>
-  <section class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+  <section class="rounded-card border border-line bg-raised shadow-card">
     <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-slate-100 px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">

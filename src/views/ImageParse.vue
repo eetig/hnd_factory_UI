@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, onUnmounted, ref } from 'vue'
 import { ElDatePicker, ElDialog, ElImage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
@@ -1028,7 +1028,7 @@ onUnmounted(() => {
       {{ message }}
     </p>
 
-    <section v-if="images.length" class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+    <section v-if="images.length" class="rounded-card border border-line bg-raised shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           已选 <span class="font-semibold text-brand-deep">{{ images.length }}</span> /
@@ -1095,7 +1095,7 @@ onUnmounted(() => {
       {{ materialLookupError }}（物料编码将全部留空，可手工填写）
     </p>
 
-    <section v-if="submitted.length" class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+    <section v-if="submitted.length" class="rounded-card border border-line bg-raised shadow-card">
       <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, ref } from 'vue'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
@@ -485,7 +485,7 @@ function handleBackToList() {
       </div>
     </div>
 
-    <section v-if="previewList.length" class="mt-6 rounded-card border border-white/60 bg-raised/95 px-5 py-4 shadow-card backdrop-blur-xl">
+    <section v-if="previewList.length" class="mt-6 rounded-card border border-line bg-raised px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
@@ -523,7 +523,7 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+    <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-line bg-raised shadow-card">
       <div class="overflow-x-auto">
         <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
           <colgroup>
@@ -572,7 +572,7 @@ function handleBackToList() {
       </div>
     </section>
 
-    <section v-if="imported" class="mt-6 rounded-card border border-white/60 bg-raised/95 px-5 py-4 shadow-card backdrop-blur-xl">
+    <section v-if="imported" class="mt-6 rounded-card border border-line bg-raised px-5 py-4 shadow-card">
       <div class="flex flex-wrap items-center gap-3">
         <div class="flex h-8 w-8 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.success">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>

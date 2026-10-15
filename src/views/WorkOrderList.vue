@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
@@ -1649,7 +1649,7 @@ watch(activeTab, (tab) => {
       定高之后纸正好是一整屏，页面自己不再滚动，滚动都在两块面板内部
       —— 这也是侧栏 `100vh − 4rem` 那个数终于「算得准」的前提。
       内层的东西（侧栏面板、各页卡片）层级不变，只是这张纸 043 起成了**中性
-      柔光场**（`.glass-field`：浅灰渐变 + 两团极淡的中性光斑，配方与理由在
+      柔光场**（`.minimal-field`：浅灰渐变 + 两团极淡的中性光斑，配方与理由在
       glass-effects.css）—— 041 那个「蓝底才有东西可吸」的载体换成了无彩的
       亮度变化：一张平纸上 blur 依然无物可糊，这是 036 的老结论、043 照旧成立。
     -->
@@ -1660,7 +1660,7 @@ watch(activeTab, (tab) => {
       跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
       主区不再被压到 1600：几个台账表格本来就宽，宽出来正好摊开列。
     -->
-      <div class="glass-field flex h-[calc(100vh-2rem)] rounded-card bg-canvas shadow-card">
+      <div class="minimal-field flex h-[calc(100vh-2rem)] rounded-card border border-line bg-canvas">
         <!--
         左侧栏：用户信息 + 四个大类 + 设置（2026-10-07 改成 dashboard 布局）。
 
@@ -1783,7 +1783,7 @@ watch(activeTab, (tab) => {
           -->
           <div
             id="app-sidebar"
-            class="glass-refract glass-veil sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-white bg-veil/55 backdrop-blur-[32px] shadow-panel"
+            class="sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-line bg-veil"
             :class="collapsed ? 'p-2' : 'p-4'"
           >
             <!--
@@ -2199,7 +2199,7 @@ watch(activeTab, (tab) => {
            `z-30`：吸顶后要压在下面的卡片上；el-dialog / el-select 那类是挂到 body 的
            2000+，不受影响。 -->
           <div
-            class="glass-refract glass-frost sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-white bg-white/55 px-6 py-4 backdrop-blur-[30px] shadow-panel"
+            class="sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-line bg-raised px-6 py-4"
           >
             <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">
               {{ activeTabLabel }}
@@ -2269,12 +2269,12 @@ watch(activeTab, (tab) => {
           ⚠️ **滚动时间线要跟着滚动容器走**（变更-038）：四个汇总页签改成「卡片撑满、
           表格区自己滚」之后，这一栏在那四页上**不再滚动**了，`--main-scroll` 就不能
           再挂死在它身上 —— 时间线挂在一个不动的东西上，三块玻璃的边缘高光会**停在
-          贴顶那一格**，不报错、只是不跟手（与 `.glass-field` 那段注释记的是同一种
+          贴顶那一格**，不报错、只是不跟手（与 `.minimal-field` 那段注释记的是同一种
           失效）。所以 `glass-scroll` 从静态 class 挪到绑定上：本栏挂「不是那四页时」
           的那一份，那四页各自的表格区挂自己那一份 —— **任何时刻只有一处声明**。
           -->
           <div
-            class="glass-refract glass-frost flex-1 min-h-0 overflow-y-auto rounded-card border border-white bg-white/55 p-4 backdrop-blur-[30px] shadow-panel"
+            class="flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4"
             :class="{ 'glass-scroll': !scrollsInsideCard }"
           >
             <div v-show="activeTab === 'workOrder'" class="flex h-full flex-col">
@@ -2300,7 +2300,7 @@ watch(activeTab, (tab) => {
               其余三个汇总页签（物料 / 领料 / 库存）同一张方子，不重复注释。
               -->
               <section
-                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div class="flex shrink-0 items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
@@ -2506,7 +2506,7 @@ watch(activeTab, (tab) => {
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
-                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
                   class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
@@ -2709,7 +2709,7 @@ watch(activeTab, (tab) => {
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
-                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
                   class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
@@ -2961,7 +2961,7 @@ watch(activeTab, (tab) => {
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
-                class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
                   class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
@@ -3106,7 +3106,7 @@ watch(activeTab, (tab) => {
 
             <div v-show="activeTab === 'weekly'">
               <section
-                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="rounded-card border border-line bg-raised shadow-card"
               >
                 <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
@@ -3222,7 +3222,7 @@ watch(activeTab, (tab) => {
 
             <div v-show="activeTab === 'daily'">
               <section
-                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="rounded-card border border-line bg-raised shadow-card"
               >
                 <PanelState type="pending" title="日报表记录" description="功能建设中，敬请期待" />
               </section>
@@ -3244,7 +3244,7 @@ watch(activeTab, (tab) => {
 
             <div v-show="activeTab === 'vessel'">
               <section
-                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="rounded-card border border-line bg-raised shadow-card"
               >
                 <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
                这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
@@ -3589,7 +3589,7 @@ watch(activeTab, (tab) => {
 
             <div v-show="activeTab === 'electricity'">
               <section
-                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="rounded-card border border-line bg-raised shadow-card"
               >
                 <!-- 电价档位备注 -->
                 <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
@@ -3632,7 +3632,7 @@ watch(activeTab, (tab) => {
             <div v-show="activeTab === 'purchase'">
               <!-- 采购进度跟踪：2026-10-10 只登记入口，功能内容与排期待使用方定 -->
               <section
-                class="rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card"
+                class="rounded-card border border-line bg-raised shadow-card"
               >
                 <PanelState
                   type="pending"

@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed } from 'vue'
 
 /**
@@ -51,7 +51,7 @@ function getRowKey(item, index) {
 </script>
 
 <template>
-  <section class="rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+  <section class="rounded-card border border-line bg-raised shadow-card">
     <div class="overflow-x-auto">
       <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
         <colgroup>

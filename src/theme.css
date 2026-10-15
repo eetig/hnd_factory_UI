@@ -1,22 +1,24 @@
 /*
- * Element Plus 主题覆盖（变更-043：高亮色从苹果蓝换到石墨黑）。
+ * Element Plus 主题覆盖（x-minimalist：高亮色 = 墨色 #111111）。
  *
  * ⚠️ 导入顺序是这份文件能不能生效的前提：必须排在 element-plus/dist/index.css **之后**。
  *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
  *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
  *
- * 高亮色 = Tailwind 的 `brand` #1D1D1F（石墨黑，macOS 风），手写 markup 与 EP 同一个值。
- * 历史：天蓝（EP 原生 #409eff 并存期）→ 翡翠绿 emerald-700（变更-027~040）→ 苹果蓝（041）
- * → 石墨黑（043）。每一代都是「整站只有一个高亮色」，这条不变量没变过。
+ * 高亮色 = Tailwind 的 `brand` #111111（minimalist 的签名 CTA：墨色实底 + 白字 +
+ * 小圆角、无阴影），手写 markup 与 EP 同一个值。
+ * 历史：天蓝（EP 原生 #409eff 并存期）→ 翡翠绿 emerald-700（变更-027~040）→ 苹果蓝
+ * （041）→ 石墨黑 #1D1D1F（043）→ linear 薰衣草蓝 #5e6ad2（x-ai，已随分支保留）→
+ * 墨色 #111111（x-minimalist）。每一代都是「整站只有一个高亮色」，这条不变量没变过。
  *
- * 043 的账比 041 简单：#1D1D1F 是**中性深灰**，白字压它 16.83:1（041 的主色 #0071E3
- * 只有 4.70）——「白字过不过」在这代不再是悬念。041 的 brand-vivid (#0A84FF) 随蓝系
- * 整键退役，tailwind.config.js 里也没有了。
+ * 墨色的账：白字压 #111111 = 18.9:1，余量比石墨那代还大 —— 「白字过不过」在这三代
+ * 里都不是悬念；换代的理由是**观感**（minimalist 的墨色 CTA 是它的签名动作），
+ * 不是阈值救火。
  */
 
 :root {
-  /* ===== 高亮色：对齐 Tailwind brand #1D1D1F ===== */
-  --el-color-primary: #1d1d1f;
+  /* ===== 高亮色：对齐 Tailwind brand #111111 ===== */
+  --el-color-primary: #111111;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -26,7 +28,7 @@
    * 校验方法：EP 默认主色 #409eff 的 light-3 是 #79bbff，
    * 用同一条公式算 0.7×64+0.3×255 = 121 = 0x79 ✅ —— 公式与 EP 一致
    *
-   * 一个**同源交叉点**：dark-2（= 主色 ×0.8）算出来 #171719，与
+   * 一个**同源交叉点**：dark-2（= 主色 ×0.8）算出来 #0E0E0E，与
    * tailwind.config.js 里手挑的 `brand-deep` 是同一个值 —— 两条路径互相验证。
    * spec 有一条同时钉两边（浅底文字用它、EP 的 dark-2 也是它）。
    *
@@ -34,16 +36,16 @@
    *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
    *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #616162;
-  --el-color-primary-light-5: #8e8e8f;
-  --el-color-primary-light-7: #bbbbbc;
-  --el-color-primary-light-8: #d2d2d2;
-  --el-color-primary-light-9: #e8e8e9;
-  --el-color-primary-dark-2: #171719;
+  --el-color-primary-light-3: #585858;
+  --el-color-primary-light-5: #888888;
+  --el-color-primary-light-7: #b8b8b8;
+  --el-color-primary-light-8: #cfcfcf;
+  --el-color-primary-light-9: #e7e7e7;
+  --el-color-primary-dark-2: #0e0e0e;
 
-  /* ===== 大圆角（EP 2.14.5 默认：base 4px / small 2px / round 20px）===== */
+  /* ===== 圆角：小圆角（minimalist：卡片 8px 上限 / 按钮 4–6px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */
-  --el-border-radius-base: 12px;
+  --el-border-radius-base: 6px;
   /* EP 的 round 默认只有 20px，不是真胶囊 */
   --el-border-radius-round: 9999px;
 
@@ -58,20 +60,21 @@
    *
    *    （`--el-border-radius-base` 与 `-small` 是真在 :root 上的，不用管。）
    */
-  --el-border-radius-small: 6px; /* 勾选框：跟着大圆角走，但不能圆到看不出是方框 */
+  --el-border-radius-small: 4px; /* 勾选框：跟着小圆角走，但不能圆到看不出是方框 */
 
   /*
-   * ===== 表面色：从「雾白」回到**纯中性**（变更-043）=====
+   * ===== 表面色：暖白文档面（x-minimalist）=====
    *
    * ⚠️ **这一组是量的结果，不是照着 EP 文档抄的。** 变更-037 时使用方圈着工作台的
-   * 分页行说「很多地方都是白色的」—— 分页那排数字不是手写的，是 Element Plus 画的，
-   * 所以改 Tailwind 的类名改不到它们（实机读回来：`.el-pager li` 是纯白、
-   * `.el-pagination button` 是冷灰、`.el-checkbox__inner` 是纯白）。
+   *    分页行说「很多地方都是白色的」—— 分页那排数字不是手写的，是 Element Plus 画的，
+   *    所以改 Tailwind 的类名改不到它们（实机读回来：`.el-pager li` 是纯白、
+   *    `.el-pagination button` 是冷灰、`.el-checkbox__inner` 是纯白）。
    *
-   * 043 的决定：底场已经中性了（desk / canvas 几乎无彩），「空白填充」就是**纯白**
-   * （#FFFFFF = Tailwind `raised`）。下面 lighter / light / fill 是三档**纯中性**的灰
-   * （max−min ≤ 6）—— 041 的微蓝（B 通道略高）是当时「蓝底上白要偏冷才不脏」的补偿，
-   * 场一中性，那抹蓝就成了残渣，整组换掉。
+   * x-minimalist 的决定：底场就是**纯白纸**（`canvas` / `raised` 都是 #FFFFFF），
+   * 「空白填充」跟随它 —— 输入框、勾选框、plain 按钮、弹层一律纯白，
+   * 与纸同色，靠 1px 发丝线（`line` #EAEAEA）而不是色差分层。
+   * 三档垫底是**暖中性的三个刻度**（lighter → light → fill 由浅到深），
+   * 最深那档 = `region` #F7F7F5（表头/行 hover/输入底）。
    *
    * 这一组**必须写在 :root 上**（与上面那几条圆角相反）：EP 的填充变量本来就是在
    * :root 上声明的，同一个选择器、同一处，谁在后谁赢；而圆角那几条是 EP 声明在
@@ -81,12 +84,12 @@
    *
    *   --el-fill-color-blank    #ffffff → #FFFFFF    「空白填充」= 输入框 / 勾选框 /
    *   --el-bg-color            #ffffff → #FFFFFF      plain 按钮 / 分页数字的底
-   *   --el-bg-color-overlay    #ffffff → #FFFFFF    弹层（dialog / popover / 下拉面板）
-   *   --el-fill-color-lighter  #fafafa → #F7F7F9
-   *   --el-fill-color-light    #f5f7fa → #F2F2F5
-   *   --el-fill-color          #f0f2f5 → #EEEEF1    分页的上一页/下一页、禁用态（= region）
+   *   --el-bg-color-overlay    #ffffff → #FFFFFF      弹层（dialog / popover / 下拉面板）
+   *   --el-fill-color-lighter  #fafafa → #FBFBFA
+   *   --el-fill-color-light    #f5f7fa → #F9F9F8
+   *   --el-fill-color          #f0f2f5 → #F7F7F5   分页的上一页/下一页、禁用态（= region）
    *
-   * 前三档与 Tailwind `raised` 同值（纯白），后三档是纯中性的三个刻度 ——
+   * 前三档与 Tailwind `raised` 同值（纯白），后三档是暖中性的三个刻度 ——
    * **相对次序没动**：六档从深到浅仍是 fill → light → lighter → blank/bg/overlay。
    *
    * ⚠️ 只管**面**，不管**字**：`--el-text-color-*` 一个没动。EP 的正文色
@@ -94,31 +97,31 @@
    *
    * ⚠️ 是**全站**生效，`:root` 没有作用域可言。弹层、消息框、下拉会跟着变 ——
    * 这是要的：`ElMessageBox` / `el-dialog` 是挂到 body 上的**系统级表面**，
-   * 出现在哪一页都该是同一种材质（现在是清水玻璃上抬起来的白面）。
+   * 出现在哪一页都该是同一种材质（现在是白纸上的白面 + 发丝线）。
    */
   --el-bg-color: #ffffff;
   --el-bg-color-overlay: #ffffff;
   --el-fill-color-blank: #ffffff;
-  --el-fill-color-lighter: #f7f7f9;
-  --el-fill-color-light: #f2f2f5;
-  --el-fill-color: #eeeef1;
+  --el-fill-color-lighter: #fbfbfa;
+  --el-fill-color-light: #f9f9f8;
+  --el-fill-color: #f7f7f5;
 }
 
 /*
  * 下面几条放在 :root 之外，选择器与 EP 同为单类权重，
  * 靠「theme.css 排在 element-plus/dist/index.css 之后」取胜。
  * 默认值分别是 2px / 4px / 4px / 继承 base，都是不跟随 base 的独立变量，
- * 漏掉就会出现「卡片 20px、旁边一个 4px 直角」，且踩中的全是高频组件。
+ * 漏掉就会出现「卡片 8px、旁边一个 4px 直角」，且踩中的全是高频组件。
  */
 .el-pagination {
-  --el-pagination-border-radius: 12px; /* 默认 2px，比 base 还尖 */
+  --el-pagination-border-radius: 6px; /* 默认 2px，比 base 还尖；分页是控件不是卡片 */
 }
 .el-popover {
-  --el-popover-border-radius: 12px; /* el-select / el-date-picker / el-autocomplete 的浮层面板 */
+  --el-popover-border-radius: 8px; /* el-select / el-date-picker / el-autocomplete 的浮层面板 */
 }
 .el-message-box {
-  --el-messagebox-border-radius: 20px; /* ElMessageBox 确认框；与对话框同级：属于「卡片」 */
+  --el-messagebox-border-radius: 8px; /* ElMessageBox 确认框；与对话框同级：属于「卡片」 */
 }
 .el-dialog {
-  --el-dialog-border-radius: 20px; /* 默认继承 base(12px)，但弹窗是「卡片」不是「控件」 */
+  --el-dialog-border-radius: 8px; /* 默认继承 base(6px)，但弹窗是「卡片」不是「控件」 */
 }

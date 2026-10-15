@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, onUnmounted, ref } from 'vue'
 import {
   ElAutocomplete,
@@ -313,7 +313,7 @@ function handleThumbError(event, image) {
     现在表格区是唯一的纵向滚动容器（`flex-1` + `min-h-0`），分页行（连带「新增一行」
     与记录说明）`shrink-0` 钉死，翻页 / 筛选怎么变都不动。
   -->
-  <section class="flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl">
+  <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
     <div class="flex shrink-0 flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
       <h2 class="text-base font-semibold text-slate-900">月底车间各储罐液位记录</h2>
       <span class="text-xs text-slate-500">数据来源：hnd_factory /api/tank-level/list</span>
