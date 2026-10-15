@@ -446,7 +446,8 @@ function handleBackToList() {
       </div>
 
       <div v-else class="flex flex-col items-center gap-3 py-4">
-        <!-- 图标与实心按钮 043 起同一档：`brand`（石墨黑 #1D1D1F，白底 16.83）。
+        <!-- 图标与实心按钮同一档：`brand`（x-minimalist 是墨色 #111111，白底 18.88；
+             043 那代是石墨 #1D1D1F，白底 16.83）。
              041 蓝时代「只有图形能用」的 `brand-vivid`（#0A84FF）已随蓝系整键退役，
              本页不出现它。（更早 emerald-600 / emerald-700 的两档账同理退役。） -->
         <svg
