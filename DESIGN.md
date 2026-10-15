@@ -77,6 +77,31 @@ EP 与 Tailwind 两侧同值，是这套令牌最容易漂移也最容易守住�
 让这句话过期 → 043 去色留亮度 → x-minimalist 换的是问题本身：不要玻璃）。留着是因为
 "为什么这次不这么做"和"这次怎么做"同样值钱。
 
+### 3.1 一个副作用：**注释会生成 CSS**（Tailwind 的内容扫描不剥注释）
+
+改完材质层后核产物，发现 `index-*.css` 里有 markup **从未使用**的规则：
+
+```
+.backdrop-blur{--tw-backdrop-blur: blur(8px); …}
+.backdrop-blur-\[30px\]{…}
+.backdrop-filter{…}
+```
+
+来源不是代码，是**注释**。本仓的注释文化是"把退役的类名写下来记账"
+（`bg-white/55`、`glass-frost`、`backdrop-blur-[30px]` …），而 Tailwind 的
+`content` 扫描**按字面量取候选、不区分注释与 markup** —— 于是这些名字被真的
+生成成了 CSS。`border-white`、`blur-xl`、`shadow-panel` 同理。
+
+修法用了 Tailwind 的 **`blocklist`**（`tailwind.config.js` 末尾），而不是把注释
+写歪成 `backdrop-blur（32px）` 那种别扭形式：历史记录最值钱的部分正是"当时叫什么"，
+不该为了躲扫描器而失去可读性。blocklist 是硬封禁，所以名单里每一个名字都先
+全仓 grep 确认过 markup 零用法（`bg-white/55` 的两处是 `hover:`/`group-hover:`
+前缀，不同类名，不受影响 —— 产物里 `.hover\:bg-white\/55` 仍在）。
+
+**账**：产物 CSS **38.05 kB → 34.68 kB（−9%）**，gzip 同步下降，删掉的每一条都是
+文档造成的死规则。审计脚本的思路留在这里，将来换代可以复用：把注释里的反引号
+token 抽出来 ∩ 产物里真出现的选择器 ∩ markup 里没用的，就是"纯死 CSS"。
+
 ## 4. 密度例外条款（**这份改造的正式契约**）
 
 minimalist 的 `not_for` 写着 `high-density dashboards, data-heavy tables`，而本项目的

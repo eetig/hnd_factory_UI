@@ -198,5 +198,52 @@ export default {
       },
     },
   },
+  /*
+   * ===== blocklist：不许生成的类名（x-minimalist，2026-10-15）=====
+   *
+   * **为什么需要它**：Tailwind 的内容扫描**不剥注释**。本仓的注释文化是"把退役的
+   * 类名写下来记账"（`bg-white/55`、`glass-frost`、`backdrop-blur` …），而这些
+   * 字面量会被当成候选类名**真的生成成 CSS** —— 于是产物里出现了 markup 从未使用、
+   * 只是被文档提到的规则。实测：改这一版之前 `index-*.css` 里就有
+   * `.backdrop-blur`、`.backdrop-blur-\[30px\]`、`.backdrop-filter` 三条，
+   * 全部来自注释；产物 CSS 因此从 38.05 kB 掉到 36.16 kB（去掉任意值那两条）
+   * 与 35 kB 上下（去掉裸名这几条）。
+   *
+   * **它比"把注释写歪"好在哪**：注释可以继续直书退役类名（历史记录最值钱的部分），
+   * 不必为了躲开扫描器而写成 `backdrop-blur（32px）` 这种别扭形式。
+   *
+   * ⚠️ 它是**硬封禁**：列进来的类即使 markup 真用了也不会生成。所以只列
+   *    「已经全仓确认零用法」的退役名 —— spec §1「禁用类名不得回流」扫的是
+   *    src 文本，两边重复但角度不同：那条防"有人写回 markdown"，这条防
+   *    "扫描器把它生成出来"。加新名字前先全仓 grep 一遍。
+   */
+  blocklist: [
+    // 玻璃时代的材质名（043 及更早，全部已退役）
+    'backdrop-blur',
+    'backdrop-blur-',
+    'backdrop-filter',
+    'backdrop-saturate',
+    'blur-xl',
+    'blur-2xl',
+    'border-white',
+    'border-white/60',
+    'border-white/70',
+    'bg-white/55',
+    'bg-white/85',
+    'bg-raised/95',
+    'glass-refract',
+    'glass-veil',
+    'glass-frost',
+    'glass-field',
+    'glass-scroll',
+    'shadow-panel',
+    'shadow-glow',
+    'bg-glass',
+    // 更早两代的遗留（041 及以前）
+    'bg-smoke',
+    'bg-night',
+    'glass-sky',
+    'glass-smoke',
+  ],
   plugins: [],
 }

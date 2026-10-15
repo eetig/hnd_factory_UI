@@ -1642,7 +1642,7 @@ watch(activeTab, (tab) => {
   ⚠️ **读这一页的模板注释之前，先看这一条**（x-minimalist，2026-10-15）
 
   本文件有大段注释在描述 036~043 的**液态玻璃**配方：`bg-white/55`、
-  `backdrop-blur-[32px]`/`[30px]`、`glass-frost`/`glass-veil`、`border-white`、
+  `backdrop-blur` 的 32px / 30px 两档任意值、`glass-frost`/`glass-veil`、`border-white`、
   「两档玻璃」「清水档」「边缘光学」……**那些段落现在只是历史记录，不再是现状。**
 
   现状：三块面板已换成**不透明的面 + 1px 发丝线**（侧栏 `bg-veil`、导航条与主区栏
