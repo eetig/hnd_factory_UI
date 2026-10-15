@@ -107,10 +107,28 @@ export default {
         'brand-50': '#E8E8E9',
         'brand-100': '#D2D2D2',
         'brand-200': '#BBBBBC',
+        /* ===== x-ai 分支：linear 风格令牌覆盖（2026-10-15，见 DESIGN.md）=====
+           放在最后 → 同名键由此生效；043 的浅色玻璃令牌原样保留，随时可回退。
+           取值来自 design-md 技能库的 linear/DESIGN.md。 */
+        ...{
+          desk: '#010102',          // 页面根/最外圈 = linear canvas（严格近黑）
+          canvas: '#010102',        // 底场最深端（.glass-field 底停同步改，见 src/style.css）
+          raised: '#141516',        // 抬起的卡面 = linear canvas-card
+          region: '#18191a',        // 垫底/表头/行 hover = linear canvas-soft
+          veil: '#23252a',          // 侧栏纱 = linear hairline
+          brand: '#5e6ad2',         // 主色 = 白（白描边胶囊，配 on-primary 黑字）
+          'brand-deep': '#f7f8f8',  // 正文色（原"浅底深字"角色，深底上翻亮）
+          'brand-50': '#3e3e44',    // canvas-mid
+          'brand-100': '#8a8f98',   // mute / body-mid
+          'brand-200': '#828fff',   // twilight 点缀
+          'ln-hairline': '#23252a',
+          'ln-primary': '#5e6ad2',
+          'ln-primary-focus': '#5e69d1',
+        },
       },
       borderRadius: {
-        // 卡片 / 面板。控件用内置的 rounded-xl（12px），小标签继续 rounded-full
-        card: '20px',
+        // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px
+        card: '8px',
       },
       boxShadow: {
         /*

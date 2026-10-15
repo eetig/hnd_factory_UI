@@ -1,0 +1,75 @@
+/* ===== linear 主题（分支 x-ai，2026-10-15）================================
+   令牌来源：design-md 技能库 linear.app/DESIGN.md。
+   它的自述就是"dense, technical"——为密集产品界面而生，故换下 x.ai。
+   核心：画布 #010102（库里称"本集合中最深的深色面"）+ 炭灰面板 #0f1011 /
+   #141516 + hairline #23252a 分层 + 唯一彩色强调 #5e6ad2（只用于焦点/CTA）。
+   回退：删掉 src/main.js 里的 `import './linear-theme.css'` 一行。 */
+
+/* 1) 画布：近黑无渐变 */
+html, body, .glass-field { background: #010102 !important; }
+body { color: #d0d6e0; }
+
+/* 2) 去掉浅色玻璃遗留的模糊与阴影（近黑底上只会浑浊） */
+[class*="backdrop-"], [style*="backdrop-filter"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[class*="shadow"] { box-shadow: none !important; }
+
+/* 3) 表面阶梯：canvas #010102 → 侧栏 #0f1011 → 卡面 #141516 → 垫底/表头 #18191a */
+[class*="bg-veil"]                       { background-color: #0f1011 !important; }
+[class*="bg-raised"], [class*="bg-white"]{ background-color: #141516 !important; }
+[class*="bg-region"]                     { background-color: #18191a !important; }
+[class*="bg-canvas"], [class*="bg-desk"] { background-color: #010102 !important; }
+
+/* 4) 文字四档（linear: ink / ink-muted / ink-subtle / ink-tertiary） */
+.text-brand-deep, [class*="text-slate-9"], [class*="text-slate-8"] { color: #f7f8f8 !important; }
+[class*="text-slate-7"] { color: #d0d6e0 !important; }
+[class*="text-slate-6"], [class*="text-slate-5"] { color: #8a8f98 !important; }
+[class*="text-slate-4"], [class*="text-slate-3"] { color: #62666d !important; }
+
+/* 5) hairline 描边（linear 用描边分层，不用阴影） */
+[class*="border-slate"], [class*="border-gray"],
+[class*="divide-slate"], [class*="divide-gray"],
+table, th, td { border-color: #23252a !important; }
+
+/* 6) 表格：表头垫一档 + 中灰小字（不做大写/加字距——中文会歪） */
+.el-table { --el-table-bg-color:#141516; --el-table-tr-bg-color:#141516;
+  --el-table-border-color:#23252a; --el-table-header-bg-color:#18191a; }
+.el-table th.el-table__cell { background-color:#18191a !important; color:#8a8f98 !important;
+  font-size:12px; font-weight:500; letter-spacing:0; text-transform:none; }
+.el-table td.el-table__cell { border-color:#23252a !important; color:#d0d6e0; }
+.el-table tr:hover > td { background-color:#1b1c1e !important; }
+.el-table__row.current-row > td { background-color:#202124 !important; }
+.el-table__empty-text { color:#62666d !important; }
+
+/* 7) 控件：薰衣草蓝只做 CTA 与焦点，其余透明描边 */
+.el-button--primary { --el-button-bg-color:#5e6ad2; --el-button-text-color:#ffffff;
+  --el-button-border-color:#5e6ad2; --el-button-hover-bg-color:#828fff;
+  --el-button-hover-text-color:#ffffff; --el-button-hover-border-color:#828fff;
+  --el-button-active-bg-color:#5e69d1; --el-button-active-border-color:#5e69d1; }
+.el-button:not(.el-button--primary) { --el-button-bg-color:transparent;
+  --el-button-text-color:#d0d6e0; --el-button-border-color:#34343a;
+  --el-button-hover-bg-color:#18191a; --el-button-hover-text-color:#f7f8f8;
+  --el-button-hover-border-color:#3e3e44; }
+:where(a,button,input,select,textarea,[tabindex]):focus-visible {
+  outline:2px solid #5e6ad2; outline-offset:2px; }
+.el-input__wrapper, .el-textarea__inner { background-color:#18191a !important;
+  box-shadow:none !important; border:1px solid #23252a; }
+.el-input__wrapper.is-focus, .el-textarea__inner:focus { border-color:#5e6ad2 !important; }
+.el-tabs__item.is-active { color:#f7f8f8; }
+.el-tabs__active-bar { background-color:#5e6ad2; }
+.el-tag { --el-tag-bg-color:#18191a; --el-tag-border-color:#23252a; --el-tag-text-color:#d0d6e0; }
+.el-dialog, .el-drawer, .el-popper, .el-message-box {
+  --el-bg-color:#141516; --el-border-color:#23252a; --el-text-color-primary:#f7f8f8; }
+::selection { background:#5e6ad2; color:#ffffff; }
+
+/* 8) 排版：显示级负字距（Linear Display 缺失 → SF Pro/Inter 回退） */
+h1 { font-weight:600; letter-spacing:-1.2px; line-height:1.08; }
+h2, h3 { font-weight:600; letter-spacing:-0.4px; }
+
+/* 9) 滚动条 */
+::-webkit-scrollbar { width:10px; height:10px; }
+::-webkit-scrollbar-thumb { background:#2b2d33; border-radius:6px; }
+::-webkit-scrollbar-thumb:hover { background:#3e3e44; }
+::-webkit-scrollbar-track { background:#0b0c0d; }
