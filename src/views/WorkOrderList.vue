@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
@@ -236,9 +236,14 @@ const activeTabLabel = computed(() => tabs.find((tab) => tab.key === activeTab.v
  * 变更-044：月底储罐液位记录（TankLevelPanel）加入同一张方子 —— 它的滚动容器
  * 在子组件里，激活状态用 `:active` 传进去，由那边的表格区自己挂 `glass-scroll`。
  *
- * `.glass-scroll` 声明的 `--main-scroll` 是**三块玻璃边缘高光的来源**，它必须挂在
- * 「当时真正在滚的那个元素」上 —— 挂在不动的那块上，高光就**冻住**：不报错、
+ * `.glass-scroll` 声明的 `--main-scroll` 曾是**三块玻璃边缘高光的来源**，所以必须挂在
+ * 「当时真正在滚的那个元素」上 —— 挂在不动的那块上，高光就会**冻住**：不报错、
  * 不警告，只是不跟手。
+ *
+ * ⚠️ **x-minimalist：高光随玻璃整组退役，这个标记现在是死的。** 保留它（以及下面
+ * `scrollsInsideCard` 的推导）只是因为「滚动到底发生在卡片内还是玻璃栏里」这条
+ * **结构事实**仍然被模板与 spec 用着；清理计划写在 DESIGN.md §5.3（连同 JS 变量
+ * 与 spec 那三条断言一起动）。别照着旧注释去追那条已经不存在的高光。
  */
 const INNER_SCROLL_TABS = ['workOrder', 'material', 'inbound', 'stock', 'tankLevel']
 const scrollsInsideCard = computed(() => INNER_SCROLL_TABS.includes(activeTab.value))
@@ -1648,10 +1653,11 @@ watch(activeTab, (tab) => {
       （实测：主区栏 619 → 3157 → 3381px，整页多出一条滚动条）。
       定高之后纸正好是一整屏，页面自己不再滚动，滚动都在两块面板内部
       —— 这也是侧栏 `100vh − 4rem` 那个数终于「算得准」的前提。
-      内层的东西（侧栏面板、各页卡片）层级不变，只是这张纸 043 起成了**中性
-      柔光场**（`.minimal-field`：浅灰渐变 + 两团极淡的中性光斑，配方与理由在
-      glass-effects.css）—— 041 那个「蓝底才有东西可吸」的载体换成了无彩的
-      亮度变化：一张平纸上 blur 依然无物可糊，这是 036 的老结论、043 照旧成立。
+      内层的东西（侧栏面板、各页卡片）层级不变，只是这张纸在 **x-minimalist** 上是
+      **纯白纸 + 一道 α=0.035 的暖径向**（`.minimal-field`，配方与理由在
+      minimal-field.css）—— 036~043 那套「浅灰渐变 + 两团中性光斑」是**给玻璃吸的**
+      （平纸上 blur 无物可糊，这条 036 的老结论一直成立），这一代不要玻璃，于是
+      问题本身换了：纸上放墨字与发丝线，就是 minimalist 要的样子。
     -->
     <main class="min-h-screen bg-desk p-4">
       <!--
@@ -1739,24 +1745,21 @@ watch(activeTab, (tab) => {
           根因不在玻璃、**在纸** —— 一张几乎纯色的纸，模糊无物可糊、saturate 无彩可提，
           玻璃再调也是灰片。
 
-          043 的两步（使用方看过 042 实机后原话「不要蓝色，做成透明」）：
-          ①纸换**中性柔光场**（浅灰渐变 + 白/冷灰两团极淡光斑，配方在
-          glass-effects.css）；②三块玻璃统一**清水档** —— 041 的深/浅二分退役，
-          侧栏改用「比场深一档」的灰纱 `veil` 压 55%。透明感靠「低填充 + 高模糊
-          + 边光学（042 保留）+ 柔光场」共同承担；这块料与场的分离比 ~1.11
-          （与 desk/canvas 那对同级，spec 钉 ≥1.08；白玻璃对白场那两对按 1.046）。
+          玻璃时代的四步（036 做料 → 037 暖白纸 → 041 天穹蓝 → 043 去色留亮度）
+          **整组退役**：x-minimalist 不要玻璃。侧栏现在是一块**不透明的暖骨面**
+          `bg-veil`（#F7F6F3）+ `border-line`（1px #EAEAEA）+ `rounded-card`；
+          与纸的分离比 **1.08**（spec 实算钉 ≥1.08）—— 靠「比纸深半档」，不靠
+          填充透明度、不靠模糊、不靠投影（043 那套「低填充 + blur 32 + 边光学」
+          是一个整体，拆一件都不成立，所以一起退场）。
 
-          · `backdrop-blur-[32px]` 写任意值，不写档位名：32 是这块料的**规格数字**
-            （043 从 28 升到 32 —— 填充砍到 55% 之后，通透感要靠更厚的模糊稳住），
-            写成数字，将来 Tailwind 调了档位它不会跟着飘。
-            `backdrop-saturate` **整条退役**：场是无彩的，提饱和无处可提。
-          · 描边仍是**不透明**的 `border-white`，不能跟着填充一起写 `/70`：
-            边框画在这块**自己背景之上**，`border-white/70` 压在填充上就是同一个像素 ——
-            等于没描边。只有比填充更亮，那道边才存在（清水档下填充只有 55%，
-            白描边的镜面感反而比 041 更清楚）。
-          · 选中指示是 **`bg-brand` 实底**（石墨 #1D1D1F + 纯白字 16.83:1）+ 一圈
+          · **不许再出现 `backdrop-*`**：整站零 `backdrop-filter` / `backdrop-blur`
+            / `backdrop-saturate`（minimalist 只给导航留了一条「subtle nav blur」
+            的口子，本项目连这条也不用）—— spec 有一条全仓反扫钉着。
+          · 描边是 `border-line` 而不是 `border-white`：白纸上的白边等于没有边，
+            发丝线才是这一代唯一的分层手段。
+          · 选中指示是 **`bg-brand` 实底**（墨色 #111111 + 纯白字 18.9:1）+ 一圈
             `ring-1 ring-white/20` 描边；041 那圈 30% 的 `shadow-glow` 光晕**已退役**
-            —— 石墨实底自己撑得住，`shadow-glow` 这个 token 也删了。
+            —— 墨色实底自己撑得住，`shadow-glow` 这个 token 也删了。
           · **吸顶位置从 `top-4` 改成 `top-0`**（与主区那条导航条对齐，见那处注释）：
             sticky 的吸附基准是 **border box**，`m-4` 那 16px **不参与**吸顶 —— 实测
             滚到 900 时面板 top = 16（就是 `top-4` 的值），不是 32。所以静止态由
@@ -2168,13 +2171,13 @@ watch(activeTab, (tab) => {
            **这一条也包一张卡片**（使用方 2026-10-07 追加）：此前标题与页签直接压在
            纸面上，而它下面的筛选/表格、左边的侧栏面板都是有底的 —— 单这一条裸着，
            就破了「东西都放在纸上」那层意思：**纸是底，抬起来的卡片才是内容**。
-           043 之后三层齐了：**桌面（desk）→ 中性柔光场（canvas + 两团光斑）→
-           清水白玻璃（这一条）**。
+           **x-minimalist：三层现在是「桌面（desk 暖骨）→ 纸（canvas 纯白
+           + `.minimal-field`）→ 不透明白面（这一条）」。** 043 那套「柔光场 +
+           清水白玻璃」已退役（同样是三层，换的只是材质：玻璃 → 面）。
 
-           **这一条 043 起与侧栏不同料、两栏彼此同料**（玻璃两档见
-           glass-effects.css 头注）：`bg-white/55` + blur 30px（去 saturate），
-           描边仍是 `border-white`（压过填充才看得见）。填充从 /85 砍到 /55 是
-           「透明」的字面要求（描边压 55% 填充的白玻璃，镜面感反而比 041 更清楚）。
+           **这一条与侧栏不同料、与主区栏同料**：`bg-raised`（纯白，不透明）
+           + `border-line`（1px #EAEAEA）+ `rounded-card`。分层靠**描边与间距**，
+           不靠填充透明度 —— minimalist：border replaces elevation。
            ⚠️ 它和主区栏**必须同串**（两块同料），spec 防「只调一块」。
            ⚠️ 页签里**只有选中的那个有底色**（041 起 brand 实底 + 白字；043 起
            brand 是石墨黑，白字 16.83 过 AA —— 041 时代 4.70 的贴线账退役），
@@ -2250,12 +2253,11 @@ watch(activeTab, (tab) => {
           量了才知道没固定住。链条是四级：**纸定高 → 列 flex-col → 导航条 shrink-0
           → 栏 flex-1/min-h-0/overflow-y-auto**，缺一级整条就退化。
 
-          **041 起与导航条同料，与侧栏分成两料（043 沿用）**：`glass-frost` + `bg-white/55`
-          + `backdrop-blur-[30px]`（无 saturate）+ 不透明的 `border-white`
-          + `rounded-card` —— 与导航条**必须同串**（spec 防「只调一块」），实算下限
-          与取值理由写在导航条那段注释里。里面那些卡片（各页签的 `<section>`）是
-          白霜的实心近亲（`bg-raised/95` + 白描边 + 自己的模糊）：**这块料上，
-          抬起来的一律是白**。
+          **x-minimalist：与导航条同料、与侧栏分成两料** —— `bg-raised`（纯白）
+          + `border-line` + `rounded-card`，与导航条**必须同串**（spec 防「只调一块」）。
+          043 那版的 `glass-frost + bg-white/55 + backdrop-blur-[30px] + border-white`
+          已随玻璃整组退役。里面那些卡片（各页签的 `<section>`）是同一张白面
+          （`bg-raised` + `border-line`）：**这块料上，抬起来的一律是白 + 一道发丝线**。
 
           ⚠️ **连带后果（要说实话）**：主区改成自己滚之后，**外面的页面不再滚动了**，
           于是导航条那条 `sticky top-0` 从此**是惰性的** —— 不会有内容从它下面过。
