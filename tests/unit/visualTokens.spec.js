@@ -2855,14 +2855,17 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
         `${ink} 有裸引用 —— 画布与滑块必须共用 VESSEL_DELTA_COLOR（一处改、三处看）`,
       ).toBe(1)
     }
+    // 变更-058 起是 **4 处**：原来的三个用点（画布剖面线 + 画布引线标注 + 滑块钮间色带）
+    // 之外多了**一处派生** —— VESSEL_DELTA_FILL 用它算出差值带底色的低透明度版，
+    // 于是"带"与"线"必然同色相（此前是两份手写字面量，只是肉眼看着像而已）。
     expect(
       SRC_TEXT.split('VESSEL_DELTA_COLOR.consume').length - 1,
-      '常量的消耗色用点不是 3 处（画布剖面线 + 画布引线标注 + 滑块钮间色带）',
-    ).toBe(3)
+      '常量的消耗色用点不是 4 处（3 个用点 + 1 处差值带底色派生）',
+    ).toBe(4)
     expect(
       SRC_TEXT.split('VESSEL_DELTA_COLOR.increase').length - 1,
-      '常量的增加色用点不是 3 处（画布剖面线 + 画布引线标注 + 滑块钮间色带）',
-    ).toBe(3)
+      '常量的增加色用点不是 4 处（3 个用点 + 1 处差值带底色派生）',
+    ).toBe(4)
 
     expect(SRC_TEXT, '钮间色带的语义映射没了（判据须与画布引线标注同源：>= 0 增加）').toContain(
       'vesselVolumeDelta.value >= 0 ? VESSEL_DELTA_COLOR.increase : VESSEL_DELTA_COLOR.consume',
@@ -2875,12 +2878,36 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
     )
   })
 
-  it('竖轨的软拟态配方：凹槽、盖掉 EP 竖版方角、钮座对中量校正、分钮环色走 border', () => {
+  it('竖轨的 minimalist 配方：垫底凹槽 + 发丝环、盖掉 EP 竖版方角、钮座对中量校正、分钮环色走 border', () => {
     expect(SRC_TEXT).toContain('.vessel-level-slider :deep(.el-slider__runway)')
+    /*
+     * 变更-058：凹槽从「软拟态两笔方向性内阴影」换成「垫底 + 1px 发丝环」。
+     * 要守的**凹凸关系没变**（一颗钮推着凹槽走），变的是它的成立方式：
+     * 槽靠"比纸深半档"（`--el-fill-color` = region）加一圈发丝线读出来，不靠 inset 光影 ——
+     * minimalist 的高程不来自光影（见 DESIGN.md §4.2，那条例外就是为这次决定而记的）。
+     * 三条一起钉：① 底色挂 token；② 发丝环走 inset 扩散环（不动几何）；③ 旧材质整组禁入。
+     */
     expect(
       SRC_TEXT,
-      '轨道的凹槽光影没了 —— 只剩一条浅灰槽，「实心钮推着凹槽走」的凹凸关系就不成立',
-    ).toContain('inset 2px 2px 5px rgba(90, 110, 150, 0.32)')
+      '轨道凹槽的底色不再挂 token —— 它必须与全站垫底同一档（--el-fill-color = region）',
+    ).toContain('background-color: var(--el-fill-color)')
+    expect(
+      SRC_TEXT,
+      '凹槽的发丝环没了 —— inset 扩散环是「不动几何」的描边写法（真 border 会让钮座偏心 1px）',
+    ).toContain('box-shadow: inset 0 0 0 1px #eaeaea')
+    for (const [needle, why] of [
+      ['inset 2px 2px 5px rgba(90, 110, 150, 0.32)', '凹槽的冷投影'],
+      ['rgba(90, 110, 150', '软拟态的冷调投影（凹槽 + 钮两处）'],
+      ['linear-gradient(145deg', '圆钮的浮面渐变'],
+      ['inset 0 1px 2px rgba(0, 0, 0, 0.14)', '色带的压暗'],
+      ['#eeeef1', '输入框的 043 字面量'],
+      ['#e8e8e9', '输入框/钮座的 043 字面量'],
+    ]) {
+      expect(
+        SRC_TEXT,
+        `${why}回流了 —— 变更-058 已把软拟态材质整组换成「垫底 + 发丝线 + 语义环」`,
+      ).not.toContain(needle)
+    }
     expect(
       SRC_TEXT,
       '钮座对中量没校正 —— EP 出厂按（6−36）/2 = −15px 写死，我们的轨厚 10 / 钮座 30 需要' +
@@ -2890,11 +2917,12 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
       SRC_TEXT,
       '竖版 bar 没盖掉 EP `.is-vertical` 的 `0 0 3px 3px` 方角 —— 凹槽会缺一个圆头',
     ).toMatch(
-      /\.vessel-level-slider :deep\(\.el-slider__bar\)\s*\{[\s\S]{0,120}border-radius: 9999px/,
+      /\.vessel-level-slider :deep\(\.el-slider__bar\)\s*\{[\s\S]{0,140}border-radius: 9999px/,
     )
-    expect(SRC_TEXT, '圆钮的浮面渐变没了 —— 与全站软拟态按钮的配方脱钩').toContain(
-      'linear-gradient(145deg, #fbfbfd, #eaebee)',
-    )
+    expect(
+      SRC_TEXT,
+      '圆钮不是平的白面了 —— 它的辨识只许靠「2px 语义环 + 白面」，不许再叠渐变/投影',
+    ).toContain('background-color: #ffffff')
     expect(
       SRC_TEXT,
       '钮环没走 border（transparent 基底 + 分钮着色；box-sizing: border-box，几何与 045 一致）',
@@ -2906,11 +2934,50 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
       /nth-child\(3\)[\s\S]{0,80}--v-thumb-upper/,
     )
     expect(SRC_TEXT, '钮/轨道没禁 CSS 过渡 —— 钮会自己滑过去而液面是瞬移，肉眼可见地错位').toMatch(
-      /\.vessel-level-slider :deep\(\.el-slider__bar\)[\s\S]{0,120}transition: none/,
+      /\.vessel-level-slider :deep\(\.el-slider__bar\)[\s\S]{0,140}transition: none/,
     )
-    expect(SRC_TEXT, '滑块的键盘聚焦环（石墨深）没了 —— EP 默认环被覆写后必须显式补').toContain(
-      'outline: 2px solid #171719',
+    expect(SRC_TEXT, '滑块的键盘聚焦环（墨色）没了 —— EP 默认环被覆写后必须显式补').toContain(
+      'outline: 2px solid #111111',
     )
+    // 输入框的悬停/聚焦也换成「三档垫底 + 发丝环」，且挂 token
+    expect(SRC_TEXT, '输入框悬停底没挂 token（-lighter 一档浮起）').toContain(
+      'background-color: var(--el-fill-color-lighter)',
+    )
+    expect(SRC_TEXT, '输入框聚焦底没挂 token（fill = region 一档落下）').toContain(
+      'background-color: var(--el-fill-color)',
+    )
+  })
+
+  it('图表（差值带）与画布字体：语义色单一来源、字族与 :root 同源', () => {
+    /*
+     * 两件 x-minimalist（变更-058）收敛掉的"同一个事实写了两份"：
+     *   ① 差值带底色原是手写 rose-500 / emerald-500 的 rgba，而线用的是
+     *      rose-600 / emerald-600 —— 带与线**不是同一只色**，只是肉眼看着差不多。
+     *      现在必须由 VESSEL_DELTA_COLOR 派生（withAlpha），同色相成为结构保证。
+     *   ② 画布字族原是一条自带 system-ui 的字符串，与 src/style.css 的 :root 栈不是
+     *      同一份 —— 页面上与图上同一串数字会落在两套字形里（tabular-nums 还在，
+     *      但字形不同）。这条断言就是那份"同源"约束。
+     */
+    expect(SRC_TEXT, '差值带的底色不再由语义色派生（withAlpha 没了）').toContain(
+      'const withAlpha = (hex, alpha)',
+    )
+    expect(SRC_TEXT, '差值带的底色没走派生常量').toContain(
+      'consume: withAlpha(VESSEL_DELTA_COLOR.consume, 0.1)',
+    )
+    for (const raw of ['rgba(244, 63, 94', 'rgba(16, 185, 129']) {
+      expect(
+        SRC_TEXT,
+        `${raw} 回流了 —— 差值带底色必须由 VESSEL_DELTA_COLOR 派生，不许再各写一份字面量`,
+      ).not.toContain(raw)
+    }
+
+    const cssFont = (read(join(SRC, 'style.css')).match(/font-family:\s*([^;]+);/) || [])[1] ?? ''
+    expect(cssFont, 'style.css 的 :root 里没解析到 font-family').toBeTruthy()
+    const firstFamily = cssFont.match(/"([^"]+)"/)?.[1] ?? cssFont.trim().split(',')[0].trim()
+    expect(
+      SRC_TEXT,
+      `画布字族与 :root 不同源 —— 页面上与图上同一串数字会落在两套字形里（:root 第一族 = ${firstFamily}）`,
+    ).toContain(firstFamily)
   })
 
   it('步进圆钮（−/+）继续退役：vessel-step 家族全仓零残留；数字输入框原样保留', () => {

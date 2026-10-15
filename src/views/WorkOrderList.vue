@@ -1138,6 +1138,35 @@ function animateVesselTo(which, target) {
 const VESSEL_START_INK = '#1e293b'
 const VESSEL_DELTA_COLOR = { consume: '#e11d48', increase: '#059669' }
 
+/**
+ * 语义色的**低透明度版**（差值带的底色）—— 由上面那一对**派生**，不再各写一份字面量。
+ *
+ * x-minimalist（变更-058）收敛的：原先是 rose-500 / emerald-500 的手写 rgba，
+ * 与线用的 rose-600 / emerald-600 **不是同一只色** —— 于是"带"与"线"是两家人，
+ * 只是肉眼看着差不多才一直没露馅。派生之后两者必然同色相，spec 也钉得住这条关系。
+ *
+ * 两档 α 的差别是**观察强度**不是笔误：消耗（玫红）比增加（翡翠）更刺眼，
+ * 所以同样铺一层时它给得更少（0.10 vs 0.12），两种带的"分量感"才相当。
+ */
+const withAlpha = (hex, alpha) => {
+  const n = Number.parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`
+}
+const VESSEL_DELTA_FILL = {
+  consume: withAlpha(VESSEL_DELTA_COLOR.consume, 0.1),
+  increase: withAlpha(VESSEL_DELTA_COLOR.increase, 0.12),
+}
+
+/**
+ * 画布里的字族必须与 `src/style.css` 的 `:root` **同源**（同一份墨、同一套字）。
+ *
+ * x-minimalist 把全站字体栈从 Inter 换成系统人文无衬线时，画布这里漏了 ——
+ * 后果是图上的数字与页面上同一串数字落在两套字形里（`tabular-nums` 还在，
+ * 但字形不同）。spec 有一条跨文件断言钉着两者同源。
+ */
+const VESSEL_CANVAS_FONT =
+  '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
+
 // 底图：卧式椭圆封头储罐图纸
 // 罐体在底图中的像素边界（由图像分析 + 轮廓叠加验证得出，横纵比例尺一致：0.28567 px/mm）
 
@@ -1313,8 +1342,8 @@ function renderVessel() {
       const bandHeight = lowerY - upperY + VESSEL_WAVE.amplitude * 2 + 8
       const bandWidth = tankRight - tankLeft
 
-      // 底色
-      ctx.fillStyle = isDecrease ? 'rgba(244, 63, 94, 0.1)' : 'rgba(16, 185, 129, 0.12)'
+      // 底色 = 同一只语义色的低透明度版（派生关系见 VESSEL_DELTA_FILL）
+      ctx.fillStyle = isDecrease ? VESSEL_DELTA_FILL.consume : VESSEL_DELTA_FILL.increase
       ctx.fillRect(tankLeft, bandTop, bandWidth, bandHeight)
 
       // 斜线剖面线
@@ -1364,7 +1393,7 @@ function renderVessel() {
         lines.push(`${sign}${Math.abs(massDelta).toFixed(2)} t`)
       }
 
-      ctx.font = `600 ${fs}px system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif`
+      ctx.font = `600 ${fs}px ${VESSEL_CANVAS_FONT}`
       ctx.textAlign = 'right'
       ctx.textBaseline = 'middle'
 
@@ -3731,12 +3760,20 @@ watch(activeTab, (tab) => {
  * 变更-048 **撤掉两根读数柱**（使用方拿实机截图定：「红色框选部分不要了，相应的信息
  * 通过引线指向滑块按钮」）：读数改成**挂在钮上的引线标注**（`.vessel-level-callout`，
  * 位置由脚本按「钮心 = 柱高 − 值/量程 × 柱高」注入），引线走画布差值标注那套折线；
- * 数字框不再画框、退成「带下划线的数字」（下划线即该读数的墨相），
- * 悬停 / 聚焦的软拟态手感照留。滑块本体（凹槽 / 钮 / 钮环 / 色带）一字未动。
+ * 数字框不再画框、退成「带下划线的数字」（下划线即该读数的墨相）。
  *
- * 三次配色迁移 + 两次形态迁移都不动的两条：纯白的高光（`rgba(255,255,255,…)`）
- * 是**光源色**不是面色（与玻璃面板的 `inset 0 1px 0 rgba(255,255,255,.85)`、
- * 与 `border-white` 同性质）；`.vessel-canvas` 那套也不在本轮的轮里。
+ * 变更-058（x-minimalist）**换掉了材质**：软拟态那套光影整组退役 ——
+ * 凹槽的两笔方向性内阴影、钮的渐变 + 四层投影、色带的压暗、输入框的亮出/压入，
+ * 全部换成**垫底档位 + 1px 发丝线 + 语义环**（minimalist 的高程不来自光影）。
+ * ⚠️ **几何一字未动**：轨厚 10 / 钮 22 / 钮座 30 / 对中量 −10px 全部照旧，
+ * 拖动即时落位、引线标注、语义色带这些行为与语义也一字未动 ——
+ * 换的只是"这块控件看起来是什么材质"，不是它怎么工作。
+ *
+ * 三件事仍然不动，且各有理由：
+ *   ① `.vessel-canvas` 的**内容色**（液面按罐号取色的 PALETTE）—— 那是数据不是 chrome
+ *      （见 DESIGN.md §4.1，落地页那张工程图的青色水面是同一条）；
+ *   ② 语义红绿（`VESSEL_DELTA_COLOR`）—— 状态语义，全站唯一允许的高饱和；
+ *   ③ 计算几何与键盘通路（可拖、可键入、可 Tab）。
  */
 .vessel-level-slider {
   --el-slider-height: 10px;
@@ -3750,10 +3787,17 @@ watch(activeTab, (tab) => {
 
 .vessel-level-slider :deep(.el-slider__runway) {
   border-radius: 9999px;
-  background-color: #e8e8e9;
-  box-shadow:
-    inset 2px 2px 5px rgba(90, 110, 150, 0.32),
-    inset -2px -2px 5px rgba(255, 255, 255, 0.9);
+  /*
+   * x-minimalist（变更-058）：凹槽不再是软拟态的两笔方向性内阴影
+   * （冷投影 `rgba(90,110,150,.32)` + 白高光）。这一代的高程不来自光影 ——
+   * 「槽」靠**比纸深半档的垫底** + **1px 发丝线**读出来就够：
+   *   · 底色挂 token `--el-fill-color`（= region，与全站垫底同一档）；
+   *   · 描边走 `inset 0 0 0 1px` 的**扩散环**而不是 border —— 不动盒子几何
+   *     （`--el-slider-button-wrapper-offset: -10px` 那套对中量是按 10px 轨厚算的，
+   *     加真 border 会让它偏 1px）。
+   */
+  background-color: var(--el-fill-color);
+  box-shadow: inset 0 0 0 1px #eaeaea;
 }
 
 /* 拖动要**即时跟手**（液面同步落位），所以钮与轨道都禁掉 CSS 过渡 ——
@@ -3764,21 +3808,26 @@ watch(activeTab, (tab) => {
 }
 
 /* 钮间色带 = 差值语义色（消耗玫红 / 增加翡翠），由使用处经 --el-slider-main-bg-color
-   注入，与画布剖面线共用 VESSEL_DELTA_COLOR；两根线各自的墨色改走钮环（见下） */
+   注入，与画布剖面线共用 VESSEL_DELTA_COLOR；两根线各自的墨色改走钮环（见下）。
+   x-minimalist：那笔 `inset 0 1px 2px rgba(0,0,0,.14)` 压暗退役 —— 色带是**实色语义**，
+   让颜色自己说话，而不是再叠一层"带子凸起"的错觉。 */
 .vessel-level-slider :deep(.el-slider__bar) {
   border-radius: 9999px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.14);
 }
 
 .vessel-level-slider :deep(.el-slider__button) {
   /* border-box：2px 环占钮径内圈，换成 transparent 只是「先不画」，几何与 045 一字不差 */
   border: 2px solid transparent;
-  background: linear-gradient(145deg, #fbfbfd, #eaebee);
-  box-shadow:
-    3px 3px 6px rgba(90, 110, 150, 0.35),
-    -2px -2px 6px rgba(255, 255, 255, 0.9),
-    inset 0 -2px 3px -1px rgba(0, 0, 0, 0.06),
-    inset 0 2px 3px -1px rgba(255, 255, 255, 0.9);
+  /*
+   * x-minimalist（变更-058）：**平的白面**取代软拟态那套四层光影
+   * （`linear-gradient(145deg,…)` + 外投影 + 白高光 + 内压暗 + 内高光）。
+   * 钮的辨识现在靠两件事，都不依赖光影：
+   *   ① 2px 的**语义环**（`--v-thumb-lower` / `--v-thumb-upper`，与读数同色）；
+   *   ② 白面压在白纸上 —— 环就是它的边界（minimalist：border 取代 elevation）。
+   * 顺带说明为什么这次可以删而不心虚：拖动是**瞬时**的（见下面的 transition: none），
+   * 那套光影从来不参与"手感"，只参与观感。
+   */
+  background-color: #ffffff;
 }
 
 /* 钮环 = 该钮代表的读数色。range 模式下轨道子的 DOM 序 = [bar, 下钮, 上钮]：
@@ -3793,9 +3842,10 @@ watch(activeTab, (tab) => {
   border-color: var(--v-thumb-upper);
 }
 
-/* 键盘聚焦：EP 自带的焦点表现落在被上面覆写的钮上，这里显式补一圈（石墨深，同 043 主色） */
+/* 键盘聚焦：EP 自带的焦点表现落在被上面覆写的钮上，这里显式补一圈
+   （墨色 = x-minimalist 的主色 #111111；043 那代是 #171719） */
 .vessel-level-slider :deep(.el-slider__button-wrapper:focus-visible .el-slider__button) {
-  outline: 2px solid #171719;
+  outline: 2px solid #111111;
   outline-offset: 2px;
 }
 
@@ -3822,8 +3872,11 @@ watch(activeTab, (tab) => {
 /* 液位数字：仍可键入（865 / 1525 这类实测读数落不到步长格点上，「扫值」与
    「录值」是两种手势 —— 045 定的分工）；048 起**不再画框**，退成「带下划线的数字」：
    下划线即该读数的墨相（起始虚线 / 终止实线，与画布那两根线、钮环同一只墨，
-   经外层的 --v-callout-ink 带进来）。悬停亮出输入底、聚焦压入 —— 软拟态的
-   「按进去录值」手感照留，只是静止态不再占一张卡片的位置 */
+   经外层的 --v-callout-ink 带进来）。
+   x-minimalist（变更-058）：悬停/聚焦不再用软拟态的"亮出/压入"两笔方向性光影，
+   改成**三档垫底 + 1px 发丝环**：悬停浮起一档（`-lighter`）、聚焦落下两档（`fill`
+   = region）并亮出发丝环 —— 「按进去录值」这层意思还在，但它由**深浅**说，
+   不由投影说。三个值全部挂 EP 的填充 token（region 系），不再写 043 的字面量。 */
 .vessel-level-input {
   border: none;
   border-bottom: 1px dashed var(--v-callout-ink);
@@ -3848,16 +3901,14 @@ watch(activeTab, (tab) => {
 }
 
 .vessel-level-input:hover {
-  background-color: #eeeef1;
+  background-color: var(--el-fill-color-lighter);
 }
 
-/* 聚焦时呈"按入"质感的凹陷效果 */
+/* 聚焦 = 落下一档 + 发丝环（"按入"的扁平写法，取代原来的 inset 光影） */
 .vessel-level-input:focus {
-  background-color: #e8e8e9;
+  background-color: var(--el-fill-color);
   border-bottom-color: transparent;
-  box-shadow:
-    inset 2px 2px 4px rgba(90, 110, 150, 0.32),
-    inset -2px -2px 4px rgba(255, 255, 255, 0.9);
+  box-shadow: inset 0 0 0 1px #eaeaea;
 }
 
 .vessel-level-input::-webkit-outer-spin-button,
