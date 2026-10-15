@@ -1840,7 +1840,7 @@ watch(activeTab, (tab) => {
             -->
               <button
                 type="button"
-                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                 :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
                 :aria-expanded="!collapsed"
                 aria-controls="app-sidebar"
@@ -1911,7 +1911,7 @@ watch(activeTab, (tab) => {
               >
                 <button
                   type="button"
-                  class="rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
+                  class="rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
                   :class="[
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
@@ -1924,7 +1924,7 @@ watch(activeTab, (tab) => {
                   @click="selectGroup(group.key)"
                 >
                   <span
-                    class="flex shrink-0 items-center justify-center rounded-xl transition-colors"
+                    class="flex shrink-0 items-center justify-center rounded-md transition-colors"
                     :class="[
                       collapsed ? 'h-10 w-10' : 'h-9 w-9',
                       currentGroup === group.key
@@ -2008,7 +2008,7 @@ watch(activeTab, (tab) => {
                     :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
                       :aria-label="collapsed ? `当前登录：${roleName}` : undefined"
@@ -2042,7 +2042,7 @@ watch(activeTab, (tab) => {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
@@ -2052,7 +2052,7 @@ watch(activeTab, (tab) => {
                     @click="handleLogout"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600 transition"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600 transition"
                       :class="
                         collapsed
                           ? 'h-10 w-10 group-hover:bg-white/55'
@@ -2093,7 +2093,7 @@ watch(activeTab, (tab) => {
                     :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-white/40 text-slate-600"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
                       :aria-label="collapsed ? '未登录，只读浏览' : undefined"
@@ -2124,7 +2124,7 @@ watch(activeTab, (tab) => {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
@@ -2134,7 +2134,7 @@ watch(activeTab, (tab) => {
                     @click="goLogin"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-xl bg-brand text-white transition group-hover:bg-brand-deep"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-white transition group-hover:bg-brand-deep"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
                       <svg
@@ -2241,7 +2241,7 @@ watch(activeTab, (tab) => {
                 :data-tab-key="tab.key"
                 type="button"
                 :aria-current="activeTab === tab.key ? 'page' : undefined"
-                class="shrink-0 whitespace-nowrap rounded-xl border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                class="shrink-0 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                 :class="
                   activeTab === tab.key
                     ? 'border-brand bg-brand font-medium text-white'
@@ -2647,7 +2647,7 @@ watch(activeTab, (tab) => {
                             </td>
                             <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                               <span
-                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-md bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                                 :role="canOpenImage(record) ? 'button' : undefined"
                                 :tabindex="canOpenImage(record) ? 0 : -1"
                                 :aria-label="
@@ -2678,7 +2678,7 @@ watch(activeTab, (tab) => {
                                   alt="领料单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2850,7 +2850,7 @@ watch(activeTab, (tab) => {
                             </td>
                             <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                               <span
-                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                                class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-md bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                                 :role="canOpenImage(record) ? 'button' : undefined"
                                 :tabindex="canOpenImage(record) ? 0 : -1"
                                 :aria-label="
@@ -2881,7 +2881,7 @@ watch(activeTab, (tab) => {
                                   alt="入库单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2961,7 +2961,7 @@ watch(activeTab, (tab) => {
                 </div>
                 <button
                   type="button"
-                  class="ml-auto shrink-0 rounded-xl border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2"
+                  class="ml-auto shrink-0 rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 transition hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-2"
                   @click="fetchGoodsMoveSummary"
                 >
                   重新加载

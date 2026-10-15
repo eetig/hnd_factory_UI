@@ -14,7 +14,7 @@ const emit = defineEmits(['open', 'clear'])
   <span class="inline-flex items-center gap-1">
     <button
       type="button"
-      class="inline-flex items-center gap-1 rounded-xl transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+      class="inline-flex items-center gap-1 rounded-md transition hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
       :class="[maxWidthClass, selected ? 'text-brand-deep' : '']"
       :title="selected ? `已筛选：${selected}` : `点击选择${hint || label}`"
       @click="emit('open')"
@@ -35,7 +35,7 @@ const emit = defineEmits(['open', 'clear'])
     <button
       v-if="selected"
       type="button"
-      class="rounded-xl px-1 text-slate-500 transition hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
+      class="rounded-md px-1 text-slate-500 transition hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600"
       :aria-label="`清除${hint || label}筛选`"
       @click="emit('clear')"
     >

@@ -198,13 +198,13 @@ const STATS_DETAIL = [
           <div class="mt-9 flex flex-wrap items-center gap-3">
             <RouterLink
               to="/"
-              class="rounded-xl bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-deep active:scale-[0.98]"
+              class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-deep active:scale-[0.98]"
             >
               进入工作台
             </RouterLink>
             <a
               href="#features"
-              class="rounded-xl border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98]"
+              class="rounded-md border border-slate-300 bg-white px-6 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 active:scale-[0.98]"
             >
               看功能清单
             </a>

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onUnmounted, ref } from 'vue'
 import { ElDatePicker, ElDialog, ElImage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
@@ -569,7 +569,7 @@ function removeRow(image, row) {
 /** 可编辑单元格：静默时不显边框，悬停/聚焦才提示可改，避免整表看起来像表单控件 */
 function inputClass(col) {
   return [
-    'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
+    'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
     'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-brand focus:bg-raised',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
@@ -1079,7 +1079,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-xl bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -1116,7 +1116,7 @@ onUnmounted(() => {
             <img
               :src="image.url"
               :alt="image.name"
-              class="h-10 w-10 shrink-0 rounded-xl border border-slate-200 object-cover"
+              class="h-10 w-10 shrink-0 rounded-md border border-slate-200 object-cover"
             />
             <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
               {{ image.name }}
@@ -1153,7 +1153,7 @@ onUnmounted(() => {
                   type="text"
                   placeholder="—"
                   aria-label="单据号"
-                  class="w-40 rounded-xl border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-brand"
+                  class="w-40 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-brand"
                   @change="onDocumentNoChange(image)"
                 />
               </span>
@@ -1184,7 +1184,7 @@ onUnmounted(() => {
             >
               <template v-if="image.confirm?.status === 'skipped'">
                 <span class="text-slate-600">已整单跳过：本次不写库</span>
-                <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="undoSkip(image)">撤销跳过</button>
+                <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="undoSkip(image)">撤销跳过</button>
               </template>
 
               <template v-else-if="image.docCheck === 'checking'">
@@ -1193,7 +1193,7 @@ onUnmounted(() => {
 
               <template v-else-if="image.docCheck.error">
                 <span class="text-rose-600">单据号核对失败：{{ image.docCheck.error }}</span>
-                <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="checkDocument(image)">重试</button>
+                <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="checkDocument(image)">重试</button>
               </template>
 
               <template v-else-if="image.docCheck.exists">
@@ -1207,26 +1207,26 @@ onUnmounted(() => {
                   :preview-src-list="[docCheckThumb(image)]"
                   :preview-teleported="true"
                   fit="cover"
-                  class="h-8 w-8 shrink-0 rounded-xl border border-slate-200"
+                  class="h-8 w-8 shrink-0 rounded-md border border-slate-200"
                   alt="库中单据图"
                 />
                 <template v-if="image.mode === 'edit'">
                   <span class="text-xs text-slate-600">
                     已载入库中数据：本张图片的识别结果不会合并进来，请直接增删改
                   </span>
-                  <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
+                  <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
                     整单跳过
                   </button>
                 </template>
                 <template v-else>
                   <button
                     type="button"
-                    class="shrink-0 rounded-xl bg-brand px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-deep"
+                    class="shrink-0 rounded-md bg-brand px-3 py-1 text-xs font-medium text-white transition hover:bg-brand-deep"
                     @click="loadDocument(image)"
                   >
                     载入编辑
                   </button>
-                  <button type="button" class="shrink-0 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
+                  <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep" @click="skipDocument(image)">
                     整单跳过
                   </button>
                 </template>
@@ -1266,7 +1266,7 @@ onUnmounted(() => {
                           :preview-src-list="[image.url]"
                           :preview-teleported="true"
                           fit="cover"
-                          class="h-8 w-8 rounded-xl border border-slate-200"
+                          class="h-8 w-8 rounded-md border border-slate-200"
                         />
                       </div>
 
@@ -1304,7 +1304,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-xl text-slate-500 transition hover:bg-brand-50 hover:text-brand-deep"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-brand-50 hover:text-brand-deep"
                           aria-label="搜索物料"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
@@ -1339,7 +1339,7 @@ onUnmounted(() => {
                       <div v-else-if="col.key === 'actions'" class="flex justify-center">
                         <button
                           type="button"
-                          class="flex h-6 w-6 items-center justify-center rounded-xl text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
+                          class="flex h-6 w-6 items-center justify-center rounded-md text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
                           aria-label="删除该行"
                           title="删除该行"
                           @click="removeRow(image, row)"
@@ -1381,7 +1381,7 @@ onUnmounted(() => {
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
+                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
                   @click="addRow(image)"
                 >
                   <svg
@@ -1426,7 +1426,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-md bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
@@ -1457,7 +1457,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand"
+          class="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand"
           @input="handlePickerInput"
           @keyup.enter="runPickerSearch"
         />

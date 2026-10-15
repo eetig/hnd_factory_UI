@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, ref } from 'vue'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
@@ -464,7 +464,7 @@ function handleBackToList() {
           将 Excel 文件拖到此处，或 <span class="text-brand-deep">点击选择文件</span>
         </p>
         <p id="wo-import-drop-hint" class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
-        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-xl bg-region px-3 py-1.5 text-sm text-slate-600">
+        <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-md bg-region px-3 py-1.5 text-sm text-slate-600">
           <span class="max-w-60 truncate">{{ currentFile.name }}</span>
           <!-- 状态须反映真实结果，避免「解析失败」与「解析完成」同时出现 -->
           <span v-if="previewError" class="font-medium text-rose-700">解析失败</span>

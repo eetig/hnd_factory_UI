@@ -28,24 +28,37 @@ const emit = defineEmits(['action'])
 </script>
 
 <template>
+  <!--
+    x-minimalist：空态/错误态是**版面**问题，不是装饰问题。
+      · 层次三档：符号徽章 → 标题（tracking-tight，字阶比正文大一档）→ 说明
+        （行高 1.6、行宽收到 46ch，长句子不会拉成一整行）；
+      · 按钮与全站同构：6px 圆角 + 墨色实底 + 按下 scale(0.98)（minimalist 的签名
+        CTA；原来 12px 的圆角是全站统一到 6px 之前的遗留）；
+      · 徽章的语义底色来自 statusTones（pale 系），**这一代不动它** —— 它是状态
+        语义的唯一载体，spec 拿实算比值钉着，动它等于改语义色；
+      · 不放插图、不放插画：empty 状态要"看得出怎么把数据放进来"，而那由各面板
+        传进来的 description 负责，不是靠图形。
+  -->
   <div
     :role="type === 'error' ? 'alert' : undefined"
     class="flex min-h-72 flex-col items-center justify-center px-6 text-center"
   >
     <div
-      class="mb-4 flex h-12 w-12 items-center justify-center rounded-full"
+      class="mb-4 flex h-12 w-12 items-center justify-center rounded-full font-mono text-base"
       :class="TONE[type] || TONE.empty"
     >
       {{ GLYPH[type] || GLYPH.empty }}
     </div>
 
-    <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
-    <p v-if="description" class="mt-2 text-sm text-slate-500">{{ description }}</p>
+    <h2 class="text-lg font-semibold tracking-tight text-slate-900">{{ title }}</h2>
+    <p v-if="description" class="mt-2 max-w-[46ch] text-sm leading-relaxed text-slate-500">
+      {{ description }}
+    </p>
 
     <button
       v-if="actionText"
       type="button"
-      class="mt-5 rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+      class="mt-5 rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
       @click="emit('action')"
     >
       {{ actionText }}

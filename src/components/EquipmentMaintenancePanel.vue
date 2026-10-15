@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
@@ -267,7 +267,7 @@ async function handleDrawingPicked(event) {
                 v-if="row.imageFile"
                 :src="imagePreview(row.imageFile)"
                 :alt="`${row.equipmentName} 的容器底图`"
-                class="h-8 w-8 rounded-xl border border-slate-200 object-contain"
+                class="h-8 w-8 rounded-md border border-slate-200 object-contain"
               />
               <span v-else class="text-xs text-slate-500">未配</span>
             </td>

@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onUnmounted, ref } from 'vue'
 import {
   ElAutocomplete,
@@ -194,7 +194,7 @@ const canCreate = computed(
 /** 静默单元格：平时看不出是输入框，悬停/聚焦才显形（同图片解析页 inputClass）*/
 function inputClass(align) {
   return [
-    'w-full rounded-xl border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
+    'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
     'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-brand focus:bg-raised',
     align === 'right' ? 'text-right' : '',
   ]
@@ -385,14 +385,14 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep"
+        class="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep"
         @click="reloadTankLevelRecords"
       >
         查询
       </button>
       <button
         type="button"
-        class="rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-region"
+        class="rounded-md border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-region"
         @click="resetTankLevelFilters"
       >
         重置
@@ -536,7 +536,7 @@ function handleThumbError(event, image) {
                     />
                     <button
                       type="button"
-                      class="rounded-xl border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-brand hover:text-brand-deep"
+                      class="rounded-md border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition hover:border-brand hover:text-brand-deep"
                       @click="pendingImageInputRef?.click()"
                     >
                       {{ pendingImages.length ? '再加一张' : '选择图片' }}
@@ -549,7 +549,7 @@ function handleThumbError(event, image) {
                       <img
                         :src="item.url"
                         :alt="item.file.name"
-                        class="h-5 w-5 rounded-xl border border-slate-300 object-cover"
+                        class="h-5 w-5 rounded-md border border-slate-300 object-cover"
                       />
                       <button
                         type="button"
@@ -566,7 +566,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-brand px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -574,7 +574,7 @@ function handleThumbError(event, image) {
                     </button>
                     <button
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-region"
+                      class="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-region"
                       :disabled="saving"
                       @click="cancelEdit"
                     >
@@ -683,7 +683,7 @@ function handleThumbError(event, image) {
                      编辑态与只读态行为一致，所以不放进上面的两态分支，免得写两份 -->
                 <td class="whitespace-nowrap px-3 py-2.5">
                   <span
-                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-xl bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                    class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-md bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
                     role="button"
                     tabindex="0"
                     :aria-label="record.images.length ? `查看图据（共 ${record.images.length} 张）` : '添加图据'"
@@ -710,7 +710,7 @@ function handleThumbError(event, image) {
                       alt="图据缩略图"
                       loading="lazy"
                       decoding="async"
-                      class="absolute inset-0 h-5 w-5 rounded-xl border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                      class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
                       @error="handleThumbError($event, record.images[0])"
                     />
                     <!-- 多张时在角上标出总数，免得点开才知道有几张 -->
@@ -728,7 +728,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-xl bg-brand px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-white transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -736,7 +736,7 @@ function handleThumbError(event, image) {
                     </button>
                     <button
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-region"
+                      class="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:bg-region"
                       :disabled="saving"
                       @click="cancelEdit"
                     >
@@ -747,7 +747,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canEdit"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:text-brand-deep"
+                      class="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:text-brand-deep"
                       @click="startEdit(record)"
                     >
                       编辑
@@ -755,7 +755,7 @@ function handleThumbError(event, image) {
                     <button
                       v-if="canDelete"
                       type="button"
-                      class="rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
+                      class="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-rose-400 hover:text-rose-600"
                       @click="removeRow(record)"
                     >
                       删除
@@ -773,7 +773,7 @@ function handleThumbError(event, image) {
       <div v-if="canCreate" class="flex shrink-0 items-center gap-3 border-t border-slate-100 px-6 py-3">
         <button
           type="button"
-          class="flex items-center gap-1 rounded-xl border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
+          class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
           @click="startCreate"
         >
           <svg
