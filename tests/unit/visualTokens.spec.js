@@ -2266,70 +2266,44 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     ).toBe(1)
   })
 
-  it('滚动时间线的来源跟着滚动容器走 —— 不再挂死在一块不动的栏上', () => {
+  it('滚动时间线（glass-scroll / --main-scroll）整组退场 —— 零残留', () => {
     /*
-     * ⚠️ **这一条这一轮"故意保留"，理由要说清楚**（别把它当成漏删的旧账）。
+     * ⚠️ **这一条替换掉了 043 版的「滚动时间线的来源跟着滚动容器走」**，不是漏删的
+     * 旧账：那一版自己写着「删标记是另一个决定 —— 那时连同本组一起删，别只删一半」，
+     * 这一条就是那个决定（变更-056）。
      *
-     * 043 时 `--main-scroll` 是**三块玻璃边缘高光的来源**（glass-effects.css 里
-     * `.glass-scroll` 声明、`.glass-refract` 消费）。它必须挂在「当时真正在滚的
-     * 那个元素」上：这四个页签改完之后玻璃栏不再滚了，时间线留在它身上就会
-     * **冻住** —— 高光静止不动，不报错、不警告，正是最难发现的那种。
+     * 病史一句话：`--main-scroll` 是 042 折射层的时间线（声明与消费都在已删除的
+     * glass-effects.css 里），它必须挂在「当时真正在滚的那个元素」上 —— 挂在不动的
+     * 元素上，三块玻璃的边缘高光会冻在贴顶那一格，不报错、只是不跟手。玻璃整组退场
+     * 之后它没有消费者，于是标记类、`INNER_SCROLL_TABS` 名单、`scrollsInsideCard`
+     * 推导、以及专为它存在的 `:active` prop 一并删除。
      *
-     * x-minimalist 把玻璃整组删掉，那条时间线**已经没有消费者**（`glass-scroll`
-     * 现在是个死标记，清理指向 DESIGN.md §5.3）。但那 7 处 `:class` 绑定**仍在**，
-     * 于是这里继续钉三件事，它们今天仍然成立、而且正是清理时最容易踩坏的：
-     *   ① 标记不许回到**静态** class 上（`v-show` 常驻，多份同名声明是未定义行为）；
-     *   ② 「不是那四个页签时由主区栏承担」的那条绑定必须在，且**只有一条**；
-     *   ③ 模板上的绑定与脚本里的 `INNER_SCROLL_TABS` 两本账必须对得上
-     *      （多一个/少一个都是同一类错：声明落在了一个不滚动的元素上）。
-     * 删标记是另一个决定 —— 那时连同本组一起删，别只删一半。
+     * 这里钉**零残留**而不是钉「挂在哪」：挂在哪已经不是契约（时间线不存在了），
+     * 而残留会让下一个人以为它还有用。剥注释之后扫 —— 本仓的注释文化会继续提到这些
+     * 名字（记录它们为什么走），那是记录不是用法。
      */
-    const carriers = CLASS_ATTRS.filter((a) => a.value.includes('glass-scroll'))
-    expect(
-      carriers.filter((a) => !a.bound).map((a) => a.value),
-      'glass-scroll 回到了静态 class 上 —— 四个页签是 v-show 的、始终在 DOM 里，' +
-        '同一时刻会有多份同名声明（换成 :class 绑定，由 activeTab 决定挂在哪）。',
-    ).toEqual([])
+    for (const token of [
+      'glass-scroll',
+      'INNER_SCROLL_TABS',
+      'scrollsInsideCard',
+      '--main-scroll',
+    ]) {
+      const offenders = SOURCE_FILES.filter((file) => stripComments(read(file)).includes(token)).map(
+        rel,
+      )
+      expect(
+        offenders,
+        `「${token}」在 src 里还有用法 —— 时间线随玻璃退场后它没有任何消费者，` +
+          '残留只会让下一个人以为它还有用（注释里的记账不算：本行断言已剥注释）。',
+      ).toEqual([])
+    }
 
+    // `:active` 这个 prop 也是为那条时间线而生的：面板现在不收任何 prop
+    // （数据走模块级单例，见 TankLevelPanel 头部注释）
     expect(
-      carriers.filter((a) => a.bound && a.value.includes('!scrollsInsideCard')).length,
-      '主区栏上没有「不是那四个页签时由我承担」的那条绑定',
-    ).toBe(1)
-
-    const boundTabs = carriers
-      .filter((a) => a.bound)
-      .map((a) => a.value.match(/activeTab === '(\w+)'/)?.[1])
-      .filter(Boolean)
-    expect(
-      boundTabs,
-      '四个汇总页签的表格区没有各自声明那个标记',
-    ).toEqual(TABS)
-
-    // 储罐液位（变更-044）：绑定在面板文件里、认的是 `active` prop（子组件拿不到
-    // activeTab），由 WorkOrderList 那只 `:active` 把它的页签名对进同一本账。
-    expect(
-      TANK_CLASS_ATTRS.filter((a) => a.bound && a.value.includes("'glass-scroll': active")).length,
-      'TankLevelPanel 的表格区没挂 glass-scroll 的 active 绑定',
-    ).toBe(1)
-    expect(
-      TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value.includes('glass-scroll')).map(
-        (a) => a.value,
-      ),
-      'glass-scroll 出现在 TankLevelPanel 的静态 class 上 —— v-show 常驻，它会与激活' +
-        '页签的声明同时存在，归属成未定义行为。',
-    ).toEqual([])
-
-    // 脚本里的名单与模板上的绑定必须对得上（两本平行账，钉在一起）。
-    // 变更-044 起名单是五份：四个汇总页签在里面绑、储罐液位在外面绑，靠 `:active` 对账。
-    const list = WORKBENCH.match(/const INNER_SCROLL_TABS = \[([^\]]*)\]/)?.[1] ?? ''
-    const panelTab = WORKBENCH.match(/<TankLevelPanel :active="activeTab === '(\w+)'"/)?.[1]
-    expect(
-      [...boundTabs, panelTab],
-      'INNER_SCROLL_TABS 与模板上真正挂那个标记的页签对不上 —— ' +
-        '多一个（那个页签其实在主区栏里滚，标记却挂在了不动的表格区上）、' +
-        '少一个（那个页签表格区在滚，标记却留在主区栏上）。' +
-        '（标记本身已经是死代码，但两本账要对得上 —— 清理时一起清。）',
-    ).toEqual([...list.matchAll(/'(\w+)'/g)].map((m) => m[1]))
+      read(join(SRC, 'components', 'TankLevelPanel.vue')),
+      'TankLevelPanel 又收 prop 了 —— 变更-056 之后它只靠模块级单例取数',
+    ).not.toMatch(/defineProps\s*\(/)
   })
 })
 

@@ -231,22 +231,18 @@ const sidebarGroups = computed(() =>
 const activeTabLabel = computed(() => tabs.find((tab) => tab.key === activeTab.value)?.label ?? '')
 
 /*
- * 变更-038：四个汇总页签的滚动发生在**卡片内部**（表格区自己滚），其余页签仍在
- * 玻璃栏里滚（模板里那个 `flex-1 min-h-0 overflow-y-auto`）。
- * 变更-044：月底储罐液位记录（TankLevelPanel）加入同一张方子 —— 它的滚动容器
- * 在子组件里，激活状态用 `:active` 传进去，由那边的表格区自己挂 `glass-scroll`。
+ * 变更-038 / 044 定下的「卡片内滚」契约仍然成立，但**不再需要 JS 表达**：
+ * 四个汇总页签与储罐液位的滚动发生在卡片内部（表格区自己滚），其余页签仍在主区栏
+ * 里滚。当时为此维护了 `INNER_SCROLL_TABS` + `scrollsInsideCard`，唯一的用途是给
+ * `.glass-scroll` 标记类挑「此刻真正在滚的那个元素」—— 那是 042 折射层的时间线
+ * （`--main-scroll`）要看的：挂在一个不滚动的元素上，三块玻璃的边缘高光会**冻在
+ * 贴顶那一格**，不报错、只是不跟手。
  *
- * `.glass-scroll` 声明的 `--main-scroll` 曾是**三块玻璃边缘高光的来源**，所以必须挂在
- * 「当时真正在滚的那个元素」上 —— 挂在不动的那块上，高光就会**冻住**：不报错、
- * 不警告，只是不跟手。
- *
- * ⚠️ **x-minimalist：高光随玻璃整组退役，这个标记现在是死的。** 保留它（以及下面
- * `scrollsInsideCard` 的推导）只是因为「滚动到底发生在卡片内还是玻璃栏里」这条
- * **结构事实**仍然被模板与 spec 用着；清理计划写在 DESIGN.md §5.3（连同 JS 变量
- * 与 spec 那三条断言一起动）。别照着旧注释去追那条已经不存在的高光。
+ * x-minimalist 删掉折射层之后这条时间线没有消费者，标记、名单与那份推导一并删除
+ * （变更-056）。「谁在滚」这条**结构事实**没有丢：它现在由模板本身表达（卡片
+ * `h-full flex-col` + 表格区 `min-h-0 flex-1 overflow-y-auto`），并由 spec §15 的
+ * 定高链断言钉着 —— 也就是不再需要「两本账对账」这种东西了。
  */
-const INNER_SCROLL_TABS = ['workOrder', 'material', 'inbound', 'stock', 'tankLevel']
-const scrollsInsideCard = computed(() => INNER_SCROLL_TABS.includes(activeTab.value))
 
 /**
  * 切大类：落到该类第一个**可见**页。
@@ -1652,8 +1648,10 @@ watch(activeTab, (tab) => {
   现状以 `DESIGN.md` 与 `src/minimal-field.css` 为准；逐段重写登记在 DESIGN.md §5.2，
   本轮只改了最误导的四处（纸 / 侧栏 / 导航条 / 主区栏）。
 
-  `glass-scroll` 这个标记类同理：它随玻璃高光一起失效，现在的价值只是「滚动到底发生在
-  卡片内还是玻璃栏里」这条**结构事实**（清理计划见 DESIGN.md §5.3）。
+  `glass-scroll` 这个标记类与它背后的 `INNER_SCROLL_TABS` / `scrollsInsideCard` 推导
+  已在变更-056 一并删除（时间线随玻璃退场后它们没有消费者）。「滚动到底发生在卡片内
+  还是玻璃栏里」这条结构事实没有丢：四个页签的卡片是 `h-full flex-col`、表格区是
+  `min-h-0 flex-1 overflow-y-auto`，由模板本身表达，spec §15 的定高链断言钉着。
   -->
   <el-config-provider :locale="zhCn">
     <!--
@@ -2285,16 +2283,17 @@ watch(activeTab, (tab) => {
           ⚠️ 变更-038 之后，四个汇总页签上连**这一栏**都不滚了（滚的是卡片里的表格区），
           这条 sticky 于是更没有用武之地 —— 去留是个独立决定，本轮不动它。
 
-          ⚠️ **滚动时间线要跟着滚动容器走**（变更-038）：四个汇总页签改成「卡片撑满、
-          表格区自己滚」之后，这一栏在那四页上**不再滚动**了，`--main-scroll` 就不能
-          再挂死在它身上 —— 时间线挂在一个不动的东西上，三块玻璃的边缘高光会**停在
+          ⚠️ **这一栏曾经挂过 `.glass-scroll`**（变更-038）：四个汇总页签改成「卡片
+          撑满、表格区自己滚」之后，本栏在那四页上不再滚动，`--main-scroll` 时间线
+          就不能挂死在它身上 —— 挂在一个不动的元素上，三块玻璃的边缘高光会**停在
           贴顶那一格**，不报错、只是不跟手（与 `.minimal-field` 那段注释记的是同一种
-          失效）。所以 `glass-scroll` 从静态 class 挪到绑定上：本栏挂「不是那四页时」
-          的那一份，那四页各自的表格区挂自己那一份 —— **任何时刻只有一处声明**。
+          失效）。所以那时把标记从静态 class 挪到 `:class` 绑定上：本栏挂「不是那四页
+          时」的那一份，那四页各自的表格区挂自己那一份 —— **任何时刻只有一处声明**。
+          x-minimalist 删掉折射层后时间线没有消费者，标记与推导一并删除（变更-056）；
+          这条注释留在这里，只是回答「为什么本栏没有那个类」。
           -->
           <div
             class="flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4"
-            :class="{ 'glass-scroll': !scrollsInsideCard }"
           >
             <div v-show="activeTab === 'workOrder'" class="flex h-full flex-col">
               <!--
@@ -2368,9 +2367,8 @@ watch(activeTab, (tab) => {
                   <div v-else class="flex min-h-0 flex-1 flex-col">
                     <div
                       class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
-                      :class="{ 'glass-scroll': activeTab === 'workOrder' }"
                     >
-                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                      <table class="min-w-full table-fixed divide-y divide-line text-left">
                         <colgroup>
                           <col v-for="column in columns" :key="column.key" :class="column.width" />
                         </colgroup>
@@ -2420,7 +2418,7 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody class="divide-y divide-line">
                           <tr v-if="tableData.length === 0">
                             <td
                               :colspan="columns.length"
@@ -2581,9 +2579,8 @@ watch(activeTab, (tab) => {
                   <div v-else class="flex min-h-0 flex-1 flex-col">
                     <div
                       class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
-                      :class="{ 'glass-scroll': activeTab === 'material' }"
                     >
-                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                      <table class="min-w-full table-fixed divide-y divide-line text-left">
                         <colgroup>
                           <col
                             v-for="column in pickColumns"
@@ -2615,7 +2612,7 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody class="divide-y divide-line">
                           <tr
                             v-for="(record, index) in pickTableData"
                             :key="`${record.materialCode}-${record.pickDate}-${index}`"
@@ -2784,9 +2781,8 @@ watch(activeTab, (tab) => {
                   <div v-else class="flex min-h-0 flex-1 flex-col">
                     <div
                       class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
-                      :class="{ 'glass-scroll': activeTab === 'inbound' }"
                     >
-                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                      <table class="min-w-full table-fixed divide-y divide-line text-left">
                         <colgroup>
                           <col
                             v-for="column in inboundColumns"
@@ -2818,7 +2814,7 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody class="divide-y divide-line">
                           <tr
                             v-for="(record, index) in inboundTableData"
                             :key="`${record.materialCode}-${record.inboundDate}-${index}`"
@@ -3037,9 +3033,8 @@ watch(activeTab, (tab) => {
                    与领料 / 入库汇总那两张表同一套写法 -->
                     <div
                       class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
-                      :class="{ 'glass-scroll': activeTab === 'stock' }"
                     >
-                      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+                      <table class="min-w-full table-fixed divide-y divide-line text-left">
                         <colgroup>
                           <col
                             v-for="column in stockColumns"
@@ -3060,7 +3055,7 @@ watch(activeTab, (tab) => {
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-slate-100">
+                        <tbody class="divide-y divide-line">
                           <tr
                             v-for="(record, index) in stockTableData"
                             :key="`${record.plantCode}-${record.materialCode}-${record.storageLocation}-${index}`"
@@ -3253,7 +3248,7 @@ watch(activeTab, (tab) => {
               「翻页组件位置变化，体验不好」（第 4 页只剩 1 行时分页行跳到表格下面）。
             -->
             <div v-show="activeTab === 'tankLevel'" class="flex h-full flex-col">
-              <TankLevelPanel :active="activeTab === 'tankLevel'" />
+              <TankLevelPanel />
             </div>
 
             <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->

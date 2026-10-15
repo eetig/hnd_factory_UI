@@ -29,13 +29,10 @@ import { useTankLevelImages } from '../composables/useTankLevelImages'
 // 「首次进 Tab 才加载」交给 WorkOrderList 的 watch(activeTab) —— 面板是 v-show 常驻的，
 // 挂载时机和 Tab 切换不是一回事。
 //
-// 变更-044：唯一的 prop `active` 是给渲染用的 —— 「卡片内滚」的页签 v-show 常驻，
-// 各自的表格区都留在 DOM 里；而 `.glass-scroll`（`--main-scroll` 的来源）按 038
-// 定下的规矩**任何时刻只有一处声明**，所以由激活状态决定挂不挂（四个汇总页签用
-// `activeTab === 'x'` 表达同一件事，这里是它的 prop 版）。
-defineProps({
-  active: { type: Boolean, default: false },
-})
+// 变更-044 曾加过一个 `active` prop：唯一的用途是决定要不要挂 `.glass-scroll`
+// （`--main-scroll` 时间线的来源，按 038 的规矩「任何时刻只有一处声明」）。
+// x-minimalist 删掉折射层后时间线没有消费者，prop 与标记在变更-056 一并删除 ——
+// 这个面板现在**不收任何 prop**，与「数据走模块级单例」的约定也更一致了。
 const {
   tankLevelTableData,
   tankLevelPageNum,
@@ -429,9 +426,8 @@ function handleThumbError(event, image) {
       <div v-else class="flex min-h-0 flex-1 flex-col">
         <div
           class="min-h-0 flex-1 overflow-x-auto overflow-y-auto"
-          :class="{ 'glass-scroll': active }"
         >
-          <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+          <table class="min-w-full table-fixed divide-y divide-line text-left">
             <colgroup>
               <col v-for="column in columns" :key="column.key" :class="column.width" />
             </colgroup>
@@ -448,7 +444,7 @@ function handleThumbError(event, image) {
                 </th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-100">
+            <tbody class="divide-y divide-line">
               <!-- 新增草稿行：固定在表格最前，一眼能看到自己正在补的那条 -->
               <tr v-if="isCreating" class="bg-brand-50/60">
                 <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-brand-deep">新增</td>
