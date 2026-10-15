@@ -1495,6 +1495,11 @@ onUnmounted(() => {
         v-else-if="pickerResults.length"
         class="max-h-80 overflow-y-auto rounded-card border border-line"
       >
+        <!-- 已有候选、又在查（细化阶段）：列表不换遮罩，只在列表顶部给一个"在查"的信号。
+             放进 <ul> 里而不是外层，是为了不动上面那条 v-if / v-else-if 链（变更-066）。 -->
+        <li v-if="pickerLoading" class="border-b border-line px-3 py-2 text-xs text-slate-500">
+          查询中…
+        </li>
         <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
           <button
             type="button"

@@ -3149,6 +3149,9 @@ describe('四个查询框共用一套边打边查接线（变更-060）', () => 
 
     expect(LEDGER_PANEL, '台账细化阶段没有「在查」的信号').toContain('ledgerRefining')
     expect(LEDGER_PANEL, '台账的提示没落在计数那一行').toContain('查询中…')
+
+    expect(OCR, '选料弹窗细化阶段没有「在查」的信号').toContain('pickerLoading')
+    expect(OCR, '选料弹窗的细化提示没落在候选列表里').toContain('查询中…')
   })
 
   it('vite 忽略原子写的临时目录（否则改一行代码就把 dev server 打死）', () => {
