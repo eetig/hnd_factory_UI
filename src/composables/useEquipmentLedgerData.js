@@ -52,16 +52,31 @@ function buildQuery() {
 }
 
 /**
+ * 请求序号护栏（变更-060）。
+ *
+ * 关键字改成边打边查之后，「并发两个台账请求」从罕见变成常态：打字停顿就发一次，
+ * 接着再敲一下又发一次。先发的那次如果后回来，就会把新结果盖掉 —— 屏上的行与输入框
+ * 里的词对不上，而且不报错，属于最难发现的那类 bug。
+ *
+ * 注意：本页**失败不清空已有数据**（见 loadLedger 注释），所以过期响应不只是不能写数据，
+ * 也不能写 loadError —— 否则用户会看到一条已经过时的错误。
+ */
+let ledgerRequestSeq = 0
+
+/**
  * 取当前页。
  *
  * **失败不清空已有数据** —— 维护到一半掉线，把列表清空比报错更糟
  * （使用者会以为数据没了）。错误落到 loadError，行里留着上一次取到的内容。
  */
 export async function loadLedger() {
+  const seq = ++ledgerRequestSeq
   loading.value = true
   loadError.value = ''
   try {
     const res = await request.get('/api/equipment/ledger/list', { params: buildQuery() })
+    if (seq !== ledgerRequestSeq) return // 过期响应：整段丢弃
+
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '设备台账接口返回异常。')
     }
@@ -69,10 +84,11 @@ export async function loadLedger() {
     total.value = Number(res.data?.total) || 0
     pageNum.value = Number(res.data?.pageNum) || pageNum.value
   } catch (error) {
+    if (seq !== ledgerRequestSeq) return // 过期请求的失败不算数（条件已经变了）
     loadError.value =
       error?.response?.data?.msg || error?.message || '取不到设备台账（接口不可用）。列表里是上一次取到的数据。'
   } finally {
-    loading.value = false
+    if (seq === ledgerRequestSeq) loading.value = false
   }
 }
 

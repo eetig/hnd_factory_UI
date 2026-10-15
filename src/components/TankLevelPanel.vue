@@ -12,6 +12,7 @@ import {
 } from 'element-plus'
 import { hasPerm } from '../api/auth'
 import LoadingMask from './LoadingMask.vue'
+import { useLiveQuery } from '../composables/useLiveQuery'
 import PanelState from './PanelState.vue'
 import TankLevelImageDialog from './TankLevelImageDialog.vue'
 import { useEquipmentLedger } from '../composables/useEquipmentLedger'
@@ -53,6 +54,21 @@ const {
   saveTankLevelRecord,
   deleteTankLevelRecord,
 } = useTankLevelData()
+
+/*
+ * 关键字**边打边查**（变更-060）：停 250ms 就发请求，不用回车。
+ *
+ * 接线走公共的 `useLiveQuery`（防抖 + 查询签名去重 + 卸载时撤销，见
+ * src/composables/useLiveQuery.js 的头部注释）；过期响应护栏在数据层
+ * （`tankLevelRequestSeq`）—— 那层必须贴着请求写。
+ *
+ * 「查询」按钮保留，但它和回车走**同一条** `flush` 路径：先取消待发的那次再查，
+ * 否则「打完字马上点查询」会变成两次请求。
+ *
+ * 为什么走 watch 而不是给 el-input 挂 @input：组字期间 v-model 不更新（Element Plus
+ * 与 Vue 对原生 input 都跳过组字中间态），拼音串不会变成一次查询。
+ */
+const { flush: flushTankLevelQuery } = useLiveQuery(tankLevelKeyword, reloadTankLevelRecords)
 
 // 图据（可多张）的弹窗状态与请求都在这个 composable 里，本组件只负责触发与渲染
 const { openImageDialog, uploadImagesForRecord } = useTankLevelImages()
@@ -377,13 +393,13 @@ function handleThumbError(event, image) {
         placeholder="物料 / 容器名称 / 容器编号"
         aria-label="搜索物料或容器"
         clearable
-        @keyup.enter="reloadTankLevelRecords"
-        @clear="reloadTankLevelRecords"
+        @keyup.enter="flushTankLevelQuery"
+        @clear="flushTankLevelQuery"
       />
       <button
         type="button"
         class="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-deep"
-        @click="reloadTankLevelRecords"
+        @click="flushTankLevelQuery"
       >
         查询
       </button>
@@ -400,7 +416,9 @@ function handleThumbError(event, image) {
     </div>
 
     <div class="relative flex min-h-0 flex-1 flex-col">
-      <LoadingMask v-if="tankLevelLoading" />
+      <!-- 实时查询下**只有首屏**才用遮罩：已经有行时换遮罩会让结果在打字时反复
+           消失又出现（与物料查询同一条规矩） -->
+      <LoadingMask v-if="tankLevelLoading && !tankLevelTableData.length" />
 
       <PanelState
         v-else-if="tankLevelError"

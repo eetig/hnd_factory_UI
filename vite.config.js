@@ -6,6 +6,19 @@ export default defineConfig({
   server: {
     port: 9091,
     host: true,
+    /*
+     * 让监听忽略「原子写」留下的临时目录（2026-10-15 实测踩到）。
+     *
+     * 编辑器/工具用「写临时文件 → rename」的方式落盘时，被监听的目录里会短暂出现
+     * `.X.vue.<pid>.<uuid>.tmpdir/`。只要 vite 恰好在那一瞬间去 watch 它，就会
+     * `EBUSY: resource busy or locked` 直接**把 dev server 打死**（目录事后会被清掉，
+     * 但进程已经退了）。表现是「改一行代码，页面就再也刷不出来」。
+     *
+     * `*.tmp` 本来就在 .gitignore 里；这里补上监听侧的忽略，让改代码时 server 还活着。
+     */
+    watch: {
+      ignored: ['**/.*.tmpdir/**', '**/.*.tmpdir', '**/*.tmp'],
+    },
     proxy: {
       // 识别服务 myocr（变更-003）。
       // ⚠️ 必须排在下面的 '/api' 之前：Vite 按定义顺序匹配上下文，

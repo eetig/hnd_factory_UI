@@ -3029,9 +3029,9 @@ describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响
     )
   })
 
-  it('输入框接的是防抖路径：既不逐字直发，也不再「只能回车」', () => {
-    expect(WORKBENCH_SRC, '关键词变化没有接到防抖路径').toContain(
-      'watch(stockKeyword, () => runStockFilterSoon())',
+  it('输入框接的是公共接线：既不逐字直发，也不再「只能回车」', () => {
+    expect(WORKBENCH_SRC, '关键词变化没有接到公共接线').toContain(
+      'const { flush: flushStockFilter } = useLiveQuery(stockKeyword, applyStockFilter',
     )
     expect(WORKBENCH_SRC, '回车没走「显式立刻查」').toContain('@keyup.enter="flushStockFilter"')
     expect(WORKBENCH_SRC, '清空没走立刻查（清空要把结果还原回来）').toContain(
@@ -3042,12 +3042,19 @@ describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响
     )
   })
 
-  it('同一个筛选条件不重复发（去重签名只含筛选条件，不含页码）', () => {
-    expect(WORKBENCH_SRC, '去重签名没了').toContain(
-      'const stockFilterKey = () => `${stockKeyword.value.trim()}|${stockOnlyInStock.value}`',
+  it('公共接线（useLiveQuery）把该做的做全：watch + 防抖 + 去重 + 卸载撤销', () => {
+    const LIVE_SRC = read(join(SRC, 'composables', 'useLiveQuery.js'))
+    expect(LIVE_SRC, '接线的 watch 没了 —— 挂 @input 会在输入法组字期间也触发').toContain(
+      'watch(source, () => soon())',
     )
-    expect(WORKBENCH_SRC, '同一个筛选仍然会重复发请求').toContain(
-      'if (key === lastStockFilterKey) return',
+    expect(LIVE_SRC, '接线没走防抖').toContain('debounce(runIfChanged, delay)')
+    expect(LIVE_SRC, '接线卸载时不撤销 —— 卸载后待发的那次会写进已销毁的组件').toContain(
+      'onUnmounted(() => soon.cancel())',
+    )
+    expect(LIVE_SRC, '同一个筛选条件仍然会重复发请求').toContain('if (current === lastKey) return')
+    // 筛选条件不止关键词时，签名必须带上其余的（否则改开关会被误判成"没变"）
+    expect(WORKBENCH_SRC, '物料的筛选签名漏了「只看有库存」').toContain(
+      'keyOf: () => `${stockKeyword.value.trim()}|${stockOnlyInStock.value}`',
     )
   })
 
@@ -3065,5 +3072,86 @@ describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响
     )
     expect(WORKBENCH_SRC, '细化阶段的信号没了').toContain('stockRefining')
     expect(WORKBENCH_SRC, '细化提示没落在计数那一行').toContain('查询中…')
+  })
+})
+
+/**
+ * §20 另外三个查询框统一到同一套接线（变更-060）
+ *
+ * 变更-059 先在物料查询上落了「防抖 + 去重 + 过期响应护栏」。当时另外三处各写各的：
+ * 储罐液位与设备台账是「回车才查」，图片解析是手写的 `setTimeout` + 300ms 静默期
+ * （与别处的 250ms 都不一致）。这一代收成同一份 `useLiveQuery` ——
+ * 同一件事四份实现必然漂移，而"看起来像"与"真的同源"是两回事。
+ */
+describe('四个查询框共用一套边打边查接线（变更-060）', () => {
+  const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
+  const TANK_DATA = read(join(SRC, 'composables', 'useTankLevelData.js'))
+  const LEDGER_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
+  const LEDGER_DATA = read(join(SRC, 'composables', 'useEquipmentLedgerData.js'))
+  const OCR = read(join(SRC, 'views', 'ImageParse.vue'))
+
+  it('四个框都接同一个接线（不许再出现第二套实现）', () => {
+    expect(TANK_PANEL, '储罐液位没接公共接线').toContain(
+      'useLiveQuery(tankLevelKeyword, reloadTankLevelRecords)',
+    )
+    expect(LEDGER_PANEL, '设备台账没接公共接线').toContain(
+      'useLiveQuery(keyword, applyLedgerFilters)',
+    )
+    expect(OCR, '图片解析没接公共接线').toContain('flush: flushPickerSearch')
+    // 手写的那套（含它留下的清理点）必须消失
+    expect(OCR, '图片解析又出现手写的防抖计时器 —— 同一件事有两份实现').not.toContain(
+      'pickerSearchTimer',
+    )
+  })
+
+  it('回车 / 清空 / 「查询」按钮都走「立刻查」（先取消待发的那次）', () => {
+    expect(TANK_PANEL, '储罐液位回车没走 flush').toContain('@keyup.enter="flushTankLevelQuery"')
+    expect(
+      TANK_PANEL,
+      '储罐液位的「查询」按钮没走 flush —— 打完字马上点会变成两次请求',
+    ).toContain('@click="flushTankLevelQuery"')
+    expect(LEDGER_PANEL, '台账回车没走 flush').toContain('@keyup.enter="flushLedgerQuery"')
+    expect(OCR, '选料回车没走 flush').toContain('@keyup.enter="flushPickerSearch"')
+  })
+
+  it('不许再出现「逐字直发」（@input 直接绑查询函数）', () => {
+    for (const [name, text] of [
+      ['储罐液位', TANK_PANEL],
+      ['设备台账', LEDGER_PANEL],
+      ['图片解析', OCR],
+    ]) {
+      expect(text, `${name} 的输入框又挂上了 @input 直发查询`).not.toMatch(
+        /@input="(reload|apply|run)/,
+      )
+    }
+  })
+
+  it('两个新加的过期响应护栏在位（含「过期请求的失败也不算数」）', () => {
+    expect(TANK_DATA, '储罐液位没有请求序号护栏').toContain('tankLevelRequestSeq')
+    expect(TANK_DATA, '储罐液位的过期响应没被丢弃').toContain(
+      'if (seq !== tankLevelRequestSeq) return',
+    )
+    expect(TANK_DATA, '储罐液位的 loading 没按序号判断').toContain(
+      'if (seq === tankLevelRequestSeq) tankLevelLoading.value = false',
+    )
+    expect(LEDGER_DATA, '设备台账没有请求序号护栏').toContain('ledgerRequestSeq')
+    expect(LEDGER_DATA, '台账的过期响应没被丢弃').toContain('if (seq !== ledgerRequestSeq) return')
+    expect(LEDGER_DATA, '台账的 loading 没按序号判断').toContain(
+      'if (seq === ledgerRequestSeq) loading.value = false',
+    )
+  })
+
+  it('遮罩只盖首屏：储罐液位也改成「有行就不换遮罩」', () => {
+    expect(TANK_PANEL, '储罐液位的遮罩又变成只看 loading 了').toContain(
+      '<LoadingMask v-if="tankLevelLoading && !tankLevelTableData.length" />',
+    )
+  })
+
+  it('vite 忽略原子写的临时目录（否则改一行代码就把 dev server 打死）', () => {
+    const viteConfig = read(join(ROOT, 'vite.config.js'))
+    expect(
+      viteConfig,
+      'vite 的 watch.ignored 没了 —— 编辑器用原子写落盘会 EBUSY 打死 dev server（已实测）',
+    ).toContain("'**/.*.tmpdir/**'")
   })
 })

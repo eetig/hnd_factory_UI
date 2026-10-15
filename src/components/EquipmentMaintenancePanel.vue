@@ -10,6 +10,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import { CONTAINER_TYPES, containerTypeLabel, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
+import { useLiveQuery } from '../composables/useLiveQuery'
 import { vesselImageUrl } from '../composables/useVesselList'
 
 // ===== 设备数据维护（2026-10-06）=====
@@ -21,7 +22,11 @@ import { vesselImageUrl } from '../composables/useVesselList'
 //
 // ⚠️ 2026-10-10 统一整改后，**搜索与分页都在服务端**（原先是一次拉全表 92 行 + 前端 filter
 // + 前端分页）。所以：
-//   · 关键字改成**回车才查**（下面输入框绑 @keyup.enter），不做逐字实时过滤；
+//   · 关键字**边打边查**（变更-060 起：停 250ms 发一次，不用回车）—— 走公共接线
+//     `useLiveQuery`（防抖 + 查询签名去重 + 卸载撤销），过期响应护栏在
+//     `useEquipmentLedgerData` 的 `ledgerRequestSeq`。
+//     ⚠️ 这不等于退回「逐字实时过滤」：服务端查询**逐字发**才会把接口打烂，
+//     防抖正是那条线（打字 8 个字仍然只发 1 次）。
 //   · 分页器照旧，只是页码/条数/关键字都发给服务端；「停用的行也要显示」这条口径没变。
 
 const {
@@ -42,6 +47,15 @@ const {
   setLedgerEnabled,
   uploadVesselDrawing,
 } = useEquipmentLedgerData()
+
+/*
+ * 关键字**边打边查**（变更-060）：停 250ms 就发请求，不用回车。
+ *
+ * 公共接线（防抖 + 查询签名去重 + 卸载撤销）见 src/composables/useLiveQuery.js；
+ * 过期响应护栏在数据层（`ledgerRequestSeq`）—— 那层必须贴着请求写。
+ * 「刷新」按钮仍走 `loadLedger`（纯强制重取），回车/清空走 `flushLedgerQuery`（先取消待发再查）。
+ */
+const { flush: flushLedgerQuery } = useLiveQuery(keyword, applyLedgerFilters)
 
 /**
  * 封头深度一列显示「上 / 下」。用一个列而不是两列：表格已经 14 列了，
@@ -190,15 +204,16 @@ async function handleDrawingPicked(event) {
         逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条
       </p>
       <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-        <!-- 关键字**回车才查**（服务端搜索）：原先没写 .enter，等于每敲一个字打一次接口 -->
+        <!-- 关键字**边打边查**（变更-060）：停 250ms 就发，不用回车；回车/清空 = 立刻发。
+             走 watch（输入法组字期间不触发）而不是 @input，选词时的拼音串不会变成一次查询 -->
         <el-input
           v-model="keyword"
           placeholder="位号 / 名称 / 昵称 / 规格 / 车间"
           aria-label="搜索设备"
           clearable
           class="w-64"
-          @keyup.enter="applyLedgerFilters"
-          @clear="applyLedgerFilters"
+          @keyup.enter="flushLedgerQuery"
+          @clear="flushLedgerQuery"
         />
         <el-checkbox :model-value="onlyEnabled" label="只看启用的" @change="toggleOnlyEnabled" />
         <el-button @click="loadLedger">刷新</el-button>

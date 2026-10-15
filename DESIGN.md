@@ -168,7 +168,7 @@ minimalist 的 `not_for` 写着 `high-density dashboards, data-heavy tables`，�
 
 ## 5. 已完成 / 未做
 
-**已完成（变更-050 ~ 变更-058）**
+**已完成（变更-050 ~ 变更-060）**
 
 1. **`tests/unit/visualTokens.spec.js` 契约重写** —— 五组观感契约换成 minimalist，
    而且**比旧版更强**（不是靠删断言换绿）：
@@ -205,6 +205,17 @@ minimalist 的 `not_for` 写着 `high-density dashboards, data-heavy tables`，�
 9. **液位滑块纳入 minimalist + 图表/字族收敛**（变更-058）—— 见 §4.2：软拟态材质整组
    换成「垫底 + 发丝线 + 语义环」（几何与行为一字未动，spec §18 的形态断言一条没删）；
    差值带底色改由 `VESSEL_DELTA_COLOR` 派生；画布字族与 `:root` 同源。
+10. **物料查询改成边打边查**（变更-059）—— 停 250ms 自动查，不用回车。⚠️ 不等于退回
+    前端过滤：筛选与分页仍在服务端，逐字发请求会把接口打烂，所以做的是**防抖**
+    （新增 `src/utils/debounce.js`）+ **查询签名去重** + **过期响应护栏**
+    （`useMaterialStockData` 的 `stockRequestSeq`）。遮罩改成只盖首屏，细化阶段在计数处
+    提示「查询中…」；回车/清空保留为显式立刻查（允许重复发 = 手动刷新）。
+11. **另外三个查询框统一到同一套接线**（变更-060）—— 抽出 `src/composables/useLiveQuery.js`
+    （防抖 + 去重 + 卸载撤销），物料/储罐液位/设备台账/图片解析四处共用；储罐液位与
+    设备台账各补一条过期响应护栏；图片解析那套手写的 `setTimeout` + 300ms 也并了进来
+    （它本来就**不是**逐字直发，但四份实现已经开始漂移）。顺带修掉一个环境坑：
+    vite 的 `server.watch.ignored` 现在忽略原子写留下的 `.*.tmpdir`（否则改一行代码就
+    `EBUSY` 把 dev server 打死，已实测两次）。
 
 **未做（下一轮的清单）**
 
@@ -218,10 +229,14 @@ minimalist 的 `not_for` 写着 `high-density dashboards, data-heavy tables`，�
 ## 6. 验证
 
 - **`npm run verify` ✅ exit 0** —— lint + test + build 一条链全过。
-- `vitest run`：**17/17 套件、331 条全绿**（契约重写后的 spec 贡献 107 条断言）。
+- `vitest run`：**18/18 套件、346 条全绿**（含契约 spec 的 118 条；另有 4 条用假定时器
+  真跑时序的防抖单测）。
 - `eslint --max-warnings=0` ✅ 0 错（src 与 tests 都干净）。
-- `npm run build` ✅ 7.22s；产物 CSS **35.62 kB / gzip 7.53 kB**
+- `npm run build` ✅ 7.90s；产物 CSS **35.62 kB / gzip 7.53 kB**
   （玻璃层时代 38.05 kB；去掉"文档生成的死 CSS"再降，机制见 §3.1）。
+- **边打边查实测**（CDP 探针：逐字插入 4 个字、每字间隔 60ms、**全程不派发 Enter**）：
+  打字前「共 799 条记录」→ 打字后「共 19 条记录」；可见 10 行全部含 2171；
+  **期间只打了一次 `/api/stock/list`**；未卡在遮罩里 —— 「实时」与「不炸接口」两条同时成立。
 - **视觉核验（无头 Chrome + CDP，1440×900，变更-051 实机截图）**：
   | 页 | 结论 |
   |---|---|

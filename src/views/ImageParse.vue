@@ -5,6 +5,7 @@ import request from '../api/request'
 import { formatFileSize } from '../utils/format'
 import { STATUS_TEXT, STATUS_TONE } from '../constants/statusTones'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
+import { useLiveQuery } from '../composables/useLiveQuery'
 import {
   BILL_TYPE_INBOUND,
   BILL_TYPE_PICK,
@@ -322,10 +323,14 @@ const pickerKeyword = ref('')
 const pickerResults = ref([])
 const pickerLoading = ref(false)
 
-/** 输入防抖：输入停下 300ms 才发请求，避免每敲一个字都打一次接口 */
-const PICKER_DEBOUNCE_MS = 300
-let pickerSearchTimer = null
-/** 请求序号：快速输入时先发的请求可能后返回，用它丢弃过期响应，否则旧结果会盖掉新结果 */
+/**
+ * 请求序号：快速输入时先发的请求可能后返回，用它丢弃过期响应，否则旧结果会盖掉新结果。
+ *
+ * ⚠️ 这一层**必须贴着请求写**（只有这里知道谁先回来），所以留在本文件；「什么时候发」
+ * 那半截已收进公共的 `useLiveQuery`（变更-060）：原先这里是自己手写的
+ * `setTimeout` + 300ms 静默期，与物料/储罐/台账三处的写法与静默期都不一致 ——
+ * 同一件事四份实现，必然漂移。
+ */
 let pickerSearchSeq = 0
 
 async function runPickerSearch() {
@@ -344,10 +349,17 @@ async function runPickerSearch() {
   }
 }
 
-function handlePickerInput() {
-  clearTimeout(pickerSearchTimer)
-  pickerSearchTimer = setTimeout(runPickerSearch, PICKER_DEBOUNCE_MS)
-}
+/*
+ * 输入**边打边查**（变更-060）：停 250ms 就发，不用回车。
+ *
+ * 走公共接线（防抖 + 查询签名去重 + 卸载时撤销）；这里额外获益的是**输入法**：
+ * 原先挂的是 `@input`（原生事件在组字期间照样发），选词过程中的拼音串会变成一次查询；
+ * 换成 `watch(pickerKeyword)` 之后只在落字时触发 —— 与另外三个查询框统一。
+ */
+const { flush: flushPickerSearch, cancel: cancelPickerSearch } = useLiveQuery(
+  pickerKeyword,
+  runPickerSearch,
+)
 
 async function openMaterialPicker(row, image) {
   pickerRow.value = row
@@ -358,7 +370,8 @@ async function openMaterialPicker(row, image) {
   pickerVisible.value = true
 
   if (!pickerResults.value.length) {
-    await runPickerSearch()
+    // 打开就要有内容：走 flush（取消待发的那次 + 立刻查），不等 250ms 防抖
+    await flushPickerSearch()
   }
 }
 
@@ -380,7 +393,7 @@ function selectMaterial(material) {
 
 function closeMaterialPicker() {
   // 取消待发的防抖请求，避免弹窗已关还在打接口
-  clearTimeout(pickerSearchTimer)
+  cancelPickerSearch()
   pickerVisible.value = false
   pickerRow.value = null
 }
@@ -954,7 +967,7 @@ function confirmButtonText(image) {
 }
 
 onUnmounted(() => {
-  clearTimeout(pickerSearchTimer)
+  // 选料搜索待发的那次不用在这里清：useLiveQuery 自己注册了 onUnmounted(() => soon.cancel())
   images.value.forEach((image) => {
     clearTimeout(image.checkTimer)
     URL.revokeObjectURL(image.url)
@@ -1458,8 +1471,7 @@ onUnmounted(() => {
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
           class="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand"
-          @input="handlePickerInput"
-          @keyup.enter="runPickerSearch"
+          @keyup.enter="flushPickerSearch"
         />
       </div>
 

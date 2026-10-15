@@ -176,10 +176,24 @@ const tankLevelLocationOptions = computed(() => {
   return options
 })
 
+/**
+ * 请求序号护栏（变更-060）。
+ *
+ * 关键字改成边打边查之后，「并发两个储罐液位请求」从罕见变成常态：打字停顿就发一次，
+ * 接着再敲一下又发一次。先发的那次如果后回来就会盖掉新结果 —— 屏上的行与输入框里的词
+ * 对不上，而且不报错，属于最难发现的那类 bug。
+ *
+ * 另外这条链上还有一处**自递归**（页码越界时会 `return fetchTankLevelRecords({keepPage})`）：
+ * 递归会领到新号，于是外层那次落地时已经是"过期"的，数据与 loading 都交给内层，
+ * 不需要特殊处理 —— 这正是用序号而不是用布尔锁的好处。
+ */
+let tankLevelRequestSeq = 0
+
 async function fetchTankLevelRecords(options) {
   // 模板里 @change / @click 直接绑了这个函数，会把事件对象当第一个参数传进来 ——
   // 所以只有显式传 { keepPage: true } 才保持当前页，传进来别的东西一律当没传
   const keepPage = options?.keepPage === true
+  const seq = ++tankLevelRequestSeq
 
   tankLevelLoading.value = true
   tankLevelError.value = ''
@@ -196,6 +210,8 @@ async function fetchTankLevelRecords(options) {
         pageSize: tankLevelPageSize.value,
       }),
     })
+
+    if (seq !== tankLevelRequestSeq) return // 过期响应：整段丢弃（含下面的页码兜底递归）
 
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '月底储罐液位接口返回异常，请稍后重试。')
@@ -218,6 +234,8 @@ async function fetchTankLevelRecords(options) {
       tankLevelPageNum.value = Number(res.data?.pageNum) || tankLevelPageNum.value
     }
   } catch (error) {
+    if (seq !== tankLevelRequestSeq) return // 过期请求的失败不算数（条件已经变了）
+
     tankLevelTableData.value = []
     tankLevelTotal.value = 0
     // 失败不置 loaded：离开再回来会重试一次，比停在一张空表上好
@@ -230,7 +248,7 @@ async function fetchTankLevelRecords(options) {
         error?.response?.data?.msg || error?.message || '月底储罐液位记录加载失败，请稍后重试。'
     }
   } finally {
-    tankLevelLoading.value = false
+    if (seq === tankLevelRequestSeq) tankLevelLoading.value = false
   }
 }
 
