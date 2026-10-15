@@ -1638,6 +1638,23 @@ watch(activeTab, (tab) => {
 </script>
 
 <template>
+  <!--
+  ⚠️ **读这一页的模板注释之前，先看这一条**（x-minimalist，2026-10-15）
+
+  本文件有大段注释在描述 036~043 的**液态玻璃**配方：`bg-white/55`、
+  `backdrop-blur-[32px]`/`[30px]`、`glass-frost`/`glass-veil`、`border-white`、
+  「两档玻璃」「清水档」「边缘光学」……**那些段落现在只是历史记录，不再是现状。**
+
+  现状：三块面板已换成**不透明的面 + 1px 发丝线**（侧栏 `bg-veil`、导航条与主区栏
+  `bg-raised`，都配 `border-line` = #EAEAEA），全站**零** `backdrop-*`；
+  卡片配方是 `bg-raised` + `border-line`（原 `/95` + `border-white/60` + `blur-xl` 退役）；
+  纸是 `bg-canvas`（纯白）+ `.minimal-field` 的一道 α=0.035 暖径向。
+  现状以 `DESIGN.md` 与 `src/minimal-field.css` 为准；逐段重写登记在 DESIGN.md §5.2，
+  本轮只改了最误导的四处（纸 / 侧栏 / 导航条 / 主区栏）。
+
+  `glass-scroll` 这个标记类同理：它随玻璃高光一起失效，现在的价值只是「滚动到底发生在
+  卡片内还是玻璃栏里」这条**结构事实**（清理计划见 DESIGN.md §5.3）。
+  -->
   <el-config-provider :locale="zhCn">
     <!--
       页面底色 = **浅桌面灰 `desk`**（变更-043）。037 立的那条规矩没变、只换了颜色：
