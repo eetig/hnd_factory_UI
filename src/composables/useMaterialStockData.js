@@ -85,12 +85,27 @@ function buildStockQuery() {
   return params
 }
 
+/**
+ * 请求序号护栏（变更-059）。
+ *
+ * 边打边查之后，「并发两个库存请求」从罕见变成常态：打字停顿 250ms 就发一次，用户接着
+ * 再敲一下又发一次 —— 两个请求同时在飞，**谁先回来不保证**。先发的那次（关键词更短、
+ * 结果更多）如果后回来，就会把新结果盖掉：屏幕上显示的行与输入框里的词对不上，
+ * 而且不报错，属于最难发现的那类 bug。
+ *
+ * 所以每次请求领一个号，落地前比对：不是最新那一号就整段丢弃（数据、总数、错误、loading
+ * 都不许写）—— loading 尤其不能乱写，否则旧请求结束会把新请求的 loading 提前关掉。
+ */
+let stockRequestSeq = 0
+
 async function fetchStockRecords() {
+  const seq = ++stockRequestSeq
   stockLoading.value = true
   stockError.value = ''
 
   try {
     const res = await request.get('/api/stock/list', { params: buildStockQuery() })
+    if (seq !== stockRequestSeq) return // 过期响应：整段丢弃
 
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '库存接口返回异常。')
@@ -101,11 +116,12 @@ async function fetchStockRecords() {
     stockTotal.value = Number(res.data?.total) || 0
     stockPageNum.value = Number(res.data?.pageNum) || stockPageNum.value
   } catch (error) {
+    if (seq !== stockRequestSeq) return // 过期请求的失败不算数（用户已经改了条件）
     stockError.value = error?.response?.data?.msg || error?.message || '库存数据加载失败。'
     stockTableData.value = []
     stockTotal.value = 0
   } finally {
-    stockLoading.value = false
+    if (seq === stockRequestSeq) stockLoading.value = false
   }
 }
 

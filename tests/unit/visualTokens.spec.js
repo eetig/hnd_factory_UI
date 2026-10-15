@@ -3007,3 +3007,63 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
     )
   })
 })
+
+/**
+ * §19 边打边查（变更-059）
+ *
+ * 「触发时机」是一条容易被人改回去的契约：服务端查询 + 逐字发请求 = 打接口，所以它
+ * 曾被定成「只能回车」（043）。这一代换成**防抖 + 去重 + 过期响应护栏**三层 ——
+ * 「回车才查」这条结论作废了，但它的**理由**（别逐字打接口）必须继续成立，
+ * 所以下面钉的是那三层机制本身，而不是"还有没有回车"。
+ */
+describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响应护栏', () => {
+  const WORKBENCH_SRC = read(join(SRC, 'views', 'WorkOrderList.vue'))
+  const STOCK_SRC = read(join(SRC, 'composables', 'useMaterialStockData.js'))
+  const DEBOUNCE_SRC = read(join(SRC, 'utils', 'debounce.js'))
+
+  it('节流器的三个动作都在：延迟执行 / flush 立刻执行 / cancel 撤销', () => {
+    expect(DEBOUNCE_SRC, 'debounce 工具没了').toContain('export function debounce')
+    expect(DEBOUNCE_SRC, 'flush 没了 —— 回车与清空就没法「立刻查」').toContain('wrapped.flush = ')
+    expect(DEBOUNCE_SRC, 'cancel 没了 —— 卸载后待发的那次会写进已销毁的组件').toContain(
+      'wrapped.cancel = ',
+    )
+  })
+
+  it('输入框接的是防抖路径：既不逐字直发，也不再「只能回车」', () => {
+    expect(WORKBENCH_SRC, '关键词变化没有接到防抖路径').toContain(
+      'watch(stockKeyword, () => runStockFilterSoon())',
+    )
+    expect(WORKBENCH_SRC, '回车没走「显式立刻查」').toContain('@keyup.enter="flushStockFilter"')
+    expect(WORKBENCH_SRC, '清空没走立刻查（清空要把结果还原回来）').toContain(
+      '@clear="flushStockFilter"',
+    )
+    expect(WORKBENCH_SRC, '输入框上还挂着逐字直发 —— 那是敲一个字打一次接口').not.toContain(
+      '@input="applyStockFilter"',
+    )
+  })
+
+  it('同一个筛选条件不重复发（去重签名只含筛选条件，不含页码）', () => {
+    expect(WORKBENCH_SRC, '去重签名没了').toContain(
+      'const stockFilterKey = () => `${stockKeyword.value.trim()}|${stockOnlyInStock.value}`',
+    )
+    expect(WORKBENCH_SRC, '同一个筛选仍然会重复发请求').toContain(
+      'if (key === lastStockFilterKey) return',
+    )
+  })
+
+  it('过期响应整段丢弃：慢的那次不许盖掉新结果，也不许关掉新请求的 loading', () => {
+    expect(STOCK_SRC, '请求序号护栏没了 —— 并发响应会互相覆盖').toContain('stockRequestSeq')
+    expect(STOCK_SRC, '过期响应没有被丢弃').toContain('if (seq !== stockRequestSeq) return')
+    expect(STOCK_SRC, 'loading 没按序号判断 —— 旧请求结束会把新请求的 loading 提前关掉').toContain(
+      'if (seq === stockRequestSeq) stockLoading.value = false',
+    )
+  })
+
+  it('遮罩只盖首屏：已经有行时改在计数处提示，避免打字时结果反复消失又出现', () => {
+    expect(WORKBENCH_SRC, '遮罩又变成只看 loading 了（打字时整块结果会闪）').toContain(
+      '<LoadingMask v-if="stockLoading && !stockTableData.length" />',
+    )
+    expect(WORKBENCH_SRC, '细化阶段的信号没了').toContain('stockRefining')
+    expect(WORKBENCH_SRC, '细化提示没落在计数那一行').toContain('查询中…')
+  })
+})

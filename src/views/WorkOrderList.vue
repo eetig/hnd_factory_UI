@@ -29,6 +29,7 @@ import { getReportOrderType } from '../constants/orderTypes'
 import { STATUS_TEXT } from '../constants/statusTones'
 import { getLastWeekMonday, getLastWeekSunday, formatMonthDay, formatQty } from '../utils/format'
 import { UTubeBundle, shellVolumeMm3 } from '../utils/vesselVolume'
+import { debounce } from '../utils/debounce'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 import {
@@ -382,10 +383,58 @@ const {
   displayText,
 } = useMaterialStockData()
 
-/** 「只看有库存」开关：改完立刻重过滤 */
+/*
+ * ===== 物料查询：边打边查（变更-059）=====
+ *
+ * ⚠️ 改的是**触发时机**，不是把服务端查询退回前端过滤 —— 筛选与分页仍在服务端
+ * （见 useMaterialStockData 头部注释）。所以不能照搬 @input 了事：逐字发请求会把接口
+ * 打成筛子（敲「HND-2171」是 8 次请求，其中 7 次的结果还没用上就被下一次盖掉）。
+ *
+ * 三层各管一件事：
+ *   ① **防抖 250ms** —— 「每次按键」换成「每次停顿」，最后一次输入之后才发；
+ *   ② **查询签名去重** —— 同一个筛选条件不重复发（打字删回来、或 clear 与 watch 双触发）；
+ *   ③ **请求序号护栏** —— 在 useMaterialStockData 里，丢弃过期响应（慢的那次不许盖新的）。
+ *
+ * 为什么用 `watch(stockKeyword)` 而不是给 el-input 挂 @input：Element Plus 在**输入法
+ * 组字期间不 emit**（`if (isComposing.value) return`），v-model 只在落字之后更新 ——
+ * 中文输入天然安全，选词过程中的拼音串不会变成一次查询。
+ */
+const SEARCH_DEBOUNCE_MS = 250
+/** 上次「已发出」的筛选签名。只含筛选条件，不含页码 —— 页码归 1 是 applyStockFilter 的事 */
+let lastStockFilterKey = ''
+const stockFilterKey = () => `${stockKeyword.value.trim()}|${stockOnlyInStock.value}`
+
+/** 真正发请求的那一步（带去重） */
+function runStockFilter() {
+  const key = stockFilterKey()
+  if (key === lastStockFilterKey) return undefined
+  lastStockFilterKey = key
+  return applyStockFilter()
+}
+const runStockFilterSoon = debounce(runStockFilter, SEARCH_DEBOUNCE_MS)
+watch(stockKeyword, () => runStockFilterSoon())
+
+/**
+ * 回车 / 清空 = **显式意图，立刻发**，而且**允许重复发**（等于「手动刷新一次」）。
+ *
+ * 为什么不走去重：打完字按回车、"我就想现在再查一次"是合理预期；被去重挡掉就会显得
+ * 「按了没反应」。所以先把签名认成当前条件，再直接调 applyStockFilter。
+ */
+function flushStockFilter() {
+  runStockFilterSoon.cancel()
+  lastStockFilterKey = stockFilterKey()
+  return applyStockFilter()
+}
+onUnmounted(() => runStockFilterSoon.cancel())
+
+/** 已经有行、又正在查（实时查询的「细化」阶段）：表格不换遮罩，只在计数处提示 */
+const stockRefining = computed(() => stockLoading.value && stockTableData.value.length > 0)
+
+/** 「只看有库存」开关：改完立刻重过滤（手动操作，不等防抖） */
 function toggleStockOnlyInStock(value) {
   stockOnlyInStock.value = value
-  applyStockFilter()
+  runStockFilterSoon.cancel()
+  return runStockFilter()
 }
 
 // 入库汇总数据（工单核算取 inboundSummaryRows —— 服务端按物料汇总的结果）
@@ -3016,31 +3065,40 @@ watch(activeTab, (tab) => {
                 <div
                   class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3"
                 >
-                  <!-- ⚠️ 查询改到服务端之后**只能回车才发请求**（清空也要发一次，好把结果还原回来）：
-                       原先挂的是 @input（逐字实时过滤），那是「前端全量 + 本地 filter」时代的做法，
-                       照搬到服务端就是「敲一个字打一次接口」。
-                       搜索键用 .enter：不这样写会在**每一次按键**上触发，
-                       连方向键、Shift 都算 —— 与储罐液位页的关键字框同一个写法。 -->
+                  <!-- ⚠️ **边打边查**（变更-059）：停 250ms 就发请求，**不用回车**。
+                       查询仍在**服务端**（筛选与分页都没动，见 useMaterialStockData），
+                       所以靠三层配合，而不是把 @input 直接当触发器：防抖 250ms +
+                       查询签名去重 + 请求序号护栏（丢弃过期响应）。
+                       中文输入法安全：Element Plus 组字期间不 emit，v-model 落字后才更新，
+                       选词过程中的拼音串不会变成一次查询。
+                       回车与清空 = 显式意图：立刻发，且允许重复发（等于手动刷新一次）。 -->
                   <el-input
                     v-model="stockKeyword"
                     placeholder="物料编码 / 物料名称 / 规格"
                     aria-label="搜索物料"
                     clearable
                     class="w-72"
-                    @keyup.enter="applyStockFilter"
-                    @clear="applyStockFilter"
+                    @keyup.enter="flushStockFilter"
+                    @clear="flushStockFilter"
                   />
                   <!-- 默认**不勾**：这一页是查物料信息，要把数量为 0 的物料也列出来 -->
                   <el-checkbox :model-value="stockOnlyInStock" @change="toggleStockOnlyInStock">
                     只看有库存
                   </el-checkbox>
                   <span class="ml-auto text-sm text-slate-500">
-                    共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
+                    <!-- 细化阶段（已有行、又在查）在这里说话：表格不换遮罩，避免打字时
+                         整块结果反复消失又出现 -->
+                    <template v-if="stockRefining">查询中…</template>
+                    <template v-else>
+                      共 <span class="font-semibold text-slate-900">{{ stockTotal }}</span> 条记录
+                    </template>
                   </span>
                 </div>
 
                 <div class="relative flex min-h-0 flex-1 flex-col">
-                  <LoadingMask v-if="stockLoading" />
+                  <!-- 实时查询下**只有首屏**才用遮罩：已经有行时换遮罩会让结果在打字时
+                       反复消失又出现；细化阶段改由上面计数处提示「查询中…」 -->
+                  <LoadingMask v-if="stockLoading && !stockTableData.length" />
 
                   <PanelState
                     v-else-if="stockError"
