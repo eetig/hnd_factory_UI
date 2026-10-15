@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { STATUS_TONE, STATUS_ICON_TONE, STATUS_TEXT } from '../../src/constants/statusTones'
@@ -9,24 +9,27 @@ import tailwindConfig from '../../tailwind.config.js'
 import tailwindColors from 'tailwindcss/colors.js'
 
 /**
- * 视觉回归护栏 —— 变更-043 版（中性清水玻璃）。
+ * 视觉回归护栏 —— x-minimalist 版（暖白纸 + 墨色主色 + 发丝线）。
  *
  * 这里只钉两类东西：**已经做过全仓扫描才定下来的类名**，和**靠人眼看不出来的
  * 对比度**。两者都会在有人把旧代码块粘进新页签时静默回归 —— 今天看起来对，
  * 明天多一个面板就退回去了。
  *
- * 变更-043 使用方看过 042 的蓝 Liquid Glass 后一句「不要蓝色，做成透明」，
- * 整套配色换成「桌面（desk）→ 中性柔光场（canvas + .glass-field）→
- * 轻纱侧栏 + 霜面两栏（两档清水玻璃）+ 石墨黑主色」，这份契约跟着整体重写。
- * 三条读法，读之前先看：
+ * 变更-050（x-minimalist）把整套**材质**从「中性清水玻璃」换成「编辑式文档感」：
+ * 暖骨桌面（desk #F4F3EF）→ 纯白纸（canvas #FFFFFF + `.minimal-field` 的一道
+ * 暖径向）→ 不透明的白面 / 侧栏面（raised / veil）+ 1px 发丝线（line #EAEAEA）
+ * + 墨色主色（brand #111111）。036~043 那两档液态玻璃整组退役：
+ * `src/glass-effects.css` 与 `src/linear-theme.css` 都已删除，材质规则搬进
+ * `src/minimal-field.css`。三条读法，读之前先看：
  *
  *   ① **数值全部由本文件自己的 luminance/contrast/composite 复算。**
- *      文件里引用到的每一个比值（16.83 / 13.8 / 1.046 / 1.08 …）在断言里都
- *      找得到对应的实算 —— 注释抄错了、取值被改了，先红的会是断言，不是屏幕。
- *   ② **两档玻璃是逐 token 锚定的**（轻纱侧栏 / 霜面两栏）。039~043 之间出过
- *      "只调一块" 的回归，就是在这条上冒出来的。
- *   ③ **场配方从 glass-effects.css 里解析出来用**：底停必须逐位等于
- *      colors.canvas；两团光斑的 α 有硬上限。这是 spec 与 CSS 之间唯一的
+ *      文件里引用到的每一个比值（1.11 / 1.08 / 1.07 / 18.88 / 4.40 …）在断言里
+ *      都找得到对应的实算 —— 注释抄错了、取值被改了，先红的会是断言，不是屏幕。
+ *   ② **三块面板是逐 token 锚定的**（侧栏 veil / 导航条与主区栏 raised），
+ *      而且都靠 `border-line` 分层。039~043 之间出过 "只调一块" 的回归，
+ *      就是在这条上冒出来的。
+ *   ③ **纸的配方从 minimal-field.css 里解析出来用**：底色必须逐位等于
+ *      colors.canvas，径向的 α 有硬上限（≤ 0.04）。这是 spec 与 CSS 之间唯一的
  *      跨文件约束 —— 改一边就必须改另一边。
  *
  * 刻意不做的事（都是过度工程）：
@@ -47,7 +50,20 @@ function walk(dir) {
 }
 
 const SOURCE_FILES = walk(SRC).filter((f) => /\.(vue|js|css)$/.test(f))
-const read = (file) => readFileSync(file, 'utf8')
+/*
+ * 读源码时**统一把 CRLF 折成 LF**。
+ *
+ * 本仓 `core.autocrlf=true`（提交进库的是 LF，检出到工作区的是 CRLF），于是同一个
+ * 文件在不同机器上的**行尾**是不一样的：本文件里有几条断言是拿多行正则钉
+ * markup 形状的（§18 的 `/\n\s*vertical\n/` 那类），行尾一旦是 CRLF 就整条不匹配
+ * —— 而失败信息看上去像"滑块没竖过来"，与真实原因（这台机器检出成了 CRLF）毫无关系。
+ * 变更-053 之后就撞上过这一次。
+ *
+ * 折叠只去 `\r`：**行号一个都不变**（`\r\n` 与 `\n` 的行数、每个 `\n` 的位置相同），
+ * 所以 `scan` 报出来的 `路径:行号` 仍然可以直接跳过去。
+ * 这不是放宽任何判据 —— 被断言的字符一个没少，只是不再把"这台机器的行尾"当成契约。
+ */
+const read = (file) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
 const rel = (file) => relative(ROOT, file).replace(/\\/g, '/')
 
 /** 逐行扫描，返回 `路径:行号` 列表（便于断言失败时直接跳过去） */
@@ -131,46 +147,51 @@ const tokenHex = (key) =>
 const hexOfColor = (name) => HEX[name] ?? tokenHex(name)
 
 /*
- * 场与两档玻璃的**最坏底色** —— 好几组的账都要在「文字实际压在哪」上算，而那个
- * 颜色不是任何一个 token：是「纸 → 玻璃（半透明 + blur）」叠出来的。
+ * 纸的配方从 CSS 里**解析**（不抄）：α 一改，§10 的硬上限与下游所有「压在纸上
+ * 的字与面」的账全部跟着变，不会有一组还守着旧值。解析失败时 fieldBlock 为空
+ * → §10 那条锚点测试先红，别处不会拿 NaN 硬算。
  *
- * .glass-field 的三段渐变从 CSS 里**解析**（不抄）：配方一改，下面所有
- * 「压在场上 / 轻纱上 / 霜面上的字与卡片」的账全部跟着变，不会有一组还守着旧值。
- * 解析失败时 FIELD_STOPS 为空 → 场组里那条锚点测试先红，别处不会拿 NaN 硬算。
+ * （043 时代这里是 `.glass-field` 的「三段渐变 + 两团光斑」，从已删除的
+ *   glass-effects.css 里读。x-minimalist 只剩 `.minimal-field` 的一道暖径向。）
  */
-const GLASS_CSS = read(join(SRC, 'glass-effects.css'))
-const fieldBlock = (GLASS_CSS.match(/\.glass-field\s*\{([\s\S]*?)\}/) || ['', ''])[1]
-const FIELD_STOPS = [...fieldBlock.matchAll(/#([0-9a-fA-F]{6})\s+(\d+)%/g)].map((m) => `#${m[1]}`)
-/** 两团光斑：主色 + 同色 0 α 收尾各一条，所以「第 N 团」= 第 2N-1 条（α > 0 那条） */
-const FIELD_BLOBS = [...fieldBlock.matchAll(/rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)/g)].map((m) => ({
-  hex: '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join(''),
-  alpha: Number(m[4]),
-}))
-const FIELD_WHITE_ALPHA = FIELD_BLOBS[0] ? FIELD_BLOBS[0].alpha : NaN
+const FIELD_CSS = read(join(SRC, 'minimal-field.css'))
+const fieldBlock = (FIELD_CSS.match(/\.minimal-field\s*\{([\s\S]*?)\}/) || ['', ''])[1]
+/**
+ * 径向的两个停点：主色（有 α）与**同色 0 α** 收尾。形状照旧留着（hex + alpha），
+ * 但语义从「光斑」换成「一道径向的两端」。
+ */
+const FIELD_BLOBS = [...fieldBlock.matchAll(/rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\s*([\d.]+)\s*\)/g)].map(
+  (m) => ({
+    hex: '#' + [m[1], m[2], m[3]].map((n) => Number(n).toString(16).padStart(2, '0')).join(''),
+    alpha: Number(m[4]),
+  }),
+)
+const FIELD_ALPHAS = FIELD_BLOBS.map((b) => b.alpha)
+/** 径向主色的 α —— **硬上限 0.04**（详见 minimal-field.css 头注与 §10 的实算） */
+const FIELD_ALPHA = FIELD_ALPHAS.length ? Math.max(...FIELD_ALPHAS) : NaN
+/** 径向主色的十六进制（暖褐 rgb(120 100 60)）—— 暖度由 §10 实算钉着 */
+const FIELD_TINT = FIELD_BLOBS[0] ? FIELD_BLOBS[0].hex : null
 
 /**
- * 代表点：三段渐变的三个停点 + 白斑最亮处（白斑在纸的左上，40% 白压在首停上）。
- * 白斑处是**所有文字/卡片的共同最坏情况** —— 压得越亮，深字的对比度越低。
- * （分离比那两对判定时**不用**白斑点，理由写在 describe 11 / 12 的两条上。）
+ * 「面」的**代表底色** —— 纸、侧栏面、白面。
+ *
+ * 043 时代这里是「纸 → 玻璃（半透明 + blur）叠出来的最坏底色」，配方从 CSS 解析。
+ * x-minimalist 之后**半透明面整组退役**：三块面板与所有卡片都是不透明的实底，
+ * 文字压在什么颜色上、看到的就是那个颜色 —— 不再需要 composite，底色的来源回归
+ * token 本身（tokenHex 现读 tailwind.config.js）。
+ *
+ * 形状保持不变（`[名字, 颜色]` 数组），§11~§13 的花括号循环照旧能用：
+ *   · 纸          —— 单一代表点 #FFFFFF（= colors.canvas）
+ *   · 侧栏面      —— colors.veil   #F7F6F3
+ *   · 面板/卡片面 —— colors.raised #FFFFFF（与纸同值：这一代分层靠发丝线，不靠色差）
+ * 名字仍是「纸」：下游循环按名字取点，改名会断。
  */
-const underlayList =
-  FIELD_STOPS.length === 3
-    ? [
-        ['最亮端', FIELD_STOPS[0]],
-        ['中间', FIELD_STOPS[1]],
-        ['最深端', FIELD_STOPS[2]],
-        [
-          '白斑处',
-          composite(
-            '#FFFFFF',
-            Number.isFinite(FIELD_WHITE_ALPHA) ? FIELD_WHITE_ALPHA : 0,
-            FIELD_STOPS[0],
-          ),
-        ],
-      ]
-    : []
-/** 分离比判定用的三个点（不含白斑 —— 它是个角落尖峰，另有探针专测） */
-const gradientPoints = underlayList.filter(([name]) => name !== '白斑处')
+const underlayList = tokenHex('canvas') ? [['纸', tokenHex('canvas')]] : []
+/**
+ * 分离比判定用的代表点。不透明面没有「角落尖峰」要排除（那个概念随渐变一起消失），
+ * 这里保留数组形状，让 §11 / §12 的同一个循环继续可用。
+ */
+const gradientPoints = underlayList
 
 const WORKBENCH = read(join(SRC, 'views', 'WorkOrderList.vue'))
 const tokensOf = (classAttr) => classAttr.trim().split(/\s+/).filter(Boolean)
@@ -183,12 +204,14 @@ const SIDEBAR = tokensOf(
 const h2At = WORKBENCH.indexOf('{{ activeTabLabel }}')
 const navClassAt = WORKBENCH.lastIndexOf('class="', WORKBENCH.lastIndexOf('class="', h2At) - 1)
 const NAV = tokensOf(WORKBENCH.slice(navClassAt + 7, WORKBENCH.indexOf('"', navClassAt + 7)))
-// 主区玻璃栏：唯一同时带 `min-h-0` 与 30px 模糊的那个 class 属性（走 class 属性、
-// 不走行文本 —— 主区那段注释里也写着 min-h-0，按行扫会把它算进来）
+// 主区栏：唯一同时带 `min-h-0` 与 `bg-raised` 的那个 class 属性（走 class 属性、
+// 不走行文本 —— 主区那段注释里也写着 min-h-0，按行扫会把它算进来）。
+// 043 的锚点是 `backdrop-blur-[30px]`（主区与导航条同料的那笔模糊）；
+// x-minimalist 换成「同料的新标记」：`bg-raised`（白面）+ `min-h-0`。
 const MAIN = tokensOf(
   [...WORKBENCH.matchAll(/:?class="([^"]*)"/g)]
     .map((m) => m[1])
-    .find((c) => c.includes('min-h-0') && c.includes('backdrop-blur-[30px]')) || '',
+    .find((c) => c.includes('min-h-0') && c.includes('bg-raised')) || '',
 )
 
 const fillOf = (tokens, kind) => tokens.find((t) => new RegExp(`^bg-${kind}/\\d{1,3}$`).test(t))
@@ -196,22 +219,20 @@ const alphaOf = (fill) => (fill ? Number(fill.split('/')[1]) / 100 : null)
 const stickyTopOf = (tokens) => tokens.find((t) => /^top-/.test(t))
 
 const VEIL_HEX = tokenHex('veil')
-/** 轻纱料实际压出来的颜色（alpha 从侧栏自己的 class 里读，不抄常量） */
+/** 侧栏面实际看到的颜色 —— **不透明**，直接就是 token 值（不再与纸复合 α） */
 const VEIL_SHOWN =
-  VEIL_HEX && underlayList.length
-    ? underlayList.map(([name, under]) => [
-        name,
-        composite(VEIL_HEX, alphaOf(fillOf(SIDEBAR, 'veil')) ?? 0.55, under),
-      ])
-    : []
-/** 霜面料实际压出来的颜色（同上，/55） */
-const FROST_ALPHA = alphaOf(fillOf(NAV, 'white')) ?? 0.55
-const FROST_SHOWN = underlayList.length
-  ? underlayList.map(([name, under]) => [name, composite('#ffffff', FROST_ALPHA, under)])
-  : []
-/** 卡片（raised/95 压霜面）实际压出来的颜色 —— 内联状态文字、弱化文字的基线 */
-const CARD_SHOWN = FROST_SHOWN.map(([name, frost]) => [name, composite('#ffffff', 0.95, frost)])
-const CARD_WORST = (CARD_SHOWN.find(([name]) => name === '白斑处') || [])[1]
+  VEIL_HEX && underlayList.length ? underlayList.map(([name]) => [name, VEIL_HEX]) : []
+/** 白面（导航条 / 主区栏 / 卡片）实际看到的颜色 —— 同上 */
+const RAISED_HEX = tokenHex('raised')
+const FROST_SHOWN =
+  RAISED_HEX && underlayList.length ? underlayList.map(([name]) => [name, RAISED_HEX]) : []
+/**
+ * 卡片实压色 —— 与白面**同值**（这一代卡与它所在的面同色，分层交给 1px 发丝线）。
+ * 它仍是内联状态文字、弱化文字的基线：§2 的 STATUS_TEXT 与 §11 的卡内文字账
+ * 都压在这上面算。名字保留（043 时代它是「白斑处的 raised/95」）。
+ */
+const CARD_SHOWN = FROST_SHOWN.map(([name, raised]) => [name, raised])
+const CARD_WORST = CARD_SHOWN.length ? CARD_SHOWN[0][1] : null
 
 /*
  * `class="…"` / `:class="…"` 的通用解析。两条分开的规矩：
@@ -432,14 +453,15 @@ describe('语义状态色必须过 AA（4.5:1）', () => {
   for (const [name, tone] of Object.entries(STATUS_TEXT)) {
     /*
      * ⚠️ **基线在 037 从 `#ffffff` 锚到暖白卡，041 起锚在「卡片实压色」上。**
-     * 这几行内联状态文字是压在**卡片**上的，而卡片 = `raised/95` 压霜面玻璃。
-     * 基线不取常量白、也不取 token raised，取 **CARD_WORST**（白斑处叠出来的
-     * 最坏值）—— 拿一个屏幕上不存在的底色去验，全绿但与屏幕无关。
+     * 这几行内联状态文字是压在**卡片**上的，所以基线取 **CARD_WORST** ——
+     * 拿一个屏幕上不存在的底色去验，全绿但与屏幕无关。
      *
-     * 这条基线随场配方联动（CARD_WORST 从 CSS 解析来的渐变推出来）：场调浅、
-     * 卡片调透，压在上面的 rose-600 都会跟着动。043 的实算**回到了白底那一列**：
-     * 浅场 + 55% 白玻璃把白斑处的霜面推到 ~#fbfbfc，再叠 95% 白卡就（四舍五入）
-     * 是纯白 —— rose-600 4.70 / emerald-700 5.48 / amber-700 5.02，全过，rose 余量最小。
+     * 这条基线随材质联动。043 时它是「白斑处的 raised/95 压在 55% 白玻璃上」推出来
+     * 的最坏值（浅场 + 55% 白玻璃把霜面推到 ~#fbfbfc，再叠 95% 白卡四舍五入就是
+     * 纯白）；**x-minimalist 之后卡片是不透明的 `bg-raised`，#FFFFFF 本身就是那个
+     * 值** —— 基线不再"实压"于任何东西，与 token raised 同值是这一代的分层方式
+     * （色差让位给发丝线，见 tailwind.config 的 raised 段）决定的结果，不是巧合。
+     * 实算：rose-600 4.70 / emerald-700 5.48 / amber-700 5.02，全过，rose 余量最小。
      */
     it(`STATUS_TEXT.${name} = ${tone}（卡片实压底色上）`, () => {
       const { text, textName } = parseTone(tone)
@@ -471,10 +493,10 @@ describe('HEX 表与 statusTones.js 注释里的比值一致', () => {
     'bg-amber-100 text-amber-800': 6.37,
     'bg-sky-100 text-sky-700': 5.17,
     /*
-     * 下面三行锚在**卡片实压底色**上（白斑处的 raised/95）。
-     * 041 的雾白把三行从白底一列拉低了 0.04（4.70→4.66）；043 的清水玻璃又推回来：
-     * 浅场 + 55% 白玻璃 + 95% 白卡在白斑处叠出来（四舍五入）就是纯白，
-     * 三行回到白底那一列 —— statusTones.js 的注释同步写得也是这一列。
+     * 下面三行锚在**卡片实压底色**上（= 不透明的 `bg-raised` #FFFFFF）。
+     * 041 的雾白把三行从白底一列拉低了 0.04（4.70→4.66）；043 的清水玻璃又推回来；
+     * x-minimalist 的卡片直接就是纯白 —— 三行仍在白底那一列，
+     * statusTones.js 的注释同步写得也是这一列。
      */
     'text-rose-600': 4.7,
     'text-emerald-700': 5.48,
@@ -1065,130 +1087,113 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 10. 场：是那张纸，不是底色（变更-043 从中性清水改名）
+// 10. 纸：纯白 + 一道 α≤0.04 的暖径向 + 发丝线（x-minimalist）
 // ---------------------------------------------------------------------------
 
-describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', () => {
+describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + 发丝线', () => {
   /*
    * 这一组的来路要连着 037 讲，不然读不出为什么管得这么宽。
    *
    * 使用方 2026-10-07 的原话是「做一个底框，暖白纸，整个项目看上去就是运行在这张
    * 卡片上」——「纸」这个概念就是那轮立起来的，它的**观感**（有一张纸，东西都在
-   * 纸上）比它的**颜色**长寿。041 换成蓝的天穹；043 使用方一句「不要蓝色，做成
-   * 透明」之后它变成浅中性柔光场：浅灰渐变 + 两团极淡的中性光斑。
+   * 纸上）比它的**颜色**长寿：037 暖白 → 041 天穹蓝 → 043 浅中性柔光场 →
+   * x-minimalist 纯白。换的永远是纸的颜色，不是「有没有纸」。
    *
-   * 037~040 那几轮玻璃为什么显土，根因就在这层：**一张几乎纯色的纸上，模糊
-   * 无物可糊**。043 去掉了**颜色**、但没去掉**亮度变化** —— 光斑不是装饰，
-   * 是给玻璃吸的：55% 填充的清水玻璃把背后的渐变与光斑吸进材质里，透明感才立得住。
+   * 036~043 那几轮玻璃为什么在 minimalist 这里整组退场：minimalist 把
+   * `gradient blobs` 与 `glassmorphism beyond a subtle nav blur` 写进反模式清单
+   * ——「一张几乎纯色的纸上，模糊无物可糊」这条 036 的老结论，在这一代不再是缺陷，
+   * 而是设计意图。纸因此只剩两笔：
+   *   · 一道 α=0.035 的**暖**径向（rgb(120 100 60)，左上）—— 平不等于空
+   *     （minimalist: "Minimalism is not emptiness"），让一大片白"是纸"而不是
+   *     "没画完"；α 是硬上限，下面实算钉着 ≤ 0.04；
+   *   · 底色 #FFFFFF，逐位等于 colors.canvas（圆角外沿靠它兜底）。
+   * 分层全部交给 1px 发丝线 `border-line`（#EAEAEA）—— 不再有阴影、不再有玻璃。
    *
    * 判据沿用 037 的「纸是页内元素，不是页面底色」：
-   *   · 页面根（min-h-screen）一律 bg-desk（浅桌面的外框）；
-   *   · bg-canvas 只许出现在带圆角的纸上，且必配 .glass-field；
+   *   · 页面根（min-h-screen）一律 bg-desk（暖骨桌面那圈外框）；
+   *   · bg-canvas 只许出现在带圆角的纸上，且必配 .minimal-field；
    *   · 四页口径不变（工作台 / 登录 / 404 是纸，Intro 是**白纸例外**，
    *     长页正文的底色必须浅，spec 白名单表达）。
    */
-  it('.glass-field 配方解析出来了 —— 锚点断了先在这里红', () => {
-    // 下面几组（文字安全、霜面卡片）都拿解析出来的三段渐变当底色算账。
+  it('.minimal-field 配方解析出来了 —— 锚点断了先在这里红', () => {
+    // 下面几组（文字安全、白面卡片）都拿解析出来的纸色当面色的底算账。
     // 与其让它们报出莫名其妙的 NaN 失败，不如在这里说清楚是解析断了。
-    expect(FIELD_STOPS, '没从 glass-effects.css 里解析出 .glass-field 的渐变停点').toHaveLength(3)
-    expect(Number.isFinite(FIELD_WHITE_ALPHA), '没解析出白斑的透明度').toBe(true)
-    expect(FIELD_BLOBS, '两团光斑各「主色 + 0 α 收尾」两条，共 4 条 rgb').toHaveLength(4)
-    expect(underlayList, '场代表底色没建起来').toHaveLength(4)
+    expect(fieldBlock, '没从 minimal-field.css 里解析到 .minimal-field 的样式块').toBeTruthy()
+    expect(FIELD_BLOBS, '径向是「主色 + 同色 0 α 收尾」两条 rgb(… / α)').toHaveLength(2)
+    expect(Number.isFinite(FIELD_ALPHA), '没解析出径向主色的 α').toBe(true)
+    expect(underlayList, '纸的代表底色没建起来（colors.canvas 断了？）').toHaveLength(1)
   })
 
-  it('配方本身：178deg / 三停由浅到深 / 底停逐位等于 colors.canvas / 两团光斑 α 定档', () => {
-    expect(fieldBlock, '没解析到 .glass-field 的样式块').toBeTruthy()
-    expect(fieldBlock).toMatch(/linear-gradient\(\s*178deg/)
+  it('配方本身：radial-gradient、底色逐位等于 colors.canvas、α ≤ 0.04、没有 linear-gradient 与 transparent', () => {
+    expect(fieldBlock, '没解析到 .minimal-field 的样式块').toBeTruthy()
+    // 纸只剩**一道径向**：036~043 的三段线性渐变 + 斜光带是「给玻璃吸的」，随玻璃退役
+    expect(
+      fieldBlock,
+      '.minimal-field 里没有 radial-gradient —— 纸又变成一块纯色板了',
+    ).toMatch(/radial-gradient\(/)
+    expect(
+      fieldBlock,
+      '出现了 linear-gradient —— 那是「给玻璃吸的」那套配方（三段渐变 + 斜带）',
+    ).not.toMatch(/linear-gradient/)
+    // 收尾停点用**同色 0 α**，不用 transparent 关键字（防某个实现按非预乘插值中途发灰）
+    expect(fieldBlock, '不许用 transparent 关键字收尾').not.toMatch(/transparent/)
+    expect(
+      fieldBlock,
+      '没有 background-repeat: no-repeat —— 径向会平铺成四块色斑',
+    ).toMatch(/background-repeat:\s*no-repeat/)
 
-    const stops = [...fieldBlock.matchAll(/#([0-9a-fA-F]{6})\s+(\d+)%/g)].map((m) => ({
-      hex: `#${m[1]}`,
-      at: Number(m[2]),
-    }))
-    expect(stops.map((s) => s.at)).toEqual([0, 46, 100])
-    // 三段必须由浅到深（上亮下暗）——043 保留了这条镜头感：光从上方来，
-    // 玻璃上缘的白镜面线压在最亮的一档上，整块材质才有「厚度」。
-    expect(luminance(stops[0].hex)).toBeGreaterThan(luminance(stops[1].hex))
-    expect(luminance(stops[1].hex)).toBeGreaterThan(luminance(stops[2].hex))
-
-    // 底停 = colors.canvas（同一值，两处一起改）：纸的四角是圆的，渐变之外的
-    // 兜底色就是 bg-canvas —— 底停有色差，圆角外沿会露出一圈「补丁」。
+    // 底色 = colors.canvas（同一值，两处一起改）：纸的四角是圆的，径向之外的
+    // 兜底色就是 bg-canvas —— 两处有色差，圆角外沿会露出一圈「补丁」。
     const canvas = tokenHex('canvas')
     expect(canvas, 'tailwind.config.js 里没有 colors.canvas').toBeTruthy()
-    expect(stops[2].hex.toLowerCase()).toBe(canvas.toLowerCase())
-
-    // 两团光斑：白（顶左）+ 冷灰（中右）。两团都要在，且都必须以「同色 0 α」
-    // 收尾（下面一条 `transparent` 禁令）—— 0 也不许，光斑是给玻璃吸的，不是可选项。
     expect(
-      FIELD_BLOBS.filter((b) => b.alpha === 0),
-      '两团光斑各自的 0 α 收尾',
-    ).toHaveLength(2)
-    // α 是**硬上限**（详见 glass-effects.css 头注）：再亮，纱与场、霜与场的分离比
-    // 会跌破下限（纱/场 1.08、霜/场 1.046，两对都在 describe 12 实算钉着）。
-    expect(FIELD_WHITE_ALPHA).toBeGreaterThan(0)
-    expect(
-      FIELD_WHITE_ALPHA,
-      '白斑 α 超过 0.45 —— 霜面与场的分离比会跌破 1.046',
-    ).toBeLessThanOrEqual(0.45)
-    const gray = FIELD_BLOBS[2]
-    expect(gray && gray.alpha).toBeGreaterThan(0)
-    expect(gray && gray.alpha, '冷灰斑 α 超过 0.35 —— 它压深的是场的亮度下限').toBeLessThanOrEqual(
-      0.35,
-    )
-    // 光斑收尾用同色的 0 α，不用 transparent 关键字（防某个实现按非预乘插值中途发灰）
-    expect(fieldBlock).not.toMatch(/transparent/)
+      fieldBlock,
+      `底色不是 colors.canvas（${canvas}）—— 圆角外沿会露出一圈补丁`,
+    ).toMatch(new RegExp(`background-color:\\s*${canvas}\\b`, 'i'))
 
-    // 时间线的作用域只能在这一层：侧栏/导航条与主区栏是兄弟/叔侄，
-    // 命名时间线默认只对声明者及后代可见 —— 挂错一层，高光永远停在贴顶那一格，
-    // 不报错、不警告（038 的机制说明在 glass-effects.css 头注）。
-    expect(fieldBlock).toMatch(/timeline-scope:\s*--main-scroll/)
+    // α 是**硬上限**：0.035 落在 0.04 以内（minimal-field.css 头注里记的账）。
+    // 再亮的后果有两条，都能实算：① 宽表里会看出色斑；② 白卡与纸的分离比
+    // （§11 那条）全靠 1px 发丝线，径向一浓就把那条线淹掉。
+    expect(FIELD_ALPHA).toBeGreaterThan(0)
+    expect(
+      FIELD_ALPHA,
+      `径向主色 α=${FIELD_ALPHA} 超过 0.04 —— 宽表里会看出色斑，发丝线也会被淹`,
+    ).toBeLessThanOrEqual(0.04)
+    expect(
+      FIELD_ALPHAS.filter((a) => a === 0),
+      '径向的收尾停点必须是**同色 0 α**（另一条 rgb(… / 0)）',
+    ).toHaveLength(1)
   })
 
-  it('场的中性度硬钉：五个采样点 max−min ≤ 6、B−R < 8（光斑只许给亮度，不许给色偏）', () => {
+  it('径向是**暖**的、不是冷的：R > G > B，且 B−R ≤ −30（minimalist 的 faint warm radial）', () => {
     /*
-     * 「不要蓝色」的字面落点。三停与两团光斑叠出来的每个采样点都必须是**中性**的：
-     * 采样点 = 三停 + 白斑 + 冷灰斑本身。判据两条：
-     *   · max−min ≤ 6 —— 三个通道的极差（允许一丝极冷的灰，macOS 的中性灰也偏冷）；
-     *   · B−R < 8     —— 不许到「看得出是蓝色」的程度（旧天穹的 B−R 是 40+）。
-     * 冷灰斑自己的颜色（rgb(186 187 191)）也一并量 —— 它是场里唯一真正
-     * 「有色」的一笔，先把它本身的色偏钉死。
+     * 043 那代这条是「三通道极差 ≤ 6 的中性度」——「不要蓝色」的字面落点。
+     * minimalist 换了问题：这一道径向**故意是暖的**（暖褐 rgb(120 100 60)），
+     * 中性度那条判据的前提随之消失（直接搬过来会红，而且红得没道理）。
+     *
+     * 所以换成一条方向相反、同样可复算的断言：
+     *   · 三通道必须**递减** R > G > B（暖色，不是冷色/中性灰）；
+     *   · B−R 必须 ≤ −30 —— 免得哪天被"顺手换成中性灰"，纸就从"暖骨"
+     *     漂成"冷白"，与 desk #F4F3EF 的暖调对不上（两层一起偏冷，
+     *     分离比 1.11 还在、观感却已经不是这一代的东西了）。
+     * 实算：rgb(120 100 60) → R−G = 20、G−B = 40、B−R = −60。
      */
-    expect(underlayList, '场代表底色没建起来').toHaveLength(4)
-    const gray = FIELD_BLOBS[2]
-    expect(gray, '没解析到冷灰斑（.glass-field 的第二团）').toBeTruthy()
-    const points = [
-      ...underlayList.map(([name, hex]) => [name, rgbOf(hex)]),
-      ['冷灰斑', gray.hex ? rgbOf(gray.hex) : null],
-    ]
-    for (const [name, rgb] of points) {
-      expect(rgb, `${name} 的色值没解析出来`).toBeTruthy()
-      const [r, g, b] = rgb
-      const spread = Math.max(r, g, b) - Math.min(r, g, b)
-      expect(spread, `${name} 三通道极差 ${spread} > 6 —— 场出现了色偏`).toBeLessThanOrEqual(6)
-      expect(
-        b - r,
-        `${name} 的 B−R = ${b - r} ≥ 8 —— 「不要蓝」之后场里不许再有看得出的蓝`,
-      ).toBeLessThan(8)
-    }
-  })
-
-  it('.glass-refract 的机制三件套还在：@property --glint / 跟随位移 / 300% 高', () => {
-    // 043 只改了折射层的**颜色**（底暗从带蓝的黑换成中性深），
-    // 几何与 --glint 机制一字未动 —— 这几条防的就是「换色顺手重写折射层」。
-    expect(GLASS_CSS).toMatch(/@property --glint\s*\{[^}]*syntax:\s*'<percentage>'/)
-    expect(GLASS_CSS).toMatch(/\.glass-refract\s*\{[\s\S]*?background-position:\s*0 var\(--glint\)/)
-    expect(GLASS_CSS).toMatch(/background-size:\s*100% 300%/)
+    expect(FIELD_TINT, '没解析到径向的主色（rgb(r g b / α) 形式）').toBeTruthy()
+    const [r, g, b] = rgbOf(FIELD_TINT)
+    expect(r, `径向主色 R=${r} 不大于 G=${g} —— 这不是暖色`).toBeGreaterThan(g)
+    expect(g, `径向主色 G=${g} 不大于 B=${b} —— 这不是暖色`).toBeGreaterThan(b)
     expect(
-      GLASS_CSS,
-      '底部微暗该是「中性深」—— 纯黑压浅灰会发死，带一点冷调的 22/22/26 正好',
-    ).toMatch(/rgb\(22 22 26/)
+      b - r,
+      `径向主色的 B−R = ${b - r}，暖度不够（要求 ≤ −30）—— 纸会从暖骨漂成冷白`,
+    ).toBeLessThanOrEqual(-30)
   })
 
-  it('四个页面根元素一律 bg-desk —— 场是纸，桌面才是底', () => {
+  it('四个页面根元素一律 bg-desk —— 纸是页内元素，桌面才是底', () => {
     // 判据是 min-h-screen，全站只有四个页面根元素用（工作台 / 登录 / 404 / 落地页）。
     //
     // 两个方向都要钉：
     //   ① 漏了底色 —— 那一页没有底色，页脚外露或回弹时露出浏览器默认白；
-    //   ② 写成 bg-canvas —— 场是**页内**那张纸，不是页面底色。
+    //   ② 写成 bg-canvas —— 纸是**页内**那张，不是页面底色。
     //      「整屏泛灰」和「有一张纸」只差一层嵌套 —— 037 的暖白吃过同一个亏
     //      （使用方原话「不是把背景变成暖白，是添加一个暖白的底层卡片」）。
     const offenders = []
@@ -1198,37 +1203,38 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
         .forEach((line, index) => {
           if (!lineHasToken(line, 'min-h-screen')) return
           const at = `${rel(file)}:${index + 1}`
-          if (lineHasToken(line, 'bg-canvas')) offenders.push(`${at} 把场当成了页面底色`)
+          if (lineHasToken(line, 'bg-canvas')) offenders.push(`${at} 把纸当成了页面底色`)
           else if (!lineHasToken(line, 'bg-desk')) offenders.push(`${at} 没有底色`)
         })
     }
     expect(
       offenders,
-      '页面根元素要用 bg-desk 当底色（浅桌面灰）；场（bg-canvas）是**纸**，不是背景 —— ' +
+      '页面根元素要用 bg-desk 当底色（暖骨桌面）；纸（bg-canvas）是**页内**那张，不是背景 —— ' +
         '「整屏泛灰」和「有一张纸」只差一层嵌套，别把主意打到根元素上。',
     ).toEqual([])
   })
 
-  it('桌面框与场分得开、深字压场过 AA —— 两层各自的账', () => {
+  it('桌面框与纸分得开、深字压纸过 AA —— 两层各自的账', () => {
     const desk = tokenHex('desk')
     const canvas = tokenHex('canvas')
     expect(desk, 'tailwind.config.js 里没有 colors.desk').toBeTruthy()
     expect(canvas, 'tailwind.config.js 里没有 colors.canvas').toBeTruthy()
     expect(
       contrast(desk, canvas),
-      `桌面框压场只有 ${contrast(desk, canvas).toFixed(3)}:1 —— 16px 外框会与纸糊成一片`,
+      `桌面框压纸只有 ${contrast(desk, canvas).toFixed(3)}:1 —— 16px 外框会与纸糊成一片` +
+        '（037 使用方原话：「整屏泛白、看不出有一张纸」）',
     ).toBeGreaterThanOrEqual(1.08)
     expect(
       contrast(HEX['slate-900'], canvas),
-      `深字（slate-900）压场只有 ${contrast(HEX['slate-900'], canvas).toFixed(2)}:1 —— 纸被调深了`,
+      `深字（slate-900）压纸只有 ${contrast(HEX['slate-900'], canvas).toFixed(2)}:1 —— 纸被调深了`,
     ).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('bg-canvas 必配 rounded-card 与 glass-field；glass-field 只许画在纸上（双向）', () => {
+  it('bg-canvas 必配 rounded-card 与 minimal-field；minimal-field 只许画在纸上（双向）', () => {
     /*
      * 有圆角才是「一张纸」—— 上面那层的口子（不带圆角的浅色大块 = 「这块区域
-     * 泛灰」）037 就堵过，这里原样保留。另一半：场配方（glass-field）必须与纸
-     * 同生共死 —— 画到别的元素上就成了浮在屏幕上的光斑。
+     * 泛灰」）037 就堵过，这里原样保留。另一半：纸的配方（minimal-field）必须与纸
+     * 同生共死 —— 画到别的元素上就成了浮在屏幕上的色斑。
      * 反面不成立：rounded-card 在全站有几十处（白卡片/面板），不必也不该都变成纸。
      */
     const offenders = []
@@ -1238,11 +1244,11 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
         .forEach((line, index) => {
           const tokens = lineClassTokens(line)
           const usesCanvas = tokens.some((t) => t === 'bg-canvas' || t.startsWith('bg-canvas/'))
-          const usesField = tokens.includes('glass-field')
+          const usesField = tokens.includes('minimal-field')
           if (!usesCanvas && !usesField) return
           const at = `${rel(file)}:${index + 1}`
-          if (usesCanvas && !usesField) offenders.push(`${at} bg-canvas 没配 glass-field`)
-          if (usesField && !usesCanvas) offenders.push(`${at} glass-field 没配 bg-canvas`)
+          if (usesCanvas && !usesField) offenders.push(`${at} bg-canvas 没配 minimal-field`)
+          if (usesField && !usesCanvas) offenders.push(`${at} minimal-field 没配 bg-canvas`)
           if (usesCanvas && !tokens.some((t) => CARD_RADIUS.test(t))) {
             offenders.push(`${at} bg-canvas 没有卡片圆角`)
           }
@@ -1250,16 +1256,18 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
     }
     expect(
       offenders,
-      'bg-canvas 必须与 rounded-card、glass-field 同行；glass-field 只许出现在纸上。' +
+      'bg-canvas 必须与 rounded-card、minimal-field 同行；minimal-field 只许出现在纸上。' +
         '想要一块没有圆角的底色区域，用 bg-desk（页面根那层）。',
     ).toEqual([])
   })
 
-  it('四个页面每一个里面都有一张纸 —— 三张柔光场 + 落地页白名单', () => {
+  it('四个页面每一个里面都有一张纸 —— 三张暖径向白纸 + 落地页白名单', () => {
     /*
      * 037 的口径（使用方：「登录、404、落地页都要加」）不变：四页一致。
-     * 041/043 里 Intro 的处理不变 —— 它是长页正文，底色必须浅，所以纸是**白**的
-     * （`rounded-card bg-white`），这是**文档化的例外**，不是漏做。
+     * Intro 的处理不变 —— 它是长页正文，底色必须浅，所以纸是**白**的
+     * （`rounded-card border border-line bg-white`），这是**文档化的例外**，
+     * 不是漏做；而工作台 / 登录 / 404 三页的纸是 `.minimal-field`
+     * （纯白 + 一道暖径向），**落地页禁挂**（长页正文上那层径向只会变成色斑）。
      *
      * 数量 4 写死是有意的：将来多出第五个页面时这条会红，提醒把它一起包进纸里；
      * 那时把 4 改成 5，顺手确认新页面的纸是哪一种。
@@ -1272,7 +1280,7 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
         .split(/\r?\n/)
         .forEach((line) => {
           if (lineHasToken(line, 'min-h-screen')) roots.add(file)
-          if (lineClassTokens(line).includes('glass-field')) fielded.add(file)
+          if (lineClassTokens(line).includes('minimal-field')) fielded.add(file)
         })
     }
     expect(
@@ -1281,43 +1289,52 @@ describe('场（变更-043）：桌面框 + 中性浅纸 + 两团极淡光斑', 
     ).toHaveLength(4)
     expect(
       fielded.has(INTRO),
-      'Intro 出现了 glass-field —— 它是白纸例外，柔光场只给工作台/登录/404',
+      'Intro 出现了 minimal-field —— 它是白纸例外，暖径向只给工作台/登录/404',
     ).toBe(false)
     expect(
       [...roots].filter((f) => !fielded.has(f) && f !== INTRO).map(rel),
-      '这些页面里没有场（只认 class 属性，写在注释里不算）。四页都要有纸，别漏',
+      '这些页面里没有纸（只认 class 属性，写在注释里不算）。四页都要有纸，别漏',
     ).toEqual([])
-    // Intro 的白纸确实在：bg-white 与卡片圆角在同一处 class 属性里
+    // Intro 的白纸确实在：bg-white、发丝线与卡片圆角在同一处 class 属性里
     const hasWhitePaper = classAttrsOf(read(INTRO)).some(
-      ({ tokens }) => tokens.includes('bg-white') && tokens.some((t) => CARD_RADIUS.test(t)),
+      ({ tokens }) =>
+        tokens.includes('bg-white') &&
+        tokens.includes('border-line') &&
+        tokens.some((t) => CARD_RADIUS.test(t)),
     )
-    expect(hasWhitePaper, 'Intro 里没有那张白纸（rounded-card bg-white）—— 长页底色不能裸奔').toBe(
-      true,
-    )
+    expect(
+      hasWhitePaper,
+      'Intro 里没有那张白纸（rounded-card border border-line bg-white）—— 长页底色不能裸奔',
+    ).toBe(true)
   })
 })
 
 // ---------------------------------------------------------------------------
-// 11. 霜面：抬起来的面全是 raised/95（变更-043）
+// 11. 面走 token + 发丝线：抬起来的面全是 bg-raised（x-minimalist）
 // ---------------------------------------------------------------------------
 
-describe('霜面（变更-043）：卡片走 raised/95，工作台不再有裸 bg-white', () => {
+describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作台不再有裸 bg-white', () => {
   /*
    * 使用方 2026-10-11 看 037 的成果时说「很多地方都是白色的，看着很刺眼」——
-   * 那轮把抬起来的面全换成了暖白。041 换了底（蓝之上，白是雾）；043 又翻回浅底，
-   * 但**结论不变**：霜面（白玻璃）是玻璃，它上面抬起来的卡片是霜面的**实心近亲**
-   * ——`bg-raised/95` + 不透明感的白描边 + 自己的模糊。
+   * 那轮把抬起来的面全换成了暖白。041 换了底（蓝之上，白是雾）；043 又翻回浅底、
+   * 卡片是白玻璃的实心近亲（raised/95）；x-minimalist 又翻回**纯白**，
+   * 但**结论不变**：面一律走 token。变的是**分层手段** —— 这一代不用色差，
+   * 用 1px 发丝线：白纸上的白卡片靠 `border-line`（#EAEAEA）与间距分开，
+   * 对应 minimalist 那条「A border/divider replaces a card whenever elevation
+   * isn't communicating hierarchy」。
    *
-   * 这一组守两件事：
+   * 这一组守三件事：
    *   ① **面一律走 token**：工作台里不许裸写不透明的 bg-white（与 raised 同值
    *      纯属现在巧合；raised 一旦重染，它就是脱队的那个），也不许冷灰垫底
    *      （垫底一律 region）；
-   *   ② **卡片配方整串锚定**：每一处 bg-raised/95 都必须配上 border-white/60 与
-   *      backdrop-blur-xl —— 防「只把一张卡改回实心」这种单点回归。
+   *   ② **卡片配方整串锚定**：每一处卡片都必须 `bg-raised` + `border-line` +
+   *      `shadow-card` 三者同串 —— 防「只把一张卡改回实心 / 去掉描边」这种单点回归；
+   *   ③ **旧玻璃配方整串禁入**：`bg-raised/95`、`border-white/60`、
+   *      `backdrop-blur-xl`、`shadow-panel` 是 043 的料，出现就是代码块被粘回来了。
    *
    * 白名单三页（Login / Intro / NotFound）是**结构不同**，不是懒得管：
-   * 它们是「白卡压场/白纸」，卡是实心白且应当实心（白卡压场，落差最宽的一级）；
-   * `bg-raised/95` 的配方只对「玻璃上抬卡片」的工作台成立。
+   * 它们是「白卡压纸」（Login / NotFound）与「白纸 + 页内白分区」（Intro），
+   * 卡是实心白且应当实心；上面那条「卡片配方」只对抬在纸上的卡片成立。
    */
   const CARD_ON_PAPER = ['src/views/Login.vue', 'src/views/Intro.vue', 'src/views/NotFound.vue']
   const workbenchFiles = () => SOURCE_FILES.filter((f) => !CARD_ON_PAPER.includes(rel(f)))
@@ -1331,19 +1348,19 @@ describe('霜面（变更-043）：卡片走 raised/95，工作台不再有裸 b
     }
     expect(
       offenders,
-      '工作台里还有不透明的 bg-white。所有「面」都走 token：卡片 bg-raised/95、' +
-        '垫底 bg-region、轻纱 bg-veil、纸 bg-canvas。裸 bg-white 现在与 raised 同值' +
-        '纯属巧合，而且它不透 —— 压在玻璃上就把材质盖死了。' +
-        '（Login / Intro / NotFound 三页是「白卡压场/白纸」，已排除。）',
+      '工作台里还有不透明的 bg-white。所有「面」都走 token：卡片 bg-raised、' +
+        '垫底 bg-region、侧栏面 bg-veil、纸 bg-canvas。裸 bg-white 现在与 raised 同值' +
+        '纯属巧合 —— raised 一旦重染，它就是唯一脱队的那块。' +
+        '（Login / Intro / NotFound 三页是「白卡压纸 / 白纸」，已排除。）',
     ).toEqual([])
   })
 
-  it('工作台里不许用冷灰垫底 —— 垫底一律 bg-region（中性的一层垫底）', () => {
+  it('工作台里不许用冷灰垫底 —— 垫底一律 bg-region（暖中性的一层垫底）', () => {
     /*
      * 037 的原文是「卡片一暖，slate-50 表头就只剩 1.004」。结论一直没变：
-     * slate-50/100 是 Tailwind 调色板的灰，压白卡上表头带半死不活；垫底这个角色
-     * 已经有值 —— region #EEEEF1，压白卡 1.16（表头带那条 1.046 的底线在下面
-     * 「表头带不许消失」一条里实算）。
+     * slate-50/100 是 Tailwind 调色板的灰（冷调），压白卡上表头带半死不活；
+     * 垫底这个角色已经有值 —— region #F7F7F5，压白卡实算 **1.073**
+     * （表头带那条 1.046 的底线在下面「表头带不许消失」一条里实算）。
      */
     const offenders = []
     for (const file of workbenchFiles()) {
@@ -1359,37 +1376,71 @@ describe('霜面（变更-043）：卡片走 raised/95，工作台不再有裸 b
         if (bad.length) offenders.push(`${rel(file)}:${line} ${bad.join(' ')}`)
       }
     }
-    expect(offenders, '工作台里还有冷灰垫底，改用 bg-region（#EEEEF1）。').toEqual([])
+    expect(offenders, '工作台里还有冷灰垫底，改用 bg-region（#F7F7F5，暖中性一档）。').toEqual([])
   })
 
-  it('卡片配方：每一处 bg-raised/95 都配上 border-white/60 与 backdrop-blur-xl', () => {
+  it('卡片配方：bg-raised + border-line + shadow-card 三者同串，且恰好 17 处', () => {
     /*
      * 配方整串锚定而不是逐处点名：041 把「卡片」从一张卡的写法升格成一条材质规则，
-     * 全站（工作台 9 张汇总卡 + 各面板的 section 卡）都是同一串。
-     * 数量写死是有意的 —— 新增卡片就 +1，**顺手确认它也有白描边与自己的模糊**；
-     * 反过来，少一张也会红：卡被改回实心时类名不同，数量会先掉下来。
+     * 全站（工作台各汇总卡 + 各面板的 section 卡）都是同一串。
+     * 数量写死是有意的 —— 新增卡片就 +1，**顺手确认它也有那条发丝线**；
+     * 反过来，少一张也会红：卡被改成别的写法和，数量会先掉下来。
+     *
+     * x-minimalist 的配方 = `rounded-card border border-line bg-raised shadow-card`
+     * （圆角 8px / 1px 发丝线 / 纯白面 / α=0.04 的近零阴影）。实算的分层账在
+     * 下面两条：卡与它所在的面**同色**（1.000），分层全部由 `border-line` 承担。
      */
     const offenders = []
     let count = 0
     for (const file of SOURCE_FILES) {
       for (const { tokens, line } of classAttrsOf(read(file))) {
-        if (!tokens.includes('bg-raised/95')) continue
+        if (!tokens.includes('bg-raised') || !tokens.includes('shadow-card')) continue
         count += 1
-        const missing = ['border-white/60', 'backdrop-blur-xl'].filter((t) => !tokens.includes(t))
+        const missing = ['rounded-card', 'border-line'].filter((t) => !tokens.includes(t))
         if (missing.length) offenders.push(`${rel(file)}:${line} 缺 ${missing.join(' / ')}`)
       }
     }
     expect(
       offenders,
-      'bg-raised/95 必须与 border-white/60 + backdrop-blur-xl 同串出现：' +
-        '这是「白霜的实心近亲」配方（描边要可见、模糊要有 —— 卡片下面就是玻璃）。',
+      '卡片串必须是 `rounded-card border border-line bg-raised shadow-card`：' +
+        '白纸上的白卡**没有色差可用**，那条 1px 发丝线就是唯一的分层手段 —— ' +
+        '少一个 border-line，这张卡就与它所在的白面糊成一片。',
     ).toEqual([])
-    expect(count, 'bg-raised/95 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整').toBe(
-      17,
-    )
+    expect(
+      count,
+      'bg-raised + shadow-card 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整',
+    ).toBe(17)
   })
 
-  it('表头带不许消失：region 压白卡 ≥ 1.046（实算 1.16）', () => {
+  it('旧玻璃卡片配方整串禁入：bg-raised/95、border-white/60、backdrop-blur-xl、shadow-panel', () => {
+    /*
+     * 043 的卡片是「白霜的实心近亲」：`bg-raised/95` + 不透明的白描边 +
+     * 自己的模糊。这一代面是不透明的，这三样都成了旧值 —— 出现即「旧代码块
+     * 被粘回来」。逐个钉的是**类名形态**，注释先剥（历史论证里会引用它们）。
+     */
+    const offenders = []
+    for (const file of SOURCE_FILES) {
+      for (const { tokens, line } of classAttrsOf(stripComments(read(file)))) {
+        const hit = tokens.filter(
+          (t) =>
+            /^bg-raised\/\d{1,3}$/.test(t) ||
+            /^border-white(\/\d{1,3})?$/.test(t) ||
+            t.startsWith('backdrop-blur') ||
+            t.startsWith('backdrop-saturate') ||
+            t === 'shadow-panel',
+        )
+        if (hit.length) offenders.push(`${rel(file)}:${line} ${hit.join(' ')}`)
+      }
+    }
+    expect(
+      offenders,
+      '043 的玻璃卡片配方回流了（bg-raised/95 / border-white/60 / backdrop-blur-xl / ' +
+        'shadow-panel）。这一代的面是**不透明**的：填充不带透明度、描边是 border-line、' +
+        '没有模糊、没有面板投影。',
+    ).toEqual([])
+  })
+
+  it('表头带不许消失：region 压白卡 ≥ 1.046（实算 1.073）', () => {
     const raised = tokenHex('raised')
     const region = tokenHex('region')
     expect(raised, 'tailwind.config.js 里没有 colors.raised').toBeTruthy()
@@ -1402,117 +1453,130 @@ describe('霜面（变更-043）：卡片走 raised/95，工作台不再有裸 b
     ).toBeGreaterThanOrEqual(1.046)
   })
 
-  it('卡片压霜面至少差一档（1.046）—— 判定走三个渐变停点，白斑除外', () => {
+  it('卡片与它所在的白面**同色**（实算 1.000）—— 分层全部由 1px 发丝线承担（实算 1.203）', () => {
     /*
-     * 036 起「浅对浅」的房屋底线是 1.046（表头带那条）。043 的刻度与它同族：
-     * 卡是纯白 raised/95、霜是 55% 白，卡与霜就压在这条线上 —— 在**最亮端**
-     * 落差最窄（实算 1.05），那里过线，全屏就过线。
+     * 043 这条是「白卡压霜面 ≥1.046」：卡是 raised/95、霜是 55% 白玻璃，在最亮端
+     * 落差最窄（实算 1.05），那里过线全屏就过线。
      *
-     * ⚠️ 白斑点不进这条判定：白斑（40% 白，半径只覆盖纸的左上角）把局部推得
-     * 几乎与霜面同亮 —— 把「整块面料还分不分得开」的判断挂在一个角落尖峰上，
-     * 等于用最尖的尖峰替掉面的常规读数。白斑在玻璃下**可见**这件事由探针
-     * liquid-cdp §4 单独钉（透过主区玻璃 ΔL ≥ 0.01，实测 0.026）。
+     * x-minimalist 把那一档**整个拿掉**：卡与它所在的面同值（#FFFFFF），
+     * 实算对比度**恰好 1.000** —— 色差这条路是这一代主动放弃的，不是失手丢的。
+     *
+     * 放弃色差 ≠ 放弃分层：分层**移交给了描边**。每张卡都必须有那条 1px
+     * `border-line`（数量与配方由上面两条钉着），它的可测量别是「与卡面的对比」
+     * = **1.203:1**。
+     *
+     * ⚠️ 这个数**故意**低于 WCAG 1.4.11 的 3:1，理由要写清楚：1.4.11 管的是
+     *    「识别**控件**及其状态所必需的视觉信息」，而发丝线是**版式分隔**
+     *    （minimalist 的 "Borders — exactly 1px solid #EAEAEA on cards,
+     *    dividers"）—— 一张卡不靠边界也认得出是卡，它靠的是间距、字阶与
+     *    分组。真要一个过 3:1 的边界，那是 §6 的焦点环，不是分隔线。
+     *    这里钉的是「线必须在、且必须淡到刚好分得开」，不是「它要过 3:1」。
      */
-    expect(FROST_SHOWN.length, '霜面压色没算出来（锚点或场配方断了）').toBeGreaterThan(0)
-    for (const [name] of gradientPoints) {
-      const frost = (FROST_SHOWN.find(([n]) => n === name) || [])[1]
-      const ratio = contrast(HEX.white, frost)
-      expect(
-        ratio,
-        `白卡压霜面（${name}）只有 ${ratio.toFixed(3)}:1 —— ` +
-          `低于 1.046 卡片就与玻璃栏糊成一片（${name} 落差最窄的一端）。`,
-      ).toBeGreaterThanOrEqual(1.046)
-    }
+    const raised = tokenHex('raised')
+    const line = tokenHex('line')
+    expect(raised && line, 'tailwind.config.js 里没有 colors.raised / colors.line').toBeTruthy()
+    expect(FROST_SHOWN.length, '面板面色没算出来（tokenHex 断了）').toBeGreaterThan(0)
+    expect(CARD_SHOWN.length, '卡面色没算出来（tokenHex 断了）').toBeGreaterThan(0)
+    expect(
+      contrast(CARD_SHOWN[0][1], FROST_SHOWN[0][1]),
+      '卡与它所在的白面（主区栏）出现了色差 —— 这一代的设计是「同色 + 发丝线」；' +
+        '若有意改回色差分层，那是另一个决定，请连同下面那条描边的账一起重写',
+    ).toBeCloseTo(1, 3)
+    expect(
+      contrast(raised, tokenHex('canvas')),
+      '白卡与纸也必须是同色（1.000）—— 色差这一档在这一代不存在',
+    ).toBeCloseTo(1, 3)
+    expect(
+      contrast(line, raised),
+      `发丝线与卡面只有 ${contrast(line, raised).toFixed(3)}:1 —— 卡片会看不出边界` +
+        '（实算 1.203：这是这一代唯一的分层手段）',
+    ).toBeGreaterThanOrEqual(1.15)
   })
 
-  it('卡片 /95 的账：卡内弱化文字过 AA；/95 与 /80 的差别已经无感（雾度取值）', () => {
+  it('卡片是不透明的（bg-raised 不带 `/` 后缀）；卡内 rose-600 / slate-500 都过 AA', () => {
     /*
-     * 041 时代这条是「/95 是照 rose-600 的余量逼出来的，再透一档就破」。
-     * 043 的浅场把那个论证整个消掉了：白斑处的 raised/95 叠出来是纯白，
-     * rose-600 / slate-500 的余量都很大 —— /95 现在纯粹是**雾度**取值。
+     * 041 时代这条是「/95 是照 rose-600 的余量逼出来的，再透一档就破」；
+     * 043 把它降级成「雾度取值」（/95 与 /80 的差 < 0.3，读不出来）。
+     * x-minimalist 把这个问题**整个取消**：面是不透明的，没有"透一点/实一点"
+     * 可调 —— `bg-raised/95` 这类写法本身就是旧配方（上一条已全仓禁入）。
      *
-     * 所以这条改成钉两件当时成立、现在仍然成立的事：
-     *   ① 卡内 rose-600 与 slate-500 在全场各代表点上都过 AA；
-     *   ② 把卡片从 /95 调到 /80，最坏点的对比度变化 < 0.3 —— 几乎无感。
-     *      换句话说 043 里「透一点/实一点」不再是个阈值问题（选择它的理由是
-     *      质感），日后若要调档，看的是观感不是这条护栏。
+     * 所以这条钉两件事：
+     *   ① `bg-raised` 一律不带 `/` 透明度后缀（全仓，含 `:class` 里的字面量）；
+     *   ② 卡面上的 rose-600 与 slate-500 在**每个代表点**上都过 AA
+     *      —— 实算 rose-600 4.70、slate-500 4.76（都在 #FFFFFF 上）。
      */
-    expect(CARD_SHOWN.length, '卡片压色没算出来（锚点或场配方断了）').toBeGreaterThan(0)
+    const slashed = []
+    for (const file of SOURCE_FILES) {
+      for (const { tokens, line } of classAttrsOf(stripComments(read(file)))) {
+        for (const t of tokens) {
+          if (/^bg-raised\//.test(t)) slashed.push(`${rel(file)}:${line} ${t}`)
+        }
+      }
+    }
+    expect(
+      slashed,
+      'bg-raised 带了透明度后缀。这一代的面是**不透明**的：一个 /95 只会把后面的' +
+        '纸透出来，把「面 + 发丝线」讲的那层关系讲糊（043 的 /95 是白玻璃的近亲，' +
+        '玻璃没了它就没有理由）。',
+    ).toEqual([])
+
+    expect(CARD_SHOWN.length, '卡片面没算出来（tokenHex 或纸解析断了）').toBeGreaterThan(0)
     for (const [name, card] of CARD_SHOWN) {
       expect(
         contrast(HEX['rose-600'], card),
-        `rose-600 压卡片（${name} 的 raised/95）不到 4.5 —— 卡内错误文字欠对比度`,
+        `rose-600 压卡片（${name}）只有 ${contrast(HEX['rose-600'], card).toFixed(2)}:1 ` +
+          '—— 卡内错误文字欠对比度',
       ).toBeGreaterThanOrEqual(4.5)
       expect(
         contrast(HEX['slate-500'], card),
-        `slate-500 压卡片（${name} 的 raised/95）不到 4.5 —— 卡内弱化文字集体欠对比度`,
+        `slate-500 压卡片（${name}）只有 ${contrast(HEX['slate-500'], card).toFixed(2)}:1 ` +
+          '—— 卡内弱化文字集体欠对比度',
       ).toBeGreaterThanOrEqual(4.5)
     }
-    // 无感断言：/95 → /80 在最靠近白的一端（白斑处就是全部落点里最亮的那处）
-    const card95 = (CARD_SHOWN.find(([name]) => name === '白斑处') || [])[1]
-    const frost = (FROST_SHOWN.find(([name]) => name === '白斑处') || [])[1]
-    expect(card95 && frost, '没解析到「白斑处」的卡/霜压色').toBeTruthy()
-    const card80 = composite('#ffffff', 0.8, frost)
-    expect(
-      Math.abs(contrast(HEX['rose-600'], card95) - contrast(HEX['rose-600'], card80)),
-      '/95 与 /80 的对比度差超过 0.3 —— 卡片透明度的档位变化已经能被读出来了，重新论证取值',
-    ).toBeLessThan(0.3)
   })
 })
 
 // ---------------------------------------------------------------------------
-// 12. 两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏）
+// 12. 不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面）
 // ---------------------------------------------------------------------------
 
-describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变更-043）', () => {
+describe('不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面，x-minimalist）', () => {
   /*
-   * 病史先记着，不然看不出为什么是「两档」：
+   * 病史先记着，不然看不出为什么还是「三块」：
    *
    * 使用方 2026-10-07 圈着侧栏和顶部标题条指定了三个值：**背景半透明、模糊 24
    * 像素、边缘用亮白描边**。第一版只照这三个值做，上线看到的是「没效果」——
    * 75% 白压在近白的纸上还是白。使用方当场补了第四条：**玻璃带一点色调**。
-   * 036 那代三块是**同一种**中性暖灰；041 拆成深烟 / 白霜两种；043 保留两档，
-   * 但都收进**清水档**（填充 55%、模糊升到 32/30、saturate 整条退役）：
+   * 036 那代三块是**同一种**中性暖灰；041 拆成深烟 / 白霜两种；043 保留两档、
+   * 都收进清水档（填充 55%、模糊 32/30）。**x-minimalist 把三块一起做成不透明**：
+   * 三块不再有透明度，但**仍然是两种料**——从两种透明度变成两种**颜色**：
    *
-   *   侧栏        轻纱 glass-veil   bg-veil/55   blur 32
-   *   导航条+主区 霜面 glass-frost  bg-white/55  blur 30
+   *   侧栏        bg-veil   #F7F6F3   + border-line
+   *   导航条+主区 bg-raised #FFFFFF   + border-line
    *
-   * 为什么必须两档：三块全做霜面，屏幕就是一片白雾、层级塌掉 —— 侧栏是「比场
-   * 深一档」的深伴星（与场 ≥1.08，tailwind.config 的 `veil` 段有定档过程）；
-   * 霜面是浅对浅（与场 ≥1.046）。
+   * 为什么侧栏仍要「比纸深半档」：043 的「深伴星」关系（与纸 ≥1.08）在这一代
+   * 继续成立（实算 1.0807），只是从"半透明叠出来的"变成"token 直接就是这个值"。
+   * 两块白面与纸同值，靠 1px 发丝线分层（§11 有那条的完整论证）。
    *
    * 这一组钉的是几条**改坏了也看不出来**的机制：
-   *   ① 两档的 token 组合逐项锚定（防顺手把料搅混）；
-   *   ② 两块霜面栏**必须同料**（只调一块 → 一块亮一块暗，并排看就是坏的）；
-   *   ③ 侧栏与霜面**必须异料**（改回三块同料就是把两档的决定推翻）；
-   *   ④ 描边必须不透明（画在自己背景之上，/70 压上去就是同一个像素）；
+   *   ① 三块的 token 组合逐项锚定（防顺手把料搅混）；
+   *   ② 两块白面栏**必须同料**（只调一块 → 一块白一块灰，并排看就是坏的）；
+   *   ③ 侧栏与白面**必须异料**（改回三块同料，就是把「侧栏比纸深半档」推翻）；
+   *   ④ 填充不带透明度后缀、描边是 border-line（画在自己背景之上，带 α 就是
+   *      同一个像素）；
    *   ⑤ 吸顶线必须同一条（滚起来才露馅）；导航条带 z；
    *   ⑥ 主区固定大小（038 的整条链，与本组同挂在 WORKBENCH 上）。
    *
-   * 另外：模糊值写任意值 `backdrop-blur-[32px]` 而不是档位名，因为 32 / 30 是
-   * 规格数字 —— 写成数字，Tailwind 哪天调了档位，它不会跟着一块儿飘。
+   * 另外：三块都不许再出现 `backdrop-*` / `shadow-panel` / `border-white` ——
+   * 那是 043 的玻璃料。`backdrop-saturate` 在 043 就已经整条退役（场是无彩的，
+   * 提饱和无处可提），这一代更彻底：`backdrop-*` 全族禁入。
    */
-  const MATERIAL_RE =
-    /^(bg-(veil|white)\/\d{1,3}|glass-(refract|veil|frost)|backdrop-blur-\[[^\]]+\]|border-white|shadow-panel)$/
+  const MATERIAL_RE = /^(bg-(veil|raised)|border-line|rounded-card)$/
   const materialOf = (tokens) => tokens.filter((t) => MATERIAL_RE.test(t)).sort()
-  const EXPECT_VEIL = [
-    'backdrop-blur-[32px]',
-    'bg-veil/55',
-    'border-white',
-    'glass-refract',
-    'glass-veil',
-    'shadow-panel',
-  ]
-  const EXPECT_FROST = [
-    'backdrop-blur-[30px]',
-    'bg-white/55',
-    'border-white',
-    'glass-frost',
-    'glass-refract',
-    'shadow-panel',
-  ]
+  const EXPECT_VEIL = ['bg-veil', 'border-line', 'rounded-card']
+  const EXPECT_RAISED = ['bg-raised', 'border-line', 'rounded-card']
 
-  it('三块玻璃都解析出来了 —— 锚点失效时先在这里红', () => {
+  it('三块面板都解析出来了 —— 锚点失效时先在这里红', () => {
     // 上面几个锚点都是从源码文本里「就近取 class」，元素挪了位置或换了写法就会解析空。
     // 与其让后面几条报出莫名其妙的失败，不如在这里说清楚是解析断了。
     expect(SIDEBAR.length, '没从 id="app-sidebar" 后面解析出侧栏面板的 class').toBeGreaterThan(1)
@@ -1522,22 +1586,24 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
     ).toBeGreaterThan(1)
     expect(
       MAIN.length,
-      '没在源码里找到同时带 min-h-0 与 backdrop-blur-[30px] 的 class —— 主区玻璃栏的锚点断了',
+      '没在源码里找到同时带 min-h-0 与 bg-raised 的 class —— 主区栏的锚点断了' +
+        '（043 的锚点是 backdrop-blur-[30px]，x-minimalist 换成同料的白面标记）',
     ).toBeGreaterThan(1)
   })
 
-  it('侧栏是轻纱料：token 组合逐项在，且描边不透明', () => {
+  it('侧栏是 veil 面：token 组合逐项在（不透明 + 发丝线 + 卡片圆角）', () => {
     expect(
       materialOf(SIDEBAR),
-      '侧栏的材质 token 与 043 的定稿不一致（轻纱：veil/55 + blur32，无 saturate）。' +
-        '改成霜面就把「深伴星」的基本盘推翻了 —— 三块全白屏会塌成一片雾。',
+      '侧栏的材质 token 与 x-minimalist 的定稿不一致（侧栏面：bg-veil + border-line + ' +
+        'rounded-card，不透明、无模糊）。改成白面就把「侧栏比纸深半档」的基本盘推翻了 —— ' +
+        '三块同色，整屏的层级只剩发丝线一条。',
     ).toEqual(EXPECT_VEIL)
     expect(SIDEBAR, '侧栏没吸顶').toContain('sticky')
     expect(SIDEBAR, '侧栏面板不是圆角卡片').toContain('rounded-card')
   })
 
-  it('导航条与主区栏是霜面料，且**两块完全同料**（防只调一块）', () => {
-    expect(materialOf(NAV), '导航条的材质 token 与定稿不一致').toEqual(EXPECT_FROST)
+  it('导航条与主区栏是白面料，且**两块完全同料**（防只调一块）', () => {
+    expect(materialOf(NAV), '导航条的材质 token 与定稿不一致').toEqual(EXPECT_RAISED)
     expect(
       materialOf(MAIN),
       '主区栏与导航条不是同一块料：主区栏占的像素最多，它一旦与导航条不一致，' +
@@ -1551,15 +1617,14 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
     }
   })
 
-  it('侧栏与霜面栏是**两种**料 —— 三块同料是被两代一起推翻的版本', () => {
-    // 只调一块 → 一块深一块浅，三块不在同一个视线上；但把侧栏也改成霜面是更隐蔽的
-    // 倒退：静止看「整齐了」，整屏却退回白雾、层级塌掉。两档是决定，不是巧合。
-    expect(fillOf(SIDEBAR, 'veil'), '侧栏的填充不是 bg-veil/xx').toBeTruthy()
-    expect(fillOf(SIDEBAR, 'white'), '侧栏出现了白色填充 —— 它是轻纱料').toBeUndefined()
-    expect(fillOf(NAV, 'white'), '霜面栏的填充不是 bg-white/xx').toBeTruthy()
-    expect(fillOf(SIDEBAR, 'veil') !== fillOf(NAV, 'white'), '侧栏与导航条用了同一种填充').toBe(
-      true,
-    )
+  it('侧栏与白面栏是**两种**料 —— 三块同料是被两代一起推翻的版本', () => {
+    // 只调一块 → 一块深一块浅，三块不在同一个视线上；但把侧栏也改成白面是更隐蔽的
+    // 倒退：静止看「整齐了」，侧栏与纸的分离比（1.0807）当场归零。
+    // 两种料是决定，不是巧合 —— 只是这一代它由**颜色**表达，不再由透明度表达。
+    expect(SIDEBAR, '侧栏的填充不是 bg-veil').toContain('bg-veil')
+    expect(SIDEBAR, '侧栏出现了白面填充 —— 它是 veil 面').not.toContain('bg-raised')
+    expect(NAV, '白面栏的填充不是 bg-raised').toContain('bg-raised')
+    expect(NAV, '导航条用了侧栏面的填充').not.toContain('bg-veil')
   })
 
   it('两块都吸顶，且吸在同一条线上；导航条带 z 轴', () => {
@@ -1573,7 +1638,8 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
      */
     expect(
       NAV,
-      '导航条没吸顶 —— 不吸顶它滚过去就没了，那块模糊底下永远没有东西经过，等于白写。',
+      '导航条没吸顶 —— 不吸顶它滚过去就没了（043 时它的存在理由是「让模糊有东西' +
+        '可糊」，玻璃退役后仍留着，理由见 2276 那一段注释）。',
     ).toContain('sticky')
     expect(
       stickyTopOf(NAV),
@@ -1591,80 +1657,101 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
     ).toBe(true)
   })
 
-  it('两档都看得出是玻璃 —— 轻纱压场 ≥1.08（深伴星）/ 霜面压场 ≥1.046（浅对浅）', () => {
+  it('侧栏面与纸分得开（实算 1.0807 ≥ 1.08）；两块白面与纸同值，靠 1px 发丝线分层', () => {
     /*
      * 037 的第一版「没效果」（使用方原话）就是这么来的：75% 白压在近白纸上
      * 只有 1.0x，玻璃与底在数值上几乎同色 ——「半透明」这个属性在屏幕上不存在。
-     * 043 的两档各有一条线（两条都是 tailwind.config 里记的定档依据）：
      *
-     *   轻纱（侧栏）是**深伴星** —— 比场深一档，与 desk/canvas 那对同按 1.08 钉，
-     *   四个代表点全钉（模型上最窄 1.14，最深端）；
-     *   霜面是**浅对浅** —— 白玻璃压浅场，按房屋底线 1.046 钉，最窄 1.06（最亮端）。
-     *
-     * 白斑点的排除理由与「卡片压霜面」那条相同（角落尖峰，另有探针专测）；
-     * 轻纱那对**不排除**：侧栏与白斑同在最左边，「最深端」是它真正的最窄点。
+     * x-minimalist 的两条线：
+     *   · **侧栏面是「深伴星」** —— 比纸深半档，与 desk/canvas 那对同按 1.08 钉；
+     *     实算 contrast(#F7F6F3, #FFFFFF) = **1.0807**（贴着线过，这是定稿值：
+     *     再浅就掉到 1.08 以下，侧栏与纸就糊成一片）。
+     *   · **两块白面与纸同值** —— 色差实算**恰好 1.000**，这一代主动放弃色差，
+     *     分层交给 1px `border-line`：它的可测量别是"与纸的对比" = **1.203**
+     *     （下面钉 ≥ 1.15；1.4.11 的 3:1 是控件的账，版式分隔不适用，§11 有论证）。
      */
-    expect(VEIL_SHOWN.length, '轻纱压色没算出来（侧栏锚点或场配方断了）').toBeGreaterThan(0)
-    expect(FROST_SHOWN.length, '霜面压色没算出来（锚点或场配方断了）').toBeGreaterThan(0)
-    for (const [name, under] of underlayList) {
-      const veil = (VEIL_SHOWN.find(([n]) => n === name) || [])[1]
-      expect(
-        contrast(veil, under),
-        `轻纱压场（${name}）只有 ${contrast(veil, under).toFixed(2)}:1 —— ` +
-          '玻璃与底同色时它就只是一块色板，「半透明」这个属性在屏幕上不存在' +
-          '（037 使用方看到「没效果」就是这一条塌了）。',
-      ).toBeGreaterThanOrEqual(1.08)
-    }
+    expect(VEIL_SHOWN.length, '侧栏面色没算出来（侧栏锚点或 colors.veil 断了）').toBeGreaterThan(0)
+    expect(FROST_SHOWN.length, '白面色没算出来（colors.raised 或纸解析断了）').toBeGreaterThan(0)
     for (const [name, under] of gradientPoints) {
-      const frost = (FROST_SHOWN.find(([n]) => n === name) || [])[1]
+      const veil = (VEIL_SHOWN.find(([n]) => n === name) || [])[1]
+      const ratio = contrast(veil, under)
       expect(
-        contrast(frost, under),
-        `霜面压场（${name}）只有 ${contrast(frost, under).toFixed(2)}:1 —— ` +
-          '低于 1.046 白玻璃与场糊成一片（最亮端最窄）。',
-      ).toBeGreaterThanOrEqual(1.046)
+        ratio,
+        `侧栏面压纸（${name}）只有 ${ratio.toFixed(4)}:1 —— ` +
+          '低于 1.08 侧栏与纸就糊成一片，「比纸深半档」在屏幕上不存在' +
+          `（实测定稿值 1.0807）。`,
+      ).toBeGreaterThanOrEqual(1.08)
+      const raised = (FROST_SHOWN.find(([n]) => n === name) || [])[1]
+      expect(
+        contrast(raised, under),
+        `白面与纸（${name}）出现了色差 —— 这一代是「同色 + 发丝线」`,
+      ).toBeCloseTo(1, 3)
     }
+    expect(
+      contrast(tokenHex('line'), tokenHex('canvas')),
+      `发丝线与纸只有 ${contrast(tokenHex('line'), tokenHex('canvas')).toFixed(3)}:1 —— ` +
+        '两块白面与纸同色，这条线是它们之间**唯一**的边界（实算 1.203）',
+    ).toBeGreaterThanOrEqual(1.15)
   })
 
-  it('填充的不透明度落在 45~65（清水档的设计区间，两档各自量）', () => {
+  it('填充不带透明度后缀，描边是 border-line —— 三块都是不透明的面', () => {
     /*
-     * 这条是**通透度**，不是对比度 —— 对比度由上面几组管着，两者是两个方向：
-     * 透明度往高调（更透）→ 越接近身后的场；往低调（更实）→ 越接近一块色板。
+     * 043 这条是**通透度**（"不透明度落在 45~65"）：玻璃透明度的区间，
+     * 往高调越接近身后的场、往低调越接近一块色板，55 是实机定档值。
      *
-     * 043 的「透明」把区间整体下移（041 是 50~90、填充 85%/60%）：低于 45
-     * 玻璃与身后的场趋同、整块发闷（036 的老结论：平纸上 blur 无物可糊）；
-     * 高于 65 又回到「色板」那条老路（模糊无从表现）。55 落在区间里，
-     * 是实机定档的取值，不是被某条对比度公式逼出来的。
+     * x-minimalist 把这个自由度**取消**了：面是不透明的，没有"透一点/实一点"
+     * 可调。所以这条改成钉住那个新契约的两半：
+     *   ① 填充必须是**裸 token**（`bg-veil` / `bg-raised`），不带 `/NN` 后缀 ——
+     *      一个 `/95` 就把后面那张纸透出来，把「面 + 发丝线」讲的关系讲糊；
+     *   ② 描边必须是 `border-line` 且同样不带透明度 —— 它画在自己的背景之上，
+     *      带 α 压上去就是同一个像素（043 的 `border-white/60` 之所以不透明，
+     *      就是这条理由；那一代靠"白描边"表达边界，这一代靠"发丝线"）。
      */
-    for (const [name, tokens, kind] of [
-      ['侧栏', SIDEBAR, 'veil'],
-      ['导航条', NAV, 'white'],
-      ['主区栏', MAIN, 'white'],
+    for (const [name, tokens, fill] of [
+      ['侧栏', SIDEBAR, 'bg-veil'],
+      ['导航条', NAV, 'bg-raised'],
+      ['主区栏', MAIN, 'bg-raised'],
     ]) {
-      const fill = fillOf(tokens, kind)
-      expect(fill, `${name}没有 bg-${kind}/xx 填充`).toBeTruthy()
-      const alpha = Number(fill.split('/')[1])
-      expect(alpha, `${name}的填充不透明度 ${alpha}% 落在 45~65 之外`).toBeGreaterThanOrEqual(45)
-      expect(alpha, `${name}的填充不透明度 ${alpha}% 落在 45~65 之外`).toBeLessThanOrEqual(65)
+      const kind = fill.replace(/^bg-/, '')
+      expect(tokens, `${name}没有 ${fill} 填充`).toContain(fill)
+      // fillOf 只认 `bg-<kind>/<n>` 这个形态 —— 它返回 undefined 就是"没有透明度后缀"。
+      // 这条比 toContain(fill) 更强：它连 `bg-veil/95` 这种**同时存在**的写法也堵住。
+      expect(
+        fillOf(tokens, kind),
+        `${name}的填充带了透明度后缀（bg-${kind}/NN）—— 三块面板都是**不透明**的（玻璃已退役）`,
+      ).toBeUndefined()
+      expect(alphaOf(fillOf(tokens, kind)), `${name}的填充解析出了 α —— 它应当没有`).toBeNull()
+      expect(
+        tokens.filter((t) => t.startsWith(`${fill}/`)),
+        `${name}的填充带了透明度后缀 —— 三块面板都是**不透明**的（玻璃已退役）`,
+      ).toEqual([])
+      expect(tokens, `${name}的描边不是 border-line`).toContain('border-line')
+      expect(
+        tokens.filter((t) => t.startsWith('border-line/')),
+        `${name}的描边带了透明度后缀 —— 它画在自己背景之上，带 α 就是同一个像素`,
+      ).toEqual([])
     }
   })
 
-  it('saturate 整条退役：三块玻璃的类名里不许再出现 backdrop-saturate-*', () => {
+  it('backdrop-* 全族退役：三块面板的类名里不许再出现 backdrop-blur / backdrop-saturate / backdrop-filter', () => {
     /*
-     * 043 的场是**无彩**的：saturate 提不出任何东西，白提。
-     * （`.glass-sample` 是唯一的例外 —— 那是 042 的真折射链，saturate(1.4) 在
-     * CSS 里、是折射链的一环，不是面板 chrome，类名侧不跟。）
+     * 043 的场是**无彩**的，saturate 提不出任何东西（那条禁令当时就立着）；
+     * 这一代连 blur 一起退 —— 三块面板都是不透明的面，`backdrop-*` 全族
+     * 在这一代没有任何正当用途（043 唯一被豁免的是 `.glass-sample` 的折射链，
+     * 那条链本身也已整份删除，见 §17）。
      */
     const offenders = []
     for (const file of SOURCE_FILES) {
       for (const { tokens, line } of classAttrsOf(stripComments(read(file)))) {
-        const hit = tokens.filter((t) => t.includes('backdrop-saturate'))
+        const hit = tokens.filter((t) => t.startsWith('backdrop-'))
         if (hit.length) offenders.push(`${rel(file)}:${line} ${hit.join(' ')}`)
       }
     }
     expect(
       offenders,
-      'backdrop-saturate 回流了。043 的场是无彩的，三块玻璃的 saturate 整条退役 —— ' +
-        '只在 .glass-sample（真折射链，CSS 里）保留 saturate(1.4)。',
+      'backdrop-* 回流了（blur / saturate / filter 全族）。x-minimalist 的三块面板是' +
+        '**不透明**的：没有背后的东西可以糊，也没有颜色值得提饱和 —— ' +
+        'minimalist 只给导航留了一条「subtle nav blur」的口子，本项目连这条也没用。',
     ).toEqual([])
   })
 
@@ -1766,32 +1853,34 @@ describe('两档液态玻璃与固定大小（轻纱侧栏 / 霜面两栏，变�
 })
 
 // ---------------------------------------------------------------------------
-// 13. 两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜面上的 slate-600）
+// 13. 面板上的文字安全复算（侧栏面上的 slate 深字 / 白面上的 slate-600）
 // ---------------------------------------------------------------------------
 
-describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜面上的 slate-600）', () => {
+describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面上的 slate-600）', () => {
   /*
-   * 这一组是「材质决定文字」的账，两档各一本（043 翻面：041 是深底配白字，
-   * 现在两档都是浅底配深字）：
+   * 这一组是「材质决定文字」的账。043 里它是**两档玻璃各一本**（翻面之后两档
+   * 都是浅底配深字）；x-minimalist 之后两档并成「侧栏面 / 白面」两种**颜色**，
+   * 账没有变，但基线简单了：面是不透明的，文字压在 token 自己的值上，
+   * 不再有"叠出来的最坏底色"（underlayList 现在只有一个代表点，见文件头）。
    *
-   *   · 轻纱侧栏 —— 浅纱上的文字**整批翻深**（043 改动量最大的一处，漏一处就
-   *     欠对比度）：主标题 `text-slate-900`（压纱最坏 ~13.8）、正文/身份行
-   *     `text-slate-700`（~8.0）、弱化行 `text-slate-600`（~5.8）。白**只留在
-   *     选中胶囊 `bg-brand` 实底里面**（16.83）。
-   *   · 霜面两栏 —— 压在上面的弱化文字是 `slate-600`（页签未选中态）：
-   *     压霜面 ~7.2。`slate-500` 压霜面是 4.4~4.5 的贴线档（最深端 4.37 不过）
-   *     —— 所以页签不写 500。
-   *
-   * 「最坏」= 场的白斑处（压在纱/霜身后最亮的一点），底色从 glass-effects.css
-   * 解析出来的三段渐变推出来（见文件头的 underlayList）—— 不是常量。
+   *   · 侧栏面（veil #F7F6F3）—— 浅面上的文字整批翻深（043 改动量最大的一处，
+   *     漏一处就欠对比度）。三档实算：
+   *       slate-900 **16.52**（主标题）/ slate-700 **9.58**（正文、身份行）/
+   *       slate-600 **7.01**（弱化行）。
+   *     `slate-500` 压它是 **4.40 < 4.5** —— 那条反面断言仍然有效（下面钉着，
+   *     它是"纱面托不住浅色字"这条老结论的 tripwire）。
+   *     白**只留在选中胶囊 `bg-brand`（#111111）实底里面**（18.88）。
+   *   · 白面（raised #FFFFFF）—— 压在上面的弱化文字是 `slate-600`（页签未选中态）：
+   *     实算 **7.58**。`slate-500` 压白面是 4.76 —— **过**，页签仍写 600 的理由
+   *     是层次而不是阈值（那条的注释写清了 043 那笔 4.37 为什么作废）。
    */
-  it('轻纱侧栏上的文字只有 slate 深字族（+ 白：只在胶囊里；+ 一处退出登录的 rose）', () => {
+  it('侧栏面（veil）上的文字只有 slate 深字族（+ 白：只在胶囊里；+ 一处退出登录的 rose）', () => {
     /*
      * 规则仍是「侧栏里一律不许出现别的色系」，而不是逐处判断「这个 span 里是
      * 文字还是图标」：后者要靠人读上下文，护栏判不了。图标本可以留在灰系
      * （走非文字元素的 3:1），但一条不许的规则好守得多。
      *
-     * 例外收成两处：选中胶囊里的白（压石墨 16.83 —— 它是「反白」，不是浅色字），
+     * 例外收成两处：选中胶囊里的白（压墨色 18.88 —— 它是「反白」，不是浅色字），
      * 与退出登录 hover 的 rose-700（那个动作的语义色）。
      * 只认 class 属性里的类名，不认行文本 —— 侧栏的注释里就写着 slate-*，
      * 按行扫会把它也算进来（变更-029 的探针踩过这个坑）。
@@ -1818,19 +1907,19 @@ describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜
     })
     expect(
       offenders,
-      '侧栏里出现了 slate/白以外的文字色。纱面是浅底 —— 浅色字压它欠对比度' +
-        '（slate-500 只有 3.7、白系更浅），深底时代的白字族在 043 全部翻深；' +
+      '侧栏里出现了 slate/白以外的文字色。侧栏面是浅底 —— 浅色字压它欠对比度' +
+        '（slate-500 只有 4.40、白系更浅），深底时代的白字族在 043 全部翻深；' +
         '语义色只有退出登录那处 rose。',
     ).toEqual([])
   })
 
-  it('侧栏深字族的锚点 —— 三档 slate、白透块三档、石墨胶囊串、焦点环都在', () => {
+  it('侧栏深字族的锚点 —— 三档 slate、白透块三档、墨色胶囊串、焦点环都在', () => {
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
     const tokens = classAttrsOf(stripComments(asideBlock)).flatMap((a) => a.tokens)
     for (const t of ['text-slate-900', 'text-slate-700', 'text-slate-600']) {
       expect(tokens, `侧栏里没有 ${t} —— 深字族的三档没了`).toContain(t)
     }
-    // 选中行：石墨胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
+    // 选中行：墨色胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
     expect(
       WORKBENCH.includes("'bg-brand ring-1 ring-white/20'"),
       '侧栏选中行不是「bg-brand + ring-1 + ring-white/20」那串了 —— ' +
@@ -1841,43 +1930,46 @@ describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜
       expect(
         tokens.some((tok) => tok === t || tok === `hover:${t}` || tok === `group-hover:${t}`),
         `侧栏里没有 ${t}（含 hover: / group-hover: 形态）。未选中行底与图标块是白色` +
-          '**透块**：纱面是浅的，实白块会刺眼（037 使用方诉状同一个理），靠透明度分层次。',
+          '**透块**：侧栏面 #F7F6F3 是浅的，实白块会刺眼（037 使用方诉状同一个理），' +
+          '靠透明度分层次。',
       ).toBe(true)
     }
     expect(
       tokens,
-      '侧栏的焦点环不是 ring-brand —— 043 起它跟全站一个环色（石墨压浅纱 ~13.7，' +
+      '侧栏的焦点环不是 ring-brand —— 043 起它跟全站一个环色（墨色压侧栏面 17.47，' +
         '041 那种「深底上豁免白环」的理由随深侧栏一起退役）',
     ).toContain('focus-visible:ring-brand')
   })
 
-  it('slate 深字族在轻纱上过 AA（每段场的实算）；slate-500 压纱只有 3.7 —— 这就是最小到 600 的原因', () => {
-    expect(VEIL_SHOWN.length, '轻纱压色没算出来（侧栏锚点或场配方断了）').toBeGreaterThan(0)
+  it('slate 深字族在侧栏面上过 AA（三档实算 16.52 / 9.58 / 7.01）；slate-500 压它是 4.40 —— 这就是最小到 600 的原因', () => {
+    expect(VEIL_SHOWN.length, '侧栏面色没算出来（侧栏锚点或 colors.veil 断了）').toBeGreaterThan(0)
     for (const level of ['slate-900', 'slate-700', 'slate-600']) {
       const hex = HEX[level]
       expect(hex, `HEX 表里没有 ${level}，先补上再算`).toBeTruthy()
       for (const [name, veil] of VEIL_SHOWN) {
         expect(
           contrast(hex, veil),
-          `${level} 压轻纱（${name}）只有 ${contrast(hex, veil).toFixed(2)}:1 —— 侧栏的深字族从这里开始欠`,
+          `${level} 压侧栏面（${name}）只有 ${contrast(hex, veil).toFixed(2)}:1 —— 侧栏的深字族从这里开始欠`,
         ).toBeGreaterThanOrEqual(4.5)
       }
     }
-    // 反面（tripwire）：slate-500 压纱最亮处只有 3.67 —— 它若哪天被当正文写在纱面上，
-    // 先在这里可见（图标块里可以：那是非文字元素，3:1 就够）
+    // 反面（tripwire）：slate-500 压侧栏面只有 4.40 —— 它若哪天被当正文写在侧栏面上，
+    // 先在这里可见（图标块里可以：那是非文字元素，3:1 就够）。
+    // 这条是「纱面托不住浅色字」那句老结论的**可复算形式**，两代都成立。
     const worst = Math.max(...VEIL_SHOWN.map(([, veil]) => contrast(HEX['slate-500'], veil)))
     expect(
       worst,
-      `${worst.toFixed(2)} —— slate-500 在轻纱上竟然过 4.5 了？纱面若被调亮，` +
-        '重新决定「纱面上的弱化档」再拆这条',
+      `${worst.toFixed(2)} —— slate-500 在侧栏面上竟然过 4.5 了？面若被调亮，` +
+        '重新决定「侧栏面上的弱化档」再拆这条',
     ).toBeLessThan(4.5)
   })
 
-  it('选中胶囊上的字：纯白 16.83；白的各档透明度压石墨也全过（041 的贴线账随蓝退役）', () => {
+  it('选中胶囊上的字：纯白 18.88；白的各档透明度压墨色也全过（041 的贴线账随蓝退役）', () => {
     /*
      * 蓝胶囊时代（041）「白的各档透明度压 brand 全破 AA」—— /95 4.39、/85 3.82，
      * 只有纯白 4.70 过线，所以选中行的提示行必须转纯白。043 的石墨主色把这条
-     * 账整个翻面：/85 白压石墨都有 12.39 —— 提示行的纯白现在是**层次手段**
+     * 账整个翻面，x-minimalist 的墨色 #111111 余量更大：纯白 **18.88**、
+     * /85 白（合成 #DBDBDB）**13.64** —— 提示行的纯白现在是**层次手段**
      * （字号 14/12 + 字重 medium/normal），不再是阈值救火。
      *
      * 这条同时是余量哨兵：余量来自「底够深」。brand 若被调浅（往任何亮色走），
@@ -1904,38 +1996,59 @@ describe('两档玻璃上的文字安全复算（轻纱上的 slate 深字 / 霜
     ).toContain("'text-white'")
   })
 
-  it('霜面上的弱化文字用 slate-600（压霜 ~7.2）；slate-500 压霜最深端 4.37 不过', () => {
-    expect(FROST_SHOWN.length, '霜面压色没算出来（锚点或场配方断了）').toBeGreaterThan(0)
-    for (const [name, frost] of FROST_SHOWN) {
-      const six = contrast(HEX['slate-600'], frost)
+  it('白面上的弱化文字：slate-600 过 AA（实算 7.58）—— 043「霜面最深端 4.37」那条推理随玻璃消失', () => {
+    expect(FROST_SHOWN.length, '白面色没算出来（colors.raised 或纸解析断了）').toBeGreaterThan(0)
+    for (const [name, face] of FROST_SHOWN) {
+      const six = contrast(HEX['slate-600'], face)
       expect(
         six,
-        `slate-600 压霜面（${name}）只有 ${six.toFixed(2)}:1 —— ` +
-          '页签未选中态、霜面上的说明文字用的就是它',
+        `slate-600 压白面（${name}）只有 ${six.toFixed(2)}:1 —— ` +
+          '页签未选中态、白面上的说明文字用的就是它',
       ).toBeGreaterThanOrEqual(4.5)
     }
-    // 反面：slate-500 压霜面最深端不过（4.37）—— 这就是霜面上不写 500 的原因。
-    // （白斑处的霜面被推到 ~#fbfbfc，500 在那里贴到 4.5 边缘 —— 最深处才是判定点。）
-    const deep = (FROST_SHOWN.find(([name]) => name === '最深端') || [])[1]
-    expect(deep, '没解析到「最深端」的霜面压色').toBeTruthy()
+    /*
+     * ⚠️ **043 那条反面断言的前提没有了，别照着旧注释去找它。**
+     *
+     * 043 写的是「slate-500 压霜面最深端 4.37 不过 —— 所以页签不写 500」，
+     * 成立的前提是**霜面是 55% 白玻璃**：半透明填充让最深处比纯白暗一档，
+     * 500 在那里刚好跌破 4.5。minimalist 把玻璃整组删掉，白面就是 #FFFFFF，
+     * 500 压它实算 **4.76 —— 过**。拿旧断言（`toBeLessThan(4.5)`）继续钉，
+     * 只会钉住一个**屏幕上不存在**的底色。
+     *
+     * 所以这里换成两条真实成立、且方向不同的账：
+     *   ① 500 现在是过的（4.76）—— 记下来，免得下一个人以为它被禁了；
+     *   ② 页签仍然写 600，但理由是**层次**不是阈值：600（7.58）与选中态的
+     *      墨底白字（18.88）之间留一级，正好是"未选中 vs 选中"的落差；
+     *      500 与卡内正文灰同档（§11 里卡面正文就是 slate-500），
+     *      在页签行上分不出主次。所以 `contrast(600) > contrast(500)` 是可测的，
+     *      而那个**不变的**约束是「页签串里必须写 600」（下一条钉字面量）。
+     */
+    const face = FROST_SHOWN[0][1]
     expect(
-      contrast(HEX['slate-500'], deep),
-      'slate-500 压霜面最深端竟然过 4.5 了？重新决定「霜面上的弱化档」再拆这条',
-    ).toBeLessThan(4.5)
+      contrast(HEX['slate-500'], face),
+      `slate-500 压白面只有 ${contrast(HEX['slate-500'], face).toFixed(2)}:1 —— ` +
+        '它在这一代是过的（实算 4.76）；不过就说明白面被调暗了、或 500 被换色了',
+    ).toBeGreaterThanOrEqual(4.5)
+    expect(
+      contrast(HEX['slate-600'], face),
+      'slate-600 压白面没有比 slate-500 更深 —— 页签那一级的层次就没了',
+    ).toBeGreaterThan(contrast(HEX['slate-500'], face))
   })
 
-  it('页签两串字面量：选中石墨胶囊 / 未选中 slate-600', () => {
-    // 页签是三块玻璃上唯一的「一组文字」，两态各钉一串字面量 ——
-    // 它同时是「选中 = brand 实底白字」与「未选中 = 压霜面的 slate-600」的锚。
+  it('页签两串字面量：选中墨色胶囊 / 未选中 slate-600', () => {
+    // 页签是三块面板上唯一的「一组文字」，两态各钉一串字面量 ——
+    // 它同时是「选中 = brand 实底白字」与「未选中 = 压白面的 slate-600」的锚。
     expect(
       WORKBENCH.includes("'border-brand bg-brand font-medium text-white'"),
       '页签选中态不是「border-brand bg-brand font-medium text-white」',
     ).toBe(true)
     expect(
       WORKBENCH.includes(
-        "'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'",
+        "'border-line text-slate-600 hover:border-slate-300 hover:text-slate-800'",
       ),
-      '页签未选中态不是 slate-600 那串（霜面上不许 slate-500，见上一条）',
+      '页签未选中态不是 `border-line` + slate-600 那串。未选中页签的边界是**发丝线**' +
+        '（分层用它），hover 才是控件描边 border-slate-300 —— 两者角色不同，别混；' +
+        '文字仍用 600（白面上 500 虽然过线，但页签那一级要与选中态拉开层次，见上一条）',
     ).toBe(true)
   })
 })
@@ -2078,17 +2191,18 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStatic(
-        'flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card',
+        'flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card',
       ),
-      '不是四张卡片都写着 flex/min-h-0/flex-1/flex-col + 白霜近亲配方：`min-h-0` 是' +
+      '不是四张卡片都写着 flex/min-h-0/flex-1/flex-col + 发丝线卡片配方：`min-h-0` 是' +
         '这里的关键一笔 —— flex 项默认 min-height:auto（不许比内容矮），不写它卡片' +
         '就被内容顶高，分页行照旧一页一个位置。',
     ).toBe(TABS.length)
 
     expect(
-      countStatic('rounded-card border border-white/60 bg-raised/95 backdrop-blur-xl shadow-card'),
-      '不是其余五张 section 卡片（周统计/日统计/储罐/设备/体积）都换成了白霜近亲配方 —— ' +
-        '041 的卡片是**一条材质规则**，不是只改四张',
+      countStatic('rounded-card border border-line bg-raised shadow-card'),
+      '不是其余五张 section 卡片（周统计/日统计/储罐/设备/体积）都换成了同一条卡片配方 —— ' +
+        '卡片是**一条材质规则**，不是只改四张（x-minimalist 的配方 = 圆角 + 1px 发丝线 ' +
+        '+ 纯白面 + α=0.04 的近零阴影，详见 §11）',
     ).toBe(5)
 
     expect(
@@ -2103,13 +2217,14 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStatic('min-h-0 flex-1 overflow-x-auto overflow-y-auto'),
-      '不是四个表格区都成了「自己滚」的那一层：表格区一旦不滚，滚的就是玻璃栏，' +
+      '不是四个表格区都成了「自己滚」的那一层：表格区一旦不滚，滚的就是主区栏，' +
         '卡片退回跟着内容长，分页行又跑起来了。',
     ).toBe(TABS.length)
 
     expect(
-      countStatic('flex shrink-0 justify-end border-t border-slate-100 px-6 py-3'),
-      '不是四个分页行都带 shrink-0：空间不够时 flex 会先压它',
+      countStatic('flex shrink-0 justify-end border-t border-line px-6 py-3'),
+      '不是四个分页行都带 shrink-0（分隔线是发丝线 border-line）：' +
+        '空间不够时 flex 会先压它',
     ).toBe(TABS.length)
   })
 
@@ -2123,7 +2238,7 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStaticTank(
-        'flex min-h-0 flex-1 flex-col rounded-card border border-white/60 bg-raised/95 shadow-card backdrop-blur-xl',
+        'flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card',
       ),
       '储罐卡片没有转成「撑满 + 纵向 flex + min-h-0」：不写 min-h-0 的后果与' +
         '四个汇总页签同款 —— 卡片被内容顶高，分页行一页一个位置。',
@@ -2141,36 +2256,44 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStaticTank('min-h-0 flex-1 overflow-x-auto overflow-y-auto'),
-      '储罐表格区不是「自己滚」的那一层：表格区一旦不滚，滚的就是玻璃栏，' +
+      '储罐表格区不是「自己滚」的那一层：表格区一旦不滚，滚的就是主区栏，' +
         '卡片退回跟着内容长，分页行又跑起来了。',
     ).toBe(1)
 
     expect(
-      countStaticTank('flex shrink-0 justify-end border-t border-slate-100 px-6 py-3'),
-      '储罐分页行没有带 shrink-0：空间不够时 flex 会先压它',
+      countStaticTank('flex shrink-0 justify-end border-t border-line px-6 py-3'),
+      '储罐分页行没有带 shrink-0（分隔线是发丝线 border-line）：空间不够时 flex 会先压它',
     ).toBe(1)
   })
 
-  it('滚动时间线的来源跟着滚动容器走 —— 不再挂死在玻璃栏上', () => {
+  it('滚动时间线的来源跟着滚动容器走 —— 不再挂死在一块不动的栏上', () => {
     /*
-     * `--main-scroll` 是**三块玻璃边缘高光的来源**（glass-effects.css 里
+     * ⚠️ **这一条这一轮"故意保留"，理由要说清楚**（别把它当成漏删的旧账）。
+     *
+     * 043 时 `--main-scroll` 是**三块玻璃边缘高光的来源**（glass-effects.css 里
      * `.glass-scroll` 声明、`.glass-refract` 消费）。它必须挂在「当时真正在滚的
      * 那个元素」上：这四个页签改完之后玻璃栏不再滚了，时间线留在它身上就会
      * **冻住** —— 高光静止不动，不报错、不警告，正是最难发现的那种。
      *
-     * 反过来也不行：四个页签是 `v-show` 的，**始终在 DOM 里**，同时挂着 4 条同名
-     * 时间线属于未定义行为。所以逐页签绑定，任何时刻只有一处声明。
+     * x-minimalist 把玻璃整组删掉，那条时间线**已经没有消费者**（`glass-scroll`
+     * 现在是个死标记，清理指向 DESIGN.md §5.3）。但那 7 处 `:class` 绑定**仍在**，
+     * 于是这里继续钉三件事，它们今天仍然成立、而且正是清理时最容易踩坏的：
+     *   ① 标记不许回到**静态** class 上（`v-show` 常驻，多份同名声明是未定义行为）；
+     *   ② 「不是那四个页签时由主区栏承担」的那条绑定必须在，且**只有一条**；
+     *   ③ 模板上的绑定与脚本里的 `INNER_SCROLL_TABS` 两本账必须对得上
+     *      （多一个/少一个都是同一类错：声明落在了一个不滚动的元素上）。
+     * 删标记是另一个决定 —— 那时连同本组一起删，别只删一半。
      */
     const carriers = CLASS_ATTRS.filter((a) => a.value.includes('glass-scroll'))
     expect(
       carriers.filter((a) => !a.bound).map((a) => a.value),
-      'glass-scroll 回到了静态 class 上 —— 时间线会挂死在一个不再滚动的元素上，' +
-        '三块玻璃的边缘高光从此不跟手（换成 :class 绑定，由 activeTab 决定挂在哪）。',
+      'glass-scroll 回到了静态 class 上 —— 四个页签是 v-show 的、始终在 DOM 里，' +
+        '同一时刻会有多份同名声明（换成 :class 绑定，由 activeTab 决定挂在哪）。',
     ).toEqual([])
 
     expect(
       carriers.filter((a) => a.bound && a.value.includes('!scrollsInsideCard')).length,
-      '玻璃栏上没有「不是那四个页签时由我承担时间线」的那条绑定',
+      '主区栏上没有「不是那四个页签时由我承担」的那条绑定',
     ).toBe(1)
 
     const boundTabs = carriers
@@ -2179,21 +2302,21 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
       .filter(Boolean)
     expect(
       boundTabs,
-      '四个汇总页签的表格区没有各自声明滚动时间线 —— 这四个页签上高光会冻住',
+      '四个汇总页签的表格区没有各自声明那个标记',
     ).toEqual(TABS)
 
     // 储罐液位（变更-044）：绑定在面板文件里、认的是 `active` prop（子组件拿不到
     // activeTab），由 WorkOrderList 那只 `:active` 把它的页签名对进同一本账。
     expect(
       TANK_CLASS_ATTRS.filter((a) => a.bound && a.value.includes("'glass-scroll': active")).length,
-      'TankLevelPanel 的表格区没挂 glass-scroll 的 active 绑定 —— 储罐页签上高光会冻住',
+      'TankLevelPanel 的表格区没挂 glass-scroll 的 active 绑定',
     ).toBe(1)
     expect(
       TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value.includes('glass-scroll')).map(
         (a) => a.value,
       ),
       'glass-scroll 出现在 TankLevelPanel 的静态 class 上 —— v-show 常驻，它会与激活' +
-        '页签的声明同时存在，时间线归属成未定义行为。',
+        '页签的声明同时存在，归属成未定义行为。',
     ).toEqual([])
 
     // 脚本里的名单与模板上的绑定必须对得上（两本平行账，钉在一起）。
@@ -2202,9 +2325,10 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     const panelTab = WORKBENCH.match(/<TankLevelPanel :active="activeTab === '(\w+)'"/)?.[1]
     expect(
       [...boundTabs, panelTab],
-      'INNER_SCROLL_TABS 与模板上真正挂 glass-scroll 的页签对不上 —— ' +
-        '多一个（那个页签其实在玻璃栏里滚，时间线却挂在了不动的表格区上）、' +
-        '少一个（那个页签表格区在滚，时间线却留在玻璃栏上），两边都是「高光冻住」。',
+      'INNER_SCROLL_TABS 与模板上真正挂那个标记的页签对不上 —— ' +
+        '多一个（那个页签其实在主区栏里滚，标记却挂在了不动的表格区上）、' +
+        '少一个（那个页签表格区在滚，标记却留在主区栏上）。' +
+        '（标记本身已经是死代码，但两本账要对得上 —— 清理时一起清。）',
     ).toEqual([...list.matchAll(/'(\w+)'/g)].map((m) => m[1]))
   })
 })
@@ -2284,347 +2408,217 @@ describe('可点的非按钮元素必须有键盘通路（变更-033）', () => 
 })
 
 // ---------------------------------------------------------------------------
-// 17. 边缘光学 + 真折射样张（变更-042）
+// 17. 042 的边缘光学与真折射样张 —— 整组退场（x-minimalist）
 // ---------------------------------------------------------------------------
-describe('边缘光学与真折射样张（变更-042）', () => {
+describe('042 的边缘光学与真折射样张：整组退场（x-minimalist）', () => {
   /*
    * 042 是 WWDC25 物料描述里被 041 明确推迟（并写进「不做」清单）的两件事：
-   * **边缘色散** 与 **真实透镜折射**。分两半落地，这份契约各钉一半：
+   * **边缘色散** 与 **真实透镜折射**。(A) 落在 panel token 的四笔色散线上，
+   * (B) 落在 /intro Hero 图上那块「演示玻璃」。
    *
-   *   (A) 工作台三块玻璃的「边缘光学」—— 全浏览器，零新技术：
-   *       panel token 在基础三笔（外投影 + 顶白镜面 + 底深厚度）上加了四笔
-   *       色散线（顶/左冷、底/右暖；043 只换了前三笔的颜色值，四笔色散线
-   *       逐字节保留 —— 使用方 042 点名要过，1px 光学不是配色）。
-   *       **顺序是载荷**：CSS Backgrounds 3 原文
-   *       「the first shadow is on top」—— 列表第一条画在最上，所以 041 的白
-   *       镜面线必须仍在顶冷线之前、底深线必须仍在底暖线之前。另一条容易忘的
-   *       规范事实：inset 阴影被裁在 **padding box** 内（画在背景之上、描边之下），
-   *       三块玻璃都有 1px border-white，所以色散线画在白描边**里侧**。
+   * x-minimalist 把整条链**整份删除** —— 不是"压平"，是这条链上的五样东西一起没了：
    *
-   *   (B) /intro Hero 图上的真折射样张 —— Chromium-only：
-   *       `backdrop-filter: url(#lg-refract)` + feDisplacementMap ×3 逐通道色散。
-   *       降级走**级联**不走 @supports（三家引擎对 url() 的 @supports 都答「支持」，
-   *       假阳性；真渲染只有 Chromium），所以 .glass-sample 里 blur 行必须写在
-   *       url 行之前 —— 这两行的顺序就是降级链本身。
+   *   ① panel token 里的四笔边缘色散线（顶/左冷 rgb(150,190,255)、
+   *      底/右暖 rgb(255,180,175)）与三笔玻璃光学（外投影 + 顶白镜面 + 底深厚度）；
+   *   ② Intro.vue Hero 图上那块演示玻璃的 DOM 叠层；
+   *   ③ SVG 滤镜链（id="lg-refract" + 三条 feDisplacementMap + feColorMatrix
+   *      + feBlend，连着 6 条"不报错、只是没效果"的硬规矩）；
+   *   ④ 位移贴图资产 src/assets/landing/lg-map.png（连 `?inline` 导入）；
+   *   ⑤ 玻璃时代为它写的三条降级路径（级联降级 / `@supports not (backdrop-filter…)`
+   *      / `prefers-reduced-transparency`）。
    *
-   * 滤镜链的六个坑（region 0/0/1/1、preserveAspectRatio=none、不写 primitiveUnits、
-   * sRGB、feColorMatrix 第 4 行保 alpha、容器 h-0/w-0 非 display:none）的「为什么」
-   * 写在 Intro.vue 模板注释里；每一条的失败样子都是「不报错、只是没效果」，所以
-   * 这里只钉得住属性本身 —— 删一条，下面就会在属性上红。
+   * 删它的理由**不是兼容性**（042 那套 Chromium-only 的账本身是成立的），
+   * 是这一代的设计立场：minimalist 把 glassmorphism 与"装饰性填充"写进反模式
+   * 清单，而那块样张是 aria-hidden、无交互、只为展示光学的**纯装饰**；
+   * 「真实图片，不做假 UI」这条 037 就立过的规矩，删掉它之后反而更完整。
    *
-   * scale 链 28/32/36 与 (c−a)/b=0.25 是**实测定案**（_runlogs/refract-tune.mjs
-   * 把 spread 从 0.125 拉到 0.625，虹边信号只从 4 涨到 7/255 —— 底图高频是 1–3px
-   * 细线，通道错位超过线宽后色差不再增长；0.25 是平台起点）。改这三个数 =
-   * 重新做过那组实测，别在编辑器里顺手调。
+   * 所以这一组不再钉"滤镜的六个坑与 scale 链 28/32/36"（那些属性已经不存在），
+   * 改钉**退场本身**：整条链的每一个名字在全仓都不许留下**用法**。
+   *
+   * ⚠️ 扫描一律先过 `stripComments`：Intro.vue 的 `<script>` 块注释与
+   *    minimal-field.css 的块注释里**故意**留着 `lg-map.png` / `backdrop-filter` /
+   *    `glass-*` 这些字样作为"删了什么"的记账 —— 那是**记录不是用法**
+   *    （规矩见文件头的 stripComments 段；这一轮差点因为按原文扫而误红）。
    */
-  const PANEL = tailwindConfig.theme?.extend?.boxShadow?.panel
   const INTRO = read(join(SRC, 'views', 'Intro.vue'))
-  const FILTER_FRAG = (INTRO.match(/<filter[\s\S]*?<\/filter>/) || [''])[0]
-  const FILTER_TAG = (FILTER_FRAG.match(/<filter[\s\S]*?>/) || [''])[0]
-  const HIDDEN_SVG = (INTRO.match(
-    /<svg\s+class="pointer-events-none absolute h-0 w-0 overflow-hidden"[\s\S]*?>/,
-  ) || [''])[0]
-  const SAMPLE_CLASS =
-    (INTRO.match(/id="glass-sample"[\s\S]{0,600}?class="([^"]*)"/) || [])[1] || ''
-  const SAMPLE_CSS = (GLASS_CSS.match(/\.glass-sample\s*\{([\s\S]*?)\}/) || [])[1] || ''
-  // 切到 `@media` 的**关键帧形式**为止 —— 裸的 'prefers-reduced-transparency' 会先命中
-  // 150 行颗粒注释里的同一个词，切出来是空段（这正是它第一次写错并被红掉的样子）
-  const SUPPORTS_NOT_BLOCK = GLASS_CSS.slice(
-    GLASS_CSS.indexOf('@supports not ('),
-    GLASS_CSS.indexOf('@media (prefers-reduced-transparency'),
-  )
-  const REDUCED_TRANSPARENCY_BLOCK = GLASS_CSS.slice(
-    GLASS_CSS.indexOf('@media (prefers-reduced-transparency'),
-    GLASS_CSS.indexOf('@media (prefers-reduced-motion'),
-  )
+  const RETIRED = [
+    'backdrop-filter',
+    '-webkit-backdrop-filter',
+    'url(#lg-refract)',
+    'feDisplacementMap',
+    'feImage',
+    'feColorMatrix',
+    'feBlend',
+    'backdrop-blur',
+    'backdrop-saturate',
+  ]
 
-  /** 按**括号深度**切 box-shadow 列表 —— rgba(…) 里的逗号不是段界（裸 split(',') 会把颜色切碎） */
-  const splitTop = (s) => {
-    const out = []
-    let depth = 0
-    let cur = ''
-    for (const ch of s) {
-      if (ch === '(') depth++
-      if (ch === ')') depth--
-      if (ch === ',' && depth === 0) {
-        out.push(cur.trim())
-        cur = ''
-      } else cur += ch
+  it('折射链的九个名字在全仓（src）都不留用法 —— 剥注释之后扫', () => {
+    const offenders = []
+    for (const file of SOURCE_FILES) {
+      stripComments(read(file))
+        .split(/\r?\n/)
+        .forEach((line, index) => {
+          for (const word of RETIRED) {
+            if (line.includes(word)) offenders.push(`${rel(file)}:${index + 1} ${word}`)
+          }
+        })
     }
-    if (cur.trim()) out.push(cur.trim())
-    return out
-  }
-  const rgbaOf = (seg) => {
-    const m = seg.match(/rgba?\(([^)]*)\)/)
-    return m ? m[1].split(',').map((n) => Number(n.trim())) : null
-  }
-  const isInset = (seg) => /(^|\s)inset($|\s)/.test(seg)
-  /** 一条影子的三个长度（offset-x / offset-y / blur），颜色元组先剥掉免得混进来 */
-  const geomOf = (seg) => (seg.replace(/rgba?\([^)]*\)/g, '').match(/-?[\d.]+/g) || []).map(Number)
-  const segIndexOf = (segs, r, g, b, a, inset = true) =>
-    segs.findIndex((seg) => {
-      const v = rgbaOf(seg)
-      return (
-        v &&
-        Math.abs(v[0] - r) < 0.5 &&
-        Math.abs(v[1] - g) < 0.5 &&
-        Math.abs(v[2] - b) < 0.5 &&
-        Math.abs(v[3] - a) < 0.005 &&
-        isInset(seg) === inset
-      )
-    })
-
-  it('锚点活着 —— panel token / Intro 滤镜段 / 样张 class 都解析出来了', () => {
-    // 下面十条断言的全是解析出来的片段：配置读不到、模板改形、正则过时，
-    // 它们会**照样绿**（空串对空断言）。所以先钉住「确实拿到了东西」。
     expect(
-      typeof PANEL === 'string' && PANEL.length > 0,
-      '没从 tailwind.config.js 读到 boxShadow.panel',
-    ).toBe(true)
+      offenders,
+      '042 的折射/玻璃链回流了。这九个名字（backdrop-filter / -webkit-backdrop-filter / ' +
+        'url(#lg-refract) / feDisplacementMap / feImage / feColorMatrix / feBlend / ' +
+        'backdrop-blur / backdrop-saturate）在这条链上是**载荷**：任何一个回来，' +
+        '都说明有人把 042 的代码块粘回去了。三块面板是不透明的，' +
+        '没有背后的东西可以糊、也没有玻璃边可以镶色散。',
+    ).toEqual([])
+  })
+
+  it('.minimal-figure 这个类名在 src 里零出现 —— 防样张以另一种形式回流', () => {
+    /*
+     * CSS 规则与 markup 两处都不许有：它是当年那块玻璃样张的挂点。
+     * 工程图现在是**一张普通的真实截图**（下一条钉着），不需要一个语义为
+     * "装饰性玻璃样张"的类名 —— 挂上去就是假命名（名字说的是它**曾经是什么**，
+     * 而不是它现在长什么样）。
+     */
+    expect(
+      scan(/minimal-figure/),
+      'minimal-figure 回流了 —— 那是"那块玻璃样张"的挂点，它的规则与用法这一轮' +
+        '已整份删除（删除理由登记在 DESIGN.md §5.3）',
+    ).toEqual([])
+  })
+
+  it('资产不在：lg-map.png 已删除，且 src 里没有它的代码引用', () => {
+    /*
+     * 位移贴图是折射链的**载荷**：删链不删图，等于留了一个"随时可以接回来"的口子。
+     * 引用侧同样扫：`import lgMap from '…lg-map.png?inline'` 这类代码一旦回来，
+     * 图片本体也必须跟着回来 —— 两条一起钉才闭环。
+     */
+    expect(
+      existsSync(join(SRC, 'assets', 'landing', 'lg-map.png')),
+      'src/assets/landing/lg-map.png 还在 —— 位移贴图是 042 折射链的载荷，' +
+        '删链不删图等于留了个口子',
+    ).toBe(false)
+    const offenders = []
+    for (const file of SOURCE_FILES) {
+      stripComments(read(file))
+        .split(/\r?\n/)
+        .forEach((line, index) => {
+          if (/lg[-_]?map/i.test(line)) offenders.push(`${rel(file)}:${index + 1}`)
+        })
+    }
+    expect(offenders, 'src 里还有 lg-map / lgMap 的代码引用（注释里记账不算）').toEqual([])
+  })
+
+  it('一张真实截图仍然在：vesselCanvas 那张图带 1px 发丝线与卡片圆角', () => {
+    /*
+     * 删掉装饰不等于删掉内容。Hero 上那张工程图是**抓的真实界面截图**
+     * （`vesselCanvas`，150 产品罐 / 液位 1250mm），alt 也在 ——
+     * 而且它现在是一条普通 img：`rounded-card` + `border-line`，
+     * 与全站其余面同一种分层方式（不再是"拿 CSS 光学在真实截图上做表演"）。
+     * 这条是「删掉了装饰、没删掉内容」的证据，别在清理时把它一起删了。
+     */
+    const img = [...INTRO.matchAll(/<img\b[\s\S]*?>/g)]
+      .map((m) => m[0])
+      .find((t) => /vesselCanvas/.test(t))
+    expect(
+      img,
+      'Intro.vue 里找不到 :src="vesselCanvas" 的那张图 —— 删装饰时把内容也删了？',
+    ).toBeTruthy()
+    expect(img, '那张图丢了 1px 发丝线（border-line）').toMatch(/border-line/)
+    expect(img, '那张图丢了卡片圆角（rounded-card）').toMatch(/rounded-card/)
+    expect(img, '那张图没有 alt —— 它是内容，不是装饰').toMatch(/alt="/)
+  })
+
+  it('阴影回到「几乎不存在」：boxShadow 只剩 card / panel 两键、各恰好一段、α ≤ 0.05 且中性', () => {
+    /*
+     * 042 的色散线是**镶在 panel token 里的**（七段 box-shadow，顺序即载荷：
+     * CSS Backgrounds 3「the first shadow is on top」）。那一整组现在没了，
+     * 取而代之的是 minimalist 的高程条：阴影"几乎不存在"，真要用也只允许
+     * 「超大扩散、α < 0.05」那一档。
+     *
+     * 这条钉四件事：
+     *   ① boxShadow 的 key 集合不变（`card` / `panel`：x-minimalist 是就地改值，
+     *      没有新开 token —— 新 token 的第一风险是撞颜色名，见 §14）；
+     *   ② 每个 token **恰好一段** —— 七段那个"边缘光学"结构不许回来；
+     *   ③ α ≤ 0.05 且为正（0.04 / 0.03 是定稿值：再深一点白纸上就看得见"脏"）；
+     *   ④ 颜色是**中性黑**（R=G=B=0）—— 043 的底深线还带一点冷调（24,24,30），
+     *      这一代连那点色偏都不要（白纸上任何色偏都会显脏）。
+     */
+    const ext = tailwindConfig.theme?.extend?.boxShadow ?? {}
+    expect(
+      Object.keys(ext).sort(),
+      'boxShadow 的 key 集合变了 —— 042 的四笔色散线只许加进 panel、不许新开 token；' +
+        'x-minimalist 只改值，key 不动',
+    ).toEqual(['card', 'panel'])
+
+    /** 按**括号深度**切 box-shadow 列表 —— rgba(…) 里的逗号不是段界（裸 split(',') 会把颜色切碎） */
+    const splitTop = (s) => {
+      const out = []
+      let depth = 0
+      let cur = ''
+      for (const ch of s) {
+        if (ch === '(') depth++
+        if (ch === ')') depth--
+        if (ch === ',' && depth === 0) {
+          out.push(cur.trim())
+          cur = ''
+        } else cur += ch
+      }
+      if (cur.trim()) out.push(cur.trim())
+      return out
+    }
     expect(splitTop('a(b,c),d'), '切分器坏了：rgba(…) 里的逗号被当成了段界').toEqual([
       'a(b,c)',
       'd',
     ])
-    expect(FILTER_FRAG, 'Intro.vue 里没找到 <filter>…</filter> 段').toContain('<feImage')
-    expect(SAMPLE_CLASS, 'Intro.vue 里没解析到 #glass-sample 的 class').toContain('glass-sample')
-    expect(SAMPLE_CSS, 'glass-effects.css 里没解析到 .glass-sample 的基础规则').toContain(
-      'backdrop-filter',
-    )
-  })
 
-  it('panel 恰好 7 段、043 三笔逐位在案（外投影 + 顶白镜面 + 底深厚度）', () => {
-    const segs = splitTop(PANEL)
-    expect(
-      segs,
-      `panel 应为 7 段（基础三笔 + 042 四笔色散线），实为 ${segs.length} 段`,
-    ).toHaveLength(7)
-    const outer = segs[0]
-    expect(isInset(outer), '第 1 段应是外投影（不带 inset）').toBe(false)
-    expect(
-      rgbaOf(outer),
-      '外投影的颜色变了 —— 043 起它是中性深（挡的是中性场的光），纯黑压浅灰会发死',
-    ).toEqual([18, 18, 22, 0.1])
-    expect(geomOf(outer)).toEqual([0, 12, 32])
-    const iWhite = segIndexOf(segs, 255, 255, 255, 0.85)
-    const iDark = segIndexOf(segs, 24, 24, 30, 0.1)
-    expect(
-      iWhite,
-      '041 的顶缘白镜面线（inset 0 1px rgba(255,255,255,0.85)）不在了',
-    ).toBeGreaterThan(-1)
-    expect(iDark, '043 的底缘深线（inset 0 -1px rgba(24,24,30,0.10)）不在了').toBeGreaterThan(-1)
-    expect(geomOf(segs[iWhite]), '白镜面线必须还是 1px 贴顶').toEqual([0, 1, 0])
-    expect(geomOf(segs[iDark]), '底深线必须还是 1px 贴底').toEqual([0, -1, 0])
-    // 042 只加在 panel 上，不新开 token —— 新 token 的第一风险是撞颜色名（第 14 节）；
-    // 043 又退役了 glow（选中胶囊不再有光晕环，石墨实底自撑）
-    expect(
-      Object.keys(tailwindConfig.theme.extend.boxShadow).sort(),
-      'boxShadow 的 key 集合变了 —— 042 的色散线只许加进 panel，不许新开 token',
-    ).toEqual(['card', 'panel'])
-  })
-
-  it('顺序是载荷：顶白 1px 必须在顶冷 2px 之前、底深 1px 必须在底暖 2px 之前', () => {
-    const segs = splitTop(PANEL)
-    const iWhite = segIndexOf(segs, 255, 255, 255, 0.85)
-    const iCoolT = segIndexOf(segs, 150, 190, 255, 0.3)
-    const iDark = segIndexOf(segs, 24, 24, 30, 0.1)
-    const iWarmB = segIndexOf(segs, 255, 180, 175, 0.22)
-    expect(iCoolT, '顶缘冷线（inset 0 2px rgba(150,190,255,0.30)）不在了').toBeGreaterThan(-1)
-    expect(iWarmB, '底缘暖线（inset 0 -2px rgba(255,180,175,0.22)）不在了').toBeGreaterThan(-1)
-    expect(
-      iWhite < iCoolT && iDark < iWarmB,
-      'panel 的顺序被打乱了。CSS Backgrounds 3 原文「the first shadow is on top」——\n' +
-        `列表第一条画在最上：白镜面线（第 ${iWhite + 1} 段）必须在顶冷线（第 ${iCoolT + 1} 段）之前、\n` +
-        `底深线（第 ${iDark + 1} 段）必须在底暖线（第 ${iWarmB + 1} 段）之前。\n` +
-        '调换 = 静默互换「谁画在最上」：屏幕上是白镜面线变暗、色散线抢戏，没有任何报错。',
-    ).toBe(true)
-  })
-
-  it('042 四笔色散线：冷暖语义 / 各缘位置 / α ∈ (0.15, 0.5)', () => {
-    const segs = splitTop(PANEL)
-    const at = {
-      顶冷: segIndexOf(segs, 150, 190, 255, 0.3),
-      左冷: segIndexOf(segs, 150, 190, 255, 0.35),
-      底暖: segIndexOf(segs, 255, 180, 175, 0.22),
-      右暖: segIndexOf(segs, 255, 180, 175, 0.28),
-    }
-    for (const [label, i] of Object.entries(at)) {
+    for (const [key, value] of Object.entries(ext)) {
+      const segs = splitTop(value)
       expect(
-        i,
-        `${label}线不在了（顶/左=rgba(150,190,255)、底/右=rgba(255,180,175) 各一）`,
-      ).toBeGreaterThan(-1)
-    }
-    // 位置：顶/底让出第 1px 给 041 的白/深，色散线落在第 2px；左/右只有一条，落在第 1px
-    expect(geomOf(segs[at.顶冷]), '顶冷线该在 y=2px（第 1px 是白镜面线）').toEqual([0, 2, 0])
-    expect(geomOf(segs[at.底暖]), '底暖线该在 y=−2px（第 1px 是深线）').toEqual([0, -2, 0])
-    expect(geomOf(segs[at.左冷]), '左冷线该在 x=1px').toEqual([1, 0, 0])
-    expect(geomOf(segs[at.右暖]), '右暖线该在 x=−1px').toEqual([-1, 0, 0])
-    // 语义：冷 = 蓝多于红，暖 = 红多于蓝（光穿过有厚度的玻璃边被掰开的色光方向）
-    for (const label of ['顶冷', '左冷']) {
-      const [r, , b] = rgbaOf(segs[at[label]])
-      expect(b > r, `${label}线的蓝分量必须大于红（现在 R=${r} B=${b}）`).toBe(true)
-    }
-    for (const label of ['底暖', '右暖']) {
-      const [r, , b] = rgbaOf(segs[at[label]])
-      expect(r > b, `${label}线的红分量必须大于蓝（现在 R=${r} B=${b}）`).toBe(true)
-    }
-    // α 档位：低于 0.15 在屏幕上找不到，高于 0.5 会抢 041 镜面线的主次
-    for (const [label, i] of Object.entries(at)) {
-      const a = rgbaOf(segs[i])[3]
-      expect(a > 0.15 && a < 0.5, `${label}线 α=${a} 出了 (0.15, 0.5) 区间`).toBe(true)
-    }
-  })
-
-  it('滤镜六条硬规矩的载荷属性都在（region / sRGB / PAR=none / 无 primitiveUnits / h-0·w-0 不是 display:none）', () => {
-    // 每条的「为什么」在 Intro.vue 模板滤镜注释里；失败样子都是「不报错、只是没效果」
-    expect(FILTER_TAG, 'filter 起始标签没解析到').toContain('filterUnits="objectBoundingBox"')
-    for (const attr of ['x="0"', 'y="0"', 'width="1"', 'height="1"']) {
+        segs,
+        `${key} 不是恰好一段（实为 ${segs.length} 段）—— 七段结构是 042 的边缘光学，` +
+          '它随玻璃整组退役',
+      ).toHaveLength(1)
+      const rgba = (segs[0].match(/rgba?\(([^)]*)\)/) || [])[1]
+      expect(rgba, `${key} 的投影颜色没解析出来`).toBeTruthy()
+      const [r, g, b, a] = rgba.split(',').map((n) => Number(n.trim()))
       expect(
-        FILTER_TAG,
-        `滤镜区域缺 ${attr} —— 默认 -10%/120% 外边距会把贴图缩成中间一小块`,
-      ).toContain(attr)
-    }
-    expect(
-      FILTER_TAG,
-      'color-interpolation-filters="sRGB" 没了 —— linearRGB 会把 128 当 0.216，整块恒定平移（看着是「错位」不是折射）',
-    ).toContain('color-interpolation-filters="sRGB"')
-    // 剥注释再扫：模板注释里**写着**「也不能出现 primitiveUnits」这句话本身
-    // （教训式的注释），裸 toContain 会把这条记录当成用法红掉。
-    expect(
-      stripComments(INTRO),
-      '出现 primitiveUnits —— Blink 对它的百分比解析有坑（svgwg #1012）',
-    ).not.toContain('primitiveUnits')
-    expect(
-      FILTER_FRAG,
-      'feImage 缺 preserveAspectRatio="none"（初始值 xMidYMid meet 会等比留白）',
-    ).toMatch(/<feImage[^>]*preserveAspectRatio="none"/)
-    expect(
-      HIDDEN_SVG,
-      '隐藏 svg 容器丢了 pointer-events-none absolute h-0 w-0 overflow-hidden 四件套',
-    ).toBeTruthy()
-    expect(
-      HIDDEN_SVG,
-      '隐藏容器不许 display:none —— feImage 从 display:none 的树里取图会静默失败',
-    ).not.toMatch(/display:\s*none/)
-  })
-
-  it('色散链 28/32/36 是实测定案：递增、spread ∈ [0.15,0.3]、褶皱余量 ≥15%', () => {
-    // 28/32/36 不是拍的（详见本 describe 注释与 _runlogs/refract-tune.mjs 的实测表）。
-    // 改这三个数 = 重新做过那组实测，不在编辑器里顺手调。
-    const scales = [...FILTER_FRAG.matchAll(/scale="(\d+)"/g)].map((m) => Number(m[1]))
-    expect(scales, '色散链的 scale 值变了 —— 改动前先重跑 _runlogs/refract-tune.mjs').toEqual([
-      28, 32, 36,
-    ])
-    const spread = (scales[2] - scales[0]) / scales[1]
-    expect(
-      spread >= 0.15 && spread <= 0.3,
-      `spread=(c−a)/b=${spread} 出了 [0.15,0.3]（平台起点 0.25）`,
-    ).toBe(true)
-    // 折叠：位移场最大斜率 = scale × 0.01907（0.03113 编码系数 × 14.7·1.5/36 的贴图最大梯度），
-    // 斜率到 1 内容就翻折（scale≈52）。要求余量 ≥15%。
-    const fold = Math.max(...scales) * 0.01907
-    expect(
-      fold <= 0.85,
-      `scale 上限 ${Math.max(...scales)} 的位移场斜率 ${fold.toFixed(2)} 逼近褶皱阈值 1`,
-    ).toBe(true)
-    // 通道选择器：贴图语义 R=x / G=y，三条都要
-    expect(
-      [...FILTER_FRAG.matchAll(/xChannelSelector="R"/g)],
-      'xChannelSelector 不全',
-    ).toHaveLength(3)
-    expect(
-      [...FILTER_FRAG.matchAll(/yChannelSelector="G"/g)],
-      'yChannelSelector 不全',
-    ).toHaveLength(3)
-  })
-
-  it('三条 feColorMatrix 精确隔离单通道（第 4 行 0 0 0 1 0 保 alpha）+ 两次 screen 合成', () => {
-    const mats = [...FILTER_FRAG.matchAll(/values="([^"]*)"/g)].map((m) =>
-      m[1].replace(/\s+/g, ' ').trim(),
-    )
-    expect(mats, 'feColorMatrix 数量不是 3').toHaveLength(3)
-    expect(mats[0], 'R 通道隔离矩阵变了').toBe('1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0')
-    expect(mats[1], 'G 通道隔离矩阵变了').toBe('0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0')
-    expect(mats[2], 'B 通道隔离矩阵变了').toBe('0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0')
-    for (const [i, v] of mats.entries()) {
-      expect(v.split(' ').length, `第 ${i + 1} 条矩阵不是 4×5=20 个数`).toBe(20)
+        a,
+        `${key} 的 α=${a} 超过 0.05 —— minimalist 的阴影"几乎不存在"（定稿 0.04 / 0.03）`,
+      ).toBeLessThanOrEqual(0.05)
+      expect(a, `${key} 的 α=${a} 不为正 —— 那就是没有投影，请直接删掉这个 token`).toBeGreaterThan(
+        0,
+      )
       expect(
-        v.endsWith('0 0 0 1 0'),
-        `第 ${i + 1} 条矩阵第 4 行必须是 0 0 0 1 0（保 alpha）—— 否则 screen 合成完整块透明`,
-      ).toBe(true)
-    }
-    const blends = [...FILTER_FRAG.matchAll(/<feBlend\b[^>]*mode="([^"]*)"/g)].map((m) => m[1])
-    expect(blends, '两次 feBlend 都必须是 screen（通道不相交 → screen≈加）').toEqual([
-      'screen',
-      'screen',
-    ])
-  })
-
-  it('?inline 导入 + 两个 id 全仓各恰好一处', () => {
-    // feImage 只认 data URL；lg-map.png 是 6.4KB > Vite 默认 4KB 内联阈值，
-    // 不吃 ?inline 的话构建后 feImage 拿到的是外部 URL 而不是图片本体。
-    // 构建侧证据：dist 里能 grep 到 data:image/png;base64 且没有 lg-map*.png。
-    expect(INTRO, 'lg-map 的导入必须带 ?inline 后缀').toMatch(
-      /import\s+lgMap\s+from\s+'[^']*lg-map\.png\?inline'/,
-    )
-    for (const id of ['lg-refract', 'glass-sample']) {
-      const hits = scan(new RegExp(`id="${id}"`))
-      expect(
-        hits.length,
-        `id="${id}" 应该在 src/ 里恰好出现 1 次，实为 ${hits.length} 次：${hits.join('、')}`,
-      ).toBe(1)
+        [r, g, b],
+        `${key} 的投影不是中性黑（${r},${g},${b}）—— 白纸上任何色偏都会显脏`,
+      ).toEqual([0, 0, 0])
     }
   })
 
-  it('.glass-sample 的级联降级：blur 行必须写在 url 行之前 —— 这两行的顺序就是降级链', () => {
-    // 不用 @supports 探测：三家引擎对 `@supports (backdrop-filter: url(#x))` 都答「支持」
-    // （假阳性），而真渲染只有 Chromium。顺序调换 = WebKit/Firefox 解析掉不认识的
-    // url() 行后没有兜底 —— 整条 backdrop 声明失效，玻璃直接消失。
-    const blurAt = SAMPLE_CSS.indexOf('backdrop-filter: blur(10px) saturate(1.4)')
-    const urlAt = SAMPLE_CSS.indexOf('url(#lg-refract)')
-    expect(blurAt, '.glass-sample 里找不到纯 blur 的兜底行').toBeGreaterThan(-1)
-    expect(urlAt, '.glass-sample 里找不到 url(#lg-refract) 的折射行').toBeGreaterThan(-1)
+  it('边缘色散与底深线的字面量不许回流（150,190,255 / 255,180,175 / 24,24,30）', () => {
+    /*
+     * 那四笔只写在 tailwind.config.js 里（不在 src 的扫描范围内），
+     * 所以它们由上面那条的「单段 + α ≤ 0.05 + 中性黑」间接管着；
+     * 这一条管的是**有人把颜色抄进 src**：theme.css 的 EP 变量、组件 scoped 块、
+     * 内联 style 都是常见落点。
+     */
+    const DISPERSION =
+      /rgba?\(\s*(150[\s,]+190[\s,]+255|255[\s,]+180[\s,]+175|24[\s,]+24[\s,]+30)\s*[,)]/i
+    const offenders = []
+    for (const file of SOURCE_FILES) {
+      stripComments(read(file))
+        .split(/\r?\n/)
+        .forEach((line, index) => {
+          if (DISPERSION.test(line)) offenders.push(`${rel(file)}:${index + 1}`)
+        })
+    }
     expect(
-      blurAt < urlAt,
-      'url() 行排到 blur 兜底行之前了 —— 解析层不认 url() 的引擎会整条丢掉，\n' +
-        '玻璃在 WebKit/Firefox 上直接消失（顺序就是降级链，详见 glass-effects.css 第 4 节）',
-    ).toBe(true)
-    // 两条都带 -webkit- 前缀（WebKit 的级联同样要两行）
-    expect(SAMPLE_CSS).toContain('-webkit-backdrop-filter: blur(10px) saturate(1.4)')
-    expect(SAMPLE_CSS).toContain(
-      '-webkit-backdrop-filter: url(#lg-refract) blur(10px) saturate(1.4)',
-    )
-  })
-
-  it('样张的三条底线：底填充 α ≤ 0.2、class 不带 glass-refract、两条降级路径都认它', () => {
-    // 底填充画在折射结果**之上**（backdrop 滤镜先算、元素背景后画），每加一档 α
-    // 就压掉一档折射的可见度 —— 0.2 是硬上限。
-    const m = SAMPLE_CSS.match(/background-color:\s*rgb\(255 255 255 \/ ([\d.]+)\)/)
-    expect(m, '没解析到 .glass-sample 的底填充（rgb(255 255 255 / α) 形式）').toBeTruthy()
-    const alpha = Number(m[1])
-    expect(alpha > 0 && alpha <= 0.2, `底填充 α=${alpha} 超过 0.2 —— 折射被压得看不见`).toBe(true)
-    // /intro 没有 .glass-scroll 时间线作用域（零 JS、文档级滚动），挂 glass-refract
-    // 只会把 --glint 动画声明带进来 —— 纯负债。
-    const tokens = SAMPLE_CLASS.split(/\s+/)
-    expect(tokens, '样张 class 串不得出现 glass-refract').not.toContain('glass-refract')
-    expect(tokens, '样张 class 串必须含 glass-sample（CSS 挂点）').toContain('glass-sample')
-    // 样张穿的是 panel token（042-A/B 的交汇点：色散镶边也在样张自己的边缘上）
-    expect(tokens, '样张丢了 shadow-panel —— 边缘的冷暖镶边是它的一半观感').toContain(
-      'shadow-panel',
-    )
-    // 两条降级路径都要认它：①不支持 backdrop-filter → 近实心雾白；②「减少透明度」→ 实心 + 关滤镜
-    expect(
-      SUPPORTS_NOT_BLOCK,
-      '①`@supports not (backdrop-filter…)` 块丢了 .glass-sample 的近实心兜底',
-    ).toContain('.glass-sample')
-    expect(SUPPORTS_NOT_BLOCK).toContain('rgb(248 248 250 / 0.72)')
-    expect(
-      REDUCED_TRANSPARENCY_BLOCK,
-      '②`prefers-reduced-transparency` 块丢了 .glass-sample',
-    ).toContain('.glass-sample')
-    expect(REDUCED_TRANSPARENCY_BLOCK).toMatch(
-      /\.glass-sample\s*\{[^}]*background-color:\s*rgb\(248 248 250\)/,
-    )
-    expect(REDUCED_TRANSPARENCY_BLOCK).toMatch(/\.glass-sample\s*\{[^}]*backdrop-filter:\s*none/)
+      offenders,
+      '042 的边缘色散/底深线颜色出现在 src 里了。那几笔是"玻璃厚度"的光学，' +
+        '白纸面上没有玻璃可镶边 —— 它们随整组退役（值仍在 git 历史里）。',
+    ).toEqual([])
   })
 })
 
