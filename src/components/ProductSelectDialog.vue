@@ -55,12 +55,12 @@ function handleSelect(item) {
       autofocus
     />
 
-    <div class="mt-4 max-h-[50vh] overflow-y-auto rounded-card border border-slate-200">
+    <div class="mt-4 max-h-[50vh] overflow-y-auto rounded-card border border-line">
       <button
         v-for="item in filteredOptions"
         :key="item"
         type="button"
-        class="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 text-left text-sm transition last:border-b-0"
+        class="flex w-full items-center justify-between gap-3 border-b border-line px-4 py-3 text-left text-sm transition last:border-b-0"
         :class="
           item === selected
             ? 'bg-brand-50 font-medium text-brand-deep'

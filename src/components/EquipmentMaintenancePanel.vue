@@ -184,7 +184,7 @@ async function handleDrawingPicked(event) {
 
 <template>
   <section class="rounded-card border border-line bg-raised shadow-card">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-slate-100 px-6 py-4">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-line px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
         逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条
@@ -240,7 +240,7 @@ async function handleDrawingPicked(event) {
             v-for="(row, index) in rows"
             :key="row.id"
             tabindex="0"
-            class="cursor-pointer border-t border-slate-100 hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
+            class="cursor-pointer border-t border-line hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
             :class="{ 'text-slate-500': row.enabled !== 1 }"
             @click="openEdit(row)"
             @keydown.enter.self.prevent="openEdit(row)"
@@ -267,7 +267,7 @@ async function handleDrawingPicked(event) {
                 v-if="row.imageFile"
                 :src="imagePreview(row.imageFile)"
                 :alt="`${row.equipmentName} 的容器底图`"
-                class="h-8 w-8 rounded-md border border-slate-200 object-contain"
+                class="h-8 w-8 rounded-md border border-line object-contain"
               />
               <span v-else class="text-xs text-slate-500">未配</span>
             </td>
@@ -358,7 +358,7 @@ async function handleDrawingPicked(event) {
               v-if="draft.imageFile"
               :src="imagePreview(draft.imageFile)"
               alt="容器底图预览"
-              class="h-24 w-24 rounded-card border border-slate-200 object-contain"
+              class="h-24 w-24 rounded-card border border-line object-contain"
             />
             <div class="text-xs text-slate-500">
               <p class="mb-1">{{ draft.imageFile || '未配置' }}</p>

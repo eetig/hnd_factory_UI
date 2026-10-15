@@ -314,13 +314,13 @@ function handleThumbError(event, image) {
     与记录说明）`shrink-0` 钉死，翻页 / 筛选怎么变都不动。
   -->
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
-    <div class="flex shrink-0 flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-6 py-4">
+    <div class="flex shrink-0 flex-wrap items-baseline justify-between gap-2 border-b border-line px-6 py-4">
       <h2 class="text-base font-semibold text-slate-900">月底车间各储罐液位记录</h2>
       <span class="text-xs text-slate-500">数据来源：hnd_factory /api/tank-level/list</span>
     </div>
 
     <!-- 查询条件：记录日期区间 + 属地 + 所属 + 物料/容器关键字，全部走接口查询 -->
-    <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+    <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
       <span class="shrink-0 text-xs text-slate-500">起始日期</span>
       <el-date-picker
         v-model="tankLevelStartDate"
@@ -710,7 +710,7 @@ function handleThumbError(event, image) {
                       alt="图据缩略图"
                       loading="lazy"
                       decoding="async"
-                      class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                      class="absolute inset-0 h-5 w-5 rounded-md border border-line bg-raised object-cover transition hover:opacity-80"
                       @error="handleThumbError($event, record.images[0])"
                     />
                     <!-- 多张时在角上标出总数，免得点开才知道有几张 -->
@@ -770,7 +770,7 @@ function handleThumbError(event, image) {
 
       <!-- 录入入口：放在状态分支之外 —— 空表时也要在，否则空态提示里那句
            「点下方『新增一行』开始录入」下面什么都没有 -->
-      <div v-if="canCreate" class="flex shrink-0 items-center gap-3 border-t border-slate-100 px-6 py-3">
+      <div v-if="canCreate" class="flex shrink-0 items-center gap-3 border-t border-line px-6 py-3">
         <button
           type="button"
           class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-deep"
@@ -794,7 +794,7 @@ function handleThumbError(event, image) {
         </span>
       </div>
 
-      <div v-if="tankLevelHasRows" class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
+      <div v-if="tankLevelHasRows" class="flex shrink-0 justify-end border-t border-line px-6 py-3">
         <el-pagination
           v-model:current-page="tankLevelPageNum"
           :page-size="tankLevelPageSize"
@@ -807,7 +807,7 @@ function handleThumbError(event, image) {
     </div>
 
     <!-- 记录说明：与线下台账表尾的说明一字不差，避免两处口径不同 -->
-    <div class="shrink-0 border-t border-slate-100 px-6 py-3 text-xs leading-relaxed text-slate-500">
+    <div class="shrink-0 border-t border-line px-6 py-3 text-xs leading-relaxed text-slate-500">
       <p>记录说明：</p>
       <p>1. 实际重量与理论计算可能存在差异，以实际测量为准。</p>
       <p>2. 记录时间为每月月底下午3点</p>

@@ -2245,7 +2245,7 @@ watch(activeTab, (tab) => {
                 :class="
                   activeTab === tab.key
                     ? 'border-brand bg-brand font-medium text-white'
-                    : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800'
+                    : 'border-line text-slate-600 hover:border-slate-300 hover:text-slate-800'
                 "
                 @click="activeTab = tab.key"
               >
@@ -2321,7 +2321,7 @@ watch(activeTab, (tab) => {
               <section
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
-                <div class="flex shrink-0 items-center gap-3 border-b border-slate-100 px-6 py-3">
+                <div class="flex shrink-0 items-center gap-3 border-b border-line px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="startDate"
@@ -2480,7 +2480,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-line px-6 py-3">
                       <el-pagination
                         v-model:current-page="pageNum"
                         :page-size="pageSize"
@@ -2528,7 +2528,7 @@ watch(activeTab, (tab) => {
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
-                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3"
                 >
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
@@ -2678,7 +2678,7 @@ watch(activeTab, (tab) => {
                                   alt="领料单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-md border border-line bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2688,7 +2688,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-line px-6 py-3">
                       <el-pagination
                         v-model:current-page="pickPageNum"
                         :page-size="pickPageSize"
@@ -2731,7 +2731,7 @@ watch(activeTab, (tab) => {
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
-                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3"
                 >
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
@@ -2881,7 +2881,7 @@ watch(activeTab, (tab) => {
                                   alt="入库单据"
                                   loading="lazy"
                                   decoding="async"
-                                  class="absolute inset-0 h-5 w-5 rounded-md border border-slate-200 bg-raised object-cover transition hover:opacity-80"
+                                  class="absolute inset-0 h-5 w-5 rounded-md border border-line bg-raised object-cover transition hover:opacity-80"
                                   @error="handleImgError($event, record)"
                                 />
                               </span>
@@ -2891,7 +2891,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-line px-6 py-3">
                       <el-pagination
                         v-model:current-page="inboundPageNum"
                         :page-size="inboundPageSize"
@@ -2983,7 +2983,7 @@ watch(activeTab, (tab) => {
                 class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
               >
                 <div
-                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3"
+                  class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3"
                 >
                   <!-- ⚠️ 查询改到服务端之后**只能回车才发请求**（清空也要发一次，好把结果还原回来）：
                        原先挂的是 @input（逐字实时过滤），那是「前端全量 + 本地 filter」时代的做法，
@@ -3108,7 +3108,7 @@ watch(activeTab, (tab) => {
                       </table>
                     </div>
 
-                    <div class="flex shrink-0 justify-end border-t border-slate-100 px-6 py-3">
+                    <div class="flex shrink-0 justify-end border-t border-line px-6 py-3">
                       <el-pagination
                         v-model:current-page="stockPageNum"
                         :page-size="stockPageSize"
@@ -3127,7 +3127,7 @@ watch(activeTab, (tab) => {
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
               >
-                <div class="flex items-center gap-3 border-b border-slate-100 px-6 py-3">
+                <div class="flex items-center gap-3 border-b border-line px-6 py-3">
                   <span class="shrink-0 text-xs text-slate-500">起始日期</span>
                   <el-date-picker
                     v-model="weeklyStartDate"
@@ -3175,7 +3175,7 @@ watch(activeTab, (tab) => {
                           <tr>
                             <th
                               colspan="5"
-                              class="border border-slate-200 px-3 py-2.5 text-base font-bold tracking-wide text-slate-800"
+                              class="border border-line px-3 py-2.5 text-base font-bold tracking-wide text-slate-800"
                             >
                               {{ weeklyTitle }}
                             </th>
@@ -3185,7 +3185,7 @@ watch(activeTab, (tab) => {
                               v-for="column in weeklyColumns"
                               :key="column.key"
                               scope="col"
-                              class="border border-slate-200 bg-region py-3 text-sm font-semibold text-slate-600"
+                              class="border border-line bg-region py-3 text-sm font-semibold text-slate-600"
                               :class="column.align === 'right' ? 'pl-3 pr-5 text-right' : 'px-3'"
                             >
                               {{ column.label }}
@@ -3194,15 +3194,15 @@ watch(activeTab, (tab) => {
                         </thead>
                         <tbody>
                           <tr v-for="row in weeklyRows" :key="row.name">
-                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-line px-3 py-2.5 text-sm text-slate-700">
                               {{ row.name }}
                             </td>
                             <td
-                              class="border border-slate-200 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                              class="border border-line py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
                             >
                               {{ row.pickQty }}
                             </td>
-                            <td class="border border-slate-200 p-0">
+                            <td class="border border-line p-0">
                               <input
                                 v-model="weeklyRemaining[row.materialCode]"
                                 type="text"
@@ -3212,21 +3212,21 @@ watch(activeTab, (tab) => {
                               />
                             </td>
                             <td
-                              class="border border-slate-200 py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
+                              class="border border-line py-2.5 pl-3 pr-5 text-right text-sm text-slate-700"
                             >
                               {{ row.actualQty }}
                             </td>
-                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-line px-3 py-2.5 text-sm text-slate-700">
                               {{ row.unitConsumption }} {{ row.unitLabel }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="border border-slate-200 px-3 py-2.5 text-sm text-slate-700">
+                            <td class="border border-line px-3 py-2.5 text-sm text-slate-700">
                               {{ weeklyInboundRow.name }}
                             </td>
                             <td
                               colspan="4"
-                              class="border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-800"
+                              class="border border-line px-3 py-2.5 text-sm font-semibold text-slate-800"
                             >
                               {{ weeklyInboundRow.value }}
                             </td>
@@ -3270,7 +3270,7 @@ watch(activeTab, (tab) => {
                只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
                 <div
                   v-if="vesselsLoading && !vessels.length"
-                  class="border-b border-slate-100 px-6 py-3 text-xs text-slate-500"
+                  class="border-b border-line px-6 py-3 text-xs text-slate-500"
                 >
                   正在加载容器清单…
                 </div>
@@ -3290,7 +3290,7 @@ watch(activeTab, (tab) => {
 
                 <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
                 <div
-                  class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-slate-100 px-6 py-4"
+                  class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line px-6 py-4"
                 >
                   <div class="min-w-0 flex-1">
                     <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
@@ -3347,7 +3347,7 @@ watch(activeTab, (tab) => {
                     <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
                     <div
                       class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
-                      :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-100 px-6 pt-5'"
+                      :class="isVerticalVessel ? 'flex-col' : 'border-t border-line px-6 pt-5'"
                     >
                       <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
                       <div
@@ -3360,7 +3360,7 @@ watch(activeTab, (tab) => {
                           :class="
                             isVerticalVessel
                               ? 'px-0 pb-4 pt-5'
-                              : 'rounded-card border border-slate-200 bg-region px-6 py-4'
+                              : 'rounded-card border border-line bg-region px-6 py-4'
                           "
                         >
                           <span class="text-sm text-slate-500">体积变化</span>
@@ -3536,7 +3536,7 @@ watch(activeTab, (tab) => {
                   </div>
                 </div>
 
-                <div class="border-t border-slate-100 bg-region/50 px-6 py-4">
+                <div class="border-t border-line bg-region/50 px-6 py-4">
                   <div class="mx-auto max-w-[900px] overflow-x-auto">
                     <p
                       class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500"
@@ -3611,7 +3611,7 @@ watch(activeTab, (tab) => {
                 class="rounded-card border border-line bg-raised shadow-card"
               >
                 <!-- 电价档位备注 -->
-                <div class="border-b border-slate-100 bg-amber-50/40 px-6 py-4">
+                <div class="border-b border-line bg-amber-50/40 px-6 py-4">
                   <div class="flex items-start gap-3">
                     <div
                       class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-800"

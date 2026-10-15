@@ -53,7 +53,7 @@ const successCount = computed(() => images.value.filter((i) => i.status === 'suc
 const errorCount = computed(() => images.value.filter((i) => i.status === 'error').length)
 
 const dropZoneClass = computed(() => {
-  if (isFull.value) return 'border-slate-200 bg-region cursor-not-allowed'
+  if (isFull.value) return 'border-line bg-region cursor-not-allowed'
   if (dragActive.value) return 'border-brand bg-brand-50'
   return 'border-slate-300 hover:border-brand cursor-pointer'
 })
@@ -730,7 +730,7 @@ function isDocCheckAttention(image) {
 function docCheckClass(image) {
   if (isDocCheckAttention(image)) return 'border-amber-200 bg-amber-50'
   if (image.mode === 'edit' && image.docCheck?.exists) return 'border-emerald-200 bg-emerald-50'
-  return 'border-slate-100 bg-region/40'
+  return 'border-line bg-region/40'
 }
 
 /** 横幅里库中单据的物料名摘要：前 3 个（供人工核对是不是同一张单） */
@@ -1029,7 +1029,7 @@ onUnmounted(() => {
     </p>
 
     <section v-if="images.length" class="rounded-card border border-line bg-raised shadow-card">
-      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div class="flex items-center justify-between border-b border-line px-6 py-4">
         <p class="text-sm text-slate-600">
           已选 <span class="font-semibold text-brand-deep">{{ images.length }}</span> /
           {{ MAX_COUNT }} 张
@@ -1048,7 +1048,7 @@ onUnmounted(() => {
         <li
           v-for="image in images"
           :key="image.id"
-          class="group relative overflow-hidden rounded-card border border-slate-200"
+          class="group relative overflow-hidden rounded-card border border-line"
         >
           <img
             :src="image.url"
@@ -1058,7 +1058,7 @@ onUnmounted(() => {
             decoding="async"
           />
 
-          <div class="border-t border-slate-100 px-2.5 py-2.5">
+          <div class="border-t border-line px-2.5 py-2.5">
             <p class="truncate text-xs text-slate-600" :title="image.name">{{ image.name }}</p>
             <p class="text-xs text-slate-500">{{ formatFileSize(image.size) }}</p>
           </div>
@@ -1096,7 +1096,7 @@ onUnmounted(() => {
     </p>
 
     <section v-if="submitted.length" class="rounded-card border border-line bg-raised shadow-card">
-      <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div class="flex items-center justify-between border-b border-line px-6 py-4">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
           <span class="font-semibold text-emerald-700">{{ successCount }}</span>
@@ -1110,13 +1110,13 @@ onUnmounted(() => {
         <article
           v-for="image in submitted"
           :key="image.id"
-          class="overflow-hidden rounded-card border border-slate-200"
+          class="overflow-hidden rounded-card border border-line"
         >
-          <header class="flex items-center gap-3 border-b border-slate-100 bg-region/60 px-4 py-3">
+          <header class="flex items-center gap-3 border-b border-line bg-region/60 px-4 py-3">
             <img
               :src="image.url"
               :alt="image.name"
-              class="h-10 w-10 shrink-0 rounded-md border border-slate-200 object-cover"
+              class="h-10 w-10 shrink-0 rounded-md border border-line object-cover"
             />
             <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
               {{ image.name }}
@@ -1134,7 +1134,7 @@ onUnmounted(() => {
                  （改造前它是逐行重复的表格列）；日期自变更-047 起下沉到每一行
                  （日期是行身份的一部分，D4），头部这格降级为批量快捷 -->
             <div
-              class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-100 bg-region/40 px-4 py-2.5"
+              class="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-region/40 px-4 py-2.5"
             >
               <span class="text-sm text-slate-600">
                 单据类型
@@ -1207,7 +1207,7 @@ onUnmounted(() => {
                   :preview-src-list="[docCheckThumb(image)]"
                   :preview-teleported="true"
                   fit="cover"
-                  class="h-8 w-8 shrink-0 rounded-md border border-slate-200"
+                  class="h-8 w-8 shrink-0 rounded-md border border-line"
                   alt="库中单据图"
                 />
                 <template v-if="image.mode === 'edit'">
@@ -1245,7 +1245,7 @@ onUnmounted(() => {
                       v-for="col in image.table.columns"
                       :key="col.key"
                       scope="col"
-                      class="border border-slate-200 px-3 py-2.5 font-medium"
+                      class="border border-line px-3 py-2.5 font-medium"
                       :class="alignClass(col)"
                     >
                       {{ col.label }}
@@ -1257,7 +1257,7 @@ onUnmounted(() => {
                     <td
                       v-for="col in image.table.columns"
                       :key="col.key"
-                      class="border border-slate-200 px-1.5 py-1 align-middle"
+                      class="border border-line px-1.5 py-1 align-middle"
                     >
                       <!-- 线下单据：原图缩略图，点开可放大 -->
                       <div v-if="col.key === 'image'" class="flex justify-center">
@@ -1266,7 +1266,7 @@ onUnmounted(() => {
                           :preview-src-list="[image.url]"
                           :preview-teleported="true"
                           fit="cover"
-                          class="h-8 w-8 rounded-md border border-slate-200"
+                          class="h-8 w-8 rounded-md border border-line"
                         />
                       </div>
 
@@ -1410,7 +1410,7 @@ onUnmounted(() => {
 
             <!-- 确认入库：按单据类型分流（领料单→领料汇总，入库单→入库汇总），落库复用文件导入那条管线 -->
             <div
-              class="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-slate-100 px-4 py-3"
+              class="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-t border-line px-4 py-3"
             >
               <p
                 v-if="image.confirm?.message"
@@ -1477,12 +1477,12 @@ onUnmounted(() => {
 
       <ul
         v-else-if="pickerResults.length"
-        class="max-h-80 overflow-y-auto rounded-card border border-slate-200"
+        class="max-h-80 overflow-y-auto rounded-card border border-line"
       >
         <li v-for="item in pickerResults" :key="`${item.code}|${item.name}`">
           <button
             type="button"
-            class="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-2.5 text-left transition last:border-b-0 hover:bg-brand-50"
+            class="flex w-full items-center gap-3 border-b border-line px-3 py-2.5 text-left transition last:border-b-0 hover:bg-brand-50"
             @click="selectMaterial(item)"
           >
             <span class="w-28 shrink-0 font-mono text-sm text-slate-900">{{ item.code }}</span>

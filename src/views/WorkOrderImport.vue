@@ -560,7 +560,7 @@ function handleBackToList() {
         </table>
       </div>
 
-      <div class="flex justify-end border-t border-slate-100 px-6 py-3">
+      <div class="flex justify-end border-t border-line px-6 py-3">
         <el-pagination
           v-model:current-page="pageNum"
           :page-size="pageSize"
