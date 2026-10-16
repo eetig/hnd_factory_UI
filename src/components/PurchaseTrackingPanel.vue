@@ -362,7 +362,9 @@ onUnmounted(cancelMaterialSearch)
               />
             </td>
             <td class="px-3 py-1.5 text-right whitespace-nowrap">
-              <el-button size="small" type="primary" :loading="saving" @click="handleCreate">
+              <!-- saving 是数据层的一个共享标志：编辑某行时它也会是 true。
+                   所以这里用 `saving && !edit` —— 否则编辑行保存时，新增行的按钮也跟着转。 -->
+              <el-button size="small" type="primary" :loading="saving && !edit" @click="handleCreate">
                 保存
               </el-button>
               <el-button size="small" @click="resetDraft">清空</el-button>
