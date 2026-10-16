@@ -968,6 +968,23 @@ const isVerticalVessel = computed(() => vesselGeometry.value.type === 'vertical'
 
 // 画布尺寸：底图宽度 + 右侧引线标注栏
 const VESSEL_CANVAS_WIDTH = 1075
+
+/**
+ * 画布的高度上限（变更-089）。
+ *
+ * ⚠️ 为什么必须有这一条：画布原先写的是 `w-full` + `maxWidth` + `aspectRatio` ——
+ * **宽度一被拉满，高度就只能由长宽比推出来**，没人管它多高。立式罐（3600×4800）于是得到
+ * 680 / 0.75 ≈ **907px** 高，把整页顶出滚动条（使用方 2026-10-16 圈着右边那条滑块问的
+ * 就是它：「这个页面也出现了滑块，是因为图片太大了」）。
+ *
+ * 通用写法（图/画布同理，规则见 DESIGN.md §7）：**不许用宽度定高度**，改成
+ * `h-auto w-auto max-w-full` + `max-width` + `max-height` —— 浏览器会在这两个上限里
+ * 自动取"保持长宽比的最大一档"，元素矩形永远等于实际绘制区。
+ * 这里用 `calc(100vh - 21rem)` 把上限挂到视口上：剩下的 21rem 留给页签头、信息行、
+ * 液位读数与底部公式，所以立式罐再高也只占屏幕内、不会撑出页面滚动条。
+ * 卧式罐（宽扁）不受影响 —— 它的高度本来就够小，`maxWidth` 先起作用。
+ */
+const CANVAS_MAX_HEIGHT = 'calc(100vh - 21rem)'
 const VESSEL_LABEL_COLUMN = 300
 
 // 画布宽高比（用于 CSS 平滑过渡罐型切换时的高度变化）
@@ -3437,10 +3454,11 @@ watch(activeTab, (tab) => {
                   >
                     <canvas
                       ref="vesselCanvas"
-                      class="vessel-canvas mx-auto block w-full"
+                      class="vessel-canvas mx-auto block h-auto w-auto max-w-full"
                       :class="{ 'is-switching': vesselSwitching }"
                       :style="{
                         maxWidth: `${vesselGeometry.displayWidth}px`,
+                        maxHeight: CANVAS_MAX_HEIGHT,
                         aspectRatio: String(vesselCanvasAspect),
                       }"
                     ></canvas>

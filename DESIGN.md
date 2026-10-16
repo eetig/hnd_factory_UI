@@ -249,3 +249,48 @@ minimalist 的 `not_for` 写着 `high-density dashboards, data-heavy tables`，�
   | `/no-such-page` | 404 同构三层，mono 灰字而不是主色 |
   截图脚本零依赖（Node 24 自带 `fetch` + `WebSocket` 直连 CDP），不在仓库内。
 - 对比基准：`x-ai`（linear 深色，09977cb）/ `main`（043 清水玻璃）。
+
+## 7. 媒体的高度不许由宽度决定（图 / SVG / 画布通用）
+
+**病史（变更-089）**：体积计算页的画布写着 `w-full` + `maxWidth: 680` + `aspectRatio` ——
+**宽度一被拉满，高度就只能由长宽比推出来，没人管它多高**。立式罐（Φ3600×4800，比例 0.75）
+于是得到 `680 / 0.75 ≈ 907px` 高，把整页顶出滚动条。使用方 2026-10-16 圈着右边那条滑块问：
+「这个页面也出现了滑块，是因为图片太大了」—— 对，而且**这是一类问题**：
+往后照片、图纸、票据大图、长截图都会这样。
+
+### 7.1 配方（自上而下三层，缺一层就复发）
+
+```html
+<!-- ① 容器给"可用高度"：要么是 038/044/088 那条定高链（卡片 flex-1 + min-h-0 + overflow），
+     要么至少给媒体一个挂到视口的 max-height 上限 -->
+<div class="flex items-center justify-center">
+  <!-- ② 媒体：h-auto w-auto max-w-full —— 宽度**不再写死**
+       ③ 上限：max-width（设计上想让这张图多大）+ max-height（物理上能占多高） -->
+  <img class="h-auto w-auto max-w-full" :style="{ maxWidth: '680px', maxHeight: 'calc(100vh - 21rem)' }" />
+</div>
+```
+
+浏览器会在这两个上限里解出「**保持长宽比的最大一档**」，所以：
+
+- 竖长图（立式罐、长截图）由 `max-height` 收住 ⇒ 不再撑出页面滚动条；
+- 宽扁图（卧式罐、全景照片）由 `max-width` 收住 ⇒ 不变形、不溢出横向可用宽度；
+- **元素矩形永远等于实际绘制区**（没有 letterbox 留白）⇒ 任何"按矩形换算坐标"的代码都还是对的。
+
+### 7.2 两条禁令
+
+1. **不许 `w-full` + `aspect-ratio`/长宽比 一起用**：`w-full` 把宽度写死，高度就只剩长宽比一条路。
+   要"占满宽度"请用 `max-w-full`（上限）而不是 `w-full`（定值）。
+2. **不许只给图片一个宽度上限**：`maxWidth` / `w-full` / `max-w-*` 都只管横向；
+   竖向必须有 `max-height`（或放进定高容器 + `h-full`）。
+
+### 7.3 两个配套结论
+
+- **留白（letterbox）与坐标换算**：若媒体用 `object-contain` 或 SVG 在宽高比不匹配的框里居中，
+  **元素矩形 ≠ 绘制区**，按矩形做的坐标换算会整体偏掉。两种正确处理：
+  ① 按 7.1 让矩形就等于绘制区（媒体有固有尺寸时可行）；
+  ② 或者走 SVG 的 `getScreenCTM().inverse()`（留白感知）——
+  `VesselCalibrateDialog.vue` 的 `toImagePoint` 就是②，所以标定弹窗在 `w-full` + `max-h` 的
+  留白下**依然精确**，不需要跟着 7.1 改。
+- **守卫**：`tests/unit/visualTokens.spec.js` 里那条「媒体尺寸通用规则」（变更-089）会扫全仓，
+  凡是同一个元素上出现 `aspectRatio` 却**没有** `maxHeight`、或同时带 `w-full`，直接红。这条守的是
+  **形态**，不是某一张图。

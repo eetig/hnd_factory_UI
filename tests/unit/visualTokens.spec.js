@@ -2338,6 +2338,56 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     ).toBe(1)
   })
 
+  it('媒体尺寸通用规则（变更-089）：不许用宽度定高度', () => {
+    /*
+     * 病史：体积计算页的画布写着 `w-full` + `maxWidth` + `aspectRatio` ——
+     * **宽度一被拉满，高度就只能由长宽比推出来、没人管它多高**。立式罐（3600×4800，
+     * 比例 0.75）于是 680 / 0.75 ≈ **907px**，把整页顶出滚动条。使用方 2026-10-16
+     * 圈着右边那条滑块问的正是它：「这个页面也出现了滑块，是因为图片太大了」。
+     *
+     * 通用配方（DESIGN.md §7）：`h-auto w-auto max-w-full` + `max-width` + **`max-height`**；
+     * 浏览器在这两个上限里解出"保持长宽比的最大一档"，所以竖长图被高度收住、
+     * 宽扁图被宽度收住，且**元素矩形 == 实际绘制区**（没有留白，坐标换算不会偏）。
+     *
+     * 这条守的是**形态**，不是某一张图：往后照片、图纸、票据大图、长截图都会踩同一个坑，
+     * 所以写成全仓扫描 —— 凡是同一元素上出现 `aspectRatio` 却没有 `maxHeight`、
+     * 或同时带 `w-full`，直接红。
+     */
+    const offenders = []
+    let scanned = 0
+    for (const file of SOURCE_FILES) {
+      const src = stripComments(read(file))
+      for (const m of src.matchAll(/<([a-zA-Z][\w-]*)([^>]*?)style="([^"]*aspectRatio[^"]*)"/g)) {
+        const [, tag, attrs, styleBody] = m
+        scanned += 1
+        const line = src.slice(0, m.index).split(/\r?\n/).length
+        if (!/maxHeight/.test(styleBody)) {
+          offenders.push(`${rel(file)}:${line} <${tag}> 用了 aspectRatio 却没有 maxHeight`)
+        }
+        for (const c of attrs.matchAll(/:?class="([^"]*)"/g)) {
+          if (/(^|\s)w-full(\s|$)/.test(c[1])) {
+            offenders.push(
+              `${rel(file)}:${line} <${tag}> 同时用了 w-full 与 aspectRatio（宽度定死 ⇒ 高度没人管）`,
+            )
+          }
+        }
+      }
+    }
+
+    expect(
+      scanned,
+      '一条带 aspectRatio 的媒体都没扫到 —— 锚点失效了（写法变了？），先在这里红，' +
+        '否则这条守卫会静默变成"永远通过"。',
+    ).toBeGreaterThan(0)
+
+    expect(
+      offenders,
+      '媒体尺寸回流了：宽度一旦写死（w-full / 只给 maxWidth），高度就只能由长宽比长出来，' +
+        '竖长图会把整页顶出滚动条。通用配方（`h-auto w-auto max-w-full` + max-width + ' +
+        'max-height，见 DESIGN.md §7）不是只给这一张图用的。',
+    ).toEqual([])
+  })
+
   it('滚动时间线（glass-scroll / --main-scroll）整组退场 —— 零残留', () => {
     /*
      * ⚠️ **这一条替换掉了 043 版的「滚动时间线的来源跟着滚动容器走」**，不是漏删的
