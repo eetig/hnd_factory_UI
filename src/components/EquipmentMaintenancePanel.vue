@@ -324,7 +324,7 @@ function handleCalibrated(boundsJson) {
     <!-- 表格自带滚动区 + 吸顶表头（变更-085）：原先整表交给页面滚动，往下翻几行表头就没了，
          根本认不出哪一列是内径、哪一列是筒体长度。给容器一个上限高度后，
          `sticky top-0` 才有参照物，表头会一直停在滚动区顶部 -->
-    <div class="max-h-[68vh] overflow-auto">
+    <div class="ledger-scroll max-h-[68vh] overflow-auto">
       <table class="w-full text-sm">
         <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]">
           <tr>
@@ -424,7 +424,7 @@ function handleCalibrated(boundsJson) {
         v-model:current-page="pageNum"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[20, 50, 100]"
+        :page-sizes="[10, 20, 50]"
         layout="total, sizes, prev, pager, next"
         background
         @current-change="loadLedgerPage"
@@ -561,3 +561,31 @@ function handleCalibrated(boundsJson) {
     />
   </section>
 </template>
+
+<style scoped>
+/*
+ * 表格滚动条做细一点（变更-086）。
+ *
+ * 使用方原话：「尽量避免右边红色框选的滑块，很影响美观，可以调整每页显示的行数，
+ * 或是更优雅的方式去处理」。两件事一起做：
+ *   ① 默认每页 10 行（原先 20）—— 1080p 与 768px 高的窗口下整表都不超高，
+ *      默认视图里**压根不会出现滚动条**；
+ *   ② 万一还是超出（小屏、或自己切到 50 行），滚动条也从系统默认的十几像素降到 8px、
+ *      去掉轨道底色，不再是一条突兀的灰带。横向仍可滚（15 列必须有）。
+ */
+.ledger-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+.ledger-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.ledger-scroll::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 999px;
+}
+.ledger-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+</style>

@@ -37,7 +37,12 @@ const total = ref(0) // **筛选后**的总条数（服务端给的，分页器�
 const loading = ref(false)
 const saving = ref(false)
 const pageNum = ref(1)
-const pageSize = ref(20)
+/**
+ * 每页条数。**默认 10 而不是 20**（变更-086）：使用方反馈列表右侧那条滚动条"很影响美观"，
+ * 而滚动条的出现只取决于「一页的行数能否放进屏幕」。10 行（约 500px）在 1080p 与 768px 高的
+ * 窗口下都放得下 ⇒ 默认视图里根本没有滚动条；想看更多可以自己切 20 / 50。
+ */
+const pageSize = ref(10)
 /** 关键字（位号/名称/昵称/规格/车间）与「只看启用的」—— 都是服务端条件 */
 const keyword = ref('')
 const onlyEnabled = ref(false)

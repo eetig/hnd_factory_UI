@@ -54,6 +54,22 @@ const vertical = computed(() => showsTangents(props.containerType))
 const ready = computed(() => imgW.value > 0 && imgH.value > 0)
 const viewBox = computed(() => `0 0 ${imgW.value || 1} ${imgH.value || 1}`)
 
+/**
+ * 屏幕上的"手感尺寸"换算成图像像素（变更-086）。
+ *
+ * ⚠️ 这是本组件最容易做错的地方：SVG 的 viewBox 用**图像像素**，而图会被缩小显示
+ * （1312px 宽的图在对话框里只占约 400px ⇒ 0.3 倍）。于是
+ *   · 半径 7 的圆在屏幕上只剩 2px —— 抓不住；
+ *   · 线宽 2 的切线只剩 0.6px —— 更抓不住。
+ * 使用方 2026-10-16 的反馈正是这个：「红色框选的边（封头与圆筒的连接）不能调」。
+ * 统一按图宽定尺寸，屏幕上看起来就始终一样粗、一样好抓。
+ */
+const handleR = computed(() => Math.max(10, Math.round(imgW.value * 0.022)))
+/** 透明命中带宽度：约 4% 图宽（1312px ⇒ 52 图像像素 ≈ 16 屏幕像素，足够好抓） */
+const hitWidth = computed(() => Math.max(24, Math.round(imgW.value * 0.04)))
+/** 标签字号：约 2.8% 图宽（1312px ⇒ 37 图像像素 ≈ 11 屏幕像素，看得清） */
+const labelSize = computed(() => Math.max(18, Math.round(imgW.value * 0.028)))
+
 /** 下切线（平底/无下封头时就是框底） */
 const tangentBottomY = computed(() =>
   vertical.value && tangents.tangentBottom !== null ? tangents.tangentBottom : box.bottom,
@@ -267,8 +283,11 @@ function handleSave() {
   >
     <div class="space-y-3">
       <p class="text-xs text-slate-500">
-        把矩形拖到**罐体外轮廓**（含上下封头，不含支腿与管口），再校准两条切线：
+        把矩形拖到<strong>罐体外轮廓</strong>（含上下封头，不含支腿与管口），再校准两条切线：
         切线之间的部分按筒体计算液位。框外的留白与水印不影响结果。
+        <br />
+        <strong>怎么拖</strong>：矩形内部按住可整框移动，四条边各有一条加宽的拖动带，
+        两条切线也能上下拖（点「按几何重算切线」可回到按几何算出的初值）。
       </p>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -288,6 +307,12 @@ function handleSave() {
         <span class="ml-auto text-xs text-slate-500">
           图片 {{ imgW }}×{{ imgH }} px ｜ 框 {{ Math.round(box.left) }},{{ Math.round(box.top) }} –
           {{ Math.round(box.right) }},{{ Math.round(box.bottom) }}
+          <template v-if="vertical">
+            ｜ 上切线 {{ tangents.tangent === null ? '未定' : Math.round(tangents.tangent) }}
+            <template v-if="tangents.tangentBottom !== null">
+              ｜ 下切线 {{ Math.round(tangents.tangentBottom) }}
+            </template>
+          </template>
         </span>
       </div>
 
@@ -330,7 +355,9 @@ function handleSave() {
             stroke-dasharray="6 4"
           />
 
-          <!-- 轮廓框 + 四条边的把手 -->
+          <!-- 轮廓框：先铺一层「可整框拖动」的透明面，再给四条边各加一条**加宽的透明命中带**
+               （变更-086）。原先只有四个 r=7（图像像素）的小圆可抓 —— 图一缩小就只剩 2px，
+               鼠标基本点不中，使用方反馈"边不能调"。命中带按图宽定宽，屏幕上恒定好抓。 -->
           <rect
             v-if="ready"
             :x="box.left"
@@ -345,67 +372,158 @@ function handleSave() {
             @pointerdown="startDrag('box', 'box', $event)"
           />
           <template v-if="ready">
+            <line
+              :x1="box.left"
+              :x2="box.left"
+              :y1="box.top"
+              :y2="box.bottom"
+              stroke="transparent"
+              :stroke-width="hitWidth"
+              pointer-events="stroke"
+              class="cursor-ew-resize"
+              @pointerdown="startDrag('edge', 'left', $event)"
+            />
+            <line
+              :x1="box.right"
+              :x2="box.right"
+              :y1="box.top"
+              :y2="box.bottom"
+              stroke="transparent"
+              :stroke-width="hitWidth"
+              pointer-events="stroke"
+              class="cursor-ew-resize"
+              @pointerdown="startDrag('edge', 'right', $event)"
+            />
+            <line
+              :x1="box.left"
+              :x2="box.right"
+              :y1="box.top"
+              :y2="box.top"
+              stroke="transparent"
+              :stroke-width="hitWidth"
+              pointer-events="stroke"
+              class="cursor-ns-resize"
+              @pointerdown="startDrag('edge', 'top', $event)"
+            />
+            <line
+              :x1="box.left"
+              :x2="box.right"
+              :y1="box.bottom"
+              :y2="box.bottom"
+              stroke="transparent"
+              :stroke-width="hitWidth"
+              pointer-events="stroke"
+              class="cursor-ns-resize"
+              @pointerdown="startDrag('edge', 'bottom', $event)"
+            />
             <circle
               :cx="box.left"
               :cy="(box.top + box.bottom) / 2"
-              r="7"
+              :r="handleR"
               fill="#f59e0b"
+              stroke="#ffffff"
+              stroke-width="2"
               class="cursor-ew-resize"
               @pointerdown="startDrag('edge', 'left', $event)"
             />
             <circle
               :cx="box.right"
               :cy="(box.top + box.bottom) / 2"
-              r="7"
+              :r="handleR"
               fill="#f59e0b"
+              stroke="#ffffff"
+              stroke-width="2"
               class="cursor-ew-resize"
               @pointerdown="startDrag('edge', 'right', $event)"
             />
             <circle
               :cx="(box.left + box.right) / 2"
               :cy="box.top"
-              r="7"
+              :r="handleR"
               fill="#f59e0b"
+              stroke="#ffffff"
+              stroke-width="2"
               class="cursor-ns-resize"
               @pointerdown="startDrag('edge', 'top', $event)"
             />
             <circle
               :cx="(box.left + box.right) / 2"
               :cy="box.bottom"
-              r="7"
+              :r="handleR"
               fill="#f59e0b"
+              stroke="#ffffff"
+              stroke-width="2"
               class="cursor-ns-resize"
               @pointerdown="startDrag('edge', 'bottom', $event)"
             />
           </template>
 
-          <!-- 上下切线（立式才有） -->
+          <!-- 上下切线（立式才有）：同样先铺加宽的透明命中带，再画细线 + 标签（变更-086）。
+               命中带在文档顺序上晚于轮廓框，所以两者重叠时以切线优先。 -->
           <template v-if="vertical && ready">
             <line
               :x1="box.left"
               :x2="box.right"
               :y1="tangentY"
               :y2="tangentY"
-              stroke="#111111"
-              stroke-width="2"
-              stroke-dasharray="4 3"
+              stroke="transparent"
+              :stroke-width="hitWidth"
+              pointer-events="stroke"
               class="cursor-ns-resize"
               @pointerdown="startDrag('tangent', 'tangent', $event)"
             />
-            <text :x="box.left" :y="tangentY - 6" font-size="16" fill="#111111">上切线</text>
+            <line
+              :x1="box.left"
+              :x2="box.right"
+              :y1="tangentY"
+              :y2="tangentY"
+              stroke="#b45309"
+              :stroke-width="Math.max(2, imgW * 0.0022)"
+              stroke-dasharray="10 6"
+            />
+            <text
+              :x="box.left"
+              :y="tangentY - labelSize * 0.5"
+              :font-size="labelSize"
+              fill="#b45309"
+              stroke="#ffffff"
+              :stroke-width="labelSize / 5"
+              paint-order="stroke"
+            >
+              上切线（封头与筒体连接处）
+            </text>
             <template v-if="tangents.tangentBottom !== null">
               <line
                 :x1="box.left"
                 :x2="box.right"
                 :y1="tangentBottomY"
                 :y2="tangentBottomY"
-                stroke="#111111"
-                stroke-width="2"
-                stroke-dasharray="4 3"
+                stroke="transparent"
+                :stroke-width="hitWidth"
+                pointer-events="stroke"
                 class="cursor-ns-resize"
                 @pointerdown="startDrag('tangent', 'tangentBottom', $event)"
               />
-              <text :x="box.left" :y="tangentBottomY - 6" font-size="16" fill="#111111">下切线</text>
+              <line
+                :x1="box.left"
+                :x2="box.right"
+                :y1="tangentBottomY"
+                :y2="tangentBottomY"
+                stroke="#b45309"
+                :stroke-width="Math.max(2, imgW * 0.0022)"
+                stroke-dasharray="10 6"
+              />
+              <text
+                :x="box.left"
+                :y="tangentBottomY - labelSize * 0.5"
+                :font-size="labelSize"
+                fill="#b45309"
+                stroke="#ffffff"
+                :stroke-width="labelSize / 5"
+                paint-order="stroke"
+              >
+                下切线（封头与筒体连接处）
+              </text>
             </template>
           </template>
         </svg>
