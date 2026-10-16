@@ -234,8 +234,18 @@ describe('WorkOrderList 页面冒烟', () => {
     }
   })
 
-  it('图片弹窗挂在页面里（工单汇总行点击的入口组件）', () => {
-    expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(true)
+  it('图片弹窗挂在页面里（工单汇总行点击的入口组件）', async () => {
+    // 面板懒挂载（变更-076/078）后，工单汇总面板要先进那个页签才存在 —— 它是 admin 专属，
+    // 所以先切身份。这条测的是「弹窗组件在位」，不是挂载时机（挂载时机由「面板懒挂载」那条钉）
+    authState.roleKey = 'admin'
+    await nextTick()
+    try {
+      await switchToTab(wrapper, '工单汇总')
+      expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(true)
+    } finally {
+      authState.roleKey = ''
+      await nextTick()
+    }
   })
 
   it('月底储罐液位记录：进入 Tab 走接口，表格按台账列渲染返回行', async () => {

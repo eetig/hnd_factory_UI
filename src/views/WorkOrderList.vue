@@ -159,33 +159,8 @@ const reportColumns = [
 const router = useRouter()
 const activeTab = ref('workOrder')
 
-/*
- * 面板懒挂载（2026-10-16 性能审查，变更-076）。
- *
- * 原先 16 个面板全是 v-show 常驻，首屏就把它们全建出来。冷缓存 trace 实测：
- *   DOM 2920 个节点中 **1379 个属于不可见面板**；16 个 el-popper、10 个 el-date-editor、
- *   15/16 张表都不可见却已存在；强制重排 117ms（EP popper 的 getBoundingClientRect watcher）、
- *   单次 layout 85ms（104/104 节点全量重排）；LCP 1032ms 里 1023ms 是渲染延迟。
- *
- * 为什么不用「纯 v-if」——那样每次切走再切回都会重建面板：
- *   ① 面板里的本地状态会丢（未保存的行内编辑、滚动位置、已选文件）；
- *   ② 面板的 onMounted 取数会重跑，把请求放大。
- * 所以：**v-if 管「存不存在」，v-show 管「可不可见」，两个必须一起写**：
- *   v-if="mountedTabs.has(x)"    首次激活才创建 —— 首屏不再为「用户可能永远不点的 15 个面板」付代价
- *   v-show="activeTab === x"     非当前页必须藏起来 —— 只留 v-if 会让进来过的面板**同时显示、上下叠在一起**
- *                                （2026-10-16 就是靠截图抓到这一次：只换 v-if 之后，页面顶部露出的是
- *                                 已挂载但本该隐藏的工单汇总面板，真正激活的物料查询被压在下面）
- * 挂载后的语义与改动前的 v-show 完全一致：状态保留、面板 onMounted 的取数不重跑。
- * 回归护栏见 tests/component/WorkOrderList.spec.js 的「面板懒挂载」用例（四件事一起钉：
- * 没进过不在 → 进去在 → 切走仍在 → 切走必须 display:none）。
- *
- * flush: 'sync' 是刻意的：下面那个 visibleTabs watch（immediate）会在 setup 阶段就把
- * activeTab 改写为第一个可见 Tab（非 admin 时默认 Tab 不可见）。同步入集合才能保证
- * 首次渲染时该面板已经在集合里 —— 否则会先渲染出一个空白面板、下一帧才补上。
- * 因此这个 watch 必须声明在 activeTab 之后、visibleTabs 那个 watch 之前。
- */
-const mountedTabs = reactive(new Set([activeTab.value]))
-watch(activeTab, (key) => mountedTabs.add(key), { flush: 'sync' })
+// 面板懒挂载的状态（mountedTabs）声明在下面 visibleTabs watch **之后** ——
+// 见那里的注释：位置本身就是实现的一部分，放错会让不可见的面板也常驻。
 
 // 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
 // 否则会停在一个空白的 activeTab 上。
@@ -203,6 +178,35 @@ watch(
   },
   { immediate: true },
 )
+
+/*
+ * 面板懒挂载（2026-10-16 性能审查，变更-076；播种顺序修正于变更-078）。
+ *
+ * 原先 16 个面板全是 v-show 常驻，首屏就把它们全建出来。冷缓存 trace 实测：
+ *   DOM 2920 个节点中 **1379 个属于不可见面板**；16 个 el-popper、10 个 el-date-editor、
+ *   15/16 张表都不可见却已存在；强制重排 117ms（EP popper 的 getBoundingClientRect watcher）；
+ *   LCP 1032ms 里 1023ms 是渲染延迟。
+ *
+ * 为什么不用「纯 v-if」——那样每次切走再切回都会重建面板：
+ *   ① 面板里的本地状态会丢（未保存的行内编辑、滚动位置、已选文件）；
+ *   ② 面板的 onMounted 取数会重跑，把请求放大。
+ * 所以：**v-if 管「存不存在」，v-show 管「可不可见」，两个必须一起写**：
+ *   v-if="mountedTabs.has(x)"    首次激活才创建
+ *   v-show="activeTab === x"     非当前页必须藏起来 —— 只留 v-if 会让进来过的面板同时显示、叠在一起
+ *                                （2026-10-16 靠截图抓到过一次：顶部露出的是本该隐藏的工单汇总面板）
+ * 挂载后的语义与改动前的 v-show 一致：状态保留、面板 onMounted 的取数不重跑。
+ * 回归护栏见 tests/component/WorkOrderList.spec.js 的「面板懒挂载」用例。
+ *
+ * ⚠️ 这段**必须放在上面 visibleTabs watch 之后**，并用 immediate + flush:'sync'：
+ *   immediate 让种子取「**生效后**的 activeTab」，而不是字面上的 ref('workOrder')。
+ *   放前面会怎样（2026-10-16 实测）：非 admin 打开页面时 activeTab 随后被 visibleTabs
+ *   改成 stock，可 workOrder 已经进了集合 —— 那个**用户根本看不到**的面板照样常驻，
+ *   连带它里面的 2 个日期选择器与 2 个 el-popper 一起出现在首屏；实测那 105ms 强制重排
+ *   **全来自这些不可见 popper 的几何读取**（element-plus.js:21837）。
+ *   flush:'sync' 则保证同一 tick 内切到的 Tab 在首次渲染前就已入集合，不会闪一个空面板。
+ */
+const mountedTabs = reactive(new Set())
+watch(activeTab, (key) => mountedTabs.add(key), { immediate: true, flush: 'sync' })
 
 // 切换 Tab 后把激活项滚进视野：登录/退出会让 visibleTabs 变化并自动切 Tab，
 // 切到的那个可能在可视区之外，用户会看不到自己现在在哪一页。

@@ -58,6 +58,15 @@ export default defineConfig({
      * （unplugin-vue-components 等），属于单独一次改动；
      * 这里把阈值放到 900 kB，让告警只在「业务包明显变胖」时出现，
      * 而不是每次构建都被一个已知的、不可通过本次改动消除的数字刷屏。
+     *
+     * ⚠️ 2026-10-16 试过并**回滚**了 unplugin-element-plus@0.11.2（记在这里，免得下次重走）：
+     *    那个插件只做**样式**注入（transformImportStyle → components/<name>/style/css），
+     *    **不改写 JS 导入路径**；装了它 element-plus chunk 仍是 812.32 KB（字节相同、只是 hash 变），
+     *    再补 include:['**/*.js']（它的默认范围只有 vue/ts/tsx/jsx）也毫无变化。
+     *    所以 JS 要真按需只有两条路，都不是改构建配置能解决的：
+     *      ① 把 9 个文件里的 `import { ElX } from 'element-plus'` 改成按组件子路径导入；
+     *      ② 删掉这些显式导入、改用 unplugin-vue-components + ElementPlusResolver 自动导入
+     *         （JS 服务类仍要显式导入，如 ElMessage）。两条都要逐页目视确认组件没裸奔。
      */
     chunkSizeWarningLimit: 900,
     rollupOptions: {
