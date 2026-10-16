@@ -114,8 +114,10 @@ export function setLedgerPageSize(size) {
 /**
  * 保存一行（id 为空则新增）。
  *
- * ⚠️ 只传**可维护的字段**：后端按 `EquipmentSaveDTO` 的白名单收，多传的会被忽略；
- * 但这里也别把整行原样回传（会把 imageBounds 之类系统列也带上，看着像能改、实际被丢掉）。
+ * ⚠️ 只传**可维护的字段**：后端按 `EquipmentSaveDTO` 的白名单收，多传的会被忽略。
+ * 白名单里现在**含 imageBounds**（变更-081 起后端可写、变更-082 起有标定界面）——
+ * 但本页只传 draft 里的那 17 项，仍然不回传整行（source_sheet / 时间戳这类系统列
+ * 传过去会被忽略，徒增困惑）。
  */
 export async function saveLedger(draft) {
   saving.value = true
@@ -181,6 +183,9 @@ export function buildPayload(draft) {
     medium: text(draft.medium),
     remark: text(draft.remark),
     imageFile: text(draft.imageFile),
+    // 底图坐标（标定界面的产出）：空 → null；后端那一列没有 ALWAYS 策略，
+    // 于是「表单没带」不会把已标定的坐标清掉（变更-081 的刻意设计）。
+    imageBounds: text(draft.imageBounds),
   }
 }
 

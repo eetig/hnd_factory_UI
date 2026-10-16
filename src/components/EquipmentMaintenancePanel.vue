@@ -5,6 +5,7 @@ import {
   ElCheckbox,
   ElDialog,
   ElInput,
+  ElMessageBox,
   ElOption,
   ElPagination,
   ElSelect,
@@ -12,6 +13,7 @@ import {
 import { CONTAINER_TYPES, containerTypeLabel, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { vesselImageUrl } from '../composables/useVesselList'
+import VesselCalibrateDialog from './VesselCalibrateDialog.vue'
 
 // ===== 设备数据维护（2026-10-06）=====
 //
@@ -112,6 +114,10 @@ function resetDraft(source = {}) {
     medium: source.medium ?? '',
     remark: source.remark ?? '',
     imageFile: source.imageFile ?? '',
+    // 底图坐标（变更-081 起后端可写、变更-082 起有标定界面）。
+    // 这里带上它是为了「编辑弹窗里刚标完就保存」这条路径；没标定的行是空串，
+    // 提交时转成 null，后端的默认更新策略会跳过这一列 —— 普通保存不会清掉已有标定。
+    imageBounds: source.imageBounds ?? '',
   })
   message.value = ''
 }
@@ -172,10 +178,36 @@ async function handleSave() {
 }
 
 async function handleToggle(row) {
+  // 启用门槛（变更-081/082）：原因由服务端下发（EquipmentLedgerVO.enableBlockReason），
+  // 前端不重复实现那套规则。不合规的行连请求都不发 —— 后端也会拒，但那样只有一句报错，
+  // 这里顺手把「为什么」摆出来。
+  if (row.enabled !== 1 && blockReasonOf(row)) {
+    await showBlockReason(row)
+    return
+  }
   try {
     await setLedgerEnabled(row.id, row.enabled !== 1)
   } catch (e) {
     loadError.value = `切换启停失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
+  }
+}
+
+/**
+ * 「不能启用」的原因；可以启用（或已启用）时返回空串。
+ * 文案是服务端拼好的整句（"不能启用：未配置容器底图；…"），直接展示即可。
+ */
+function blockReasonOf(row) {
+  if (row.enabled === 1) return ''
+  return row.enableBlockReason || ''
+}
+
+async function showBlockReason(row) {
+  try {
+    await ElMessageBox.alert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`, {
+      confirmButtonText: '知道了',
+    })
+  } catch {
+    // 关掉弹窗即可，不算错误
   }
 }
 
@@ -197,9 +229,36 @@ async function handleDrawingPicked(event) {
   message.value = ''
   try {
     draft.imageFile = await uploadVesselDrawing(file)
+    // 换了图，旧的坐标一律作废：新图的尺寸/取景与旧图未必一致，
+    // 留着旧坐标会让液面画在错误的位置（而且不报错）。清空后再走「标定底图」。
+    draft.imageBounds = ''
   } catch (e) {
     message.value = `底图上传失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
   }
+}
+
+// ===== 标定底图（变更-082）=====
+
+const calibrateVisible = ref(false)
+
+function openCalibrate() {
+  if (!draft.imageFile) {
+    message.value = '先上传底图，再标定'
+    return
+  }
+  message.value = ''
+  calibrateVisible.value = true
+}
+
+/**
+ * 标定结果**只写进 draft**，随编辑弹窗的「保存」一起提交。
+ *
+ * 为什么不在标定弹窗里直接调接口：后端 save 是**整行覆写**（变更-065 的契约），
+ * 单独提交一份只带 id + imageBounds 的载荷会把其余 16 个字段清成 NULL。
+ */
+function handleCalibrated(boundsJson) {
+  draft.imageBounds = boundsJson
+  calibrateVisible.value = false
 }
 </script>
 
@@ -286,19 +345,41 @@ async function handleDrawingPicked(event) {
             <td class="px-4 py-2.5">{{ row.medium || '—' }}</td>
             <td class="px-4 py-2.5 text-right">{{ row.density ?? '—' }}</td>
             <td class="px-4 py-2.5">
-              <img
-                v-if="row.imageFile"
-                :src="imagePreview(row.imageFile)"
-                :alt="`${row.equipmentName} 的容器底图`"
-                class="h-8 w-8 rounded-md border border-line object-contain"
-              />
-              <span v-else class="text-xs text-slate-500">未配</span>
+              <div class="flex items-center gap-2">
+                <img
+                  v-if="row.imageFile"
+                  :src="imagePreview(row.imageFile)"
+                  :alt="`${row.equipmentName} 的容器底图`"
+                  class="h-8 w-8 rounded-md border border-line object-contain"
+                />
+                <span v-else class="text-xs text-slate-500">未配</span>
+                <!-- 有图但没坐标 = 进不了体积计算页的下拉；这个徽标就是为了让"为什么下拉里没有它"一眼可查 -->
+                <span
+                  v-if="row.imageFile && !row.imageBounds"
+                  class="rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[11px] text-amber-700"
+                >
+                  未标定
+                </span>
+              </div>
             </td>
             <td class="px-4 py-2.5 text-xs">{{ row.enabled === 1 ? '启用' : '已停用' }}</td>
-            <td class="px-4 py-2.5 text-right">
-              <el-button size="small" @click.stop="handleToggle(row)">
+            <td class="px-4 py-2.5 text-right whitespace-nowrap">
+              <el-button
+                size="small"
+                :disabled="row.enabled !== 1 && !!blockReasonOf(row)"
+                :title="blockReasonOf(row)"
+                @click.stop="handleToggle(row)"
+              >
                 {{ row.enabled === 1 ? '停用' : '启用' }}
               </el-button>
+              <button
+                v-if="blockReasonOf(row)"
+                type="button"
+                class="ml-2 text-xs text-amber-700 underline decoration-dotted"
+                @click.stop="showBlockReason(row)"
+              >
+                为何不能启用
+              </button>
             </td>
           </tr>
           <tr v-if="!rows.length">
@@ -384,12 +465,29 @@ async function handleDrawingPicked(event) {
               class="h-24 w-24 rounded-card border border-line object-contain"
             />
             <div class="text-xs text-slate-500">
-              <p class="mb-1">{{ draft.imageFile || '未配置' }}</p>
+              <p class="mb-1">
+                {{ draft.imageFile || '未配置' }}
+                <span v-if="draft.imageFile" class="ml-1">
+                  · {{ draft.imageBounds ? '已标定' : '未标定（该设备不能被启用）' }}
+                </span>
+              </p>
               <el-button size="small" @click="pickDrawing">上传底图</el-button>
+              <el-button
+                v-if="draft.imageFile"
+                size="small"
+                type="primary"
+                plain
+                @click="openCalibrate"
+              >
+                {{ draft.imageBounds ? '重新标定' : '标定底图' }}
+              </el-button>
               <el-button v-if="draft.imageFile" size="small" @click="draft.imageFile = ''">
                 清除
               </el-button>
               <p class="mt-1 text-slate-500">上传后自动生成深色主题用的亮线版</p>
+              <p class="mt-1 text-slate-500">
+                标定 = 框出罐体外轮廓 + 对准上下切线；体积计算页只收「已启用 + 已标定 + 几何齐全」的设备
+              </p>
             </div>
           </div>
           <input
@@ -409,5 +507,20 @@ async function handleDrawingPicked(event) {
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 标定底图（变更-082）：只产出坐标 JSON，随上面的「保存」一起提交（后端 save 是整行覆写） -->
+    <VesselCalibrateDialog
+      v-model="calibrateVisible"
+      :image-url="imagePreview(draft.imageFile)"
+      :image-file="draft.imageFile"
+      :container-type="Number(draft.containerType) || null"
+      :geometry="{
+        topHeadDepth: draft.topHeadDepth,
+        shellLength: draft.shellLength,
+        bottomHeadDepth: draft.bottomHeadDepth,
+      }"
+      :bounds="draft.imageBounds"
+      @save="handleCalibrated"
+    />
   </section>
 </template>
