@@ -837,9 +837,11 @@ const weeklyTitle = computed(() => {
 // 展示层（配色、备注文案、显示宽度、文件名→URL 映射）在 composables/useVesselList.js，
 // 体积公式在 utils/vesselVolume.js —— 三处各管各的。
 //
-// ⚠️ 底图坐标（imageBounds）是**按图片宽度归一化**的：width 恒为 1、height 是长宽比，
-//    其余是「占图宽的比例」。这样电脑端用原图、uni-app 用 1/2 压图能共用同一组坐标 ——
-//    绘制时仍是 s = IMAGE_W / bounds.width 那一套，只是那个 width 成了 1。
+// ⚠️ 底图坐标（imageBounds）的口径是**原图像素**：`width/height` 是底图原图尺寸，
+//    其余数字用同一把尺子。绘制时是 `s = IMAGE_W / bounds.width`，
+//    所以「按宽度归一化（width=1、height=长宽比）」的旧写法也能用 —— 只要六个数字同尺。
+//    库里现存的行都是像素口径（变更-081 已把实体/VO 上写错的"按宽度归一化"改对，
+//    这处注释 2026-10-16 一并改对）。
 const { vessels, vesselsLoading, vesselsFromCache, loadVessels } = useVesselList()
 
 // 清单是异步来的，先留空，到位后由下面这个 watch 补上选中项
@@ -855,6 +857,19 @@ watch(vessels, (list) => {
 
 // 这个页面是**纯前端计算**（公式在本地），台账取不到时会退到本地缓存，见 useVesselList
 onMounted(loadVessels)
+
+// 每次**进「压力容器体积计算」页签**都重新取一次容器列表（变更-087）。
+//
+// 为什么需要：这个列表原先只在整页挂载时取一次，而「设备数据维护」与「体积计算」是同页
+// 两个 v-show 页签（不共享状态）。于是使用方 2026-10-16 遇到的现象是：
+// 在维护页刚把一台容器标定好并启用，切回计算页 —— **下拉里还是旧的 4 台**，
+// 必须整页刷新才看得到。按"进入页签"重取，比在两端之间做跨页通知简单得多，也够用。
+//
+// ⚠️ 必须写在 onMounted 之后：watch 用 immediate 时会在 setup 期间立刻执行，
+// 那时 loadVessels 还没解构出来（TDZ）—— 同一个坑本文件上方已经吃过一次（见 activeTab 的注释）。
+watch(activeTab, (key) => {
+  if (key === 'vessel') loadVessels()
+})
 
 // 当前选中的容器。**可能是 null**：清单异步来，且台账取不到时会退到缓存/空。
 // 下游一律走 vesselGeometry，由它在没有选中项时返回一份「空白几何」，避免整页崩掉。

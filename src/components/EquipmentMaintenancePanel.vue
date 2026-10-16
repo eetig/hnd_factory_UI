@@ -215,6 +215,30 @@ function blockReasonOf(row) {
   return row.enableBlockReason || ''
 }
 
+/**
+ * 「不能参与体积计算」的原因（服务端对**每一行**都算好了，不区分启用与否）。
+ *
+ * 与 {@link blockReasonOf} 的区别：那个只用来决定【启用】按钮能不能点（已启用的行返回空），
+ * 这个用来回答"我已经启用了，为什么计算页里没有它"（变更-087）。
+ */
+function usageProblemOf(row) {
+  return row.enableBlockReason || ''
+}
+
+async function showUsageProblem(row) {
+  try {
+    await ElMessageBox.alert(
+      `${usageProblemOf(row)}\n\n` +
+        '这台设备在【设备检索 / 储罐液位录入】里仍然正常可用 —— 状态里的"仅台账"就是这个意思；' +
+        '这里说的是它还不能进【压力容器体积计算】的下拉。',
+      `${row.equipmentName || '该设备'}：不能参与体积计算`,
+      { confirmButtonText: '知道了' },
+    )
+  } catch {
+    // 关掉弹窗即可，不算错误
+  }
+}
+
 async function showBlockReason(row) {
   try {
     await ElMessageBox.alert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`, {
@@ -390,7 +414,25 @@ function handleCalibrated(boundsJson) {
                 </span>
               </div>
             </td>
-            <td class="px-4 py-2.5 text-xs">{{ row.enabled === 1 ? '启用' : '已停用' }}</td>
+            <td class="px-4 py-2.5 text-xs">
+              <!-- 状态要说实话（变更-087）：库里的 `enabled` 只表示"在台账里启用"，
+                   而体积计算页额外要求「底图 + 坐标 + 几何齐全」。两者不一致时
+                   这里显示「启用 · 仅台账」并给出原因入口 ——
+                   否则使用方会以为"我明明启用了，为什么计算页下拉里没有它"。 -->
+              <template v-if="row.enabled !== 1">已停用</template>
+              <template v-else-if="usageProblemOf(row)">
+                <span class="text-slate-500">启用</span>
+                <span class="ml-1 text-amber-700">· 仅台账</span>
+                <button
+                  type="button"
+                  class="ml-1 text-amber-700 underline decoration-dotted"
+                  @click.stop="showUsageProblem(row)"
+                >
+                  为何不能算
+                </button>
+              </template>
+              <template v-else>启用</template>
+            </td>
             <td class="px-4 py-2.5 text-right whitespace-nowrap">
               <el-button
                 size="small"
