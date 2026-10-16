@@ -2194,11 +2194,15 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
   const TANK_CLASS_ATTRS = classAttrsIn(TANK_PANEL)
   const MAINT_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
   const MAINT_CLASS_ATTRS = classAttrsIn(MAINT_PANEL)
+  const PURCHASE_PANEL = read(join(SRC, 'components', 'PurchaseTrackingPanel.vue'))
+  const PURCHASE_CLASS_ATTRS = classAttrsIn(PURCHASE_PANEL)
   const countStatic = (text) => CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
   const countStaticTank = (text) =>
     TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
   const countStaticMaint = (text) =>
     MAINT_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
+  const countStaticPurchase = (text) =>
+    PURCHASE_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
 
   it('四个页签的定高链一级不少：包装层 h-full → 卡片 flex-1/min-h-0 → 表格区是唯一滚动容器', () => {
     expect(
@@ -2227,12 +2231,12 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStatic('rounded-card border border-line bg-raised shadow-card'),
-      '不是其余五张 section 卡片（周统计/日统计/储罐/设备/体积）都换成了同一条卡片配方 —— ' +
+      '不是其余四张 section 卡片（周统计/日统计/储罐/体积）都换成了同一条卡片配方 —— ' +
         '卡片是**一条材质规则**，不是只改四张（x-minimalist 的配方 = 圆角 + 1px 发丝线 ' +
         '+ 纯白面 + α=0.04 的近零阴影，详见 §11）。' +
-        '注：这里数的是 WorkOrderList.vue 里的卡片；「设备数据维护」那张在它自己的组件文件里，' +
-        '由下面 088 那条用例单独钉。',
-    ).toBe(5)
+        '⚠️ 变更-091 起采购进度跟踪不再是「占位 section」，改成子组件 + 定高链，' +
+        '所以这里从 5 变成 4（那张卡片现在在 PurchaseTrackingPanel.vue 里，另行钉住）。',
+    ).toBe(4)
 
     expect(
       countStatic('relative flex min-h-0 flex-1 flex-col'),
@@ -2334,6 +2338,40 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
 
     expect(
       countStaticMaint('shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800'),
+      '加载失败提示条没有带 shrink-0：它也会被 flex 压扁',
+    ).toBe(1)
+  })
+
+  it('采购进度跟踪同一张方子（变更-091）：定高由包装层传下来，分页行钉底', () => {
+    /*
+     * 新页面上线时最容易漏的就是这条链 —— 而它漏了**静止看一屏完全正常**，
+     * 只有翻页（或行数变化）时才看得出来分页行在跳。所以照着 088 的做法，
+     * 纳进来的当天就把四个锚点钉住，而不是等使用方再报一次。
+     */
+    expect(
+      tokensOf(classAttr('purchase')),
+      '采购进度跟踪的包装层少了 flex/h-full/flex-col：卡片拿不到定高，分页行会退回「跟着内容跑」。',
+    ).toEqual(expect.arrayContaining(['flex', 'h-full', 'flex-col']))
+
+    expect(
+      countStaticPurchase(
+        'flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card',
+      ),
+      '采购卡片没有转成「撑满 + 纵向 flex + min-h-0」：不写 min-h-0，卡片被内容顶高，分页行一页一个位置。',
+    ).toBe(1)
+
+    expect(
+      countStaticPurchase('purchase-scroll min-h-0 flex-1 overflow-auto'),
+      '采购表格区不是「自己滚」的那一层（或丢了细滚动条类 purchase-scroll）',
+    ).toBe(1)
+
+    expect(
+      countStaticPurchase('flex shrink-0 justify-end border-t border-line px-6 py-3'),
+      '采购分页行没有带 shrink-0（分隔线是发丝线 border-line）：空间不够时 flex 会先压它',
+    ).toBe(1)
+
+    expect(
+      countStaticPurchase('shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800'),
       '加载失败提示条没有带 shrink-0：它也会被 flex 压扁',
     ).toBe(1)
   })

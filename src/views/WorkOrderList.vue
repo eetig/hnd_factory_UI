@@ -23,6 +23,7 @@ import { useTankLevelData } from '../composables/useTankLevelData'
 import { useVesselList } from '../composables/useVesselList'
 import TankLevelPanel from '../components/TankLevelPanel.vue'
 import EquipmentMaintenancePanel from '../components/EquipmentMaintenancePanel.vue'
+import PurchaseTrackingPanel from '../components/PurchaseTrackingPanel.vue'
 import WorkOrderImport from './WorkOrderImport.vue'
 import ImageParse from './ImageParse.vue'
 import { getReportOrderType } from '../constants/orderTypes'
@@ -3791,17 +3792,11 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-if="mountedTabs.has('purchase')" v-show="activeTab === 'purchase'">
-              <!-- 采购进度跟踪：2026-10-10 只登记入口，功能内容与排期待使用方定 -->
-              <section
-                class="rounded-card border border-line bg-raised shadow-card"
-              >
-                <PanelState
-                  type="pending"
-                  title="采购进度跟踪"
-                  description="功能建设中，敬请期待"
-                />
-              </section>
+            <!-- 采购进度跟踪（变更-091）：需求登记 → 下单 → 到货的流水台账。
+                 包装层接上 038/044/088 那张定高方子（卡片撑满 + 表格区自己滚 + 分页行钉底），
+                 面板文件里是完整链条。 -->
+            <div v-if="mountedTabs.has('purchase')" v-show="activeTab === 'purchase'" class="flex h-full flex-col">
+              <PurchaseTrackingPanel />
             </div>
 
             <div v-if="mountedTabs.has('import')" v-show="activeTab === 'import'">
