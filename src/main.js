@@ -29,8 +29,10 @@ import { getToken, saveAuth } from './api/auth'
  * （产物 352.2KB 且 render-blocking），而全仓只用到下面这些组件 —— 全量那份里
  * `.el-col-*` 750 条、`.el-tabs__*` 252 条、`.el-upload` 160 条、`.el-cascader` 100 条
  * 等规则**没有任何元素会匹配**。改为按需后只留用到的部分。
- * ⚠️ 新增 EP 组件时**必须**在这里补上对应的 el-xxx.css：vitest 不会报错
- *   （jsdom 不应用样式），漏了只会表现为该组件裸奔，得靠肉眼过一遍页面。
+ * ⚠️ 新增 EP 组件时**必须**在这里补上对应的 el-xxx.css。这条从 080 起不再只靠肉眼：
+ *   tests/unit/elementPlusStyles.spec.js 会拿本文件的导入清单与 dist/index.css 的类名
+ *   做差集、再按「源码里实际用到的组件」筛一遍 —— 漏了就红，并直接告诉你缺哪个类名。
+ *   新增组件时在那份 spec 的 REQUIRED 表里登记即可（未登记的组件会让它失败，提醒你补）。
  */
 import 'element-plus/theme-chalk/base.css'
 import 'element-plus/theme-chalk/el-var.css'
@@ -40,6 +42,15 @@ import 'element-plus/theme-chalk/el-input.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 import 'element-plus/theme-chalk/el-date-picker.css'
+// ⚠️ 日期选择器是**两个文件**（变更-080 补）：el-date-picker.css 只管输入框那截，
+// 弹出来的日历面板全在下面这份里 —— .el-picker-panel / .el-date-table /
+// .el-date-table-cell / .el-month-table / .el-year-table / .el-date-editor / .el-time-panel。
+//
+// 076 漏了它，2026-10-16 被用户在生产截图里抓出来：日历格子挤成一团、
+// 「《 2026 年 9 月 》」这种排版错位。**输入框看起来完全正常** —— 所以当时只截
+// 「没打开弹层」的页面（还对比过像素完全相同）根本发现不了。教训：按需引入的
+// 验证必须**逐个打开弹层**，或干脆交给下面的自动护栏。
+import 'element-plus/theme-chalk/el-date-picker-panel.css'
 import 'element-plus/theme-chalk/el-popper.css'
 import 'element-plus/theme-chalk/el-tooltip.css'
 import 'element-plus/theme-chalk/el-overlay.css'

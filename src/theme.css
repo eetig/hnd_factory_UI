@@ -125,3 +125,20 @@
 .el-dialog {
   --el-dialog-border-radius: 8px; /* 默认继承 base(6px)，但弹窗是「卡片」不是「控件」 */
 }
+
+/*
+ * Element Plus 打包怪癖的一处补丁（变更-080）。
+ *
+ * `.el-tooltip{white-space:nowrap;min-width:50px}` 这条规则在 EP 的产物里**只写在
+ * el-table.css 里**（反查 node_modules/element-plus/theme-chalk：定义于 el-table 与
+ * 聚合的 index.css 两处，el-tooltip.css 里没有它）。本项目不用 el-table（列表是手写
+ * 表格），于是 076 改成按需引入后 tooltip 就少了这两个声明 —— 表现是窄提示可能被压成
+ * 两行。补在这里，而不是为一个 30KB 的表格样式文件引整包。
+ *
+ * 将来若真引入 el-table，可删掉这段（两处会重复，但值相同，无害）。
+ * tests/unit/elementPlusStyles.spec.js 把本条算作 el-tooltip 的覆盖来源之一。
+ */
+.el-tooltip {
+  white-space: nowrap;
+  min-width: 50px;
+}
