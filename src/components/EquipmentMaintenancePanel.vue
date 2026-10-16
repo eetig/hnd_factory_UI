@@ -312,8 +312,16 @@ function handleCalibrated(boundsJson) {
 </script>
 
 <template>
-  <section class="rounded-card border border-line bg-raised shadow-card">
-    <div class="flex flex-wrap items-center gap-x-4 gap-y-4 border-b border-line px-6 py-4">
+  <!-- 定高链（变更-088）：卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底**。
+       与工单汇总（变更-038）/ 储罐液位（变更-044）同一张方子，完整理由见
+       WorkOrderList.vue 里 workOrder 页签那段注释。
+       使用方 2026-10-16 对这张表说的是同一句话：「分页工具翻页时，不在同一个位置，
+       体感上就像是在跳动」。根因不是分页器：分页行是卡片最后一个子元素，**卡片多高它就多低**，
+       而「名称/规格」是折行的，每页折行条数不一样，卡片跟着一高一矮。
+       ⚠️ 少一级 `min-h-0`，卡片就会被内容重新顶高、分页行照旧乱跑，
+       而**静止看一屏完全正常**，只有翻页才看得出来。 -->
+  <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
+    <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-4 border-b border-line px-6 py-4">
       <p class="text-sm font-medium text-slate-700">设备数据维护</p>
       <p class="text-xs text-slate-500">
         <template v-if="ledgerRefining">查询中…</template>
@@ -340,15 +348,15 @@ function handleCalibrated(boundsJson) {
     <p
       v-if="loadError"
       role="alert"
-      class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800"
+      class="shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800"
     >
       {{ loadError }}
     </p>
 
-    <!-- 表格自带滚动区 + 吸顶表头（变更-085）：原先整表交给页面滚动，往下翻几行表头就没了，
-         根本认不出哪一列是内径、哪一列是筒体长度。给容器一个上限高度后，
-         `sticky top-0` 才有参照物，表头会一直停在滚动区顶部 -->
-    <div class="ledger-scroll max-h-[68vh] overflow-auto">
+    <!-- 表格区：`min-h-0 flex-1` 拿的是"卡片分给它之后剩下的空间"（定高，不随内容变），
+         所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。
+         原先这里是 `max-h-[68vh]` —— 那是"最大"，高度仍随每页折行数变，分页行就上下跳。 -->
+    <div class="ledger-scroll min-h-0 flex-1 overflow-auto">
       <table class="w-full text-sm">
         <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]">
           <tr>
@@ -461,7 +469,9 @@ function handleCalibrated(boundsJson) {
       </table>
     </div>
 
-    <div v-if="rows.length" class="flex justify-end px-6 py-3">
+    <!-- 分页行钉底（变更-088）：`shrink-0` 让它不参与上面的空间分配、始终贴卡底；
+         `border-t` 与其它定高链页签保持一致（翻页时这行纹丝不动） -->
+    <div v-if="rows.length" class="flex shrink-0 justify-end border-t border-line px-6 py-3">
       <el-pagination
         v-model:current-page="pageNum"
         v-model:page-size="pageSize"

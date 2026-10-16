@@ -3361,8 +3361,10 @@ watch(activeTab, (tab) => {
               <TankLevelPanel />
             </div>
 
-            <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
-            <div v-if="mountedTabs.has('equipment')" v-show="activeTab === 'equipment'">
+            <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门。
+                 变更-088：接上 038/044 那张定高方子（`flex h-full flex-col`）——
+                 使用方 2026-10-16 对这张表说的是同一句话「翻页时不在同一个位置，像在跳动」。 -->
+            <div v-if="mountedTabs.has('equipment')" v-show="activeTab === 'equipment'" class="flex h-full flex-col">
               <EquipmentMaintenancePanel />
             </div>
 

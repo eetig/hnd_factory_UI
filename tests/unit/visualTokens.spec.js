@@ -2192,9 +2192,13 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     }))
   const CLASS_ATTRS = classAttrsIn(WORKBENCH)
   const TANK_CLASS_ATTRS = classAttrsIn(TANK_PANEL)
+  const MAINT_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
+  const MAINT_CLASS_ATTRS = classAttrsIn(MAINT_PANEL)
   const countStatic = (text) => CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
   const countStaticTank = (text) =>
     TANK_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
+  const countStaticMaint = (text) =>
+    MAINT_CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
 
   it('四个页签的定高链一级不少：包装层 h-full → 卡片 flex-1/min-h-0 → 表格区是唯一滚动容器', () => {
     expect(
@@ -2225,7 +2229,9 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
       countStatic('rounded-card border border-line bg-raised shadow-card'),
       '不是其余五张 section 卡片（周统计/日统计/储罐/设备/体积）都换成了同一条卡片配方 —— ' +
         '卡片是**一条材质规则**，不是只改四张（x-minimalist 的配方 = 圆角 + 1px 发丝线 ' +
-        '+ 纯白面 + α=0.04 的近零阴影，详见 §11）',
+        '+ 纯白面 + α=0.04 的近零阴影，详见 §11）。' +
+        '注：这里数的是 WorkOrderList.vue 里的卡片；「设备数据维护」那张在它自己的组件文件里，' +
+        '由下面 088 那条用例单独钉。',
     ).toBe(5)
 
     expect(
@@ -2286,6 +2292,49 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     expect(
       countStaticTank('flex shrink-0 justify-end border-t border-line px-6 py-3'),
       '储罐分页行没有带 shrink-0（分隔线是发丝线 border-line）：空间不够时 flex 会先压它',
+    ).toBe(1)
+  })
+
+  it('设备数据维护同一张方子（变更-088）：定高由包装层传下来，分页行钉底', () => {
+    /*
+     * 使用方 2026-10-16 对这张表说的是与 038 / 044 **同一句话**：
+     * 「分页工具翻页时，不在同一个位置，体感上就像是在跳动」。
+     *
+     * 这一处是 038 的注释里点名过、当时没动的三个漏网页之一（原话：「另有设备保养、
+     * 文件导入预览表，仍未动」）—— 变更-085 给表格区只加了 `max-h-[68vh]`，
+     * 那是"最大高度"，卡片依然随每页折行数一高一矮，所以病还在。
+     */
+    expect(
+      tokensOf(classAttr('equipment')),
+      '设备数据维护的包装层少了 flex/h-full/flex-col：卡片拿不到定高，分页行会退回' +
+        '「跟着内容跑」—— 使用方 2026-10-16 报的就是它。',
+    ).toEqual(expect.arrayContaining(['flex', 'h-full', 'flex-col']))
+
+    expect(
+      countStaticMaint(
+        'flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card',
+      ),
+      '维护卡片没有转成「撑满 + 纵向 flex + min-h-0」：`min-h-0` 是关键一笔 —— ' +
+        'flex 项默认 min-height:auto（不许比内容矮），不写它卡片就被内容顶高，' +
+        '分页行照旧一页一个位置，而静止看一屏完全正常。',
+    ).toBe(1)
+
+    // 表格区带 ledger-scroll（变更-086 的细滚动条），所以整串与四个汇总页签那条不同；
+    // 但「自己滚」那一笔（min-h-0 flex-1 overflow-auto）必须一样
+    expect(
+      countStaticMaint('ledger-scroll min-h-0 flex-1 overflow-auto'),
+      '维护表格区不是「自己滚」的那一层（或丢了细滚动条类 ledger-scroll）：' +
+        '表格区一旦不滚，滚的就是主区栏，卡片退回跟着内容长，分页行又跑起来了。',
+    ).toBe(1)
+
+    expect(
+      countStaticMaint('flex shrink-0 justify-end border-t border-line px-6 py-3'),
+      '维护分页行没有带 shrink-0（分隔线是发丝线 border-line）：空间不够时 flex 会先压它',
+    ).toBe(1)
+
+    expect(
+      countStaticMaint('shrink-0 border-b border-amber-200 bg-amber-50 px-6 py-3 text-xs text-amber-800'),
+      '加载失败提示条没有带 shrink-0：它也会被 flex 压扁',
     ).toBe(1)
   })
 
