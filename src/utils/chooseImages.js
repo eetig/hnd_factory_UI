@@ -17,9 +17,12 @@
 // ⚠️ 系统相册给的是 content:// 凭据、且**只有原图**（没有「压缩」开关）。
 //    所以选完必须立刻拷进 App 私有目录 —— 授权只在本次会话有效，而且 App 端只认本地文件。
 //    拷完交出去的是 `file:///…` 形式的地址（见下面 paths 那段的说明）。
-//    代价是几 MB 的原图会照原样上传，图片解析页那条 10MB 的单张上限会更容易拦下来。
+//    拷完会**紧接着压一次**（变更-077，实现在 utils/imageCompress.js）：系统相册没有压缩开关，
+//    原图一张 3~8MB 会被「识别」与「确认入库」各上传一次；而实测本机到服务端只有 3.75 Mbps，
+//    压到长边 2000px 后单张约 300~600KB，一单 5 张的上行从 30~80MB 降到 2~5MB。
 
 import { copyContentUriToPrivateDir, isAndroidBridgeAvailable } from './androidContent'
+import { compressIfNeeded } from './imageCompress'
 
 /** 起系统相册用的 requestCode。别和 appFilePicker 的 0x51A7、uni 自己的值撞上 */
 const ALBUM_REQUEST_CODE = 0x51a8
@@ -220,21 +223,23 @@ function readPickedUris(data) {
   return uris
 }
 
-/** 逐张拷进私有目录。串行：跨桥拷贝是重活，别并行去抢主线程；单张失败不中断整批 */
+/** 逐张拷进私有目录并压一次。串行：跨桥拷贝与压缩都是重活，别并行去抢主线程；单张失败不中断整批 */
 async function copyAll(uris) {
   const files = []
   const errors = []
 
   for (let i = 0; i < uris.length; i++) {
     try {
-      files.push(
-        copyContentUriToPrivateDir(uris[i], {
-          prefix: 'picked',
-          subdir: PICKED_DIR,
-          defaultName: `picked-${Date.now()}-${i}.jpg`,
-          fallbackExtension: 'jpg',
-        }),
-      )
+      const copied = copyContentUriToPrivateDir(uris[i], {
+        prefix: 'picked',
+        subdir: PICKED_DIR,
+        defaultName: `picked-${Date.now()}-${i}.jpg`,
+        fallbackExtension: 'jpg',
+      })
+      // 拷完立刻压（变更-077）：系统相册这条路拿到的就是原图，没有任何压缩开关。
+      // 压不动（平台不支持 / 取不到尺寸 / 原生报错 / 结果不可用）会原样返回 —— 压缩是优化，
+      // 不该成为新的失败点，详见 imageCompress.js 文件头的三条取舍。
+      files.push(await compressIfNeeded(copied))
     } catch (error) {
       errors.push(error.message || String(error))
     }
