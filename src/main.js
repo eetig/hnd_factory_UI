@@ -54,10 +54,18 @@ async function restoreAuth() {
   }
 }
 
-// 最多等待 3 秒，避免后端不可用时阻塞页面加载
-Promise.race([
-  restoreAuth(),
-  new Promise((resolve) => setTimeout(resolve, 3000)),
-]).finally(() => {
-  createApp(App).use(router).mount('#app')
-})
+// 先挂载，再在后台补拉角色（2026-10-16 性能审查，变更-075）。
+//
+// 原写法是 Promise.race([restoreAuth(), 3 秒兜底]).finally(() => mount())：
+// 而 LCP 元素就在 #app 里 —— 于是「接口慢 800ms，首屏就晚 800ms」，最坏情况白屏 3 秒。
+// 冷缓存 trace 实测 LCP 1032ms 中 1023ms 是纯渲染延迟，mount 正是被这个 Promise 串在最后。
+//
+// 为什么不需要「先拿到角色再挂载」：
+//   ① authState 是 reactive 镜像（api/auth.js:24-31），台账类 Tab 与按钮都从它读，
+//      后台请求回来写入 saveAuth() 后界面自会跟着变；
+//   ② 路由守卫只判断 token（router/index.js:50），而 token 在模块加载时就已从
+//      localStorage 同步读入，与这次请求无关 —— 所以不存在「挂早了被弹到登录页」。
+// 顺序即语义：mount 在前、restoreAuth 在后，别调换。
+createApp(App).use(router).mount('#app')
+
+restoreAuth()
