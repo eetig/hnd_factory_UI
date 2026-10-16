@@ -31,7 +31,7 @@ function methanolRow(overrides = {}) {
     straightFlange: 40,
     topHeadDepth: 550,
     bottomHeadDepth: 550,
-    imageFile: 'vessel-methanol.png',
+    imageFile: '/files/c0a0e0e14e24450f8567473268eca4ef.png', // 变更-084：已迁到图片服务器（原 vessel-methanol.png）
     imageBounds: BOUNDS_METHANOL,
     medium: '甲醇',
     density: 0.792,
@@ -95,7 +95,7 @@ describe('toVesselOption：库里的行 → 页面选项', () => {
         shellLength: 5500,
         topHeadDepth: 700,
         bottomHeadDepth: 700,
-        imageFile: 'vessel.png',
+        imageFile: '/files/fc95320c23c444d8ae62525c50ad800e.png', // 变更-084：已迁到图片服务器（原 vessel.png）
         headVolume: 3.1198,
       }),
     )
@@ -129,11 +129,13 @@ describe('toVesselOption：库里的行 → 页面选项', () => {
     expect(toVesselOption(methanolRow()).bundle).toBeNull()
   })
 
-  it('坏数据不炸、也不进下拉：缺 id / 缺坐标 / 坐标不是 JSON / 图不在本仓 assets', () => {
+  it('坏数据不炸、也不进下拉：缺 id / 缺坐标 / 坐标不是 JSON / 底图取不到', () => {
     expect(toVesselOption(null)).toBeNull()
     expect(toVesselOption(methanolRow({ id: null }))).toBeNull()
     expect(toVesselOption(methanolRow({ imageBounds: null }))).toBeNull()
     expect(toVesselOption(methanolRow({ imageBounds: '{不是 json' }))).toBeNull()
+    // 纯文件名走打包资源映射（变更-084 删掉那 4 张内置图后，任何纯文件名都解析成空串）。
+    // 这条同时钉住「取不到底图 → 不进下拉」这条有意为之的契约：宁可少一台，也不要画一张取不到的图。
     expect(toVesselOption(methanolRow({ imageFile: '没有这张图.png' }))).toBeNull()
   })
 
