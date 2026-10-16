@@ -39,3 +39,7 @@ minio同步手册.md
 
 # 部署产物压缩包（构建产物，dist/ 已被忽略，这个包同理）
 hnd-ui-dist.zip
+
+# 工具产物：archify 技能（画架构图）在本机生成的输出目录，不入库
+# （之前一直挂在 git status 的未跟踪列表里，容易被顺手 git add -A 带进去）
+.archify/
