@@ -2175,8 +2175,16 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
    */
   const TABS = ['workOrder', 'material', 'inbound', 'stock']
   const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
+  // 变更-076 起面板是「首次激活才挂载、之后保留、非当前必须隐藏」：
+  //   v-if 管存在性（没进过的页签不创建），v-show 管可见性 —— 两者缺一不可，
+  //   只有 v-if 会让进来过的面板同时显示、互相叠在一起。
+  // 这条定高链本身没变，变的只是定位写法；锚点再失效时，下面用例的第一条断言会先红。
   const classAttr = (tab) =>
-    WORKBENCH.match(new RegExp(`<div v-show="activeTab === '${tab}'" class="([^"]*)"`))?.[1] ?? ''
+    WORKBENCH.match(
+      new RegExp(
+        `<div v-if="mountedTabs\\.has\\('${tab}'\\)" v-show="activeTab === '${tab}'" class="([^"]*)"`,
+      ),
+    )?.[1] ?? ''
   const classAttrsIn = (src) =>
     [...src.matchAll(/(:?)class="([^"]*)"/g)].map((m) => ({
       bound: m[1] === ':',
@@ -2191,7 +2199,7 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
   it('四个页签的定高链一级不少：包装层 h-full → 卡片 flex-1/min-h-0 → 表格区是唯一滚动容器', () => {
     expect(
       TABS.map(classAttr).filter(Boolean).length,
-      '没解析出四个汇总页签的包装层 —— 锚点失效（v-show 的写法变了？），先在这里红',
+      '没解析出四个汇总页签的包装层 —— 锚点失效（面板懒挂载的写法变了？），先在这里红',
     ).toBe(TABS.length)
 
     for (const tab of TABS) {

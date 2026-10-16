@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
@@ -158,6 +158,34 @@ const reportColumns = [
 
 const router = useRouter()
 const activeTab = ref('workOrder')
+
+/*
+ * 面板懒挂载（2026-10-16 性能审查，变更-076）。
+ *
+ * 原先 16 个面板全是 v-show 常驻，首屏就把它们全建出来。冷缓存 trace 实测：
+ *   DOM 2920 个节点中 **1379 个属于不可见面板**；16 个 el-popper、10 个 el-date-editor、
+ *   15/16 张表都不可见却已存在；强制重排 117ms（EP popper 的 getBoundingClientRect watcher）、
+ *   单次 layout 85ms（104/104 节点全量重排）；LCP 1032ms 里 1023ms 是渲染延迟。
+ *
+ * 为什么不用「纯 v-if」——那样每次切走再切回都会重建面板：
+ *   ① 面板里的本地状态会丢（未保存的行内编辑、滚动位置、已选文件）；
+ *   ② 面板的 onMounted 取数会重跑，把请求放大。
+ * 所以：**v-if 管「存不存在」，v-show 管「可不可见」，两个必须一起写**：
+ *   v-if="mountedTabs.has(x)"    首次激活才创建 —— 首屏不再为「用户可能永远不点的 15 个面板」付代价
+ *   v-show="activeTab === x"     非当前页必须藏起来 —— 只留 v-if 会让进来过的面板**同时显示、上下叠在一起**
+ *                                （2026-10-16 就是靠截图抓到这一次：只换 v-if 之后，页面顶部露出的是
+ *                                 已挂载但本该隐藏的工单汇总面板，真正激活的物料查询被压在下面）
+ * 挂载后的语义与改动前的 v-show 完全一致：状态保留、面板 onMounted 的取数不重跑。
+ * 回归护栏见 tests/component/WorkOrderList.spec.js 的「面板懒挂载」用例（四件事一起钉：
+ * 没进过不在 → 进去在 → 切走仍在 → 切走必须 display:none）。
+ *
+ * flush: 'sync' 是刻意的：下面那个 visibleTabs watch（immediate）会在 setup 阶段就把
+ * activeTab 改写为第一个可见 Tab（非 admin 时默认 Tab 不可见）。同步入集合才能保证
+ * 首次渲染时该面板已经在集合里 —— 否则会先渲染出一个空白面板、下一帧才补上。
+ * 因此这个 watch 必须声明在 activeTab 之后、visibleTabs 那个 watch 之前。
+ */
+const mountedTabs = reactive(new Set([activeTab.value]))
+watch(activeTab, (key) => mountedTabs.add(key), { flush: 'sync' })
 
 // 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
 // 否则会停在一个空白的 activeTab 上。
@@ -2350,7 +2378,7 @@ watch(activeTab, (tab) => {
           <div
             class="flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4"
           >
-            <div v-show="activeTab === 'workOrder'" class="flex h-full flex-col">
+            <div v-if="mountedTabs.has('workOrder')" v-show="activeTab === 'workOrder'" class="flex h-full flex-col">
               <!--
               变更-038：四个汇总页签的卡片**撑满玻璃栏、自己管滚动**（使用方
               2026-10-11：「翻页功能每页都不在一个位置，体验很差」）。
@@ -2574,7 +2602,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'material'" class="flex h-full flex-col">
+            <div v-if="mountedTabs.has('material')" v-show="activeTab === 'material'" class="flex h-full flex-col">
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
@@ -2776,7 +2804,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'inbound'" class="flex h-full flex-col">
+            <div v-if="mountedTabs.has('inbound')" v-show="activeTab === 'inbound'" class="flex h-full flex-col">
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
@@ -2978,7 +3006,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'report'">
+            <div v-if="mountedTabs.has('report')" v-show="activeTab === 'report'">
               <StatsTable
                 :columns="reportColumns"
                 :rows="reportRows"
@@ -2987,7 +3015,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'costing'">
+            <div v-if="mountedTabs.has('costing')" v-show="activeTab === 'costing'">
               <StatsTable
                 :columns="costingColumns"
                 :rows="costingRows"
@@ -2996,7 +3024,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'materialCosting'">
+            <div v-if="mountedTabs.has('materialCosting')" v-show="activeTab === 'materialCosting'">
               <!-- 货物移动取数失败（变更-033）：核算表那两个派生列就没有正确答案，
                    说出来 + 给一次重试，好过让 0 冒充「没有人报工」 -->
               <div
@@ -3027,7 +3055,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'stock'" class="flex h-full flex-col">
+            <div v-if="mountedTabs.has('stock')" v-show="activeTab === 'stock'" class="flex h-full flex-col">
               <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
                    完整理由见上面「工单汇总」那一段 -->
               <section
@@ -3181,7 +3209,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-show="activeTab === 'weekly'">
+            <div v-if="mountedTabs.has('weekly')" v-show="activeTab === 'weekly'">
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
               >
@@ -3297,7 +3325,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-show="activeTab === 'daily'">
+            <div v-if="mountedTabs.has('daily')" v-show="activeTab === 'daily'">
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
               >
@@ -3310,16 +3338,16 @@ watch(activeTab, (tab) => {
               页签那段）—— 卡片撑满、表格区自己滚、分页行钉卡底。使用方 2026-10-11：
               「翻页组件位置变化，体验不好」（第 4 页只剩 1 行时分页行跳到表格下面）。
             -->
-            <div v-show="activeTab === 'tankLevel'" class="flex h-full flex-col">
+            <div v-if="mountedTabs.has('tankLevel')" v-show="activeTab === 'tankLevel'" class="flex h-full flex-col">
               <TankLevelPanel />
             </div>
 
             <!-- 设备数据维护（2026-10-06）：页签按 equipment:edit 权限显隐，写接口另有 admin 闸门 -->
-            <div v-show="activeTab === 'equipment'">
+            <div v-if="mountedTabs.has('equipment')" v-show="activeTab === 'equipment'">
               <EquipmentMaintenancePanel />
             </div>
 
-            <div v-show="activeTab === 'vessel'">
+            <div v-if="mountedTabs.has('vessel')" v-show="activeTab === 'vessel'">
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
               >
@@ -3664,7 +3692,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-show="activeTab === 'electricity'">
+            <div v-if="mountedTabs.has('electricity')" v-show="activeTab === 'electricity'">
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
               >
@@ -3706,7 +3734,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-show="activeTab === 'purchase'">
+            <div v-if="mountedTabs.has('purchase')" v-show="activeTab === 'purchase'">
               <!-- 采购进度跟踪：2026-10-10 只登记入口，功能内容与排期待使用方定 -->
               <section
                 class="rounded-card border border-line bg-raised shadow-card"
@@ -3719,7 +3747,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <div v-show="activeTab === 'import'">
+            <div v-if="mountedTabs.has('import')" v-show="activeTab === 'import'">
               <WorkOrderImport
                 @cancel="handleImportCancel"
                 @back="handleImportBack"
@@ -3727,7 +3755,7 @@ watch(activeTab, (tab) => {
               />
             </div>
 
-            <div v-show="activeTab === 'imageParse'">
+            <div v-if="mountedTabs.has('imageParse')" v-show="activeTab === 'imageParse'">
               <ImageParse @confirmed="handleOcrConfirmed" />
             </div>
           </div>

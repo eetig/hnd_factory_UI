@@ -178,34 +178,60 @@ describe('WorkOrderList 页面冒烟', () => {
     await nextTick()
   })
 
-  it('三张汇总表都交给 StatsTable 渲染，且列配置与空表文案正确', () => {
-    const tables = wrapper.findAllComponents(StatsTable)
-    expect(tables).toHaveLength(3)
+  it('三张汇总表都交给 StatsTable 渲染，且列配置与空表文案正确', async () => {
+    // 变更-076 起面板「首次激活才挂载」：三张汇总表要各自切到页签才会存在。
+    // 切完三页后 findAllComponents 的顺序仍是模板顺序（工单报工 → 工单核算 → 原辅料核算），
+    // 所以下面的断言与改动前一一对应；顺带，toHaveLength(3) 现在还多证了一条
+    // 「懒挂载没有把面板重复建出来」。
+    authState.roleKey = 'admin'
+    await nextTick()
+    try {
+      await switchToTab(wrapper, '工单报工')
+      await switchToTab(wrapper, '工单核算')
+      await switchToTab(wrapper, '原辅料核算')
 
-    const [report, costing, materialCosting] = tables
+      const tables = wrapper.findAllComponents(StatsTable)
+      expect(tables).toHaveLength(3)
 
-    expect(report.props('emptyText')).toBe('暂无报工数据')
-    expect(report.props('columns')[1].key).toBe('orderType')
-    // 长物料名列需要换行限宽
-    expect(report.props('columns')[2]).toMatchObject({ key: 'materialDesc', wrap: true })
+      const [report, costing, materialCosting] = tables
 
-    expect(costing.props('emptyText')).toBe('暂无核算数据')
-    expect(costing.props('columns').map((column) => column.key)).toEqual([
-      'index',
-      'materialName',
-      'materialCode',
-      'inboundQty',
-      'reportedQty',
-      'unreportedQty',
-    ])
-    // 未报工数需要高亮
-    expect(costing.props('columns')[5].emphasis).toBe(true)
+      expect(report.props('emptyText')).toBe('暂无报工数据')
+      expect(report.props('columns')[1].key).toBe('orderType')
+      // 长物料名列需要换行限宽
+      expect(report.props('columns')[2]).toMatchObject({ key: 'materialDesc', wrap: true })
 
-    expect(materialCosting.props('columns')[3].key).toBe('pickQty')
+      expect(costing.props('emptyText')).toBe('暂无核算数据')
+      expect(costing.props('columns').map((column) => column.key)).toEqual([
+        'index',
+        'materialName',
+        'materialCode',
+        'inboundQty',
+        'reportedQty',
+        'unreportedQty',
+      ])
+      // 未报工数需要高亮
+      expect(costing.props('columns')[5].emphasis).toBe(true)
+
+      expect(materialCosting.props('columns')[3].key).toBe('pickQty')
+    } finally {
+      // authState 是模块级单例：断言失败也必须复位，否则 admin 身份会泄漏给后续用例
+      //（2026-10-16 实测过一次：某个用例抛在复位之前，后面两个侧栏用例跟着红）
+      authState.roleKey = ''
+      await nextTick()
+    }
   })
 
-  it('空数据时渲染的是空表文案而不是空白', () => {
-    expect(wrapper.findAllComponents(StatsTable)[0].text()).toContain('暂无报工数据')
+  it('空数据时渲染的是空表文案而不是空白', async () => {
+    // 面板懒挂载后要先进「工单报工」，报工表才存在
+    authState.roleKey = 'admin'
+    await nextTick()
+    try {
+      await switchToTab(wrapper, '工单报工')
+      expect(wrapper.findComponent(StatsTable).text()).toContain('暂无报工数据')
+    } finally {
+      authState.roleKey = ''
+      await nextTick()
+    }
   })
 
   it('图片弹窗挂在页面里（工单汇总行点击的入口组件）', () => {
@@ -480,23 +506,46 @@ describe('WorkOrderList 页面冒烟', () => {
     authState.permissions = []
   })
 
-  it('切换 Tab 会切换对应面板的显示（v-show）', async () => {
+  it('面板懒挂载：首次进入才创建、切走后保留，且非当前页必须隐藏（v-if + v-show 一起用）', async () => {
+    // 变更-076：16 个面板原本全是 v-show 常驻 —— 首屏就把 16 个 el-popper、
+    // 10 个 el-date-editor、15/16 张表全建出来（冷缓存 trace 实测：DOM 2920 个节点里
+    // 1379 个属于不可见面板，强制重排 117ms、单次 layout 85ms）。
+    // 契约改为「首次激活才挂载、之后一直保留」，这条同时钉住四件事：
+    //   ① 没进过的页签不在 DOM 里 —— 这正是省下来的首屏成本；
+    //   ② 进去之后在；
+    //   ③ 切走之后**仍在 DOM 里** —— 不是纯 v-if：那样每次切回都重建面板，
+    //      丢掉未保存的行内编辑与滚动位置，还会让面板 onMounted 的取数重跑；
+    //   ④ 切走之后**必须被藏起来** —— v-if 只管"存不存在"，可见性得靠 v-show。
+    //      少了 ④ 就是真事故：进来过的面板会同时显示、上下叠在一起
+    //      （2026-10-16 靠截图发现过一次：截图里看到的是已挂载但本该隐藏的工单汇总面板）。
     // 「工单报工」是 admin 专属（决策-004），先切到 admin 身份，Tab 才在条上
     authState.roleKey = 'admin'
     await nextTick()
+    try {
+      expect(wrapper.findAllComponents(StatsTable)).toHaveLength(0)
 
-    const reportPanel = wrapper.findAllComponents(StatsTable)[0].element.parentElement
-    expect(reportPanel.style.display).toBe('none')
+      await switchToTab(wrapper, '工单报工')
+      const active = wrapper.findAllComponents(StatsTable)
+      expect(active, '进入后报工表应当存在').toHaveLength(1)
+      expect(active[0].element.parentElement.style.display, '当前页不能是隐藏的').toBe('')
 
-    await switchToTab(wrapper, '工单报工')
-
-    expect(reportPanel.style.display).toBe('')
-
-    authState.roleKey = ''
-    await nextTick()
+      await switchToTab(wrapper, '物料查询')
+      // 物料查询页签自身不是 StatsTable，所以仍是 1 —— 报工面板被保留了下来
+      const kept = wrapper.findAllComponents(StatsTable)
+      expect(kept, '切走后报工表应当仍在 DOM 里（不是纯 v-if）').toHaveLength(1)
+      expect(
+        kept[0].element.parentElement.style.display,
+        '切走后必须被隐藏（漏了 v-show 就会与当前页叠在一起）',
+      ).toBe('none')
+    } finally {
+      authState.roleKey = ''
+      await nextTick()
+    }
   })
 
-  it('周统计面板按默认区间（上周一到上周日）生成标题', () => {
+  it('周统计面板按默认区间（上周一到上周日）生成标题', async () => {
+    // 面板懒挂载后要先切到「周统计」页签；这条测的是默认区间文案，不是挂载时机
+    await switchToTab(wrapper, '周统计')
     expect(wrapper.text()).toMatch(/\d+月\d+日-\d+月\d+日周统计（截止\d+月\d+日晚8点）/)
   })
 

@@ -6,7 +6,7 @@ import { getToken, saveAuth } from './api/auth'
 
 /*
  * 样式导入顺序是有意的，别调换：
- *   element-plus/dist/index.css  先 —— EP 组件库自带样式
+ *   EP 按需组件样式  先 —— EP 组件库自带样式（原来是 dist/index.css 全量，见文末变更-076）
  *   ./theme.css                  后 —— 覆盖 --el-color-primary 与圆角变量；
  *                                     两者同优先级（都是 :root），谁后加载谁赢
  *   ./style.css                  最后 —— Tailwind 与全局基础样式
@@ -24,8 +24,39 @@ import { getToken, saveAuth } from './api/auth'
  *   颗粒、跟滚动的高光、真折射样张）是 minimalist 点名不要的装饰；后者是另一条
  *   分支的配色方向（近黑 + 薰衣草蓝），与本分支相反。两份都还在 git 里可回退：
  *   linear 那套 = x-ai 分支 09977cb。
+ *
+ * 变更-076（2026-10-16 性能审查）：原来是 `element-plus/dist/index.css` 全量
+ * （产物 352.2KB 且 render-blocking），而全仓只用到下面这些组件 —— 全量那份里
+ * `.el-col-*` 750 条、`.el-tabs__*` 252 条、`.el-upload` 160 条、`.el-cascader` 100 条
+ * 等规则**没有任何元素会匹配**。改为按需后只留用到的部分。
+ * ⚠️ 新增 EP 组件时**必须**在这里补上对应的 el-xxx.css：vitest 不会报错
+ *   （jsdom 不应用样式），漏了只会表现为该组件裸奔，得靠肉眼过一遍页面。
  */
-import 'element-plus/dist/index.css'
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-var.css'
+import 'element-plus/theme-chalk/el-icon.css'
+import 'element-plus/theme-chalk/el-button.css'
+import 'element-plus/theme-chalk/el-input.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-option.css'
+import 'element-plus/theme-chalk/el-date-picker.css'
+import 'element-plus/theme-chalk/el-popper.css'
+import 'element-plus/theme-chalk/el-tooltip.css'
+import 'element-plus/theme-chalk/el-overlay.css'
+import 'element-plus/theme-chalk/el-dialog.css'
+import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-message-box.css'
+import 'element-plus/theme-chalk/el-loading.css'
+import 'element-plus/theme-chalk/el-pagination.css'
+import 'element-plus/theme-chalk/el-image.css'
+// el-image 点开预览大图用的是**独立组件**（ImageParse.vue:1224 用了
+// :preview-src-list + :preview-teleported），它的样式不在 el-image.css 里 —— 漏了会
+// 出现「遮罩层没样式、大图直接叠在页面上」。这条正是上面注释里警告的那类漏项。
+import 'element-plus/theme-chalk/el-image-viewer.css'
+import 'element-plus/theme-chalk/el-checkbox.css'
+import 'element-plus/theme-chalk/el-autocomplete.css'
+import 'element-plus/theme-chalk/el-slider.css'
+import 'element-plus/theme-chalk/el-scrollbar.css'
 import './theme.css'
 import './style.css'
 import './minimal-field.css'
