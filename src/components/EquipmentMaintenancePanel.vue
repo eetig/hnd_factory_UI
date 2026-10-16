@@ -5,12 +5,14 @@ import {
   ElCheckbox,
   ElDialog,
   ElInput,
+  ElMessage,
   ElMessageBox,
   ElOption,
   ElPagination,
   ElSelect,
 } from 'element-plus'
 import { CONTAINER_TYPES, containerTypeLabel, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
+import { STATUS_TEXT } from '../constants/statusTones'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { vesselImageUrl } from '../composables/useVesselList'
 import VesselCalibrateDialog from './VesselCalibrateDialog.vue'
@@ -93,6 +95,10 @@ const dialogVisible = ref(false)
 const isNew = ref(false)
 const draft = reactive({})
 const message = ref('')
+/** 上面那条提示是"成功"还是"失败"（只有失败才是红的） */
+const messageOk = ref(false)
+/** 底图上传中：按钮转圈 + 禁止重复点（原先上传没有任何反馈，使用者不知道传没传成功） */
+const uploadingDrawing = ref(false)
 const uploadInput = ref(null)
 
 function resetDraft(source = {}) {
@@ -160,20 +166,28 @@ function firstNonNumericField() {
 
 async function handleSave() {
   message.value = ''
+  messageOk.value = false
   if (!draft.equipmentName?.trim()) {
     message.value = '设备名称不能为空'
+    ElMessage.error(message.value)
     return
   }
   const badField = firstNonNumericField()
   if (badField) {
     message.value = `${badField}必须填数字（留空表示未填写）`
+    ElMessage.error(message.value)
     return
   }
   try {
     await saveLedger(draft)
     dialogVisible.value = false
+    // 成功也要说话（变更-085）：原先保存成功毫无反馈，使用者无法判断到底存进去没有
+    ElMessage.success('已保存')
   } catch (e) {
+    // ⚠️ 失败**不关弹窗**（变更-085）：后端把业务失败也发成 HTTP 200，
+    // 配合 request.js 新加的拦截，这里终于能拿到失败原因了，而不是静默关掉当成功
     message.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
+    ElMessage.error(message.value)
   }
 }
 
@@ -227,13 +241,24 @@ async function handleDrawingPicked(event) {
   event.target.value = '' // 允许连续选同一个文件
   if (!file) return
   message.value = ''
+  messageOk.value = false
+  uploadingDrawing.value = true
+  // 上传要好几秒（几 MB 的图纸），期间必须让使用者看到"在传"（变更-085）
+  ElMessage.info(`正在上传底图（${Math.round(file.size / 1024)} KB）…`)
   try {
     draft.imageFile = await uploadVesselDrawing(file)
+    // 上传只是把图放进图片服务器；**没点保存就不会写进台账**，这句话必须说出来
+    messageOk.value = true
+    message.value = '底图已上传 ✓ 记得点右下角【保存】才会写进台账；接着点【标定底图】框出罐体轮廓'
+    ElMessage.success('底图已上传')
     // 换了图，旧的坐标一律作废：新图的尺寸/取景与旧图未必一致，
     // 留着旧坐标会让液面画在错误的位置（而且不报错）。清空后再走「标定底图」。
     draft.imageBounds = ''
   } catch (e) {
     message.value = `底图上传失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
+    ElMessage.error(message.value)
+  } finally {
+    uploadingDrawing.value = false
   }
 }
 
@@ -296,9 +321,12 @@ function handleCalibrated(boundsJson) {
       {{ loadError }}
     </p>
 
-    <div class="overflow-x-auto">
+    <!-- 表格自带滚动区 + 吸顶表头（变更-085）：原先整表交给页面滚动，往下翻几行表头就没了，
+         根本认不出哪一列是内径、哪一列是筒体长度。给容器一个上限高度后，
+         `sticky top-0` 才有参照物，表头会一直停在滚动区顶部 -->
+    <div class="max-h-[68vh] overflow-auto">
       <table class="w-full text-sm">
-        <thead class="bg-region text-xs text-slate-500">
+        <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]">
           <tr>
             <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>
             <th scope="col" class="px-4 py-2.5 text-left font-medium">位号</th>
@@ -471,7 +499,9 @@ function handleCalibrated(boundsJson) {
                   · {{ draft.imageBounds ? '已标定' : '未标定（该设备不能被启用）' }}
                 </span>
               </p>
-              <el-button size="small" @click="pickDrawing">上传底图</el-button>
+              <el-button size="small" :loading="uploadingDrawing" @click="pickDrawing">
+                {{ uploadingDrawing ? '上传中…' : '上传底图' }}
+              </el-button>
               <el-button
                 v-if="draft.imageFile"
                 size="small"
@@ -499,7 +529,14 @@ function handleCalibrated(boundsJson) {
           />
         </div>
 
-        <p v-if="message" role="alert" class="text-xs text-rose-600">{{ message }}</p>
+        <p
+          v-if="message"
+          :role="messageOk ? 'status' : 'alert'"
+          class="text-xs"
+          :class="messageOk ? STATUS_TEXT.success : STATUS_TEXT.error"
+        >
+          {{ message }}
+        </p>
       </div>
 
       <template #footer>

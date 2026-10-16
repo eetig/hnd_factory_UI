@@ -25,7 +25,22 @@ request.interceptors.request.use(
 )
 
 request.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // ⚠️ 业务失败也走 **HTTP 200**（后端统一返回 Result{code,msg,data,success}）。
+    // 必须在成功分支里拦下 —— 原先前端原样放行，调用方拿到的"成功"是假的：
+    // 弹窗关掉了、界面当成功了，而库里什么都没变（变更-085 修的就是这个：
+    // 保存被后端以 {code:500,success:false,msg:"设备位号不能为空"} 拒掉，使用者却毫无察觉）。
+    // 这里只对「明确的 success:false」生效， blob/字符串等其它响应类型不受影响。
+    const data = response?.data
+    if (data && typeof data === 'object' && data.success === false) {
+      const error = new Error(data.msg || '操作失败')
+      // 保留 response，调用方现有的 `e.response.data.msg` 读法不用改
+      error.response = response
+      error.businessError = true
+      return Promise.reject(error)
+    }
+    return response
+  },
   (error) => {
     const response = error?.response
     const data = response?.data || {}
