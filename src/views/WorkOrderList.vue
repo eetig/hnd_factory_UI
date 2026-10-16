@@ -983,8 +983,14 @@ const VESSEL_CANVAS_WIDTH = 1075
  * 这里用 `calc(100vh - 21rem)` 把上限挂到视口上：剩下的 21rem 留给页签头、信息行、
  * 液位读数与底部公式，所以立式罐再高也只占屏幕内、不会撑出页面滚动条。
  * 卧式罐（宽扁）不受影响 —— 它的高度本来就够小，`maxWidth` 先起作用。
+ *
+ * 变更-090 又把这笔预算收紧到 **20rem**：介质/几何那段说明搬进右栏后，顶部那行的高度
+ * 由选择器决定（≈36px）而不是文字（两行 ≈34px），`py` 也从 16px 收到 8px ⇒
+ * 实际腾出约 **1rem** —— 常量就跟着减 1rem（诚实对账：减多了会反而溢出，
+ * 反倒把页面滚动条又请回来）。
+ * ⚠️ 这是本页**唯一的高度调节旋钮**：觉得图偏小就把 rem 调小，觉得页面还滚就调大。
  */
-const CANVAS_MAX_HEIGHT = 'calc(100vh - 21rem)'
+const CANVAS_MAX_HEIGHT = 'calc(100vh - 20rem)'
 const VESSEL_LABEL_COLUMN = 300
 
 // 画布宽高比（用于 CSS 平滑过渡罐型切换时的高度变化）
@@ -3412,24 +3418,21 @@ watch(activeTab, (tab) => {
                   </template>
                 </div>
 
-                <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动 -->
+                <!-- 储罐切换：位置在两种罐型下保持一致，切换时不跳动。
+                     变更-090：介质/几何那段说明**从这一行搬进右栏**（原先它横在顶部，
+                     把图往下压）。这个页面的图是「高度决定宽度」的（见 CANVAS_MAX_HEIGHT），
+                     顶部每让出一行、图就长高一行；而右栏加宽对图**零损失**。
+                     这里 py 也从 4 收到 2。 -->
                 <div
-                  class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line px-6 py-4"
+                  class="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 border-b border-line px-6 py-2"
                 >
-                  <div class="min-w-0 flex-1">
-                    <p class="text-xs text-slate-500">{{ vesselDescription }}</p>
-                    <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
-                      {{ vesselGeometry.note }}
-                    </p>
-                    <!-- 录入对账：几何与台账的封头容积对不上时单独一行红字（不阻断计算 ——
-                   页面算的是按几何来的，台账那列只用于核对） -->
-                    <p v-if="vesselReconcileWarning" class="mt-1 text-xs font-medium text-rose-600">
-                      {{ vesselReconcileWarning }}
-                    </p>
-                    <p v-if="vesselBundleWarning" class="mt-1 text-xs font-medium text-rose-600">
-                      {{ vesselBundleWarning }}
-                    </p>
-                  </div>
+                  <!-- 告警留在顶部：它们是需要立刻看见的红字，塞进窄右栏会折成一片 -->
+                  <p v-if="vesselReconcileWarning" class="mr-auto text-xs font-medium text-rose-600">
+                    {{ vesselReconcileWarning }}
+                  </p>
+                  <p v-if="vesselBundleWarning" class="mr-auto text-xs font-medium text-rose-600">
+                    {{ vesselBundleWarning }}
+                  </p>
                   <el-select
                     v-model="vesselKey"
                     class="vessel-select shrink-0"
@@ -3466,9 +3469,24 @@ watch(activeTab, (tab) => {
 
                   <div
                     :class="
-                      isVerticalVessel ? 'flex min-w-0 flex-1 flex-col justify-center' : 'w-full'
+                      isVerticalVessel
+                        ? 'flex min-w-[260px] max-w-[380px] flex-1 flex-col justify-center'
+                        : 'w-full'
                     "
                   >
+                    <!-- 介质 / 几何说明（变更-090：从顶部行搬到这里）。
+                         竖版：右栏是窄条，给它 260~380px 才折得好看 —— 而图是高度决定宽度的，
+                         多让出横向对它**没有任何损失**；横版：右栏在图下方、本来就占整幅宽。 -->
+                    <p
+                      class="text-xs leading-relaxed text-slate-500"
+                      :class="isVerticalVessel ? '' : 'mt-4'"
+                    >
+                      {{ vesselDescription }}
+                    </p>
+                    <p v-if="vesselGeometry.note" class="mt-1 text-xs font-medium text-amber-700">
+                      {{ vesselGeometry.note }}
+                    </p>
+
                     <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
                     <div
                       class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
