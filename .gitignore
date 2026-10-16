@@ -52,3 +52,6 @@ test.keystore
 # 起就会落到项目根）。17MB 起，且会让 Vite 的文件监听 EBUSY 崩溃 ——
 # 排除见 vite.config.js 的 server.watch.ignored。
 tmp-chrome-profile/
+
+# 工具产物：archify 技能（画架构图）在本机生成的输出目录，不入库
+.archify/
