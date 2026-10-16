@@ -121,6 +121,53 @@ export async function deletePurchase(id) {
   await loadPurchase()
 }
 
+// ===== 送货单图片（变更-094：使用方「送货单是一张图片」）=====
+
+const uploading = ref(false)
+
+/**
+ * 上传一张送货单图片，返回存进 `deliveryNote` 的值。
+ *
+ * 按 ADR-0004 的固定拼接规则存 **`/files/<fileName>`**（不存裸文件名、也不存 img-service
+ * 给的 URL）—— 缩略图由 storedImageThumb 换成 `/thumbs/…` 拼出来，前端只记一条规则。
+ *
+ * 上传打到本服务转发（img-service 不对外、那边也没有鉴权）；权限位在服务端那一层。
+ */
+export async function uploadDeliveryNote(file) {
+  uploading.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await request.post('/api/purchase/upload-delivery-note', form)
+    if (res.data?.success === false) {
+      throw new Error(res.data.msg || '上传失败')
+    }
+    const fileName = res.data?.data
+    if (!fileName) {
+      throw new Error('上传未返回文件名')
+    }
+    return `/files/${fileName}`
+  } finally {
+    uploading.value = false
+  }
+}
+
+/**
+ * 这个值是不是我们存的图片路径。
+ *
+ * ⚠️ `delivery_note` 这一列**原本是文本**（送货单号），老数据里可能是任意文字、也可能是空串
+ * （空串 = 还没到货）。所以判断只看形态，不看"有没有值" —— 一段文字要照文本显示，
+ * 不能当坏数据，更不能拿它去拼图片地址。
+ */
+export function isStoredImage(value) {
+  return typeof value === 'string' && value.trim().startsWith('/files/')
+}
+
+/** `/files/abc.png` → `/thumbs/abc.png`（img-service 两个前缀都提供）；不是图片则原样返回 */
+export function storedImageThumb(value) {
+  return isStoredImage(value) ? value.trim().replace('/files/', '/thumbs/') : value
+}
+
 /**
  * 后端要的字段与类型。
  *
@@ -157,6 +204,7 @@ export function usePurchaseTracking() {
     total,
     loading,
     saving,
+    uploading,
     loadError,
     pageNum,
     pageSize,

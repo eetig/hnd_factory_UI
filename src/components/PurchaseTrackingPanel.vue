@@ -4,6 +4,7 @@ import {
   ElAutocomplete,
   ElButton,
   ElDatePicker,
+  ElImage,
   ElInput,
   ElMessage,
   ElMessageBox,
@@ -12,7 +13,12 @@ import {
 import { hasPerm } from '../api/auth'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { useMaterialLookup } from '../composables/useMaterialLookup'
-import { usePurchaseTracking } from '../composables/usePurchaseTracking'
+import {
+  isStoredImage,
+  storedImageThumb,
+  usePurchaseTracking,
+} from '../composables/usePurchaseTracking'
+import DeliveryNoteUpload from './DeliveryNoteUpload.vue'
 
 /**
  * 采购进度跟踪（变更-091，2026-10-16；变更-092 改成表内录入）。
@@ -89,7 +95,9 @@ const EDIT_FIELDS = [
   { key: 'spec', kind: 'text', placeholder: '规格型号', aria: '规格型号' },
   { key: 'requiredArrivalDate', kind: 'date', aria: '要求到货日期' },
   { key: 'purchaseOrderNo', kind: 'text', placeholder: '订单号', aria: '采购订单号' },
-  { key: 'deliveryNote', kind: 'text', placeholder: '送货单', aria: '送货单' },
+  // 送货单是一张图片（变更-094，使用方：「送货单是一张图片」）—— 不再是文本框，
+  // 换成上传控件（选图即传、显示缩略图、可重传/删除）。
+  { key: 'deliveryNote', kind: 'image', aria: '送货单图片' },
   { key: 'remark', kind: 'text', placeholder: '备注', aria: '备注' },
 ]
 
@@ -352,6 +360,11 @@ onUnmounted(cancelMaterialSearch)
                   <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
                 </template>
               </el-autocomplete>
+              <DeliveryNoteUpload
+                v-else-if="f.kind === 'image'"
+                :value="draft[f.key]"
+                @update:value="draft[f.key] = $event"
+              />
               <el-input
                 v-else
                 v-model="draft[f.key]"
@@ -442,6 +455,11 @@ onUnmounted(cancelMaterialSearch)
                     <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
                   </template>
                 </el-autocomplete>
+                <DeliveryNoteUpload
+                  v-else-if="f.kind === 'image'"
+                  :value="edit[f.key]"
+                  @update:value="edit[f.key] = $event"
+                />
                 <el-input
                   v-else
                   v-model="edit[f.key]"
@@ -479,9 +497,20 @@ onUnmounted(cancelMaterialSearch)
               <td class="px-3 py-2 text-slate-600">{{ row.spec || '—' }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.purchaseOrderNo || '—' }}</td>
-              <!-- 空 = 还没到货：这是「进度」这一列的核心信息，所以用灰字说清楚而不是留白 -->
+              <!-- 送货单三态（变更-094）：图片 → 缩略图（点开看原图）；文本 → 原样显示
+                   （这一列原本是「送货单号」文本，老数据不许当坏数据）；空 → 未到货。
+                   这是「进度」这一列的核心信息，所以空着要用灰字说清楚而不是留白。 -->
               <td class="px-3 py-2 text-slate-600">
-                <template v-if="row.deliveryNote">{{ row.deliveryNote }}</template>
+                <el-image
+                  v-if="isStoredImage(row.deliveryNote)"
+                  :src="storedImageThumb(row.deliveryNote)"
+                  :preview-src-list="[row.deliveryNote]"
+                  :preview-teleported="true"
+                  fit="cover"
+                  alt="送货单图片"
+                  class="h-8 w-8 rounded border border-line"
+                />
+                <template v-else-if="row.deliveryNote">{{ row.deliveryNote }}</template>
                 <span v-else class="text-slate-500">未到货</span>
               </td>
               <td class="px-3 py-2 text-slate-600">{{ row.remark || '—' }}</td>

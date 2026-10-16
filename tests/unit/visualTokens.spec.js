@@ -2195,6 +2195,7 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
   const MAINT_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
   const MAINT_CLASS_ATTRS = classAttrsIn(MAINT_PANEL)
   const PURCHASE_PANEL = read(join(SRC, 'components', 'PurchaseTrackingPanel.vue'))
+  const PURCHASE_DATA = read(join(SRC, 'composables', 'usePurchaseTracking.js'))
   const PURCHASE_CLASS_ATTRS = classAttrsIn(PURCHASE_PANEL)
   const countStatic = (text) => CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
   const countStaticTank = (text) =>
@@ -2403,6 +2404,28 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
       (PURCHASE_PANEL.match(/v-for="f in EDIT_FIELDS"/g) || []).length,
       '新增行与编辑行没有共用 EDIT_FIELDS 字段表（应当各引用一次）',
     ).toBe(2)
+  })
+
+  it('送货单是图片，不是文本框（变更-094）', () => {
+    /*
+     * 使用方原话：「送货单是一张图片」。这条钉住三件事，任何一件被"简化"掉都会红：
+     *   · 可编辑格里必须是上传控件（回到文本框就白改了）；
+     *   · 只读行要判断形态（`/files/…` 才当图，文本照文本显示 —— 这一列原本是送货单号文本，
+     *     老数据不能当坏数据）；
+     *   · 上传走本服务的转发端点（img-service 不对外、那边也没有鉴权注解）。
+     */
+    expect(
+      PURCHASE_PANEL.includes('DeliveryNoteUpload'),
+      '送货单那一列又变回文本框了：使用方明确说「送货单是一张图片」。',
+    ).toBe(true)
+    expect(
+      PURCHASE_PANEL.includes('isStoredImage'),
+      '只读行没有按形态取图（/files/… 才算图片，文本老数据要照原样显示）。',
+    ).toBe(true)
+    expect(
+      PURCHASE_DATA.includes('/api/purchase/upload-delivery-note'),
+      '送货单上传没有走本服务的转发端点（前端不许直连 img-service）。',
+    ).toBe(true)
   })
 
   it('媒体尺寸通用规则（变更-089）：不许用宽度定高度', () => {

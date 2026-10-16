@@ -6,9 +6,13 @@ vi.mock('../../src/api/request', () => ({
 }))
 
 const { default: request } = await import('../../src/api/request')
-const { buildPurchasePayload, usePurchaseTracking } = await import(
-  '../../src/composables/usePurchaseTracking'
-)
+const {
+  buildPurchasePayload,
+  isStoredImage,
+  storedImageThumb,
+  uploadDeliveryNote,
+  usePurchaseTracking,
+} = await import('../../src/composables/usePurchaseTracking')
 const { useMaterialLookup } = await import('../../src/composables/useMaterialLookup')
 
 const { materialOptions, searchMaterials } = useMaterialLookup()
@@ -217,5 +221,55 @@ describe('物料检索（采购行的下拉）', () => {
     request.get.mockRejectedValue(new Error('boom'))
     await expect(searchMaterials('硅')).resolves.toEqual([])
     expect(materialOptions.value).toEqual([])
+  })
+})
+
+/**
+ * 送货单图片（变更-094）：使用方说「送货单是一张图片」。
+ *
+ * 这里守两件事：① 上传走**本服务**的转发端点（img-service 不对外、也没有鉴权注解），
+ * 并按 ADR-0004 存成 `/files/<fileName>`；② `delivery_note` 那一列**原本是文本**，
+ * 老数据（送货单号文字 / 空串）必须能照原样处理，不能被当成坏掉的数据。
+ */
+describe('送货单图片', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('uploadDeliveryNote：POST 到本服务，FormData 带 file，返回 /files/<fileName>', async () => {
+    request.post.mockResolvedValue({ data: { success: true, data: 'abc123.png' } })
+    const file = new Blob(['x'], { type: 'image/png' })
+
+    const stored = await uploadDeliveryNote(file)
+
+    const [url, body] = request.post.mock.calls.at(-1)
+    expect(url).toBe('/api/purchase/upload-delivery-note')
+    expect(body).toBeInstanceOf(FormData)
+    // ⚠️ 断言"是个二进制 Blob"而不是"就是那个对象"：jsdom 会把 Blob 包成 File
+    // （File 是 Blob 子类），逐字比较会失败；而如果塞进去的是普通对象，
+    // FormData 会把它转成字符串 "[object Object]"，那时这条断言就会红 ——
+    // 这才是它真正要守住的东西（实测两处都踩过）。
+    expect(body.get('file')).toBeInstanceOf(Blob)
+    expect(stored).toBe('/files/abc123.png')
+  })
+
+  it('uploadDeliveryNote：没回文件名 → 抛（不能把 undefined 存进库里）', async () => {
+    request.post.mockResolvedValue({ data: { success: true } })
+    await expect(uploadDeliveryNote({ name: 'x.png' })).rejects.toThrow('上传未返回文件名')
+  })
+
+  it('isStoredImage：只认 /files/ 形态 —— 文本老数据与空值都不算图片', () => {
+    expect(isStoredImage('/files/abc.png')).toBe(true)
+    expect(isStoredImage('  /files/abc.png  ')).toBe(true)
+    expect(isStoredImage('SH-2026-001')).toBe(false) // 老数据：送货单号文本
+    expect(isStoredImage('')).toBe(false) // 空串 = 还没到货
+    expect(isStoredImage(null)).toBe(false)
+    expect(isStoredImage(undefined)).toBe(false)
+  })
+
+  it('storedImageThumb：表格里看 /thumbs/，点开看 /files/；文本原样返回', () => {
+    expect(storedImageThumb('/files/abc.png')).toBe('/thumbs/abc.png')
+    expect(storedImageThumb('SH-2026-001')).toBe('SH-2026-001')
+    expect(storedImageThumb('')).toBe('')
   })
 })
