@@ -1,9 +1,9 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import {
+  ElAutocomplete,
   ElButton,
   ElDatePicker,
-  ElDialog,
   ElInput,
   ElMessage,
   ElMessageBox,
@@ -11,16 +11,22 @@ import {
 } from 'element-plus'
 import { hasPerm } from '../api/auth'
 import { useLiveQuery } from '../composables/useLiveQuery'
+import { useMaterialLookup } from '../composables/useMaterialLookup'
 import { usePurchaseTracking } from '../composables/usePurchaseTracking'
 
 /**
- * 采购进度跟踪（变更-091）。
+ * 采购进度跟踪（变更-091，2026-10-16；变更-092 改成表内录入）。
  *
- * 需求登记 → 下单 → 到货的流水台账。数据层在 composables/usePurchaseTracking.js。
+ * 使用方原话：「PC端就不用这种卡片式，直接在行上面添加，物料名称可以搜索，实时搜索的形式，
+ * 物料编码自动带出，也可以根据物料编码搜索，物料名称自动带出。」
+ * ⇒ 去掉弹窗，改成**表格第一行直接填**（采购同事的心智就是 Excel：上面一行敲完就多一条），
+ *   点某行的「编辑」时那一行**原地变成输入框**，不再跳弹窗。
  *
- * ⚠️ 写按钮（新增/编辑/删除）按权限位 `purchase:edit` 显隐 —— **查询对所有人开放**
- * （与物料查询/体积计算一致：列表接口本来就免登录），只有写操作需要权限位。
- * 后端另有 @SaCheckPermission 兜底：界面藏了按钮不等于接口安全，两层都要在。
+ * 物料两个框是 `el-autocomplete` 远程检索（`/api/stock/list`，见 useMaterialLookup）：
+ * 打名称搜、打编码也搜，**选中**后互相带出（只是打字不互填 —— 否则半个名字会把编码冲掉）。
+ *
+ * ⚠️ 写操作按权限位 `purchase:edit` 显隐；查询对所有人开放（列表接口本来就免登录）。
+ * 后端另有 @SaCheckPermission 兜底：界面藏了不等于接口安全，两层都要在。
  */
 const {
   rows,
@@ -41,67 +47,149 @@ const {
   deletePurchase,
 } = usePurchaseTracking()
 
+const { fetchMaterialSuggestions, cancelMaterialSearch } = useMaterialLookup()
+
 // 关键字边打边查（防抖 + 查询签名去重 + 卸载撤销，公共接线见 useLiveQuery）；
-// 回车 / 清空 = 显式意图，立刻发。日期区间是离散动作，直接 @change 触发，不需要防抖。
+// 回车 / 清空 = 显式意图，立刻发。日期区间是离散动作，直接 @change 触发。
 const { flush: flushPurchaseQuery } = useLiveQuery(keyword, applyPurchaseFilters)
 
 const canEdit = computed(() => hasPerm('purchase:edit'))
 
-const dialogVisible = ref(false)
-const isNew = ref(false)
+/** 新增行（表格第一行）的草稿。空着的字段就按"没有"处理 */
 const draft = reactive({})
+/** 正在原地编辑的那一行的草稿；null = 没有行在编辑 */
+const edit = ref(null)
 const message = ref('')
 
-function resetDraft(source) {
-  Object.assign(draft, {
-    id: source?.id ?? null,
-    requester: source?.requester ?? '',
-    requestDate: source?.requestDate ?? '',
-    materialName: source?.materialName ?? '',
-    materialCode: source?.materialCode ?? '',
-    spec: source?.spec ?? '',
-    requiredArrivalDate: source?.requiredArrivalDate ?? '',
-    purchaseOrderNo: source?.purchaseOrderNo ?? '',
-    deliveryNote: source?.deliveryNote ?? '',
-    remark: source?.remark ?? '',
-  })
+function blankDraft() {
+  return {
+    requester: '',
+    requestDate: '',
+    materialName: '',
+    materialCode: '',
+    spec: '',
+    requiredArrivalDate: '',
+    purchaseOrderNo: '',
+    deliveryNote: '',
+    remark: '',
+  }
 }
 
-function openCreate() {
-  isNew.value = true
-  resetDraft(null)
-  message.value = ''
-  dialogVisible.value = true
-}
+/**
+ * 可编辑单元格的字段表 —— 新增行与编辑行共用一份，避免两处各写 9 个 <td> 而慢慢写歪。
+ *
+ * kind 决定用哪个控件：text=input、date=el-date-picker、materialName/materialCode=el-autocomplete。
+ * **顺序与表头一一对应**（含备注列；备注是库里的字段，不给它留列就永远填不进去）。
+ */
+const EDIT_FIELDS = [
+  { key: 'requester', kind: 'text', placeholder: '需求人', aria: '需求人' },
+  { key: 'requestDate', kind: 'date', aria: '提出需求日期' },
+  { key: 'materialName', kind: 'materialName', placeholder: '打字搜物料名称', aria: '物料名称' },
+  { key: 'materialCode', kind: 'materialCode', placeholder: '打字搜物料编码', aria: '物料编码' },
+  { key: 'spec', kind: 'text', placeholder: '规格型号', aria: '规格型号' },
+  { key: 'requiredArrivalDate', kind: 'date', aria: '要求到货日期' },
+  { key: 'purchaseOrderNo', kind: 'text', placeholder: '订单号', aria: '采购订单号' },
+  { key: 'deliveryNote', kind: 'text', placeholder: '送货单', aria: '送货单' },
+  { key: 'remark', kind: 'text', placeholder: '备注', aria: '备注' },
+]
 
-function openEdit(row) {
-  isNew.value = false
-  resetDraft(row)
-  message.value = ''
-  dialogVisible.value = true
-}
-
-async function handleSave() {
-  message.value = ''
-  // 与前端的必填口径一致（后端还会再校验一次，两边都要有：
-  // 界面先拦住能少一次往返，后端拦住才是真的拦住）
-  if (!draft.requester?.trim()) {
-    message.value = '需求人不能为空'
-    ElMessage.error(message.value)
+/**
+ * 从下拉里选中一条物料后互相带出。
+ *
+ * · 选名字 → 带出编码；
+ * · 选编码 → 带出名字（**主数据里没有名字时保持原样**，不要拿编码冒充名字 ——
+ *   `/api/stock/list` 的注释写明名称可能为 null，那时显示编码只是显示层的兜底）；
+ * · 规格只在**原本空着**时填，不覆盖人已经敲进去的内容。
+ */
+function pickMaterial(target, option, source) {
+  if (!option) {
     return
   }
-  if (!draft.materialName?.trim()) {
-    message.value = '物料名称不能为空'
-    ElMessage.error(message.value)
+  if (source === 'name') {
+    target.materialName = option.name || option.code
+    target.materialCode = option.code
+  } else {
+    target.materialCode = option.code
+    if (option.name) {
+      target.materialName = option.name
+    }
+  }
+  if (!target.spec) {
+    target.spec = option.spec || ''
+  }
+}
+
+function resetDraft() {
+  Object.assign(draft, blankDraft())
+  message.value = ''
+}
+
+function startEdit(row) {
+  edit.value = {
+    id: row.id,
+    requester: row.requester ?? '',
+    requestDate: row.requestDate ?? '',
+    materialName: row.materialName ?? '',
+    materialCode: row.materialCode ?? '',
+    spec: row.spec ?? '',
+    requiredArrivalDate: row.requiredArrivalDate ?? '',
+    purchaseOrderNo: row.purchaseOrderNo ?? '',
+    deliveryNote: row.deliveryNote ?? '',
+    remark: row.remark ?? '',
+  }
+  message.value = ''
+}
+
+function cancelEdit() {
+  edit.value = null
+  message.value = ''
+}
+
+/** 必填口径与后端一致（界面先拦一次少一趟往返，后端拦住才是真的拦住） */
+function requiredProblem(source) {
+  if (!source.requester?.trim()) {
+    return '需求人不能为空'
+  }
+  if (!source.materialName?.trim()) {
+    return '物料名称不能为空'
+  }
+  return ''
+}
+
+/** 新增行保存 */
+async function handleCreate() {
+  const problem = requiredProblem(draft)
+  if (problem) {
+    message.value = problem
+    ElMessage.error(problem)
     return
   }
   try {
     await savePurchase(draft)
-    dialogVisible.value = false
+    resetDraft()
     ElMessage.success('已保存')
   } catch (e) {
-    // ⚠️ 失败**不关弹窗**：api/request.js 已把「HTTP 200 + success:false」拦成 Promise 拒绝
-    // （变更-085），所以这里拿得到后端原话，而不是静默关掉当成功（那条坑吃过一次）。
+    // ⚠️ 失败**不清理已填内容**：api/request.js 已把「HTTP 200 + success:false」拦成拒绝
+    // （变更-085），这里拿得到后端原话；清空输入框等于让人重敲一遍（变更-091 的弹窗版本
+    // 就是靠"不关弹窗"保住这一点的，改成行内录入后由"不清 draft"接替）。
+    message.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
+    ElMessage.error(message.value)
+  }
+}
+
+/** 原地编辑保存 */
+async function handleUpdate() {
+  const problem = requiredProblem(edit.value)
+  if (problem) {
+    message.value = problem
+    ElMessage.error(problem)
+    return
+  }
+  try {
+    await savePurchase(edit.value)
+    edit.value = null
+    ElMessage.success('已保存')
+  } catch (e) {
     message.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
     ElMessage.error(message.value)
   }
@@ -125,13 +213,16 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(loadPurchase)
+onMounted(() => {
+  resetDraft()
+  loadPurchase()
+})
+// 离开面板撤销待发的物料检索（免得已经不打字了还在打接口）
+onUnmounted(cancelMaterialSearch)
 </script>
 
 <template>
-  <!-- 定高链（变更-088 的方子，与设备数据维护/储罐液位同一张）：
-       卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底**。
-       少一级 min-h-0，卡片就会被内容顶高、翻页时分页行上下跳。 -->
+  <!-- 定高链（变更-088 的方子）：卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底** -->
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
     <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-line px-6 py-3">
       <p class="text-sm font-medium text-slate-700">采购进度跟踪</p>
@@ -169,7 +260,6 @@ onMounted(loadPurchase)
           @change="applyPurchaseFilters"
         />
         <el-button @click="applyPurchaseFilters">查询</el-button>
-        <el-button v-if="canEdit" type="primary" @click="openCreate">新增采购需求</el-button>
       </div>
     </div>
 
@@ -181,75 +271,231 @@ onMounted(loadPurchase)
       {{ loadError }}
     </p>
 
+    <p
+      v-if="message"
+      role="alert"
+      class="shrink-0 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs text-rose-700"
+    >
+      {{ message }}
+    </p>
+
     <div class="purchase-scroll min-h-0 flex-1 overflow-auto">
       <table class="w-full text-sm">
         <thead
           class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]"
         >
           <tr>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">需求人</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">提出需求日期</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">物料名称</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">物料编码</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">规格型号</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">要求到货日期</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">采购订单号</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">送货单</th>
-            <th v-if="canEdit" scope="col" class="px-4 py-2.5 text-right font-medium">操作</th>
+            <th scope="col" class="px-3 py-2.5 text-right font-medium">序号</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">需求人</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">提出需求日期</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">物料名称</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">物料编码</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">规格型号</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">要求到货日期</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">采购订单号</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">送货单</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">备注</th>
+            <th v-if="canEdit" scope="col" class="px-3 py-2.5 text-right font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
+          <!-- ★ 新增行：就摆在数据行**上面**，敲完点保存（或在本行文本框里回车）就多一条。
+               不做弹窗 —— 采购同事的心智是 Excel，跳窗会打断连续录入。 -->
+          <tr v-if="canEdit" class="border-t border-line bg-region/40">
+            <td class="px-3 py-1.5 text-right align-middle text-base leading-none text-brand">＋</td>
+            <td v-for="f in EDIT_FIELDS" :key="f.key" class="px-2 py-1.5">
+              <el-date-picker
+                v-if="f.kind === 'date'"
+                v-model="draft[f.key]"
+                type="date"
+                size="small"
+                value-format="YYYY-MM-DD"
+                placeholder="选择日期"
+                :aria-label="f.aria"
+                class="w-full"
+              />
+              <el-autocomplete
+                v-else-if="f.kind === 'materialName'"
+                v-model="draft.materialName"
+                class="w-full"
+                size="small"
+                value-key="label"
+                :fetch-suggestions="fetchMaterialSuggestions"
+                :trigger-on-focus="true"
+                :debounce="0"
+                :placeholder="f.placeholder"
+                :aria-label="f.aria"
+                @select="pickMaterial(draft, $event, 'name')"
+              >
+                <template #default="{ item }">
+                  <span class="text-sm text-slate-800">{{ item.label }}</span>
+                  <span v-if="item.code" class="ml-2 text-xs text-slate-500">{{ item.code }}</span>
+                  <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
+                </template>
+              </el-autocomplete>
+              <el-autocomplete
+                v-else-if="f.kind === 'materialCode'"
+                v-model="draft.materialCode"
+                class="w-full"
+                size="small"
+                value-key="code"
+                :fetch-suggestions="fetchMaterialSuggestions"
+                :trigger-on-focus="true"
+                :debounce="0"
+                :placeholder="f.placeholder"
+                :aria-label="f.aria"
+                @select="pickMaterial(draft, $event, 'code')"
+              >
+                <template #default="{ item }">
+                  <span class="text-sm text-slate-800">{{ item.code }}</span>
+                  <span v-if="item.label" class="ml-2 text-xs text-slate-500">{{ item.label }}</span>
+                  <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
+                </template>
+              </el-autocomplete>
+              <el-input
+                v-else
+                v-model="draft[f.key]"
+                size="small"
+                :placeholder="f.placeholder"
+                :aria-label="f.aria"
+                @keyup.enter="handleCreate"
+              />
+            </td>
+            <td class="px-3 py-1.5 text-right whitespace-nowrap">
+              <el-button size="small" type="primary" :loading="saving" @click="handleCreate">
+                保存
+              </el-button>
+              <el-button size="small" @click="resetDraft">清空</el-button>
+            </td>
+          </tr>
+
+          <!-- 数据行：正在编辑的那一行原地变成输入框（同一份字段表，两种形态不会写歪） -->
           <tr
             v-for="(row, index) in rows"
             :key="row.id"
-            :tabindex="canEdit ? 0 : -1"
             class="border-t border-line"
             :class="
-              canEdit
-                ? 'cursor-pointer hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand'
-                : ''
+              edit && edit.id === row.id
+                ? 'bg-region/40'
+                : canEdit
+                  ? 'cursor-pointer hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand'
+                  : ''
             "
-            @click="canEdit && openEdit(row)"
-            @keydown.enter.self.prevent="canEdit && openEdit(row)"
+            :tabindex="canEdit && !(edit && edit.id === row.id) ? 0 : -1"
+            @click="canEdit && !(edit && edit.id === row.id) && startEdit(row)"
+            @keydown.enter.self.prevent="canEdit && !(edit && edit.id === row.id) && startEdit(row)"
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号核对，一翻页重新数会串 -->
-            <td class="px-4 py-2.5 text-right text-xs text-slate-500">
+            <td class="px-3 py-2 text-right text-xs text-slate-500">
               {{ (pageNum - 1) * pageSize + index + 1 }}
             </td>
-            <td class="px-4 py-2.5 text-slate-600">{{ row.requester || '—' }}</td>
-            <td class="px-4 py-2.5 text-slate-600">{{ row.requestDate || '—' }}</td>
-            <td class="px-4 py-2.5 font-medium">{{ row.materialName }}</td>
-            <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白 -->
-            <td class="px-4 py-2.5 text-slate-600">
-              {{ row.materialCode || '—' }}
-              <!-- ⚠️ 措辞要两种情况下都成立：有编码时后端**要么**把它登记进 0000 档、
-                   **要么**发现它本来就在库存表里而跳过。标成「已登记」会让后一种情况被误读成
-                   "它一定进了采购登记档」。说「总表可查」才是两句都真的话。 -->
-              <span
-                v-if="row.materialCode"
-                class="ml-1 rounded-full border border-line px-1.5 text-[11px] text-slate-500"
-                title="有编码的行都能在物料总表里按编码查到：新编码由保存时登记进「采购登记（无库存）」档，原本就在库存表里的则保持原样"
-              >
-                总表可查
-              </span>
-            </td>
-            <td class="px-4 py-2.5 text-slate-600">{{ row.spec || '—' }}</td>
-            <td class="px-4 py-2.5 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
-            <td class="px-4 py-2.5 text-slate-600">{{ row.purchaseOrderNo || '—' }}</td>
-            <!-- 空 = 还没到货：这是「进度」这一列的核心信息，所以用灰字说清楚而不是留白 -->
-            <td class="px-4 py-2.5 text-slate-600">
-              <template v-if="row.deliveryNote">{{ row.deliveryNote }}</template>
-              <span v-else class="text-slate-500">未到货</span>
-            </td>
-            <td v-if="canEdit" class="px-4 py-2.5 text-right whitespace-nowrap">
-              <el-button size="small" @click.stop="openEdit(row)">编辑</el-button>
-              <el-button size="small" @click.stop="handleDelete(row)">删除</el-button>
-            </td>
+
+            <template v-if="edit && edit.id === row.id">
+              <td v-for="f in EDIT_FIELDS" :key="f.key" class="px-2 py-1.5">
+                <el-date-picker
+                  v-if="f.kind === 'date'"
+                  v-model="edit[f.key]"
+                  type="date"
+                  size="small"
+                  value-format="YYYY-MM-DD"
+                  placeholder="选择日期"
+                  :aria-label="f.aria"
+                  class="w-full"
+                />
+                <el-autocomplete
+                  v-else-if="f.kind === 'materialName'"
+                  v-model="edit.materialName"
+                  class="w-full"
+                  size="small"
+                  value-key="label"
+                  :fetch-suggestions="fetchMaterialSuggestions"
+                  :trigger-on-focus="true"
+                  :debounce="0"
+                  :placeholder="f.placeholder"
+                  :aria-label="f.aria"
+                  @select="pickMaterial(edit, $event, 'name')"
+                >
+                  <template #default="{ item }">
+                    <span class="text-sm text-slate-800">{{ item.label }}</span>
+                    <span v-if="item.code" class="ml-2 text-xs text-slate-500">{{ item.code }}</span>
+                    <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
+                  </template>
+                </el-autocomplete>
+                <el-autocomplete
+                  v-else-if="f.kind === 'materialCode'"
+                  v-model="edit.materialCode"
+                  class="w-full"
+                  size="small"
+                  value-key="code"
+                  :fetch-suggestions="fetchMaterialSuggestions"
+                  :trigger-on-focus="true"
+                  :debounce="0"
+                  :placeholder="f.placeholder"
+                  :aria-label="f.aria"
+                  @select="pickMaterial(edit, $event, 'code')"
+                >
+                  <template #default="{ item }">
+                    <span class="text-sm text-slate-800">{{ item.code }}</span>
+                    <span v-if="item.label" class="ml-2 text-xs text-slate-500">{{ item.label }}</span>
+                    <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
+                  </template>
+                </el-autocomplete>
+                <el-input
+                  v-else
+                  v-model="edit[f.key]"
+                  size="small"
+                  :placeholder="f.placeholder"
+                  :aria-label="f.aria"
+                  @keyup.enter="handleUpdate"
+                />
+              </td>
+              <td class="px-3 py-1.5 text-right whitespace-nowrap">
+                <el-button size="small" type="primary" :loading="saving" @click.stop="handleUpdate">
+                  保存
+                </el-button>
+                <el-button size="small" @click.stop="cancelEdit">取消</el-button>
+              </td>
+            </template>
+
+            <template v-else>
+              <td class="px-3 py-2 text-slate-600">{{ row.requester || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600">{{ row.requestDate || '—' }}</td>
+              <td class="px-3 py-2 font-medium">{{ row.materialName }}</td>
+              <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白 -->
+              <td class="px-3 py-2 text-slate-600">
+                {{ row.materialCode || '—' }}
+                <!-- ⚠️ 措辞要两种情况下都成立：有编码时后端**要么**把它登记进 0000 档、
+                     **要么**发现它本来就在库存表里而跳过。说「总表可查」才是两句都真的话。 -->
+                <span
+                  v-if="row.materialCode"
+                  class="ml-1 rounded-full border border-line px-1.5 text-[11px] text-slate-500"
+                  title="有编码的行都能在物料总表里按编码查到：新编码由保存时登记进「采购登记（无库存）」档，原本就在库存表里的则保持原样"
+                >
+                  总表可查
+                </span>
+              </td>
+              <td class="px-3 py-2 text-slate-600">{{ row.spec || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600">{{ row.purchaseOrderNo || '—' }}</td>
+              <!-- 空 = 还没到货：这是「进度」这一列的核心信息，所以用灰字说清楚而不是留白 -->
+              <td class="px-3 py-2 text-slate-600">
+                <template v-if="row.deliveryNote">{{ row.deliveryNote }}</template>
+                <span v-else class="text-slate-500">未到货</span>
+              </td>
+              <td class="px-3 py-2 text-slate-600">{{ row.remark || '—' }}</td>
+              <td v-if="canEdit" class="px-3 py-2 text-right whitespace-nowrap">
+                <el-button size="small" @click.stop="startEdit(row)">编辑</el-button>
+                <el-button size="small" @click.stop="handleDelete(row)">删除</el-button>
+              </td>
+            </template>
           </tr>
+
           <tr v-if="!rows.length">
-            <td :colspan="canEdit ? 10 : 9" class="px-4 py-10 text-center text-sm text-slate-500">
-              {{ loading ? '正在加载…' : '还没有采购需求记录' }}
+            <td
+              :colspan="canEdit ? 11 : 10"
+              class="px-4 py-10 text-center text-sm text-slate-500"
+            >
+              {{ loading ? '正在加载…' : '还没有采购需求记录 —— 在第一行直接填就能加一条' }}
             </td>
           </tr>
         </tbody>
@@ -268,61 +514,6 @@ onMounted(loadPurchase)
         @size-change="setPurchasePageSize"
       />
     </div>
-
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isNew ? '新增采购需求' : `编辑：${draft.materialName || ''}`"
-      width="720px"
-    >
-      <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-        <label class="text-sm">
-          需求人 <span class="text-rose-600">*</span>
-          <el-input v-model="draft.requester" />
-        </label>
-        <label class="text-sm">
-          提出需求日期
-          <el-date-picker
-            v-model="draft.requestDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="选择日期"
-            aria-label="提出需求日期"
-            class="w-full"
-          />
-        </label>
-        <label class="text-sm">
-          物料名称 <span class="text-rose-600">*</span>
-          <el-input v-model="draft.materialName" />
-        </label>
-        <label class="text-sm">物料编码<el-input v-model="draft.materialCode" /></label>
-        <label class="text-sm">规格型号<el-input v-model="draft.spec" /></label>
-        <label class="text-sm">
-          要求到货日期
-          <el-date-picker
-            v-model="draft.requiredArrivalDate"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="选择日期"
-            aria-label="要求到货日期"
-            class="w-full"
-          />
-        </label>
-        <label class="text-sm">采购订单号<el-input v-model="draft.purchaseOrderNo" /></label>
-        <label class="text-sm">送货单号<el-input v-model="draft.deliveryNote" /></label>
-        <label class="col-span-2 text-sm">备注<el-input v-model="draft.remark" /></label>
-      </div>
-
-      <p class="mt-3 text-xs leading-relaxed text-slate-500">
-        只填名称也能存 —— 编码、订单号、送货单号都可以后面补。带编码保存时，
-        后端会把这个编码登记进物料总表（库位「采购登记（无库存）」、库存记 0），以后按编码就能查到它。
-      </p>
-      <p v-if="message" role="alert" class="mt-2 text-xs text-rose-600">{{ message }}</p>
-
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-      </template>
-    </el-dialog>
   </section>
 </template>
 
@@ -331,7 +522,7 @@ onMounted(loadPurchase)
  * 表格滚动条做细一点（与设备数据维护同一配方）。
  * 默认每页 10 行时这张表通常不会超出，所以这条多数时候看不见；
  * 小屏或自己切到 50 行时才出现，那时也不该是一条突兀的灰带。
- * 横向仍可滚：10 列在窄窗口下会溢出。
+ * 横向仍可滚：11 列在窄窗口下会溢出（新增行/编辑行的输入框也在这里，别改成 overflow-hidden）。
  */
 .purchase-scroll {
   scrollbar-width: thin;

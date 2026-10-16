@@ -9,6 +9,9 @@ const { default: request } = await import('../../src/api/request')
 const { buildPurchasePayload, usePurchaseTracking } = await import(
   '../../src/composables/usePurchaseTracking'
 )
+const { useMaterialLookup } = await import('../../src/composables/useMaterialLookup')
+
+const { materialOptions, searchMaterials } = useMaterialLookup()
 
 const {
   rows,
@@ -155,5 +158,64 @@ describe('采购进度跟踪数据层', () => {
     expect(request.delete.mock.calls.at(-1)[0]).toBe('/api/purchase/delete')
     expect(request.delete.mock.calls.at(-1)[1].params).toEqual({ id: 3 })
     expect(request.get.mock.calls.at(-1)[0]).toBe('/api/purchase/list')
+  })
+})
+
+/**
+ * 物料检索（变更-092）：采购行里的「物料名称 / 物料编码」两个框靠它做实时搜索与互相带出。
+ *
+ * 这里守的是**数据源与清洗规则**：走现成的 /api/stock/list（双源合并、关键字同时命中
+ * 编码/名称/规格），分页参数必带（缺参 400），且**没有编码的行要滤掉** ——
+ * 采购登记靠编码，一个没有编码的候选项点下去等于什么都没选。
+ */
+describe('物料检索（采购行的下拉）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    materialOptions.value = []
+  })
+
+  it('searchMaterials：打 /api/stock/list，分页参数必带，只保留有编码的行', async () => {
+    request.get.mockResolvedValue({
+      data: {
+        success: true,
+        dataList: [
+          { materialCode: '111001785', materialName: '硅粉', spec: '500kg/袋' },
+          { materialCode: '', materialName: '只有名字没有编码' },
+        ],
+        total: 2,
+      },
+    })
+
+    const options = await searchMaterials(' 硅 ')
+
+    const [url, config] = request.get.mock.calls.at(-1)
+    expect(url).toBe('/api/stock/list')
+    expect(config.params.pageNum).toBe(1)
+    expect(config.params.pageSize).toBe(20)
+    expect(config.params.keyword).toBe('硅')
+    expect(options).toHaveLength(1)
+    expect(options[0]).toEqual({
+      code: '111001785',
+      name: '硅粉',
+      spec: '500kg/袋',
+      label: '硅粉',
+    })
+  })
+
+  it('searchMaterials：主数据里没有名称时 label 回退成编码（下拉里不许出现空白项）', async () => {
+    request.get.mockResolvedValue({
+      data: { success: true, dataList: [{ materialCode: '220000469', materialName: null }] },
+    })
+
+    const options = await searchMaterials('220000469')
+
+    expect(options[0].name).toBe('')
+    expect(options[0].label).toBe('220000469')
+  })
+
+  it('searchMaterials：接口失败 → 返回空数组且不抛（下拉是辅助输入，取不到不打断填表）', async () => {
+    request.get.mockRejectedValue(new Error('boom'))
+    await expect(searchMaterials('硅')).resolves.toEqual([])
+    expect(materialOptions.value).toEqual([])
   })
 })

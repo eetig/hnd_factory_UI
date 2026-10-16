@@ -2376,6 +2376,35 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     ).toBe(1)
   })
 
+  it('采购进度跟踪是「表内录入」，不许退回弹窗（变更-092）', () => {
+    /*
+     * 使用方原话：「PC端就不用这种卡片式，直接在行上面添加，物料名称可以搜索，实时搜索的形式，
+     * 物料编码自动带出，也可以根据物料编码搜索，物料名称自动带出。」
+     * 这条把那次决定钉住：改回弹窗、或者把两个物料框换回普通输入框（"实时搜索 + 互相带出"就没了），
+     * 都要在这里红一次，而不是等使用方再报一遍。
+     */
+    expect(
+      PURCHASE_PANEL.includes('<el-dialog'),
+      '采购面板又出现了 el-dialog：使用方明确要求 PC 端不要卡片式弹窗，改成表格第一行直接填、某行原地编辑。',
+    ).toBe(false)
+
+    // 两个物料框各在「新增行」与「编辑行」里出现一次 = 4 个 el-autocomplete
+    expect(
+      (PURCHASE_PANEL.match(/<el-autocomplete/g) || []).length,
+      '物料名称/物料编码必须是 el-autocomplete 远程检索（普通输入框就没有「实时搜索 + 互相带出」了）',
+    ).toBe(4)
+    expect(
+      PURCHASE_PANEL.includes('fetchMaterialSuggestions'),
+      '两个物料框没有接上防抖远程检索（useMaterialLookup 的 fetchMaterialSuggestions）',
+    ).toBe(true)
+
+    // 新增行与编辑行共用同一份字段表：两处各写一遍 9 个 <td> 迟早写歪
+    expect(
+      (PURCHASE_PANEL.match(/v-for="f in EDIT_FIELDS"/g) || []).length,
+      '新增行与编辑行没有共用 EDIT_FIELDS 字段表（应当各引用一次）',
+    ).toBe(2)
+  })
+
   it('媒体尺寸通用规则（变更-089）：不许用宽度定高度', () => {
     /*
      * 病史：体积计算页的画布写着 `w-full` + `maxWidth` + `aspectRatio` ——
