@@ -223,12 +223,15 @@ onMounted(loadPurchase)
             <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白 -->
             <td class="px-4 py-2.5 text-slate-600">
               {{ row.materialCode || '—' }}
+              <!-- ⚠️ 措辞要两种情况下都成立：有编码时后端**要么**把它登记进 0000 档、
+                   **要么**发现它本来就在库存表里而跳过。标成「已登记」会让后一种情况被误读成
+                   "它一定进了采购登记档」。说「总表可查」才是两句都真的话。 -->
               <span
                 v-if="row.materialCode"
                 class="ml-1 rounded-full border border-line px-1.5 text-[11px] text-slate-500"
-                title="带编码保存时，后端会把它登记进物料总表的「采购登记（无库存）」档"
+                title="有编码的行都能在物料总表里按编码查到：新编码由保存时登记进「采购登记（无库存）」档，原本就在库存表里的则保持原样"
               >
-                已登记
+                总表可查
               </span>
             </td>
             <td class="px-4 py-2.5 text-slate-600">{{ row.spec || '—' }}</td>
