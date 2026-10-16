@@ -166,6 +166,10 @@ export function buildPayload(draft) {
     medium: text(draft.medium),
     remark: text(draft.remark),
     imageFile: text(draft.imageFile),
+    // 底图坐标：手机端**不做标定**（在小屏上框选太费劲，标定留在电脑端），
+    // 这里只承担一件事 —— 「换图即作废旧坐标」：后端 save 会比对 imageFile 是否变了，
+    // 变了又没给新坐标就把旧坐标清成 NULL（变更-083）。留着旧坐标会让液面画在错误位置且不报错。
+    imageBounds: text(draft.imageBounds),
   }
 }
 

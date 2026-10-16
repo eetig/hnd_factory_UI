@@ -67,7 +67,28 @@ async function onSaved() {
   await loadLedger()
 }
 
+/**
+ * 「不能启用」的原因（服务端下发的整句，见 EquipmentLedgerVO.enableBlockReason）；
+ * 可启用或已启用时为空。**规则只有服务端一份**，这里不重复实现。
+ */
+function blockReasonOf(row) {
+  if (row.enabled === 1) return ''
+  return row.enableBlockReason || ''
+}
+
+/** 有底图但没标定坐标：进不了体积计算页的下拉，卡片上给个标识 */
+function uncalibrated(row) {
+  return Boolean(row.imageFile) && !row.imageBounds
+}
+
 async function toggleEnabled(row) {
+  // 启用门槛（变更-081/082）：不合规连请求都不发，直接把原因摆出来。
+  // 手机上没有 hover，所以不靠 tooltip —— 点一下给弹窗（原因是一整句，toast 显示不下）。
+  const blocked = blockReasonOf(row)
+  if (row.enabled !== 1 && blocked) {
+    uni.showModal({ title: '不能启用', content: blocked, showCancel: false, confirmText: '知道了' })
+    return
+  }
   try {
     await setLedgerEnabled(row.id, row.enabled !== 1)
     toast.success(row.enabled === 1 ? '已停用' : '已启用')
@@ -136,9 +157,17 @@ function thumbOf(row) {
           {{ row.medium || '介质未填' }}
         </text>
         <text v-if="row.enabled !== 1" class="eq-card__badge">已停用</text>
+        <!-- 有图但没坐标 = 进不了体积计算页的下拉；标定在电脑端做（本端不做标定） -->
+        <text v-if="uncalibrated(row)" class="eq-card__badge">底图未标定</text>
+        <text v-if="blockReasonOf(row)" class="eq-card__badge">暂不可启用</text>
       </view>
 
-      <view v-if="canEdit" class="eq-card__side" @click.stop="toggleEnabled(row)">
+      <view
+        v-if="canEdit"
+        class="eq-card__side"
+        :class="{ 'is-blocked': !!blockReasonOf(row) }"
+        @click.stop="toggleEnabled(row)"
+      >
         <text>{{ row.enabled === 1 ? '停用' : '启用' }}</text>
       </view>
     </view>
@@ -315,5 +344,10 @@ function thumbOf(row) {
   padding: 12rpx 16rpx;
   font-size: 24rpx;
   color: var(--ui-gold-600);
+}
+
+/* 不合规的行：按钮仍然可点（点了会弹出"缺什么"），只是看起来不该点 */
+.eq-card__side.is-blocked {
+  color: var(--ui-slate-400);
 }
 </style>
