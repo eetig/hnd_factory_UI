@@ -209,6 +209,32 @@ function quantityText(row) {
 }
 
 /**
+ * 状态标签后面跟的「几天」（变更-097d）。
+ *
+ * 使用方原话：「进度下面的比如临期、超期之类的，要说明多少天」。
+ * 只给两个状态补天数，因为只有这两个状态"差几天"才是行动信息：
+ *   · 超期 → 已超 N 天
+ *   · 临期 → 还剩 N 天（当天到期显示「今天」）
+ * 等货还早、待提单还没提单、已到货已经结束 —— 给它们标天数是噪音。
+ *
+ * ⚠️ 天数来自后端（`overdueDays` / `daysToDue`），前端不自己算日期，
+ * 免得和后端跨天的那一刻算出不同结果。
+ */
+function dayHint(row) {
+  if (row.status === 'OVERDUE' && row.overdueDays) {
+    return `${row.overdueDays}天`
+  }
+  if (row.status === 'DUE_SOON') {
+    const days = row.daysToDue
+    if (days === null || days === undefined) {
+      return ''
+    }
+    return days === 0 ? '今天' : `${days}天`
+  }
+  return ''
+}
+
+/**
  * 汇总栏的按钮组：点数字＝按那个状态筛。
  *
  * 顺序按"最该先看的"排：超期 → 临期 → 待提单 → 等货 → 已到货 → 部分到货。
@@ -796,32 +822,26 @@ onUnmounted(cancelMaterialSearch)
             </template>
 
             <template v-else>
-              <!-- 进度标签：文案与颜色都来自后端派生值。超期额外显示"超期 N 天"，
-                   因为"还差几天"比"超期"本身更能决定先催哪一条。 -->
+              <!-- 进度标签：文案与颜色都来自后端派生值。
+                   临期/超期后面直接跟"几天"（使用方 2026-10-18：要能一眼看出差几天），
+                   「还差几天」比状态本身更能决定先催哪一条。 -->
               <td class="px-3 py-2">
                 <span
                   class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px]"
                   :class="statusClass(row.status)"
                   :title="row.overdueDays ? `已超期 ${row.overdueDays} 天` : (row.daysToDue !== null && row.daysToDue !== undefined ? `距要求到货 ${row.daysToDue} 天` : '')"
                 >
-                  {{ row.statusLabel }}<template v-if="row.status === 'OVERDUE' && row.overdueDays"> · {{ row.overdueDays }}天</template>
+                  {{ row.statusLabel }}<template v-if="dayHint(row)"> · {{ dayHint(row) }}</template>
                 </span>
               </td>
               <td class="px-3 py-2"><span class="block truncate text-slate-600" :title="row.requester || ''">{{ row.requester || '—' }}</span></td>
               <td class="px-3 py-2 text-slate-600">{{ row.requestDate || '—' }}</td>
               <td class="px-3 py-2 font-medium"><span class="block truncate" :title="row.materialName">{{ row.materialName }}</span></td>
-              <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白 -->
+              <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白。
+                   变更-097d：去掉原来的「总表可查」小胶囊 —— 使用方说它影响美观、又不影响功能
+                   （后端仍然会把编码登记进 material_stock 的 0000 档，只是界面上不再标注）。 -->
               <td class="px-3 py-2 text-slate-600">
-                {{ row.materialCode || '—' }}
-                <!-- ⚠️ 措辞要两种情况下都成立：有编码时后端**要么**把它登记进 0000 档、
-                     **要么**发现它本来就在库存表里而跳过。说「总表可查」才是两句都真的话。 -->
-                <span
-                  v-if="row.materialCode"
-                  class="ml-1 rounded-full border border-line px-1.5 text-[11px] text-slate-500"
-                  title="有编码的行都能在物料总表里按编码查到：新编码由保存时登记进「采购登记（无库存）」档，原本就在库存表里的则保持原样"
-                >
-                  总表可查
-                </span>
+                <span class="block truncate" :title="row.materialCode || ''">{{ row.materialCode || '—' }}</span>
               </td>
               <td class="px-3 py-2 text-slate-600"><div class="line-clamp-2" :title="row.spec || ''">{{ row.spec || '—' }}</div></td>
               <td class="px-3 py-2 text-slate-600">
