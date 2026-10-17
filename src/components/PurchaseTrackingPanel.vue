@@ -211,6 +211,24 @@ function quantityText(row) {
 }
 
 /**
+ * OA 的「按单号筛列表」地址前缀（变更-099）。
+ *
+ * ⚠️ 这是 OA（蓝凌 EKP）前端的 hash 路由，**不是我们的接口**：
+ *    `#/j_path=%2FlistAll`（= /listAll）+ `mydoc=all` + `criteria=docNumber%3A<单号>`
+ * 实测 2026-10-18：粘上单号就能筛出唯一那张单，再从列表点进表单。
+ * 若哪天 OA 升级改了路由，只需要改这一个常量（不用动库、不用动后端）。
+ * 域名同理：换环境改这里。
+ */
+const OA_SEARCH_BASE =
+  'https://ekp.batf.cn/ssc/fee/#/j_path=%2FlistAll&mydoc=all&criteria=docNumber%3A'
+
+/** 单号 → OA 筛选地址；单号里万一有 & # 这类字符也不会把 URL 拼坏 */
+function oaSearchLink(oaNo) {
+  const code = (oaNo ?? '').toString().trim()
+  return code ? OA_SEARCH_BASE + encodeURIComponent(code) : ''
+}
+
+/**
  * 状态标签后面跟的「几天」（变更-097d）。
  *
  * 使用方原话：「进度下面的比如临期、超期之类的，要说明多少天」。
@@ -859,7 +877,24 @@ onUnmounted(cancelMaterialSearch)
               </td>
               <td class="px-3 py-2 whitespace-nowrap text-slate-600">{{ quantityText(row) }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
-              <td class="px-3 py-2 text-slate-600"><span class="block truncate" :title="row.oaNo || ''">{{ row.oaNo || '—' }}</span></td>
+              <!-- OA 单号 → 点开 OA 的「单号筛选」列表（变更-099）。
+                   为什么是列表而不是表单：表单要 fdId（OA 内部主键），而 URL 里没有单号；
+                   但 OA 的 listAll 路由支持 criteria=docNumber:<单号> 精确筛一张单 ——
+                   实测地址形如 /ssc/fee/#/j_path=%2FlistAll&mydoc=all&criteria=docNumber%3AF-ZCSG-20261001。
+                   代价是多点一次（列表里就 1 行）；好处是那列表还顺带显示
+                   「当前处理人 / 文档状态（审批中）」，比直接进表单信息更多。
+                   没有单号就保持普通文字 —— 看着像链接点不动最恼人。 -->
+              <td class="px-3 py-2 text-slate-600">
+                <a
+                  v-if="row.oaNo"
+                  :href="oaSearchLink(row.oaNo)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="block truncate text-brand hover:underline"
+                  :title="`在 OA 里打开 ${row.oaNo}`"
+                >{{ row.oaNo }}</a>
+                <template v-else>—</template>
+              </td>
               <!-- 送货单三态（变更-094）：图片 → 缩略图（点开看原图）；文本 → 原样显示
                    （这一列原本是「送货单号」文本，老数据不许当坏数据）；空 → 未到货。
                    这是「进度」这一列的核心信息，所以空着要用灰字说清楚而不是留白。 -->
