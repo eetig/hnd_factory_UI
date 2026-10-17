@@ -96,6 +96,7 @@ function blankDraft() {
     materialName: '',
     materialCode: '',
     spec: '',
+    purpose: '',
     category: '',
     quantity: '',
     unit: '',
@@ -122,6 +123,7 @@ const EDIT_FIELDS = [
   { key: 'materialName', kind: 'materialName', placeholder: '打字搜物料名称', aria: '物料名称' },
   { key: 'materialCode', kind: 'materialCode', placeholder: '打字搜物料编码', aria: '物料编码' },
   { key: 'spec', kind: 'text', placeholder: '规格型号', aria: '规格型号' },
+  { key: 'purpose', kind: 'text', placeholder: '用途（这料拿去干嘛）', aria: '用途' },
   { key: 'category', kind: 'select', aria: '类别' },
   { key: 'quantity', kind: 'quantity', aria: '数量与单位' },
   { key: 'requiredArrivalDate', kind: 'date', aria: '要求到货日期' },
@@ -295,6 +297,7 @@ function startEdit(row) {
     materialName: row.materialName ?? '',
     materialCode: row.materialCode ?? '',
     spec: row.spec ?? '',
+    purpose: row.purpose ?? '',
     category: row.category ?? '',
     quantity: row.quantity ?? '',
     unit: row.unit ?? '',
@@ -491,7 +494,7 @@ onUnmounted(cancelMaterialSearch)
       <!-- 列宽写死（table-fixed + colgroup）：15 列用 table-layout:auto 时，浏览器会把每列压到
        "一个汉字"的宽度，长规格型号就变成竖排的一列 —— 2026-10-18 使用方截图就是这个现象。
        写死之后：窄列不再被压扁，长文本用 line-clamp/truncate 收口，悬停看全文。 -->
-      <table class="w-full min-w-[1740px] table-fixed text-sm">
+      <table class="w-full min-w-[1850px] table-fixed text-sm">
         <colgroup>
           <col class="w-[56px]" />
           <col class="w-[92px]" />
@@ -499,7 +502,8 @@ onUnmounted(cancelMaterialSearch)
           <col class="w-[112px]" />
           <col class="w-[116px]" />
           <col class="w-[120px]" />
-          <col class="w-[260px]" />
+          <col class="w-[240px]" />
+          <col class="w-[130px]" />
           <col class="w-[80px]" />
           <col class="w-[84px]" />
           <col class="w-[112px]" />
@@ -521,6 +525,7 @@ onUnmounted(cancelMaterialSearch)
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">物料名称</th>
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">物料编码</th>
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">规格型号</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">用途</th>
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">类别</th>
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">数量</th>
             <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">要求到货日期</th>
@@ -844,6 +849,7 @@ onUnmounted(cancelMaterialSearch)
                 <span class="block truncate" :title="row.materialCode || ''">{{ row.materialCode || '—' }}</span>
               </td>
               <td class="px-3 py-2 text-slate-600"><div class="line-clamp-2" :title="row.spec || ''">{{ row.spec || '—' }}</div></td>
+              <td class="px-3 py-2 text-slate-600"><div class="line-clamp-2" :title="row.purpose || ''">{{ row.purpose || '—' }}</div></td>
               <td class="px-3 py-2 text-slate-600">
                 <span
                   v-if="row.category"
@@ -898,7 +904,7 @@ onUnmounted(cancelMaterialSearch)
 
           <tr v-if="!rows.length">
             <td
-              :colspan="canEdit ? 15 : 14"
+              :colspan="canEdit ? 16 : 15"
               class="px-4 py-10 text-center text-sm text-slate-500"
             >
               {{ loading ? '正在加载…' : '还没有采购需求记录 —— 在第一行直接填就能加一条' }}

@@ -268,6 +268,7 @@ export function buildPurchasePayload(draft) {
     materialName: (draft.materialName ?? '').toString().trim(),
     materialCode: text(draft.materialCode),
     spec: text(draft.spec),
+    purpose: text(draft.purpose),
     category: text(draft.category),
     quantity: decimal(draft.quantity),
     unit: text(draft.unit),

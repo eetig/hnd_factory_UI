@@ -56,6 +56,7 @@ describe('采购需求详情数据层', () => {
       materialName: ' 硅粉 ',
       materialCode: ' 111001785 ',
       spec: '500kg/袋',
+      purpose: '机械密封',
       category: '原料',
       quantity: '3',
       unit: '袋',
@@ -75,6 +76,7 @@ describe('采购需求详情数据层', () => {
         'materialName',
         'materialCode',
         'spec',
+        'purpose',
         'category',
         'quantity',
         'unit',
@@ -109,6 +111,7 @@ describe('采购需求详情数据层', () => {
     expect(payload.requestDate).toBeNull()
     expect(payload.materialCode).toBeNull()
     expect(payload.spec).toBeNull()
+    expect(payload.purpose).toBeNull()
     expect(payload.requiredArrivalDate).toBeNull()
     expect(payload.oaNo).toBeNull()
     expect(payload.deliveryNote).toBeNull()
