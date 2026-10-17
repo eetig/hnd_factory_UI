@@ -951,4 +951,28 @@ onUnmounted(cancelMaterialSearch)
 .purchase-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/*
+ * 单元格里的控件不许撑破列宽（2026-10-18 使用方截图反馈「上面的框都重叠了」）。
+ *
+ * 根因：Element Plus 的日期选择器自带 `width: var(--el-date-editor-width)`，默认 220px；
+ * 而这一页是 table-fixed，日期那两列只有 112/108px —— 控件按 220px 渲染，于是向右溢出、
+ * 盖住隔壁「OA 单号」「备注」的输入框。`w-full` 类权重不够（同为单类选择器，顺序不定），
+ * 所以在组件里用 :deep() 提一级特异性，把宽度压回 100%。
+ * min-width:0 是必须的：flex/grid 子项默认 min-width:auto，光设 width 仍会被内容撑住。
+ */
+.purchase-scroll :deep(.el-date-editor.el-input),
+.purchase-scroll :deep(.el-date-editor .el-input__wrapper) {
+  width: 100%;
+  min-width: 0;
+}
+.purchase-scroll :deep(.el-input),
+.purchase-scroll :deep(.el-select),
+.purchase-scroll :deep(.el-autocomplete) {
+  min-width: 0;
+}
+.purchase-scroll :deep(.el-select__wrapper) {
+  min-width: 0;
+}
+
 </style>
