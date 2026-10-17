@@ -274,6 +274,7 @@ export function buildPurchasePayload(draft) {
     unit: text(draft.unit),
     requiredArrivalDate: date(draft.requiredArrivalDate),
     oaNo: text(draft.oaNo),
+    oaUrl: text(draft.oaUrl),
     deliveryNote: text(draft.deliveryNote),
     receivedQuantity: decimal(draft.receivedQuantity),
     actualArrivalDate: date(draft.actualArrivalDate),

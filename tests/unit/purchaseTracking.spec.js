@@ -82,6 +82,7 @@ describe('采购需求详情数据层', () => {
         'unit',
         'requiredArrivalDate',
         'oaNo',
+        'oaUrl',
         'deliveryNote',
         'receivedQuantity',
         'actualArrivalDate',
