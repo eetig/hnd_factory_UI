@@ -30,14 +30,14 @@ const {
 } = usePurchaseTracking()
 
 /**
- * 采购进度跟踪数据层单测（变更-091）。
+ * 采购需求详情（原「采购进度跟踪」）数据层单测（变更-091）。
  *
  * 这里守的是**跨端契约**：字段名与参数名必须与后端
  * `PurchaseTrackingSaveDTO` / `PurchaseTrackingQueryDTO` 一字不差 ——
  * 名字错了不会报错，只会静默把某个字段存成空（最难发现的那类）。
  * 另有两条行为约定：查询失败**不清空已有数据**；成功响应才写 rows/total。
  */
-describe('采购进度跟踪数据层', () => {
+describe('采购需求详情数据层', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     rows.value = []

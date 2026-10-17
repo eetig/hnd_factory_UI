@@ -39,5 +39,21 @@ export const STATUS_TEXT = {
   warning: 'text-amber-700', // 白底 5.02
 }
 
+// 整行淡底（变更-097）：用于「一眼看出这行是什么状态」的表格行。
+//
+// ⚠️ 只用 -50 档 + 低透明度，**不要加深**：一张表十几列，底色一重就变成色块迷宫，
+// 扫读反而更慢。底色只负责"分区"，精确含义交给同一行的胶囊标签（STATUS_TONE）。
+// 也不要用 -100/-200：那几档在 8px 字号下会把黑字压得看不清。
+//
+// 为什么放在本文件：这些类名在视觉守卫里是「语义色」，只有本文件豁免 sky-/emerald- 的
+// 禁用规则（见 tests/unit/visualTokens.spec.js）。散落到组件里会被守卫判为回流。
+export const STATUS_ROW_TONE = {
+  error: 'bg-rose-50/60',
+  success: 'bg-emerald-50/50',
+  warning: 'bg-amber-50/60',
+  info: 'bg-sky-50/50',
+  neutral: 'bg-slate-50',
+}
+
 // 形状不归这里管：面板级状态圆是 h-12 w-12 rounded-full，横幅级是 h-8 w-8
 // rounded-full，内联胶囊又是另一套。色调与形状分开，换形状时不必动本文件。

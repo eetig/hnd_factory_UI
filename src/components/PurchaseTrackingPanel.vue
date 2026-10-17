@@ -13,7 +13,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import { hasPerm } from '../api/auth'
-import { STATUS_TONE } from '../constants/statusTones'
+import { STATUS_ROW_TONE, STATUS_TONE } from '../constants/statusTones'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { useMaterialLookup } from '../composables/useMaterialLookup'
 import {
@@ -24,7 +24,8 @@ import {
 import DeliveryNoteUpload from './DeliveryNoteUpload.vue'
 
 /**
- * 采购进度跟踪（变更-091，2026-10-16；变更-092 改成表内录入；变更-096 加进度字段与汇总栏）。
+ * 采购需求详情（原名「采购进度跟踪」，变更-091，2026-10-16；变更-092 改成表内录入；
+ * 变更-096 加进度字段与汇总栏；变更-097 改名并挪到「数据统计」组）。
  *
  * 使用方原话：「PC端就不用这种卡片式，直接在行上面添加，物料名称可以搜索，实时搜索的形式，
  * 物料编码自动带出，也可以根据物料编码搜索，物料名称自动带出。」
@@ -35,7 +36,7 @@ import DeliveryNoteUpload from './DeliveryNoteUpload.vue'
  * 打名称搜、打编码也搜，**选中**后互相带出（只是打字不互填 —— 否则半个名字会把编码冲掉）。
  *
  * 变更-096 加的进度能力（使用方：「要实时掌握它的进度，也要跟进，避免采购误了工期」）：
- *   · 顶部**汇总栏**（待提OA / 等货 / 临期 / 超期 / 已到货 / 部分到货），数字来自服务端聚合；
+ *   · 顶部**汇总栏**（待提单 / 等货 / 临期 / 超期 / 已到货 / 部分到货），数字来自服务端聚合；
  *   · 行首**状态标签**，超期标红、临期标黄；口径由后端算好，前端只上色；
  *   · 新增 类别 / 数量+单位 / 实际到货日期 / 实际到货数量。
  *
@@ -173,6 +174,31 @@ function statusClass(status) {
   }
 }
 
+/**
+ * 整行淡底（变更-097）。与 `statusClass` 一一对应，只是换成行级色档。
+ *
+ * 使用方要求「待提单/已到货/部分到货/超期各一种颜色，直观好看」。
+ * 分寸：**底色只负责分区，精确含义交给同行的胶囊标签** —— 六种状态全上重色会变迷宫。
+ * 「等货」是最常见的常态，故意不上色（白底），这样它的邻居一染色就跳出来了。
+ */
+function rowTone(status) {
+  switch (status) {
+    case 'OVERDUE':
+      return STATUS_ROW_TONE.error
+    case 'DUE_SOON':
+      return STATUS_ROW_TONE.warning
+    case 'ARRIVED':
+      return STATUS_ROW_TONE.success
+    case 'PARTIAL':
+      return STATUS_ROW_TONE.info
+    case 'PENDING_OA':
+      return STATUS_ROW_TONE.neutral
+    case 'WAITING':
+    default:
+      return ''
+  }
+}
+
 /** 「3 个」；数量为空显示「—」（历史数据没有数量列） */
 function quantityText(row) {
   const qty = row.quantity === null || row.quantity === undefined ? '' : String(row.quantity)
@@ -185,14 +211,14 @@ function quantityText(row) {
 /**
  * 汇总栏的按钮组：点数字＝按那个状态筛。
  *
- * 顺序按"最该先看的"排：超期 → 临期 → 待提OA → 等货 → 已到货 → 部分到货。
+ * 顺序按"最该先看的"排：超期 → 临期 → 待提单 → 等货 → 已到货 → 部分到货。
  * 「全部」放最前面当复位。数字全部来自服务端聚合，前端不做加减（见 composable 注释）。
  */
 const statusChips = computed(() => [
   { value: '', label: '全部', count: summary.value.total },
   { value: 'OVERDUE', label: '超期', count: summary.value.overdue },
   { value: 'DUE_SOON', label: '临期', count: summary.value.dueSoon },
-  { value: 'PENDING_OA', label: '待提OA', count: summary.value.pendingOa },
+  { value: 'PENDING_OA', label: '待提单', count: summary.value.pendingOa },
   { value: 'WAITING', label: '等货', count: summary.value.waiting },
   { value: 'ARRIVED', label: '已到货', count: summary.value.arrived },
   { value: 'PARTIAL', label: '部分到货', count: summary.value.partial },
@@ -344,7 +370,7 @@ onUnmounted(cancelMaterialSearch)
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
     <div class="shrink-0 border-b border-line px-6 py-3">
       <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <p class="text-sm font-medium text-slate-700">采购进度跟踪</p>
+        <p class="text-sm font-medium text-slate-700">采购需求详情</p>
         <p class="text-xs text-slate-500">
           <template v-if="loading">查询中…</template>
           <template v-else>共 {{ total }} 条</template>
@@ -395,7 +421,7 @@ onUnmounted(cancelMaterialSearch)
       <!-- 汇总栏（变更-096）：数字全部来自服务端聚合，点一下＝按该状态筛。
            刻意不做图表 —— 这一栏要回答的是「有几条要催」，不是「趋势怎么样」。 -->
       <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-        <span class="text-xs text-slate-500">进度概览</span>
+        <span class="text-xs text-slate-500">状态概览</span>
         <button
           v-for="chip in statusChips"
           :key="chip.value || 'all'"
@@ -607,13 +633,7 @@ onUnmounted(cancelMaterialSearch)
             :key="row.id"
             class="border-t border-line"
             :class="[
-              edit && edit.id === row.id
-                ? 'bg-region/40'
-                : row.status === 'OVERDUE'
-                  ? 'bg-rose-50/50'
-                  : row.status === 'DUE_SOON'
-                    ? 'bg-amber-50/50'
-                    : '',
+              edit && edit.id === row.id ? 'bg-region/40' : rowTone(row.status),
             ]"
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号核对，一翻页重新数会串 -->

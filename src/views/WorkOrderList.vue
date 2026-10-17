@@ -85,12 +85,14 @@ const tabs = [
   // 将来要放开给非 admin 的维护员时只需给角色加权限位，不必动这里的结构。
   { key: 'equipment', label: '设备数据维护', perm: 'equipment:edit', group: 'maintain' },
   { key: 'electricity', label: '电费预提', group: 'tools' },
-  // 采购进度跟踪（2026-10-10 挂入口；变更-096 起只给 admin）。
+  // 采购需求详情（2026-10-10 挂入口；变更-096 起只给 admin；变更-097 改名并挪到「数据统计」组）。
+  // 为什么在 stats 组：改叫「详情」之后它不是"算一算"的工具，而是查台账的页，
+  // 与「周统计 / 日报表记录 / 月底储罐液位记录」同类（侧栏那行提示就写着"周统计与台账记录"）。
   // 为什么是 adminOnly 而不是权限位：使用方 2026-10-17 的原话是「这页只有管理员能看」，
   // 背后 GET /api/purchase/** 已收进后端的 ADMIN_READ_PATTERNS —— 两边必须同口径，
   // 只藏前端等于数据仍然公开，只锁后端等于非 admin 点进来满屏 403。
   // 将来做「车间主任/采购只看自己那部分」的看板时，再改成 perm 并把后端拆出只读接口。
-  { key: 'purchase', label: '采购进度跟踪', adminOnly: true, group: 'tools' },
+  { key: 'purchase', label: '采购需求详情', adminOnly: true, group: 'stats' },
   { key: 'import', label: '文件导入', perm: 'work_order:import', group: 'maintain' },
   // 图片解析：单据图片识别辅助录入（变更-003）。与文件导入同属录入入口，沿用同一权限位
   { key: 'imageParse', label: '图片解析', perm: 'work_order:import', group: 'maintain' },
@@ -3796,7 +3798,7 @@ watch(activeTab, (tab) => {
               </section>
             </div>
 
-            <!-- 采购进度跟踪（变更-091）：需求登记 → 下单 → 到货的流水台账。
+            <!-- 采购需求详情（变更-091）：需求登记 → 下单 → 到货的流水台账。
                  包装层接上 038/044/088 那张定高方子（卡片撑满 + 表格区自己滚 + 分页行钉底），
                  面板文件里是完整链条。 -->
             <div v-if="mountedTabs.has('purchase')" v-show="activeTab === 'purchase'" class="flex h-full flex-col">
