@@ -56,9 +56,14 @@ describe('采购进度跟踪数据层', () => {
       materialName: ' 硅粉 ',
       materialCode: ' 111001785 ',
       spec: '500kg/袋',
+      category: '原料',
+      quantity: '3',
+      unit: '袋',
       requiredArrivalDate: '2026-11-01',
-      purchaseOrderNo: 'PO-2026-001',
-      deliveryNote: 'DN-9',
+      oaNo: 'OA-2026-001',
+      deliveryNote: '/files/a.png',
+      receivedQuantity: '2',
+      actualArrivalDate: '2026-10-30',
       remark: '急',
     })
 
@@ -70,9 +75,14 @@ describe('采购进度跟踪数据层', () => {
         'materialName',
         'materialCode',
         'spec',
+        'category',
+        'quantity',
+        'unit',
         'requiredArrivalDate',
-        'purchaseOrderNo',
+        'oaNo',
         'deliveryNote',
+        'receivedQuantity',
+        'actualArrivalDate',
         'remark',
       ].sort(),
     )
@@ -84,6 +94,13 @@ describe('采购进度跟踪数据层', () => {
     expect(payload.requiredArrivalDate).toBe('2026-11-01')
     expect(payload.materialCode).toBe('111001785')
     expect(payload.id).toBe(7)
+    // 变更-096：数量类发**数字**而不是字符串（后端是 BigDecimal，"" 会解析失败）
+    expect(payload.quantity).toBe(3)
+    expect(payload.receivedQuantity).toBe(2)
+    expect(payload.category).toBe('原料')
+    expect(payload.unit).toBe('袋')
+    expect(payload.oaNo).toBe('OA-2026-001')
+    expect(payload.actualArrivalDate).toBe('2026-10-30')
   })
 
   it('buildPurchasePayload：空值一律 null（可空列交给后端写 NULL），不是空串', () => {
@@ -93,9 +110,20 @@ describe('采购进度跟踪数据层', () => {
     expect(payload.materialCode).toBeNull()
     expect(payload.spec).toBeNull()
     expect(payload.requiredArrivalDate).toBeNull()
-    expect(payload.purchaseOrderNo).toBeNull()
+    expect(payload.oaNo).toBeNull()
     expect(payload.deliveryNote).toBeNull()
     expect(payload.remark).toBeNull()
+    // 变更-096 的 5 个新字段同样是"没填 = null"
+    expect(payload.category).toBeNull()
+    expect(payload.quantity).toBeNull()
+    expect(payload.unit).toBeNull()
+    expect(payload.receivedQuantity).toBeNull()
+    expect(payload.actualArrivalDate).toBeNull()
+  })
+
+  it('buildPurchasePayload：数量填了非数字不发 NaN（退化成 null，避免整次保存 400）', () => {
+    const payload = buildPurchasePayload({ requester: '王五', materialName: '法兰', quantity: 'abc' })
+    expect(payload.quantity).toBeNull()
   })
 
   it('loadPurchase：页码与每页条数必带；关键字/日期只在填了时才带（空串不发）', async () => {

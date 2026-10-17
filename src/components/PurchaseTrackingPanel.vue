@@ -8,9 +8,12 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElPagination,
+  ElSelect,
 } from 'element-plus'
 import { hasPerm } from '../api/auth'
+import { STATUS_TONE } from '../constants/statusTones'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { useMaterialLookup } from '../composables/useMaterialLookup'
 import {
@@ -21,7 +24,7 @@ import {
 import DeliveryNoteUpload from './DeliveryNoteUpload.vue'
 
 /**
- * 采购进度跟踪（变更-091，2026-10-16；变更-092 改成表内录入）。
+ * 采购进度跟踪（变更-091，2026-10-16；变更-092 改成表内录入；变更-096 加进度字段与汇总栏）。
  *
  * 使用方原话：「PC端就不用这种卡片式，直接在行上面添加，物料名称可以搜索，实时搜索的形式，
  * 物料编码自动带出，也可以根据物料编码搜索，物料名称自动带出。」
@@ -31,12 +34,19 @@ import DeliveryNoteUpload from './DeliveryNoteUpload.vue'
  * 物料两个框是 `el-autocomplete` 远程检索（`/api/stock/list`，见 useMaterialLookup）：
  * 打名称搜、打编码也搜，**选中**后互相带出（只是打字不互填 —— 否则半个名字会把编码冲掉）。
  *
- * ⚠️ 写操作按权限位 `purchase:edit` 显隐；查询对所有人开放（列表接口本来就免登录）。
- * 后端另有 @SaCheckPermission 兜底：界面藏了不等于接口安全，两层都要在。
+ * 变更-096 加的进度能力（使用方：「要实时掌握它的进度，也要跟进，避免采购误了工期」）：
+ *   · 顶部**汇总栏**（待提OA / 等货 / 临期 / 超期 / 已到货 / 部分到货），数字来自服务端聚合；
+ *   · 行首**状态标签**，超期标红、临期标黄；口径由后端算好，前端只上色；
+ *   · 新增 类别 / 数量+单位 / 实际到货日期 / 实际到货数量。
+ *
+ * ⚠️ 写操作按权限位 `purchase:edit` 显隐。**查询原先对所有人开放，变更-096 起收紧为仅 admin**
+ * （后端 `SaTokenConfigure` 的 ADMIN_READ_PATTERNS 里有 /api/purchase/**）——
+ * 界面和后端两层都要在：只藏前端 = 数据仍然公开。
  */
 const {
   rows,
   total,
+  summary,
   loading,
   saving,
   loadError,
@@ -45,6 +55,8 @@ const {
   keyword,
   rangeStart,
   rangeEnd,
+  statusFilter,
+  categoryFilter,
   loadPurchase,
   loadPurchasePage,
   applyPurchaseFilters,
@@ -67,6 +79,15 @@ const draft = reactive({})
 const edit = ref(null)
 const message = ref('')
 
+/** 类别枚举（与后端约定一致；统计时这是第一个会切的维度） */
+const CATEGORY_OPTIONS = ['备件', '原料', '设备', '其他']
+
+/**
+ * 常见单位候选（`allow-create` 允许自己敲）：
+ * 固定清单会挡住"公斤/桶/卷"这类，自由输入又会写成 个/只/件 三种并存 —— 折中成"给常用值、也能自填"。
+ */
+const UNIT_OPTIONS = ['个', '台', '套', '件', '只', '米', '公斤', '桶', '卷', '张']
+
 function blankDraft() {
   return {
     requester: '',
@@ -74,18 +95,25 @@ function blankDraft() {
     materialName: '',
     materialCode: '',
     spec: '',
+    category: '',
+    quantity: '',
+    unit: '',
     requiredArrivalDate: '',
-    purchaseOrderNo: '',
+    oaNo: '',
     deliveryNote: '',
+    receivedQuantity: '',
+    actualArrivalDate: '',
     remark: '',
   }
 }
 
 /**
- * 可编辑单元格的字段表 —— 新增行与编辑行共用一份，避免两处各写 9 个 <td> 而慢慢写歪。
+ * 可编辑单元格的字段表 —— 新增行与编辑行共用一份，避免两处各写十几个 <td> 而慢慢写歪。
  *
- * kind 决定用哪个控件：text=input、date=el-date-picker、materialName/materialCode=el-autocomplete。
- * **顺序与表头一一对应**（含备注列；备注是库里的字段，不给它留列就永远填不进去）。
+ * kind 决定用哪个控件：text=input、date=el-date-picker、select=el-select、
+ * materialName/materialCode=el-autocomplete、image=上传控件、
+ * quantity=**一格两个控件**（数量 + 单位，因为它们分开填没意义、合起来又只是两列文字）。
+ * **顺序与表头一一对应**（状态列是派生值，不在本表里，单独渲染）。
  */
 const EDIT_FIELDS = [
   { key: 'requester', kind: 'text', placeholder: '需求人', aria: '需求人' },
@@ -93,13 +121,88 @@ const EDIT_FIELDS = [
   { key: 'materialName', kind: 'materialName', placeholder: '打字搜物料名称', aria: '物料名称' },
   { key: 'materialCode', kind: 'materialCode', placeholder: '打字搜物料编码', aria: '物料编码' },
   { key: 'spec', kind: 'text', placeholder: '规格型号', aria: '规格型号' },
+  { key: 'category', kind: 'select', aria: '类别' },
+  { key: 'quantity', kind: 'quantity', aria: '数量与单位' },
   { key: 'requiredArrivalDate', kind: 'date', aria: '要求到货日期' },
-  { key: 'purchaseOrderNo', kind: 'text', placeholder: '订单号', aria: '采购订单号' },
+  { key: 'oaNo', kind: 'text', placeholder: 'OA 单号', aria: 'OA 单号' },
   // 送货单是一张图片（变更-094，使用方：「送货单是一张图片」）—— 不再是文本框，
   // 换成上传控件（选图即传、显示缩略图、可重传/删除）。
   { key: 'deliveryNote', kind: 'image', aria: '送货单图片' },
+  { key: 'actualArrivalDate', kind: 'date', aria: '实际到货日期' },
   { key: 'remark', kind: 'text', placeholder: '备注', aria: '备注' },
 ]
+
+/**
+ * 「全到」：把到货数量填成需求数量、到货日期填成今天。
+ *
+ * 为什么给这个按钮：变更-096 的「部分到货」判断要求两个数量都在。
+ * 多数情况是一次到齐，逼人手动抄一遍数字，最后一定是没人填 —— 那就永远判不出部分到货。
+ */
+function markAllDelivered(target) {
+  const need = (target.quantity ?? '').toString().trim()
+  if (!need) {
+    ElMessage.warning('先填需求数量，才知道"全到"是多少')
+    return
+  }
+  target.receivedQuantity = need
+  target.actualArrivalDate = new Date().toISOString().slice(0, 10)
+}
+
+/**
+ * 状态标签的配色。
+ *
+ * 只做**上色**，不判断状态 —— `row.status` 是后端算好的（口径唯一）。
+ * 用的是 `constants/statusTones.js` 那张语义色表（error/warning/success/info/neutral），
+ * 不自己写 Tailwind 色阶：那张表的每个组合都按 WCAG 算过对比度，
+ * 手写 `bg-rose-50 text-rose-500` 这类会悄悄掉到 AA 以下（那个坑已经踩过一次）。
+ */
+function statusClass(status) {
+  switch (status) {
+    case 'OVERDUE':
+      return STATUS_TONE.error
+    case 'DUE_SOON':
+      return STATUS_TONE.warning
+    case 'ARRIVED':
+      return STATUS_TONE.success
+    case 'PARTIAL':
+      return STATUS_TONE.info
+    case 'PENDING_OA':
+    case 'WAITING':
+    default:
+      return STATUS_TONE.neutral
+  }
+}
+
+/** 「3 个」；数量为空显示「—」（历史数据没有数量列） */
+function quantityText(row) {
+  const qty = row.quantity === null || row.quantity === undefined ? '' : String(row.quantity)
+  if (!qty) {
+    return '—'
+  }
+  return row.unit ? `${qty} ${row.unit}` : qty
+}
+
+/**
+ * 汇总栏的按钮组：点数字＝按那个状态筛。
+ *
+ * 顺序按"最该先看的"排：超期 → 临期 → 待提OA → 等货 → 已到货 → 部分到货。
+ * 「全部」放最前面当复位。数字全部来自服务端聚合，前端不做加减（见 composable 注释）。
+ */
+const statusChips = computed(() => [
+  { value: '', label: '全部', count: summary.value.total },
+  { value: 'OVERDUE', label: '超期', count: summary.value.overdue },
+  { value: 'DUE_SOON', label: '临期', count: summary.value.dueSoon },
+  { value: 'PENDING_OA', label: '待提OA', count: summary.value.pendingOa },
+  { value: 'WAITING', label: '等货', count: summary.value.waiting },
+  { value: 'ARRIVED', label: '已到货', count: summary.value.arrived },
+  { value: 'PARTIAL', label: '部分到货', count: summary.value.partial },
+])
+
+/** 点汇总按钮 = 设上状态筛选并回第 1 页重查（已选中的再点一次＝取消） */
+function toggleStatusFilter(value) {
+  statusFilter.value = statusFilter.value === value ? '' : value
+  applyPurchaseFilters()
+}
 
 /**
  * 从下拉里选中一条物料后互相带出。
@@ -140,9 +243,14 @@ function startEdit(row) {
     materialName: row.materialName ?? '',
     materialCode: row.materialCode ?? '',
     spec: row.spec ?? '',
+    category: row.category ?? '',
+    quantity: row.quantity ?? '',
+    unit: row.unit ?? '',
     requiredArrivalDate: row.requiredArrivalDate ?? '',
-    purchaseOrderNo: row.purchaseOrderNo ?? '',
+    oaNo: row.oaNo ?? '',
     deliveryNote: row.deliveryNote ?? '',
+    receivedQuantity: row.receivedQuantity ?? '',
+    actualArrivalDate: row.actualArrivalDate ?? '',
     remark: row.remark ?? '',
   }
   message.value = ''
@@ -173,7 +281,9 @@ async function handleCreate() {
     return
   }
   try {
-    await savePurchase(draft)
+    // gotoFirstPage：变更-093 的遗留问题 —— 原先保存完停在当前页，
+    // 而排序是"提出需求日期倒序"，翻在第 2 页时新加的行根本看不见（只有一个 toast）。
+    await savePurchase(draft, { gotoFirstPage: true })
     resetDraft()
     ElMessage.success('已保存')
   } catch (e) {
@@ -232,42 +342,80 @@ onUnmounted(cancelMaterialSearch)
 <template>
   <!-- 定高链（变更-088 的方子）：卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底** -->
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
-    <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-line px-6 py-3">
-      <p class="text-sm font-medium text-slate-700">采购进度跟踪</p>
-      <p class="text-xs text-slate-500">
-        <template v-if="loading">查询中…</template>
-        <template v-else>共 {{ total }} 条</template>
-      </p>
-      <div class="ml-auto flex flex-wrap items-center gap-x-2 gap-y-2">
-        <el-input
-          v-model="keyword"
-          placeholder="需求人 / 物料名称 / 物料编码 / 订单号 / 送货单"
-          aria-label="搜索采购需求"
-          clearable
-          class="w-64"
-          @keyup.enter="flushPurchaseQuery"
-          @clear="flushPurchaseQuery"
-        />
-        <el-date-picker
-          v-model="rangeStart"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="提出需求·起"
-          aria-label="提出需求日期起"
-          class="w-40"
-          @change="applyPurchaseFilters"
-        />
-        <span class="text-xs text-slate-500">至</span>
-        <el-date-picker
-          v-model="rangeEnd"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="提出需求·止"
-          aria-label="提出需求日期止"
-          class="w-40"
-          @change="applyPurchaseFilters"
-        />
-        <el-button @click="applyPurchaseFilters">查询</el-button>
+    <div class="shrink-0 border-b border-line px-6 py-3">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p class="text-sm font-medium text-slate-700">采购进度跟踪</p>
+        <p class="text-xs text-slate-500">
+          <template v-if="loading">查询中…</template>
+          <template v-else>共 {{ total }} 条</template>
+        </p>
+        <div class="ml-auto flex flex-wrap items-center gap-x-2 gap-y-2">
+          <el-input
+            v-model="keyword"
+            placeholder="需求人 / 物料名称 / 物料编码 / OA单号 / 送货单"
+            aria-label="搜索采购需求"
+            clearable
+            class="w-60"
+            @keyup.enter="flushPurchaseQuery"
+            @clear="flushPurchaseQuery"
+          />
+          <el-date-picker
+            v-model="rangeStart"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="提出需求·起"
+            aria-label="提出需求日期起"
+            class="w-36"
+            @change="applyPurchaseFilters"
+          />
+          <span class="text-xs text-slate-500">至</span>
+          <el-date-picker
+            v-model="rangeEnd"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="提出需求·止"
+            aria-label="提出需求日期止"
+            class="w-36"
+            @change="applyPurchaseFilters"
+          />
+          <el-select
+            v-model="categoryFilter"
+            placeholder="全部类别"
+            aria-label="按类别筛选"
+            clearable
+            class="w-28"
+            @change="applyPurchaseFilters"
+          >
+            <el-option v-for="c in CATEGORY_OPTIONS" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-button @click="applyPurchaseFilters">查询</el-button>
+        </div>
+      </div>
+
+      <!-- 汇总栏（变更-096）：数字全部来自服务端聚合，点一下＝按该状态筛。
+           刻意不做图表 —— 这一栏要回答的是「有几条要催」，不是「趋势怎么样」。 -->
+      <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        <span class="text-xs text-slate-500">进度概览</span>
+        <button
+          v-for="chip in statusChips"
+          :key="chip.value || 'all'"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs transition-colors"
+          :class="[
+            statusFilter === chip.value
+              ? 'border-slate-700 bg-slate-800 text-white'
+              : 'border-line bg-region text-slate-600 hover:border-slate-400',
+          ]"
+          :aria-pressed="statusFilter === chip.value"
+          @click="toggleStatusFilter(chip.value)"
+        >
+          {{ chip.label }}
+          <span
+            class="font-semibold"
+            :class="statusFilter === chip.value ? 'text-white' : 'text-slate-800'"
+          >{{ chip.count }}</span>
+        </button>
+        <span v-if="statusFilter" class="text-xs text-slate-500">（再点一次该状态可取消筛选）</span>
       </div>
     </div>
 
@@ -294,14 +442,19 @@ onUnmounted(cancelMaterialSearch)
         >
           <tr>
             <th scope="col" class="px-3 py-2.5 text-right font-medium">序号</th>
+            <!-- 状态列是**派生值**，不参与 EDIT_FIELDS（见 EDIT_FIELDS 的注释） -->
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">进度</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">需求人</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">提出需求日期</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">物料名称</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">物料编码</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">规格型号</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">类别</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">数量</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">要求到货日期</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">采购订单号</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">OA 单号</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">送货单</th>
+            <th scope="col" class="px-3 py-2.5 text-left font-medium">实际到货</th>
             <th scope="col" class="px-3 py-2.5 text-left font-medium">备注</th>
             <th v-if="canEdit" scope="col" class="px-3 py-2.5 text-right font-medium">操作</th>
           </tr>
@@ -311,6 +464,8 @@ onUnmounted(cancelMaterialSearch)
                不做弹窗 —— 采购同事的心智是 Excel，跳窗会打断连续录入。 -->
           <tr v-if="canEdit" class="border-t border-line bg-region/40">
             <td class="px-3 py-1.5 text-right align-middle text-base leading-none text-brand">＋</td>
+            <!-- 状态列：新增行还没有状态（保存后才派生），给个占位保持列对齐 -->
+            <td class="px-3 py-1.5 text-xs text-slate-500">—</td>
             <td v-for="f in EDIT_FIELDS" :key="f.key" class="px-2 py-1.5">
               <el-date-picker
                 v-if="f.kind === 'date'"
@@ -360,11 +515,70 @@ onUnmounted(cancelMaterialSearch)
                   <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
                 </template>
               </el-autocomplete>
-              <DeliveryNoteUpload
-                v-else-if="f.kind === 'image'"
-                :value="draft[f.key]"
-                @update:value="draft[f.key] = $event"
-              />
+              <el-select
+                v-else-if="f.kind === 'select'"
+                v-model="draft[f.key]"
+                size="small"
+                placeholder="类别"
+                :aria-label="f.aria"
+                clearable
+                class="w-full"
+              >
+                <el-option v-for="c in CATEGORY_OPTIONS" :key="c" :label="c" :value="c" />
+              </el-select>
+              <!-- 数量与单位合成一格：分开填没意义、分开显示又占两列 -->
+              <div v-else-if="f.kind === 'quantity'" class="flex items-center gap-1">
+                <el-input
+                  v-model="draft.quantity"
+                  size="small"
+                  type="number"
+                  min="0"
+                  placeholder="数量"
+                  aria-label="需求数量"
+                  class="w-16"
+                />
+                <el-select
+                  v-model="draft.unit"
+                  size="small"
+                  placeholder="单位"
+                  aria-label="单位"
+                  clearable
+                  filterable
+                  allow-create
+                  class="w-20"
+                >
+                  <el-option v-for="u in UNIT_OPTIONS" :key="u" :label="u" :value="u" />
+                </el-select>
+              </div>
+              <div v-else-if="f.kind === 'image'" class="flex flex-col gap-1">
+                <DeliveryNoteUpload
+                  :value="draft[f.key]"
+                  @update:value="draft[f.key] = $event"
+                />
+                <!-- 到货数量只在「已经上传送货单」时才可填：没到货就没有"到齐没到齐"这回事。
+                     多数情况一次到齐，所以给个「全到」一键填满 —— 否则没人愿意手抄数字，
+                     而「部分到货」恰恰要靠这两个数字才判得出来。 -->
+                <div v-if="draft.deliveryNote" class="flex items-center gap-1">
+                  <span class="text-[11px] text-slate-500">到货</span>
+                  <el-input
+                    v-model="draft.receivedQuantity"
+                    size="small"
+                    type="number"
+                    min="0"
+                    placeholder="数量"
+                    aria-label="实际到货数量"
+                    class="w-16"
+                  />
+                  <button
+                    type="button"
+                    class="text-[11px] text-brand hover:underline"
+                    title="把到货数量填成需求数量、到货日期填成今天"
+                    @click="markAllDelivered(draft)"
+                  >
+                    全到
+                  </button>
+                </div>
+              </div>
               <el-input
                 v-else
                 v-model="draft[f.key]"
@@ -385,20 +599,22 @@ onUnmounted(cancelMaterialSearch)
           </tr>
 
           <!-- 数据行：正在编辑的那一行原地变成输入框（同一份字段表，两种形态不会写歪） -->
+          <!-- ⚠️ 只有「编辑」按钮能进入编辑态（使用方要求）：行级 @click / @keydown / tabindex 已移除。
+               原先整行可点，导致点「送货单」缩略图时事件冒泡到行、直接切成编辑态，
+               el-image 的原图预览根本打不开 —— 图片预览与行级编辑不能共存，二者取图片。 -->
           <tr
             v-for="(row, index) in rows"
             :key="row.id"
             class="border-t border-line"
-            :class="
+            :class="[
               edit && edit.id === row.id
                 ? 'bg-region/40'
-                : canEdit
-                  ? 'cursor-pointer hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand'
-                  : ''
-            "
-            :tabindex="canEdit && !(edit && edit.id === row.id) ? 0 : -1"
-            @click="canEdit && !(edit && edit.id === row.id) && startEdit(row)"
-            @keydown.enter.self.prevent="canEdit && !(edit && edit.id === row.id) && startEdit(row)"
+                : row.status === 'OVERDUE'
+                  ? 'bg-rose-50/50'
+                  : row.status === 'DUE_SOON'
+                    ? 'bg-amber-50/50'
+                    : '',
+            ]"
           >
             <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号核对，一翻页重新数会串 -->
             <td class="px-3 py-2 text-right text-xs text-slate-500">
@@ -406,6 +622,13 @@ onUnmounted(cancelMaterialSearch)
             </td>
 
             <template v-if="edit && edit.id === row.id">
+              <!-- 编辑态下状态仍显示原值（改的是进度字段，状态要等保存后由后端重算） -->
+              <td class="px-3 py-1.5">
+                <span
+                  class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px]"
+                  :class="statusClass(row.status)"
+                >{{ row.statusLabel }}</span>
+              </td>
               <td v-for="f in EDIT_FIELDS" :key="f.key" class="px-2 py-1.5">
                 <el-date-picker
                   v-if="f.kind === 'date'"
@@ -455,11 +678,66 @@ onUnmounted(cancelMaterialSearch)
                     <span v-if="item.spec" class="ml-2 text-xs text-slate-500">{{ item.spec }}</span>
                   </template>
                 </el-autocomplete>
-                <DeliveryNoteUpload
-                  v-else-if="f.kind === 'image'"
-                  :value="edit[f.key]"
-                  @update:value="edit[f.key] = $event"
-                />
+                <el-select
+                  v-else-if="f.kind === 'select'"
+                  v-model="edit[f.key]"
+                  size="small"
+                  placeholder="类别"
+                  :aria-label="f.aria"
+                  clearable
+                  class="w-full"
+                >
+                  <el-option v-for="c in CATEGORY_OPTIONS" :key="c" :label="c" :value="c" />
+                </el-select>
+                <div v-else-if="f.kind === 'quantity'" class="flex items-center gap-1">
+                  <el-input
+                    v-model="edit.quantity"
+                    size="small"
+                    type="number"
+                    min="0"
+                    placeholder="数量"
+                    aria-label="需求数量"
+                    class="w-16"
+                  />
+                  <el-select
+                    v-model="edit.unit"
+                    size="small"
+                    placeholder="单位"
+                    aria-label="单位"
+                    clearable
+                    filterable
+                    allow-create
+                    class="w-20"
+                  >
+                    <el-option v-for="u in UNIT_OPTIONS" :key="u" :label="u" :value="u" />
+                  </el-select>
+                </div>
+                <div v-else-if="f.kind === 'image'" class="flex flex-col gap-1">
+                  <DeliveryNoteUpload
+                    :value="edit[f.key]"
+                    @update:value="edit[f.key] = $event"
+                  />
+                  <div v-if="edit.deliveryNote" class="flex items-center gap-1">
+                    <span class="text-[11px] text-slate-500">到货</span>
+                    <el-input
+                      v-model="edit.receivedQuantity"
+                      size="small"
+                      type="number"
+                      min="0"
+                      placeholder="数量"
+                      aria-label="实际到货数量"
+                      class="w-16"
+                    />
+                    <button
+                      type="button"
+                      class="text-[11px] text-brand hover:underline"
+                      title="把到货数量填成需求数量、到货日期填成今天"
+                      @click="markAllDelivered(edit)"
+                    >
+                      全到
+                    </button>
+                  </div>
+                </div>
                 <el-input
                   v-else
                   v-model="edit[f.key]"
@@ -478,6 +756,17 @@ onUnmounted(cancelMaterialSearch)
             </template>
 
             <template v-else>
+              <!-- 进度标签：文案与颜色都来自后端派生值。超期额外显示"超期 N 天"，
+                   因为"还差几天"比"超期"本身更能决定先催哪一条。 -->
+              <td class="px-3 py-2">
+                <span
+                  class="whitespace-nowrap rounded-full px-2 py-0.5 text-[11px]"
+                  :class="statusClass(row.status)"
+                  :title="row.overdueDays ? `已超期 ${row.overdueDays} 天` : (row.daysToDue !== null && row.daysToDue !== undefined ? `距要求到货 ${row.daysToDue} 天` : '')"
+                >
+                  {{ row.statusLabel }}<template v-if="row.status === 'OVERDUE' && row.overdueDays"> · {{ row.overdueDays }}天</template>
+                </span>
+              </td>
               <td class="px-3 py-2 text-slate-600">{{ row.requester || '—' }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.requestDate || '—' }}</td>
               <td class="px-3 py-2 font-medium">{{ row.materialName }}</td>
@@ -495,8 +784,16 @@ onUnmounted(cancelMaterialSearch)
                 </span>
               </td>
               <td class="px-3 py-2 text-slate-600">{{ row.spec || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600">
+                <span
+                  v-if="row.category"
+                  class="rounded border border-line bg-region px-1.5 text-[11px] text-slate-600"
+                >{{ row.category }}</span>
+                <template v-else>—</template>
+              </td>
+              <td class="px-3 py-2 whitespace-nowrap text-slate-600">{{ quantityText(row) }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
-              <td class="px-3 py-2 text-slate-600">{{ row.purchaseOrderNo || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600">{{ row.oaNo || '—' }}</td>
               <!-- 送货单三态（变更-094）：图片 → 缩略图（点开看原图）；文本 → 原样显示
                    （这一列原本是「送货单号」文本，老数据不许当坏数据）；空 → 未到货。
                    这是「进度」这一列的核心信息，所以空着要用灰字说清楚而不是留白。 -->
@@ -508,10 +805,28 @@ onUnmounted(cancelMaterialSearch)
                   :preview-teleported="true"
                   fit="cover"
                   alt="送货单图片"
-                  class="h-8 w-8 rounded border border-line"
+                  title="点击查看原图"
+                  class="h-8 w-8 cursor-zoom-in rounded border border-line"
+                  @click.stop
                 />
                 <template v-else-if="row.deliveryNote">{{ row.deliveryNote }}</template>
                 <span v-else class="text-slate-500">未到货</span>
+              </td>
+              <!-- 实际到货：日期 + （部分到货时）到货数量/需求数量。
+                   没有日期就显示「—」而不是「未到货」——"未到货"已经在送货单那列说过了，
+                   这里再写一遍会让人以为两列各自有独立状态。 -->
+              <td class="px-3 py-2 whitespace-nowrap text-slate-600">
+                <template v-if="row.actualArrivalDate || row.receivedQuantity">
+                  <div>{{ row.actualArrivalDate || '—' }}</div>
+                  <div
+                    v-if="row.receivedQuantity"
+                    class="text-[11px]"
+                    :class="row.partial ? 'font-medium text-slate-700' : 'text-slate-500'"
+                  >
+                    到货 {{ row.receivedQuantity }}<template v-if="row.quantity"> / 需求 {{ row.quantity }}</template>
+                  </div>
+                </template>
+                <template v-else>—</template>
               </td>
               <td class="px-3 py-2 text-slate-600">{{ row.remark || '—' }}</td>
               <td v-if="canEdit" class="px-3 py-2 text-right whitespace-nowrap">
@@ -523,7 +838,7 @@ onUnmounted(cancelMaterialSearch)
 
           <tr v-if="!rows.length">
             <td
-              :colspan="canEdit ? 11 : 10"
+              :colspan="canEdit ? 15 : 14"
               class="px-4 py-10 text-center text-sm text-slate-500"
             >
               {{ loading ? '正在加载…' : '还没有采购需求记录 —— 在第一行直接填就能加一条' }}
