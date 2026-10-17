@@ -43,3 +43,5 @@ hnd-ui-dist.zip
 # 工具产物：archify 技能（画架构图）在本机生成的输出目录，不入库
 # （之前一直挂在 git status 的未跟踪列表里，容易被顺手 git add -A 带进去）
 .archify/
+# vite 构建时把 TEMP 指到项目内产生的缓存（本机杀软锁 %TEMP% 时的绕法，见变更-097b）
+.tmp-build/

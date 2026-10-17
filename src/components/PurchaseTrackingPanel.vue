@@ -462,27 +462,47 @@ onUnmounted(cancelMaterialSearch)
     </p>
 
     <div class="purchase-scroll min-h-0 flex-1 overflow-auto">
-      <table class="w-full text-sm">
+      <!-- 列宽写死（table-fixed + colgroup）：15 列用 table-layout:auto 时，浏览器会把每列压到
+       "一个汉字"的宽度，长规格型号就变成竖排的一列 —— 2026-10-18 使用方截图就是这个现象。
+       写死之后：窄列不再被压扁，长文本用 line-clamp/truncate 收口，悬停看全文。 -->
+      <table class="w-full min-w-[1740px] table-fixed text-sm">
+        <colgroup>
+          <col class="w-[56px]" />
+          <col class="w-[92px]" />
+          <col class="w-[84px]" />
+          <col class="w-[112px]" />
+          <col class="w-[116px]" />
+          <col class="w-[120px]" />
+          <col class="w-[260px]" />
+          <col class="w-[80px]" />
+          <col class="w-[84px]" />
+          <col class="w-[112px]" />
+          <col class="w-[130px]" />
+          <col class="w-[88px]" />
+          <col class="w-[108px]" />
+          <col class="w-[170px]" />
+          <col class="w-[126px]" />
+        </colgroup>
         <thead
           class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]"
         >
           <tr>
-            <th scope="col" class="px-3 py-2.5 text-right font-medium">序号</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-right font-medium">序号</th>
             <!-- 状态列是**派生值**，不参与 EDIT_FIELDS（见 EDIT_FIELDS 的注释） -->
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">进度</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">需求人</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">提出需求日期</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">物料名称</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">物料编码</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">规格型号</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">类别</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">数量</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">要求到货日期</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">OA 单号</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">送货单</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">实际到货</th>
-            <th scope="col" class="px-3 py-2.5 text-left font-medium">备注</th>
-            <th v-if="canEdit" scope="col" class="px-3 py-2.5 text-right font-medium">操作</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">进度</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">需求人</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">提出需求日期</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">物料名称</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">物料编码</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">规格型号</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">类别</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">数量</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">要求到货日期</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">OA 单号</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">送货单</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">实际到货</th>
+            <th scope="col" class="whitespace-nowrap px-3 py-2.5 text-left font-medium">备注</th>
+            <th v-if="canEdit" scope="col" class="whitespace-nowrap px-3 py-2.5 text-right font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -787,9 +807,9 @@ onUnmounted(cancelMaterialSearch)
                   {{ row.statusLabel }}<template v-if="row.status === 'OVERDUE' && row.overdueDays"> · {{ row.overdueDays }}天</template>
                 </span>
               </td>
-              <td class="px-3 py-2 text-slate-600">{{ row.requester || '—' }}</td>
+              <td class="px-3 py-2"><span class="block truncate text-slate-600" :title="row.requester || ''">{{ row.requester || '—' }}</span></td>
               <td class="px-3 py-2 text-slate-600">{{ row.requestDate || '—' }}</td>
-              <td class="px-3 py-2 font-medium">{{ row.materialName }}</td>
+              <td class="px-3 py-2 font-medium"><span class="block truncate" :title="row.materialName">{{ row.materialName }}</span></td>
               <!-- 编码可能还没有（采购/仓库后定）：空值显示「—」，不要显示成 0 或空白 -->
               <td class="px-3 py-2 text-slate-600">
                 {{ row.materialCode || '—' }}
@@ -803,7 +823,7 @@ onUnmounted(cancelMaterialSearch)
                   总表可查
                 </span>
               </td>
-              <td class="px-3 py-2 text-slate-600">{{ row.spec || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600"><div class="line-clamp-2" :title="row.spec || ''">{{ row.spec || '—' }}</div></td>
               <td class="px-3 py-2 text-slate-600">
                 <span
                   v-if="row.category"
@@ -813,7 +833,7 @@ onUnmounted(cancelMaterialSearch)
               </td>
               <td class="px-3 py-2 whitespace-nowrap text-slate-600">{{ quantityText(row) }}</td>
               <td class="px-3 py-2 text-slate-600">{{ row.requiredArrivalDate || '—' }}</td>
-              <td class="px-3 py-2 text-slate-600">{{ row.oaNo || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600"><span class="block truncate" :title="row.oaNo || ''">{{ row.oaNo || '—' }}</span></td>
               <!-- 送货单三态（变更-094）：图片 → 缩略图（点开看原图）；文本 → 原样显示
                    （这一列原本是「送货单号」文本，老数据不许当坏数据）；空 → 未到货。
                    这是「进度」这一列的核心信息，所以空着要用灰字说清楚而不是留白。 -->
@@ -848,7 +868,7 @@ onUnmounted(cancelMaterialSearch)
                 </template>
                 <template v-else>—</template>
               </td>
-              <td class="px-3 py-2 text-slate-600">{{ row.remark || '—' }}</td>
+              <td class="px-3 py-2 text-slate-600"><div class="line-clamp-2" :title="row.remark || ''">{{ row.remark || '—' }}</div></td>
               <td v-if="canEdit" class="px-3 py-2 text-right whitespace-nowrap">
                 <el-button size="small" @click.stop="startEdit(row)">编辑</el-button>
                 <el-button size="small" @click.stop="handleDelete(row)">删除</el-button>
