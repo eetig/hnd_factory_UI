@@ -43,7 +43,7 @@ const rangeStart = ref('')
 const rangeEnd = ref('')
 /** 派生状态筛选（PENDING_OA/WAITING/DUE_SOON/OVERDUE/ARRIVED/PARTIAL；空串 = 不限） */
 const statusFilter = ref('')
-/** 类别筛选（备件/原料/设备/其他；空串 = 不限） */
+/** 类别筛选（备件/五金/原料/设备/其他；空串 = 不限） */
 const categoryFilter = ref('')
 
 /** 列表只发分页与筛选；汇总不分页（后端那个端点也不收 pageNum/pageSize） */

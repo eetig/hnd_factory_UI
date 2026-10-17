@@ -81,7 +81,7 @@ const edit = ref(null)
 const message = ref('')
 
 /** 类别枚举（与后端约定一致；统计时这是第一个会切的维度） */
-const CATEGORY_OPTIONS = ['备件', '原料', '设备', '其他']
+const CATEGORY_OPTIONS = ['备件', '五金', '原料', '设备', '其他']
 
 /**
  * 常见单位候选（`allow-create` 允许自己敲）：
