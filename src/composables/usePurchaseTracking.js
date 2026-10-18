@@ -41,11 +41,34 @@ const keyword = ref('')
 /** 提出需求日期区间（yyyy-MM-dd，空串 = 不限） */
 const rangeStart = ref('')
 const rangeEnd = ref('')
-/** 派生状态筛选（PENDING_OA/WAITING/DUE_SOON/OVERDUE/ARRIVED/PARTIAL；空串 = 不限） */
-const statusFilter = ref('')
+/**
+ * 派生状态筛选**多选**（PENDING_OA/WAITING/DUE_SOON/OVERDUE/ARRIVED/PARTIAL；空数组 = 不限）。
+ *
+ * 变更-118：使用方的日常动作是「超期 + 临期一起看」，单选得来回切两次。
+ * 后端为此加了 `statuses` 参数（并集）。
+ *
+ * ⚠️ 发**逗号串**而不是重复参数：axios 默认把数组序列化成 `statuses[]=A`，
+ * Spring 的 model attribute 绑不上 `statuses` —— 表现是筛选静默失效（最难查的那种）。
+ * 后端 `parseStatuses` 同时认逗号串与重复参数，两边都容错。
+ */
+const statusFilters = ref([])
 /** 类别筛选（备件/五金/原料/设备/其他；空串 = 不限） */
 const categoryFilter = ref('')
 
+/**
+ * 切换一个状态（多选）。已在里面就移除，不在就加进去。
+ * `''`（「全部」chip）表示清空 —— 前端不把「全部」翻译成 6 个值发出去，
+ * 那会让请求无谓地变长，也让后端的"空 = 不限"这条语义失去唯一入口。
+ */
+function toggleStatus(value) {
+  if (!value) {
+    statusFilters.value = []
+    return
+  }
+  const next = statusFilters.value.filter((v) => v !== value)
+  if (next.length === statusFilters.value.length) next.push(value)
+  statusFilters.value = next
+}
 /** 列表只发分页与筛选；汇总不分页（后端那个端点也不收 pageNum/pageSize） */
 function buildQuery(withPaging = true) {
   const params = {}
@@ -59,8 +82,7 @@ function buildQuery(withPaging = true) {
   if (start) params.startDate = start
   const end = rangeEnd.value
   if (end) params.endDate = end
-  const status = statusFilter.value
-  if (status) params.status = status
+  if (statusFilters.value.length) params.statuses = statusFilters.value.join(',')
   const category = categoryFilter.value
   if (category) params.category = category
   return params
@@ -296,7 +318,8 @@ export function usePurchaseTracking() {
     keyword,
     rangeStart,
     rangeEnd,
-    statusFilter,
+    statusFilters,
+    toggleStatus,
     categoryFilter,
     loadPurchase,
     loadSummary,
@@ -307,3 +330,10 @@ export function usePurchaseTracking() {
     deletePurchase,
   }
 }
+
+/**
+ * 给单测用的别名：`buildQuery` 是纯函数（读几个 ref、拼一个对象），
+ * 但它是模块内私有。为了让「多选发逗号串而不是 statuses[]」这条有断言守着，
+ * 这里原样导出一个引用 —— 不包一层、不改行为，避免"测的和跑的不是同一份"。
+ */
+export const buildPurchaseQuery = buildQuery

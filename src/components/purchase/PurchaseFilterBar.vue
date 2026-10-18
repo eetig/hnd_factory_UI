@@ -27,7 +27,8 @@ const {
   keyword,
   rangeStart,
   rangeEnd,
-  statusFilter,
+  statusFilters,
+  toggleStatus,
   categoryFilter,
   summary,
   applyPurchaseFilters,
@@ -48,16 +49,23 @@ const chips = computed(() => [
 ])
 
 /**
- * 点一下＝按该状态筛；再点一次＝取消。
+ * 点一下＝把这个状态**加进**筛选（多选）；再点一次＝移除。
  *
- * ⚠️ **单选而不是多选**：后端 `/api/purchase/list` 只收一个 `status` 参数，
- * 多选要么串起来（后端不认识 `OVERDUE,ARRIVED` 这种值），要么发多次请求再合并
- * （分页就废了）。本轮的硬约束是「不改接口契约」，所以保持单选 —— 这条已在
- * 变更说明里标为**未达项**，需要多选得先让后端支持。
+ * 变更-118：上一版是单选，因为后端只收一个 `status`。使用方的日常动作是
+ * 「超期 + 临期一起看」，单选得来回切两次 —— 后端因此加了 `statuses`（并集），
+ * 这里改成真正的多选。
+ *
+ * 「全部」这一格不是第七个状态，而是**清空**：它不翻译成 6 个值发出去，
+ * 那会让请求无谓变长，也让后端"空 = 不限"这条唯一入口失效。
  */
-function toggleStatus(value) {
-  statusFilter.value = statusFilter.value === value ? '' : value
+function onChipClick(value) {
+  toggleStatus(value)
   applyPurchaseFilters()
+}
+
+/** 某一格是否处于选中态。「全部」= 一个都没选 */
+function isChipActive(value) {
+  return value ? statusFilters.value.includes(value) : statusFilters.value.length === 0
 }
 </script>
 
@@ -91,13 +99,13 @@ function toggleStatus(value) {
         type="button"
         class="shrink-0 rounded-full border px-2 py-0.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
         :class="
-          statusFilter === chip.value
+          isChipActive(chip.value)
             ? 'border-slate-700 bg-slate-800 text-white'
             : 'border-line bg-region text-slate-600 hover:border-slate-400'
         "
-        :aria-pressed="statusFilter === chip.value"
+        :aria-pressed="isChipActive(chip.value)"
         :title="`${chip.label}：${chip.count} 条`"
-        @click="toggleStatus(chip.value)"
+        @click="onChipClick(chip.value)"
       >
         {{ chip.label }}
       </button>

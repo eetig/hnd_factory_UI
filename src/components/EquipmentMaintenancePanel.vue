@@ -1,38 +1,46 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { ElButton, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import {
-  ElButton,
-  ElCheckbox,
-  ElDialog,
-  ElInput,
-  ElMessage,
-  ElMessageBox,
-  ElOption,
-  ElPagination,
-  ElSelect,
-} from 'element-plus'
-import { CONTAINER_TYPES, containerTypeLabel, useEquipmentLedgerData } from '../composables/useEquipmentLedgerData'
-import { STATUS_TEXT } from '../constants/statusTones'
+  containerTypeLabel,
+  useEquipmentLedgerData,
+} from '../composables/useEquipmentLedgerData'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import { vesselImageUrl } from '../composables/useVesselList'
-import VesselCalibrateDialog from './VesselCalibrateDialog.vue'
+import { hasPerm } from '../api/auth'
+import EquipmentColumnPicker from './equipment/EquipmentColumnPicker.vue'
+import EquipmentDetailDrawer from './equipment/EquipmentDetailDrawer.vue'
+import EquipmentFilterBar from './equipment/EquipmentFilterBar.vue'
+import { firstNonNumericField } from './equipment/fields.js'
+import { useEquipmentColumns } from './equipment/useEquipmentColumns.js'
+import {
+  hasClientFilter,
+  matchesClientFilters,
+  statusScope,
+} from './equipment/useEquipmentFilters.js'
 
-// ===== 设备数据维护（2026-10-06）=====
-//
-// 为什么是「列表 + 点行弹窗」而不是全字段行内编辑：使用方要**逐个设备对着图纸核对参数**，
-// 16 个字段横着排一屏放不下，行内编辑要在横向滚动的表格里拖着填，极易改错行；
-// 弹窗一次把字段按「台账信息 / 几何参数 / 底图」三组铺开，比对着图纸改顺手得多。
-// （手机端同理，见 uni-app 的 EquipmentFormDialog。）
-//
-// ⚠️ 2026-10-10 统一整改后，**搜索与分页都在服务端**（原先是一次拉全表 92 行 + 前端 filter
-// + 前端分页）。所以：
-//   · 关键字**边打边查**（变更-060 起：停 250ms 发一次，不用回车）—— 走公共接线
-//     `useLiveQuery`（防抖 + 查询签名去重 + 卸载撤销），过期响应护栏在
-//     `useEquipmentLedgerData` 的 `ledgerRequestSeq`。
-//     ⚠️ 这不等于退回「逐字实时过滤」：服务端查询**逐字发**才会把接口打烂，
-//     防抖正是那条线（打字 8 个字仍然只发 1 次）。
-//   · 分页器照旧，只是页码/条数/关键字都发给服务端；「停用的行也要显示」这条口径没变。
-
+/**
+ * 设备数据维护（2026-10-18 重构，变更-118）。
+ *
+ * ## 这一版改了什么
+ *
+ *   · 15 列 + 操作列 → **默认 8 列**（列配置可勾回全部 15 列），只能让「名称」自适应
+ *   · 表格上方那块常驻的编辑弹窗 → **点行开右抽屉**（新增走同一个抽屉的空白模式）
+ *   · 关键字 + 只看启用 + 按钮挤在标题行 → **一行不换行的筛选条**
+ *
+ * ## 没有变、也不许变的口径
+ *
+ *   · 搜索与分页**都在服务端**（变更-060 起关键字边打边查，防抖 250ms 走
+ *     `useLiveQuery`；过期响应护栏在 `useEquipmentLedgerData` 的 `ledgerRequestSeq`）
+ *   · 「停用的行也要显示」、`启用 / 停用` 的门槛与原因、`仅台账` 的提示（变更-087）
+ *   · 定高链（变更-088）：卡片撑满、表格区自己滚、分页行钉卡底 —— 三串 class 原样保留，
+ *     守卫按字面量钉着它们（少一级 `min-h-0` 卡片就会被内容顶高，分页行一页一个位置）
+ *
+ * ## 前端过滤的那两档
+ *
+ * 「停用·本页」与「容器类型」只在当前页内生效（后端没有这两个参数，硬约束是不改接口）。
+ * 见 `equipment/useEquipmentFilters.js` 的注释 —— 数据量涨上去必须挪到后端。
+ */
 const {
   rows,
   total,
@@ -49,154 +57,93 @@ const {
   setLedgerPageSize,
   saveLedger,
   setLedgerEnabled,
-  uploadVesselDrawing,
 } = useEquipmentLedgerData()
 
-/*
- * 关键字**边打边查**（变更-060）：停 250ms 就发请求，不用回车。
- *
- * 公共接线（防抖 + 查询签名去重 + 卸载撤销）见 src/composables/useLiveQuery.js；
- * 过期响应护栏在数据层（`ledgerRequestSeq`）—— 那层必须贴着请求写。
- * 「刷新」按钮仍走 `loadLedger`（纯强制重取），回车/清空走 `flushLedgerQuery`（先取消待发再查）。
- */
+// 关键字边打边查（变更-060）：停 250ms 就发，不用回车；回车/清空 = 立刻发。
 const { flush: flushLedgerQuery } = useLiveQuery(keyword, applyLedgerFilters)
+
+const { orderedColumns } = useEquipmentColumns()
+
+/**
+ * 能不能改。用与导航同一个权限键（equipment:edit）—— 导航没这个键就不显示本页，
+ * 所以真实用户的行为与改版前一致；这里补上门是为了「只读用户万一进来」时抽屉里
+ * 不出现保存按钮，而不是让他填完才发现存不进去。
+ */
+const canEdit = computed(() => hasPerm('equipment:edit'))
 
 /**
  * 已经有行、又正在查（实时查询的「细化」阶段）：只在计数处提示"查询中…"。
- * 台账原先完全没有细化阶段的信号 —— 遮罩只盖首屏（`v-if="loading && !rows.length"`），
- * 于是打字期间屏上一点"在查"的迹象都没有（变更-066）。
+ * 遮罩只盖首屏（`loading && !rows.length`），打字期间必须另有"在查"的信号（变更-066）。
  */
 const ledgerRefining = computed(() => loading.value && rows.value.length > 0)
 
-/**
- * 封头深度一列显示「上 / 下」。用一个列而不是两列：表格已经 14 列了，
- * 而下封头为空只可能是平底这一种情况，并排写反而占地方。
- */
-function headDepthText(row) {
-  const top = row.topHeadDepth ?? '—'
-  const bottom = row.bottomHeadDepth > 0 ? row.bottomHeadDepth : '平底'
-  return `${top} / ${bottom}`
+/** 当前页经过**前端**筛选后真正显示的行 */
+const displayRows = computed(() => rows.value.filter((row) => matchesClientFilters(row)))
+
+/* ===== 打开抽屉 ===== */
+
+const drawerOpen = ref(false)
+const drawerMode = ref('edit')
+const drawerRow = ref(null)
+const drawerError = ref('')
+
+function openCreate() {
+  drawerMode.value = 'create'
+  drawerRow.value = null
+  drawerError.value = ''
+  drawerOpen.value = true
 }
 
-onMounted(() => {
-  // loadLedger 自己吞错误并落到 loadError（失败时保留上一次取到的行），这里不必再包 try
-  loadLedger()
-})
+function openDetail(row) {
+  drawerMode.value = 'edit'
+  drawerRow.value = row
+  drawerError.value = ''
+  drawerOpen.value = true
+}
 
-/** 「只看启用的」勾选变化：写回查询条件并回第 1 页重查 */
-function toggleOnlyEnabled(value) {
-  onlyEnabled.value = value
+/* ===== 筛选 ===== */
+
+/**
+ * 筛选条变了。只有「启用」这一档会改服务端参数（`onlyEnabled`），
+ * 其余两档是当前页内的前端过滤，不必为了它们再发一次请求。
+ */
+function onFilterChange() {
+  const wantEnabled = statusScope.value === 'on'
+  if (onlyEnabled.value === wantEnabled) return
+  onlyEnabled.value = wantEnabled
   applyLedgerFilters()
 }
 
-// ===== 编辑弹窗 =====
+/* ===== 保存 ===== */
 
-const dialogVisible = ref(false)
-const isNew = ref(false)
-const draft = reactive({})
-const message = ref('')
-/** 上面那条提示是"成功"还是"失败"（只有失败才是红的） */
-const messageOk = ref(false)
-/** 底图上传中：按钮转圈 + 禁止重复点（原先上传没有任何反馈，使用者不知道传没传成功） */
-const uploadingDrawing = ref(false)
-const uploadInput = ref(null)
-
-function resetDraft(source = {}) {
-  Object.assign(draft, {
-    id: source.id ?? null,
-    equipmentCode: source.equipmentCode ?? '',
-    equipmentName: source.equipmentName ?? '',
-    nickname: source.nickname ?? '',
-    workshop: source.workshop ?? '',
-    spec: source.spec ?? '',
-    containerType: source.containerType ?? 3,
-    innerDiameter: source.innerDiameter ?? null,
-    shellLength: source.shellLength ?? null,
-    straightFlange: source.straightFlange ?? null,
-    topHeadDepth: source.topHeadDepth ?? null,
-    bottomHeadDepth: source.bottomHeadDepth ?? null,
-    volumePerMm: source.volumePerMm ?? null,
-    density: source.density ?? null,
-    medium: source.medium ?? '',
-    remark: source.remark ?? '',
-    imageFile: source.imageFile ?? '',
-    // 底图坐标（变更-081 起后端可写、变更-082 起有标定界面）。
-    // 这里带上它是为了「编辑弹窗里刚标完就保存」这条路径；没标定的行是空串，
-    // 提交时转成 null，后端的默认更新策略会跳过这一列 —— 普通保存不会清掉已有标定。
-    imageBounds: source.imageBounds ?? '',
-  })
-  message.value = ''
-}
-
-function openEdit(row) {
-  isNew.value = false
-  resetDraft(row)
-  dialogVisible.value = true
-}
-
-function openCreate() {
-  isNew.value = true
-  resetDraft()
-  dialogVisible.value = true
-}
-
-// 几何/数值列只做「像不像数字」的粗校验：这些值会直接喂给容器体积计算，
-// 一旦混进 "350O"（字母 O）这类值，保存时不报错，计算页却算出一个 NaN（变更-033）
-const NUMERIC_DRAFT_FIELDS = [
-  ['innerDiameter', '内径'],
-  ['shellLength', '筒体长度'],
-  ['straightFlange', '直边'],
-  ['topHeadDepth', '上封头深度'],
-  ['bottomHeadDepth', '下封头深度'],
-  ['volumePerMm', '每毫米体积'],
-  ['density', '介质密度'],
-]
-
-/** 返回第一个「填了但不是数字」的字段名，全部合法返回空串；留空一律放行 */
-function firstNonNumericField() {
-  for (const [key, label] of NUMERIC_DRAFT_FIELDS) {
-    const raw = draft[key]
-    if (raw === null || raw === undefined) continue
-    const text = String(raw).trim()
-    if (!text) continue
-    if (!Number.isFinite(Number(text))) return label
-  }
-  return ''
-}
-
-async function handleSave() {
-  message.value = ''
-  messageOk.value = false
-  if (!draft.equipmentName?.trim()) {
-    message.value = '设备名称不能为空'
-    ElMessage.error(message.value)
+async function handleSave(payload) {
+  drawerError.value = ''
+  if (!payload.equipmentName?.trim()) {
+    drawerError.value = '设备名称不能为空'
     return
   }
-  const badField = firstNonNumericField()
+  const badField = firstNonNumericField(payload)
   if (badField) {
-    message.value = `${badField}必须填数字（留空表示未填写）`
-    ElMessage.error(message.value)
+    drawerError.value = `${badField}必须填数字（留空表示未填写）`
     return
   }
   try {
-    await saveLedger(draft)
-    dialogVisible.value = false
-    // 成功也要说话（变更-085）：原先保存成功毫无反馈，使用者无法判断到底存进去没有
+    await saveLedger(payload)
+    drawerOpen.value = false
     ElMessage.success('已保存')
   } catch (e) {
-    // ⚠️ 失败**不关弹窗**（变更-085）：后端把业务失败也发成 HTTP 200，
-    // 配合 request.js 新加的拦截，这里终于能拿到失败原因了，而不是静默关掉当成功
-    message.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
-    ElMessage.error(message.value)
+    // 失败**不关抽屉**（变更-085）：后端把业务失败也发成 200，配合 request.js 的拦截
+    // 现在能拿到原因，不能静默关掉当成功
+    drawerError.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
+    ElMessage.error(drawerError.value)
   }
 }
 
+/* ===== 启停（口径不变，只是位置从"操作列"挪到状态格） ===== */
+
 async function handleToggle(row) {
-  // 启用门槛（变更-081/082）：原因由服务端下发（EquipmentLedgerVO.enableBlockReason），
-  // 前端不重复实现那套规则。不合规的行连请求都不发 —— 后端也会拒，但那样只有一句报错，
-  // 这里顺手把「为什么」摆出来。
   if (row.enabled !== 1 && blockReasonOf(row)) {
-    await showBlockReason(row)
+    await showAlert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`)
     return
   }
   try {
@@ -206,140 +153,121 @@ async function handleToggle(row) {
   }
 }
 
-/**
- * 「不能启用」的原因；可以启用（或已启用）时返回空串。
- * 文案是服务端拼好的整句（"不能启用：未配置容器底图；…"），直接展示即可。
- */
+/** 「不能启用」的原因；可以启用（或已启用）时返回空串 */
 function blockReasonOf(row) {
   if (row.enabled === 1) return ''
   return row.enableBlockReason || ''
 }
 
 /**
- * 「不能参与体积计算」的原因（服务端对**每一行**都算好了，不区分启用与否）。
- *
- * 与 {@link blockReasonOf} 的区别：那个只用来决定【启用】按钮能不能点（已启用的行返回空），
- * 这个用来回答"我已经启用了，为什么计算页里没有它"（变更-087）。
+ * 「不能参与体积计算」的原因（服务端对每一行都算好了）。
+ * 与 blockReasonOf 的区别：那个决定【启用】按钮能否点（已启用返回空），
+ * 这个回答"我已经启用了，为什么计算页里没有它"（变更-087）。
  */
 function usageProblemOf(row) {
   return row.enableBlockReason || ''
 }
 
+async function showAlert(text, title) {
+  try {
+    await ElMessageBox.alert(text, title, { confirmButtonText: '知道了' })
+  } catch {
+    // 关掉弹窗即可，不算错误
+  }
+}
+
 async function showUsageProblem(row) {
-  try {
-    await ElMessageBox.alert(
-      `${usageProblemOf(row)}\n\n` +
-        '这台设备在【设备检索 / 储罐液位录入】里仍然正常可用 —— 状态里的"仅台账"就是这个意思；' +
-        '这里说的是它还不能进【压力容器体积计算】的下拉。',
-      `${row.equipmentName || '该设备'}：不能参与体积计算`,
-      { confirmButtonText: '知道了' },
-    )
-  } catch {
-    // 关掉弹窗即可，不算错误
-  }
+  await showAlert(
+    `${usageProblemOf(row)}\n\n` +
+      '这台设备在【设备检索 / 储罐液位录入】里仍然正常可用 —— 状态里的"仅台账"就是这个意思；' +
+      '这里说的是它还不能进【压力容器体积计算】的下拉。',
+    `${row.equipmentName || '该设备'}：不能参与体积计算`,
+  )
 }
 
-async function showBlockReason(row) {
-  try {
-    await ElMessageBox.alert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`, {
-      confirmButtonText: '知道了',
-    })
-  } catch {
-    // 关掉弹窗即可，不算错误
-  }
+/* ===== 单元格取值 ===== */
+
+/** 封头深度一列显示「上 / 下」；下封头为空只可能是平底，并排写两列反而占地方 */
+function headDepthText(row) {
+  const top = row.topHeadDepth ?? '—'
+  const bottom = row.bottomHeadDepth > 0 ? row.bottomHeadDepth : '平底'
+  return `${top} / ${bottom}`
 }
 
-// ===== 底图 =====
-
-/** 底图预览地址：与体积计算页同一个解析（内置底图走打包资源、上传的走 /files） */
 function imagePreview(file) {
   return vesselImageUrl(file)
 }
 
-function pickDrawing() {
-  uploadInput.value?.click()
-}
-
-async function handleDrawingPicked(event) {
-  const file = event.target.files?.[0]
-  event.target.value = '' // 允许连续选同一个文件
-  if (!file) return
-  message.value = ''
-  messageOk.value = false
-  uploadingDrawing.value = true
-  // 上传要好几秒（几 MB 的图纸），期间必须让使用者看到"在传"（变更-085）
-  ElMessage.info(`正在上传底图（${Math.round(file.size / 1024)} KB）…`)
-  try {
-    draft.imageFile = await uploadVesselDrawing(file)
-    // 上传只是把图放进图片服务器；**没点保存就不会写进台账**，这句话必须说出来
-    messageOk.value = true
-    message.value = '底图已上传 ✓ 记得点右下角【保存】才会写进台账；接着点【标定底图】框出罐体轮廓'
-    ElMessage.success('底图已上传')
-    // 换了图，旧的坐标一律作废：新图的尺寸/取景与旧图未必一致，
-    // 留着旧坐标会让液面画在错误的位置（而且不报错）。清空后再走「标定底图」。
-    draft.imageBounds = ''
-  } catch (e) {
-    message.value = `底图上传失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
-    ElMessage.error(message.value)
-  } finally {
-    uploadingDrawing.value = false
+/** 普通文本列；空值统一显示破折号，不要留白（留白会被误读成"没有这一列"） */
+function cellText(row, key, index) {
+  switch (key) {
+    case 'index':
+      return (pageNum.value - 1) * pageSize.value + index + 1
+    case 'equipmentCode':
+      return row.equipmentCode || '—'
+    case 'equipmentName':
+      return row.equipmentName || '—'
+    case 'nickname':
+      return row.nickname || '—'
+    case 'workshop':
+      return row.workshop || '—'
+    case 'containerType':
+      return containerTypeLabel(row.containerType)
+    case 'spec':
+      return row.spec || '—'
+    case 'medium':
+      return row.medium || '—'
+    case 'innerDiameter':
+      return row.innerDiameter ?? '—'
+    case 'shellLength':
+      return row.shellLength ?? '—'
+    case 'straightFlange':
+      return row.straightFlange ?? '—'
+    case 'headDepth':
+      return headDepthText(row)
+    case 'density':
+      return row.density ?? '—'
+    default:
+      return ''
   }
 }
 
-// ===== 标定底图（变更-082）=====
-
-const calibrateVisible = ref(false)
-
-function openCalibrate() {
-  if (!draft.imageFile) {
-    message.value = '先上传底图，再标定'
-    return
-  }
-  message.value = ''
-  calibrateVisible.value = true
-}
-
-/**
- * 标定结果**只写进 draft**，随编辑弹窗的「保存」一起提交。
- *
- * 为什么不在标定弹窗里直接调接口：后端 save 是**整行覆写**（变更-065 的契约），
- * 单独提交一份只带 id + imageBounds 的载荷会把其余 16 个字段清成 NULL。
- */
-function handleCalibrated(boundsJson) {
-  draft.imageBounds = boundsJson
-  calibrateVisible.value = false
-}
+onMounted(() => {
+  // loadLedger 自己吞错误并落到 loadError（失败时保留上一次取到的行）
+  loadLedger()
+})
 </script>
 
 <template>
   <!-- 定高链（变更-088）：卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底**。
-       与工单汇总（变更-038）/ 储罐液位（变更-044）同一张方子，完整理由见
-       views/orders/WorkOrderList.vue 里那张卡片的注释。
-       使用方 2026-10-16 对这张表说的是同一句话：「分页工具翻页时，不在同一个位置，
-       体感上就像是在跳动」。根因不是分页器：分页行是卡片最后一个子元素，**卡片多高它就多低**，
-       而「名称/规格」是折行的，每页折行条数不一样，卡片跟着一高一矮。
-       ⚠️ 少一级 `min-h-0`，卡片就会被内容重新顶高、分页行照旧乱跑，
-       而**静止看一屏完全正常**，只有翻页才看得出来。 -->
+       三串 class 原样保留，守卫按字面量钉着（与工单汇总 / 储罐液位同一张方子）。 -->
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
-    <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-4 border-b border-line px-6 py-4">
-      <p class="text-sm font-medium text-slate-700">设备数据维护</p>
-      <p class="text-xs text-slate-500">
+    <div class="flex shrink-0 flex-nowrap items-center gap-x-3 border-b border-line px-6 py-4">
+      <p class="shrink-0 text-sm font-medium text-slate-700">设备数据维护</p>
+      <p class="shrink-0 text-xs text-slate-500">
         <template v-if="ledgerRefining">查询中…</template>
-        <template v-else>逐个设备对着图纸核对参数：本页 {{ rows.length }} / 共 {{ total }} 条</template>
+        <template v-else>
+          本页 {{ displayRows.length }} / 共 {{ total }} 条
+          <span v-if="hasClientFilter()" class="text-amber-700">（本页内过滤）</span>
+        </template>
       </p>
-      <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-        <!-- 关键字**边打边查**（变更-060）：停 250ms 就发，不用回车；回车/清空 = 立刻发。
+
+      <!-- 筛选条：状态 chips + 容器类型（一行不换行） -->
+      <EquipmentFilterBar class="min-w-0" @change="onFilterChange" />
+
+      <div class="ml-auto flex shrink-0 items-center gap-2">
+        <!-- 关键字边打边查（变更-060）：停 250ms 就发，不用回车；
              走 watch（输入法组字期间不触发）而不是 @input，选词时的拼音串不会变成一次查询 -->
         <el-input
           v-model="keyword"
           placeholder="位号 / 名称 / 昵称 / 规格 / 车间"
           aria-label="搜索设备"
           clearable
-          class="w-64"
+          class="!w-[220px]"
           @keyup.enter="flushLedgerQuery"
           @clear="flushLedgerQuery"
         />
-        <el-checkbox :model-value="onlyEnabled" label="只看启用的" @change="toggleOnlyEnabled" />
+        <EquipmentColumnPicker />
         <el-button @click="loadLedger">刷新</el-button>
         <el-button type="primary" @click="openCreate">新增设备</el-button>
       </div>
@@ -354,114 +282,111 @@ function handleCalibrated(boundsJson) {
     </p>
 
     <!-- 表格区：`min-h-0 flex-1` 拿的是"卡片分给它之后剩下的空间"（定高，不随内容变），
-         所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。
-         原先这里是 `max-h-[68vh]` —— 那是"最大"，高度仍随每页折行数变，分页行就上下跳。 -->
+         所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。 -->
     <div class="ledger-scroll min-h-0 flex-1 overflow-auto">
-      <table class="w-full max-w-[1280px] text-sm">
-        <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]">
+      <table class="w-full max-w-[1100px] table-fixed text-sm">
+        <colgroup>
+          <col v-for="column in orderedColumns" :key="column.key" :class="column.width" />
+        </colgroup>
+        <thead
+          class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]"
+        >
           <tr>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">位号</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">名称</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">昵称</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">规格</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">容器类型</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">内径</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">筒体长度</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">直边</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">封头深度(上/下)</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">介质</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">介质密度</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">底图</th>
-            <th scope="col" class="px-4 py-2.5 text-left font-medium">状态</th>
-            <th scope="col" class="px-4 py-2.5 text-right font-medium">操作</th>
+            <th
+              v-for="column in orderedColumns"
+              :key="column.key"
+              scope="col"
+              class="whitespace-nowrap px-4 py-2.5 font-medium"
+              :class="column.align === 'right' ? 'text-right' : 'text-left'"
+            >
+              {{ column.label }}
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="(row, index) in rows"
+            v-for="(row, index) in displayRows"
             :key="row.id"
             tabindex="0"
             class="cursor-pointer border-t border-line hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
             :class="{ 'text-slate-500': row.enabled !== 1 }"
-            @click="openEdit(row)"
-            @keydown.enter.self.prevent="openEdit(row)"
-            @keydown.space.self.prevent="openEdit(row)"
+            @click="openDetail(row)"
+            @keydown.enter.self.prevent="openDetail(row)"
+            @keydown.space.self.prevent="openDetail(row)"
           >
-            <!-- 序号跨页连续（不是每页从 1 开始）：使用方是照着序号逐个核对，
-                 一翻页就重新数会串 -->
-            <td class="px-4 py-2.5 text-right text-xs text-slate-500">
-              {{ (pageNum - 1) * pageSize + index + 1 }}
-            </td>
-            <td class="px-4 py-2.5">{{ row.equipmentCode || '—' }}</td>
-            <td class="px-4 py-2.5 font-medium">{{ row.equipmentName }}</td>
-            <td class="px-4 py-2.5">{{ row.nickname || '—' }}</td>
-            <td class="px-4 py-2.5">{{ row.spec || '—' }}</td>
-            <td class="px-4 py-2.5">{{ containerTypeLabel(row.containerType) }}</td>
-            <td class="px-4 py-2.5 text-right">{{ row.innerDiameter ?? '—' }}</td>
-            <td class="px-4 py-2.5 text-right">{{ row.shellLength ?? '—' }}</td>
-            <td class="px-4 py-2.5 text-right">{{ row.straightFlange ?? '—' }}</td>
-            <td class="px-4 py-2.5 text-right">{{ headDepthText(row) }}</td>
-            <td class="px-4 py-2.5">{{ row.medium || '—' }}</td>
-            <td class="px-4 py-2.5 text-right">{{ row.density ?? '—' }}</td>
-            <td class="px-4 py-2.5">
-              <div class="flex items-center gap-2">
-                <img
-                  v-if="row.imageFile"
-                  :src="imagePreview(row.imageFile)"
-                  :alt="`${row.equipmentName} 的容器底图`"
-                  class="h-8 w-8 rounded-md border border-line object-contain"
-                />
-                <span v-else class="text-xs text-slate-500">未配</span>
-                <!-- 有图但没坐标 = 进不了体积计算页的下拉；这个徽标就是为了让"为什么下拉里没有它"一眼可查 -->
-                <span
-                  v-if="row.imageFile && !row.imageBounds"
-                  class="rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[11px] text-amber-700"
-                >
-                  未标定
-                </span>
-              </div>
-            </td>
-            <td class="px-4 py-2.5 text-xs">
-              <!-- 状态要说实话（变更-087）：库里的 `enabled` 只表示"在台账里启用"，
-                   而体积计算页额外要求「底图 + 坐标 + 几何齐全」。两者不一致时
-                   这里显示「启用 · 仅台账」并给出原因入口 ——
-                   否则使用方会以为"我明明启用了，为什么计算页下拉里没有它"。 -->
-              <template v-if="row.enabled !== 1">已停用</template>
-              <template v-else-if="usageProblemOf(row)">
-                <span class="text-slate-500">启用</span>
-                <span class="ml-1 text-amber-700">· 仅台账</span>
-                <button
-                  type="button"
-                  class="ml-1 text-amber-700 underline decoration-dotted"
-                  @click.stop="showUsageProblem(row)"
-                >
-                  为何不能算
-                </button>
+            <td
+              v-for="column in orderedColumns"
+              :key="column.key"
+              class="px-4 py-2.5"
+              :class="[
+                column.align === 'right' ? 'text-right' : 'text-left',
+                column.key === 'equipmentName' ? 'font-medium' : '',
+                column.key === 'index' ? 'text-xs text-slate-500' : '',
+              ]"
+            >
+              <!-- 状态列：库里的 enabled 只表示"在台账里启用"，体积计算页还要求
+                   底图 + 坐标 + 几何齐全。两者不一致时显示「启用 · 仅台账」并给原因入口，
+                   否则使用方会以为"我明明启用了，为什么计算页下拉里没有它"（变更-087） -->
+              <template v-if="column.key === 'status'">
+                <div class="flex flex-wrap items-center gap-1 text-xs">
+                  <template v-if="row.enabled !== 1">已停用</template>
+                  <template v-else-if="usageProblemOf(row)">
+                    <span>启用</span>
+                    <span class="text-amber-700">· 仅台账</span>
+                    <button
+                      type="button"
+                      class="text-amber-700 underline decoration-dotted focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                      @click.stop="showUsageProblem(row)"
+                    >
+                      为何不能算
+                    </button>
+                  </template>
+                  <template v-else>启用</template>
+
+                  <el-button
+                    size="small"
+                    text
+                    :disabled="row.enabled !== 1 && !!blockReasonOf(row)"
+                    :title="blockReasonOf(row)"
+                    @click.stop="handleToggle(row)"
+                  >
+                    {{ row.enabled === 1 ? '停用' : '启用' }}
+                  </el-button>
+                  <button
+                    v-if="blockReasonOf(row)"
+                    type="button"
+                    class="text-amber-700 underline decoration-dotted focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    @click.stop="showAlert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`)"
+                  >
+                    为何不能启用
+                  </button>
+                </div>
               </template>
-              <template v-else>启用</template>
-            </td>
-            <td class="px-4 py-2.5 text-right whitespace-nowrap">
-              <el-button
-                size="small"
-                :disabled="row.enabled !== 1 && !!blockReasonOf(row)"
-                :title="blockReasonOf(row)"
-                @click.stop="handleToggle(row)"
-              >
-                {{ row.enabled === 1 ? '停用' : '启用' }}
-              </el-button>
-              <button
-                v-if="blockReasonOf(row)"
-                type="button"
-                class="ml-2 text-xs text-amber-700 underline decoration-dotted"
-                @click.stop="showBlockReason(row)"
-              >
-                为何不能启用
-              </button>
+
+              <!-- 底图列：缩略图 + 「未标定」徽标（有图没坐标 = 进不了体积计算页的下拉） -->
+              <template v-else-if="column.key === 'imageFile'">
+                <div class="flex items-center gap-2">
+                  <img
+                    v-if="row.imageFile"
+                    :src="imagePreview(row.imageFile)"
+                    :alt="`${row.equipmentName} 的容器底图`"
+                    class="h-8 w-8 rounded-md border border-line object-contain"
+                  />
+                  <span v-else class="text-xs text-slate-500">未配</span>
+                  <span
+                    v-if="row.imageFile && !row.imageBounds"
+                    class="rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[11px] text-amber-700"
+                  >
+                    未标定
+                  </span>
+                </div>
+              </template>
+
+              <template v-else>{{ cellText(row, column.key, index) }}</template>
             </td>
           </tr>
-          <tr v-if="!rows.length">
-            <td colspan="15" class="px-4 py-10 text-center text-sm text-slate-500">
+          <tr v-if="!displayRows.length">
+            <td :colspan="orderedColumns.length" class="px-4 py-10 text-center text-sm text-slate-500">
               {{ loading ? '正在加载…' : '没有符合条件的设备' }}
             </td>
           </tr>
@@ -469,8 +394,7 @@ function handleCalibrated(boundsJson) {
       </table>
     </div>
 
-    <!-- 分页行钉底（变更-088）：`shrink-0` 让它不参与上面的空间分配、始终贴卡底；
-         `border-t` 与其它定高链页签保持一致（翻页时这行纹丝不动） -->
+    <!-- 分页行钉底（变更-088）：`shrink-0` 让它不参与上面的空间分配、始终贴卡底 -->
     <div v-if="rows.length" class="flex shrink-0 justify-end border-t border-line px-6 py-3">
       <el-pagination
         v-model:current-page="pageNum"
@@ -484,132 +408,14 @@ function handleCalibrated(boundsJson) {
       />
     </div>
 
-    <!-- 编辑弹窗：16 个字段按「台账信息 / 几何参数 / 底图」三组 -->
-    <el-dialog
-      v-model="dialogVisible"
-      :title="isNew ? '新增设备' : `编辑：${draft.equipmentName || ''}`"
-      width="720px"
-    >
-      <div class="space-y-6">
-        <div>
-          <p class="mb-2 text-xs font-medium text-slate-500">台账信息</p>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-            <label class="text-sm">设备位号<el-input v-model="draft.equipmentCode" /></label>
-            <label class="text-sm">设备名称<el-input v-model="draft.equipmentName" /></label>
-            <label class="text-sm">设备昵称<el-input v-model="draft.nickname" /></label>
-            <label class="text-sm">车间装置<el-input v-model="draft.workshop" /></label>
-            <label class="text-sm">设备规格<el-input v-model="draft.spec" /></label>
-            <label class="text-sm">
-              容器类型
-              <el-select v-model="draft.containerType" class="w-full">
-                <el-option
-                  v-for="t in CONTAINER_TYPES"
-                  :key="t.value"
-                  :label="t.label"
-                  :value="t.value"
-                />
-              </el-select>
-            </label>
-            <label class="text-sm">介质<el-input v-model="draft.medium" /></label>
-            <label class="text-sm">介质密度 (g/cm³)<el-input v-model="draft.density" inputmode="decimal" /></label>
-            <label class="text-sm">
-              每毫米液位对应的体积 (m³/mm)<el-input v-model="draft.volumePerMm" inputmode="decimal" />
-            </label>
-            <label class="text-sm col-span-2">备注<el-input v-model="draft.remark" /></label>
-          </div>
-        </div>
-
-        <div>
-          <p class="mb-2 text-xs font-medium text-slate-500">
-            几何参数
-            <span class="font-normal text-slate-500">
-              ｜筒体长度不含两端直边；下封头留空表示平底
-            </span>
-          </p>
-          <div class="grid grid-cols-2 gap-x-4 gap-y-4">
-            <label class="text-sm">内径 (mm)<el-input v-model="draft.innerDiameter" inputmode="decimal" /></label>
-            <label class="text-sm">筒体长度 (mm)<el-input v-model="draft.shellLength" inputmode="decimal" /></label>
-            <label class="text-sm">直边 (mm)<el-input v-model="draft.straightFlange" inputmode="decimal" /></label>
-            <label class="text-sm">上封头深度 (mm)<el-input v-model="draft.topHeadDepth" inputmode="decimal" /></label>
-            <label class="text-sm">下封头深度 (mm)<el-input v-model="draft.bottomHeadDepth" inputmode="decimal" /></label>
-          </div>
-        </div>
-
-        <div>
-          <p class="mb-2 text-xs font-medium text-slate-500">容器底图</p>
-          <div class="flex items-center gap-3">
-            <img
-              v-if="draft.imageFile"
-              :src="imagePreview(draft.imageFile)"
-              alt="容器底图预览"
-              class="h-24 w-24 rounded-card border border-line object-contain"
-            />
-            <div class="text-xs text-slate-500">
-              <p class="mb-1">
-                {{ draft.imageFile || '未配置' }}
-                <span v-if="draft.imageFile" class="ml-1">
-                  · {{ draft.imageBounds ? '已标定' : '未标定（该设备不能被启用）' }}
-                </span>
-              </p>
-              <el-button size="small" :loading="uploadingDrawing" @click="pickDrawing">
-                {{ uploadingDrawing ? '上传中…' : '上传底图' }}
-              </el-button>
-              <el-button
-                v-if="draft.imageFile"
-                size="small"
-                type="primary"
-                plain
-                @click="openCalibrate"
-              >
-                {{ draft.imageBounds ? '重新标定' : '标定底图' }}
-              </el-button>
-              <el-button v-if="draft.imageFile" size="small" @click="draft.imageFile = ''">
-                清除
-              </el-button>
-              <p class="mt-1 text-slate-500">上传后自动生成深色主题用的亮线版</p>
-              <p class="mt-1 text-slate-500">
-                标定 = 框出罐体外轮廓 + 对准上下切线；体积计算页只收「已启用 + 已标定 + 几何齐全」的设备
-              </p>
-            </div>
-          </div>
-          <input
-            ref="uploadInput"
-            type="file"
-            accept="image/png,image/jpeg"
-            class="hidden"
-            @change="handleDrawingPicked"
-          />
-        </div>
-
-        <p
-          v-if="message"
-          :role="messageOk ? 'status' : 'alert'"
-          class="text-xs"
-          :class="messageOk ? STATUS_TEXT.success : STATUS_TEXT.error"
-        >
-          {{ message }}
-        </p>
-      </div>
-
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 标定底图（变更-082）：只产出坐标 JSON，随上面的「保存」一起提交（后端 save 是整行覆写） -->
-    <VesselCalibrateDialog
-      v-model="calibrateVisible"
-      :image-url="imagePreview(draft.imageFile)"
-      :image-file="draft.imageFile"
-      :container-type="Number(draft.containerType) || null"
-      :geometry="{
-        topHeadDepth: draft.topHeadDepth,
-        shellLength: draft.shellLength,
-        bottomHeadDepth: draft.bottomHeadDepth,
-      }"
-      :bounds="draft.imageBounds"
-      @save="handleCalibrated"
+    <EquipmentDetailDrawer
+      v-model="drawerOpen"
+      :mode="drawerMode"
+      :row="drawerRow"
+      :can-edit="canEdit"
+      :saving="saving"
+      :error-message="drawerError"
+      @save="handleSave"
     />
   </section>
 </template>
@@ -618,23 +424,23 @@ function handleCalibrated(boundsJson) {
 /*
  * 表格滚动条做细一点（变更-086）。
  *
- * 使用方原话：「尽量避免右边红色框选的滑块，很影响美观，可以调整每页显示的行数，
- * 或是更优雅的方式去处理」。两件事一起做：
- *   ① 默认每页 10 行（原先 20）—— 1080p 与 768px 高的窗口下整表都不超高，
- *      默认视图里**压根不会出现滚动条**；
- *   ② 万一还是超出（小屏、或自己切到 50 行），滚动条也从系统默认的十几像素降到 8px、
- *      去掉轨道底色，不再是一条突兀的灰带。横向仍可滚（15 列必须有）。
+ * 使用方原话：「尽量避免右边红色框选的滑块，很影响美观」。两件事：
+ *   ① 默认每页 10 行 —— 1080p 与 768px 高的窗口下整表都不超高，默认视图里不出现滚动条；
+ *   ② 万一还是超出（小屏 / 自己切到 50 行），滚动条从系统默认的十几像素降到 8px、
+ *      去掉轨道底色。横向仍可滚（勾开全部 15 列时必须有）。
+ *
+ * ⚠️ 颜色用 `theme(colors.line)` 而不是 hex：本仓禁裸 hex（守卫会红）。
  */
 .ledger-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #d4d4d8 transparent;
+  scrollbar-color: theme(colors.line) transparent;
 }
 .ledger-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .ledger-scroll::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
+  background: theme(colors.line);
   border-radius: 999px;
 }
 .ledger-scroll::-webkit-scrollbar-track {
