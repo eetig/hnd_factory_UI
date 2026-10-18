@@ -343,10 +343,13 @@ function toggleSidebar() {
               `shadow-glow` 光晕 —— 石墨实底自己撑得住）。四块一样亮就分不出当前在
               哪一组；收起态也不描边 —— 40px 见方里再套一层环会糊成一团。
               -->
-              <el-tooltip
-                v-for="group in visibleGroups"
-                :key="group.key"
-                :content="group.label"
+              <!-- 两级树（变更-103）：分组是**可展开的一级**，组内页面直接列在它下面。
+                   为什么改：上一版只有一级（点组 → 顶栏再点页签），等于"两次点击才到位"，
+                   而使用方报的第一个问题正是「找不到入口」。展开态直接列出组内页面后，
+                   进任何一页都只要一次点击；收起态不列（88px 放不下），点组图标仍进该组第一页。 -->
+              <div v-for="group in visibleGroups" :key="group.key">
+                <el-tooltip
+                  :content="group.label"
                 placement="right"
                 :disabled="!collapsed"
                 :show-after="200"
@@ -407,7 +410,32 @@ function toggleSidebar() {
                     >
                   </span>
                 </button>
-              </el-tooltip>
+                </el-tooltip>
+
+                <!-- 二级：当前组的页面。只渲染当前组（不是全部组都铺开）——
+                     14 条全铺会让侧栏变成一堵墙，而且组与组之间来回跳时高度会跳。
+                     `group.items` 来自 useNav().visibleGroups，已经按权限过滤过，
+                     所以这里不需要再判一次权限。 -->
+                <ul
+                  v-show="!collapsed && currentGroup === group.key"
+                  class="mt-1 ml-4 space-y-0.5 border-l border-brand/15 pl-2"
+                  :aria-label="`${group.label}下的页面`"
+                >
+                  <li v-for="page in group.items" :key="page.key">
+                    <router-link
+                      :to="page.path"
+                      class="block rounded px-2 py-1 text-xs transition"
+                      :class="
+                        route.path === page.path
+                          ? 'bg-brand/10 font-medium text-brand-deep'
+                          : 'text-slate-700 hover:bg-white/50'
+                      "
+                      :aria-current="route.path === page.path ? 'page' : undefined"
+                      >{{ page.label }}</router-link
+                    >
+                  </li>
+                </ul>
+              </div>
             </nav>
 
             <!--
