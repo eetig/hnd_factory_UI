@@ -401,7 +401,7 @@ function handleBackToList() {
     />
 
     <section
-      class="relative cursor-pointer rounded-card border-2 border-dashed bg-raised p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2"
+      class="relative cursor-pointer rounded-card border-2 border-dashed bg-raised p-12 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:ring-offset-2"
       :class="dragActive ? 'border-brand bg-brand-50' : 'border-slate-300 hover:border-brand'"
       role="button"
       :tabindex="uploading ? -1 : 0"
@@ -462,7 +462,7 @@ function handleBackToList() {
           <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
         </svg>
         <p id="wo-import-drop-title" class="text-base font-medium text-slate-700">
-          将 Excel 文件拖到此处，或 <span class="text-brand-deep">点击选择文件</span>
+          将 Excel 文件拖到此处，或 <span class="text-brand-ink">点击选择文件</span>
         </p>
         <p id="wo-import-drop-hint" class="text-xs text-slate-500">仅支持 .xlsx / .xls 格式</p>
         <p v-if="currentFile" class="mt-1 inline-flex items-center gap-2 rounded-md bg-region px-3 py-1.5 text-sm text-slate-600">
@@ -491,7 +491,7 @@ function handleBackToList() {
         <span class="text-sm text-slate-500">文件类型识别结果：</span>
         <span
           v-if="workOrderType"
-          class="rounded-full bg-brand-100 px-3 py-1 text-sm font-semibold text-brand-deep"
+          class="rounded-full bg-brand-100 px-3 py-1 text-sm font-semibold text-brand-ink"
         >
           {{ workOrderType }}
         </span>
@@ -578,8 +578,8 @@ function handleBackToList() {
         <div class="flex h-8 w-8 items-center justify-center rounded-full" :class="STATUS_ICON_TONE.success">✓</div>
         <h3 class="text-sm font-semibold text-slate-900">导入完成</h3>
         <span class="text-sm text-slate-500">
-          新增 <span class="font-semibold text-brand-deep">{{ importSummary.addCount }}</span> 条，
-          更新 <span class="font-semibold text-brand-deep">{{ importSummary.updateCount }}</span> 条，
+          新增 <span class="font-semibold text-brand-ink">{{ importSummary.addCount }}</span> 条，
+          更新 <span class="font-semibold text-brand-ink">{{ importSummary.updateCount }}</span> 条，
           跳过 <span class="font-semibold text-slate-600">{{ importSummary.skipCount }}</span> 条
         </span>
       </div>

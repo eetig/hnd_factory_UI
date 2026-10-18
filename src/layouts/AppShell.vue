@@ -287,13 +287,13 @@ function toggleSidebar() {
                 Factory Operations
               </p>
               <!--
-              焦点环是**全站统一的 `ring-brand`**（043）：石墨压浅纱 ~13:1。
+              焦点环是**全站统一的 `ring-brand-ink`**（043）：石墨压浅纱 ~13:1。
               这处原先用的是 slate-500，理由是「导航项那批浅色环只有 1.67:1」——
               那批环已在 变更-028 一并修掉，不统一的理由随之消失。
             -->
               <button
                 type="button"
-                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
                 :aria-label="collapsed ? '展开侧栏' : '收起侧栏'"
                 :aria-expanded="!collapsed"
                 aria-controls="app-sidebar"
@@ -357,7 +357,7 @@ function toggleSidebar() {
                 <button
                   type="button"
                   :data-group="group.key"
-                  class="nav-group-btn rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
+                  class="nav-group-btn rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.99]"
                   :class="[
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
@@ -394,7 +394,7 @@ function toggleSidebar() {
                     <span
                       class="block text-sm"
                       :class="
-                        currentGroup === group.key ? 'font-medium text-white' : 'text-slate-900'
+                        currentGroup === group.key ? 'font-medium text-on-brand' : 'text-slate-900'
                       "
                       >{{ group.label }}</span
                     >
@@ -406,7 +406,7 @@ function toggleSidebar() {
                        选中行的层次由字号（14/12）与字重（medium/normal）承担。 -->
                     <span
                       class="mt-0.5 block truncate text-xs font-normal"
-                      :class="currentGroup === group.key ? 'text-white' : 'text-slate-600'"
+                      :class="currentGroup === group.key ? 'text-on-brand' : 'text-slate-600'"
                       >{{ group.hint }}</span
                     >
                   </span>
@@ -433,7 +433,7 @@ function toggleSidebar() {
                         class="block rounded px-2 py-1 text-xs transition"
                         :class="
                           route.path === page.path
-                            ? 'bg-brand/10 font-medium text-brand-deep'
+                            ? 'bg-brand/10 font-medium text-brand-ink'
                             : 'text-slate-700 hover:bg-white/50'
                         "
                         :aria-current="route.path === page.path ? 'page' : undefined"
@@ -515,7 +515,7 @@ function toggleSidebar() {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
@@ -597,7 +597,7 @@ function toggleSidebar() {
                 >
                   <button
                     type="button"
-                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.98]"
+                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
                     :class="
                       collapsed
                         ? 'mx-auto flex items-center justify-center'
@@ -607,7 +607,7 @@ function toggleSidebar() {
                     @click="goLogin"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-white transition group-hover:bg-brand-deep"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-on-brand transition group-hover:bg-brand-deep"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
                       <svg
@@ -699,10 +699,10 @@ function toggleSidebar() {
                 :data-tab-key="tab.key"
                 type="button"
                 :aria-current="activeItem?.key === tab.key ? 'page' : undefined"
-                class="shrink-0 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                class="shrink-0 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                 :class="
                   activeItem?.key === tab.key
-                    ? 'border-brand bg-brand font-medium text-white'
+                    ? 'border-brand bg-brand font-medium text-on-brand'
                     : 'border-line text-slate-600 hover:border-slate-300 hover:text-slate-800'
                 "
                 @click="goToPage(tab.path)"

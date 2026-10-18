@@ -115,10 +115,10 @@ onMounted(() => {
         role="tab"
         :aria-selected="activeView === view.key ? 'true' : 'false'"
         :aria-current="activeView === view.key ? 'page' : undefined"
-        class="shrink-0 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        class="shrink-0 whitespace-nowrap rounded-md border px-3 py-1.5 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
         :class="
           activeView === view.key
-            ? 'border-brand bg-brand font-medium text-white'
+            ? 'border-brand bg-brand font-medium text-on-brand'
             : 'border-line text-slate-600 hover:border-slate-300 hover:text-slate-800'
         "
         @click="activeView = view.key"

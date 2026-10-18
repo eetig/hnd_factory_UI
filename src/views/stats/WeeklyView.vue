@@ -247,7 +247,7 @@ const weeklyTitle = computed(() => {
                       type="text"
                       placeholder="/"
                       :aria-label="`车间剩余 ${row.name}`"
-                      class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-region focus:bg-raised focus:ring-2 focus:ring-inset focus:ring-brand"
+                      class="w-full bg-transparent py-2.5 pl-3 pr-5 text-right text-sm text-slate-700 outline-none transition placeholder:text-slate-500 hover:bg-region focus:bg-raised focus:ring-2 focus:ring-inset focus:ring-brand-ink"
                     />
                   </td>
                   <td class="border border-line py-2.5 pl-3 pr-5 text-right text-sm text-slate-700">

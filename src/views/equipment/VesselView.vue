@@ -242,7 +242,7 @@ const {
                     <span class="text-slate-500">mm</span>
                   </div>
                   <div class="mt-0.5 text-sm text-slate-500">
-                    体积：<span class="font-semibold text-brand-deep">{{
+                    体积：<span class="font-semibold text-brand-ink">{{
                       vesselStartVolume.toFixed(2)
                     }}</span>
                     m³<template v-if="vesselStartMass !== null"
@@ -299,7 +299,7 @@ const {
                     <span class="text-slate-500">mm</span>
                   </div>
                   <div class="mt-0.5 text-sm text-slate-500">
-                    体积：<span class="font-semibold text-brand-deep">{{
+                    体积：<span class="font-semibold text-brand-ink">{{
                       vesselEndVolume.toFixed(2)
                     }}</span>
                     m³<template v-if="vesselEndMass !== null"
@@ -476,7 +476,7 @@ const {
 /* 键盘聚焦：EP 自带的焦点表现落在被上面覆写的钮上，这里显式补一圈
    （品牌蓝 = 主色 #1E40AF；更早是墨色 #111111 / #171719） */
 .vessel-level-slider :deep(.el-slider__button-wrapper:focus-visible .el-slider__button) {
-  outline: 2px solid #B23A0B;
+  outline: 2px solid #92400E;
   outline-offset: 2px;
 }
 

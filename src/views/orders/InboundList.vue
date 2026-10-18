@@ -168,7 +168,7 @@ onMounted(fetchInboundRecords)
                   </td>
                   <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     <span
-                      class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-md bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand"
+                      class="relative flex h-5 w-5 cursor-pointer items-center justify-center rounded-md bg-region text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                       :role="canOpenImage(record) ? 'button' : undefined"
                       :tabindex="canOpenImage(record) ? 0 : -1"
                       :aria-label="

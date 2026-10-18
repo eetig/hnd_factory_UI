@@ -617,17 +617,31 @@ describe('主按钮与品牌色的阈值账（变更-043）', () => {
    */
   const brand = tokenHex('brand')
   const deep = tokenHex('brand-deep')
+  const onBrand = tokenHex('on-brand')
 
-  it('brand 压白字过 AA（16.83 —— 石墨主色自己的余量）', () => {
+  /*
+   * 2026-10-18 换太阳橙 #F59E0B 之后，这一组的结论**翻面**了：
+   * 白字压亮橙只有 2.15:1 —— 不是「余量小」，是物理上不可能过 AA。
+   * 所以这一代钉的不再是「白字够不够」，而是「橙底必须配深墨」：
+   *   on-brand(#1C1917) 压 brand     = 8.14
+   *   on-brand 压 brand-deep（hover） = 5.9 上下，仍过
+   * 另一半也钉住：brand 与白字的比值**必须小于 4.5** —— 否则说明有人把橙
+   * 调回了「能吃白字」的深红棕，太阳橙就没保住。
+   */
+  it('橙底配深墨过 AA（on-brand 8.14）—— 亮橙上白字物理上过不了', () => {
     expect(brand, 'tailwind.config.js 里没有 colors.brand').toBeTruthy()
-    expect(contrast(brand, HEX.white)).toBeGreaterThanOrEqual(4.5)
+    expect(onBrand, 'tailwind.config.js 里没有 colors.on-brand').toBeTruthy()
+    expect(contrast(onBrand, brand)).toBeGreaterThanOrEqual(4.5)
+    expect(
+      contrast(HEX.white, brand),
+      'brand 又能吃白字了？说明它被调回了深红棕 —— 太阳橙这一关是「白字必须不够」',
+    ).toBeLessThan(4.5)
   })
 
-  it('brand-deep 也过（17.90）—— hover 态不许把白字拖破', () => {
-    // 实心按钮的 hover 是 bg-brand-deep：白字在**两个状态**上都要过，
-    // 否则鼠标准星移上去的那一瞬间文字就欠对比度了。
+  it('hover 填充（brand-deep）配深墨也过', () => {
+    // 实心按钮 hover 是 bg-brand-deep，字色不变 —— 两个状态都要过。
     expect(deep, 'tailwind.config.js 里没有 colors.brand-deep').toBeTruthy()
-    expect(contrast(deep, HEX.white)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(onBrand, deep)).toBeGreaterThanOrEqual(4.5)
   })
 
   it('brand-vivid 整键退役 —— 它存在的理由（白字过不了主档）在石墨下不成立', () => {
@@ -654,16 +668,24 @@ describe('主按钮与品牌色的阈值账（变更-043）', () => {
     ).toEqual([])
   })
 
-  it('浅底上的文字用 brand-deep：压 brand-50 / brand-100 都过（14.62 / 11.84）', () => {
+  it('浅底上的品牌文字用 brand-ink：压 brand-50 / brand-100 都过', () => {
+    /*
+     * 太阳橙时代（2026-10-18）分了两档：
+     *   brand-deep #C47E09 = hover **填充**（= EP dark-2，同源交叉那条要它）；
+     *   brand-ink  #92400E = 浅底上的**文字 / 焦点环**（压白底 7.09）。
+     * 拿 brand-deep 当文字只有 3.07 / 2.63 —— 正是这条用例抓出来的。
+     */
+    const ink = tokenHex('brand-ink')
     const b50 = tokenHex('brand-50')
     const b100 = tokenHex('brand-100')
+    expect(ink, 'tailwind.config.js 里没有 colors.brand-ink').toBeTruthy()
     expect(b50, 'tailwind.config.js 里没有 colors.brand-50').toBeTruthy()
     expect(b100, 'tailwind.config.js 里没有 colors.brand-100').toBeTruthy()
-    expect(contrast(deep, b50)).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(deep, b100)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(ink, b50)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(ink, b100)).toBeGreaterThanOrEqual(4.5)
   })
 
-  it('brand-200 上的文字账翻面：brand-deep 压它 9.33 过 —— 旧「禁文字」规则退役', () => {
+  it('brand-200 上的文字账：brand-ink 压它仍过 —— 旧「禁文字」规则退役', () => {
     /*
      * 041 的 brand-200（#B3D4F7 蓝浅档）上不许垫 brand-deep 文字：4.36 破 AA。
      * 043 的三档是 EP 石墨派生（light-7 #BBBBBC 系），brand-deep 压它实算 9.33 ——
@@ -673,7 +695,7 @@ describe('主按钮与品牌色的阈值账（变更-043）', () => {
      */
     const b200 = tokenHex('brand-200')
     expect(b200, 'tailwind.config.js 里没有 colors.brand-200').toBeTruthy()
-    expect(contrast(deep, b200)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(tokenHex('brand-ink'), b200)).toBeGreaterThanOrEqual(4.5)
   })
 })
 
@@ -978,8 +1000,8 @@ describe('焦点环必须过 1.4.11 的 3:1', () => {
    * 靠形态自然排除 —— 前两个靠 `[a-z]+` 的要求，inset/offset 靠显式排除。
    */
   const RING_OK = [
-    { ring: 'focus-visible:ring-brand', why: '16.83（压白底；压轻纱最亮处 ~13.7）' },
-    { ring: 'focus:ring-brand', why: '16.83（表内可编辑格，环画在卡面上）' },
+    { ring: 'focus-visible:ring-brand-ink', why: '7.09（压白底；亮橙 ring-brand 只有 2.15，够不到 3:1）' },
+    { ring: 'focus:ring-brand-ink', why: '7.09（表内可编辑格，环画在卡面上）' },
     { ring: 'focus-visible:ring-rose-600', why: '4.70（清除筛选 / 清空），rose 是它的语义色' },
     { ring: 'focus:ring-slate-500', why: '4.76（实心主按钮，环画在 ring-offset 之外的白底上）' },
     {
@@ -989,7 +1011,7 @@ describe('焦点环必须过 1.4.11 的 3:1', () => {
     },
   ]
 
-  const RING_RE = /\bfocus(-visible)?:ring-(?!offset|inset)([a-z]+(?:-\d{2,3})?(?:\/\d{1,3})?)\b/g
+  const RING_RE = /\bfocus(-visible)?:ring-(?!offset|inset)([a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\/\d{1,3})?)\b/g
 
   it('全仓只允许出现白名单里的焦点环', () => {
     const known = new Set(RING_OK.map((e) => e.ring))
@@ -2016,7 +2038,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
       tokens,
       '侧栏的焦点环不是 ring-brand —— 043 起它跟全站一个环色（墨色压侧栏面 17.47，' +
         '041 那种「深底上豁免白环」的理由随深侧栏一起退役）',
-    ).toContain('focus-visible:ring-brand')
+    ).toContain('focus-visible:ring-brand-ink')
   })
 
   it('slate 深字族在侧栏面上过 AA（三档实算 16.52 / 9.58 / 7.01）；slate-500 压它是 4.40 —— 这就是最小到 600 的原因', () => {
@@ -2042,36 +2064,39 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     ).toBeLessThan(4.5)
   })
 
-  it('选中胶囊上的字：纯白 18.88；白的各档透明度压墨色也全过（041 的贴线账随蓝退役）', () => {
+  it('选中胶囊上的字：深墨 8.14；深墨各档透明度压橙也全过（亮橙时代翻面）', () => {
     /*
-     * 蓝胶囊时代（041）「白的各档透明度压 brand 全破 AA」—— /95 4.39、/85 3.82，
-     * 只有纯白 4.70 过线，所以选中行的提示行必须转纯白。043 的石墨主色把这条
-     * 账整个翻面，x-minimalist 的墨色 #111111 余量更大：纯白 **18.88**、
-     * /85 白（合成 #DBDBDB）**13.64** —— 提示行的纯白现在是**层次手段**
-     * （字号 14/12 + 字重 medium/normal），不再是阈值救火。
+     * 这条的结论换过三次向：
+     *   · 041 蓝胶囊：白的各档透明度压 brand 全破 AA（/95 4.39、/85 3.82），
+     *     只有纯白 4.70 过线 → 提示行必须转纯白；
+     *   · 043 石墨：白字余量 18.88，白成了**层次手段**；
+     *   · 2026-10-18 太阳橙：白字只剩 2.15 —— 字色整体翻成深墨 `on-brand`
+     *     （#1C1917 压橙 8.14），提示行的 /85 深墨也有 6.17。
      *
-     * 这条同时是余量哨兵：余量来自「底够深」。brand 若被调浅（往任何亮色走），
-     * 最软的 /85 白先跌回 4.5 附近 —— 那时这里红，重新决定提示行的字色。
+     * 这条同时是余量哨兵，只是方向反了：余量来自「橙够亮」。brand 若被调暗
+     * （往能吃白字的深红棕走），太阳橙就没了 —— 那一半由上一条用例守。
      */
     const brand = tokenHex('brand')
+    const onBrand = tokenHex('on-brand')
     expect(brand, 'tailwind.config.js 里没有 colors.brand').toBeTruthy()
+    expect(onBrand, 'tailwind.config.js 里没有 colors.on-brand').toBeTruthy()
     expect(
-      contrast(HEX.white, brand),
-      '纯白压 brand 不过 4.5 了？先看 brand 是不是被调过，再谈别的',
+      contrast(onBrand, brand),
+      '深墨压 brand 不过 4.5 了？先看 brand 是不是被调过，再谈别的',
     ).toBeGreaterThanOrEqual(4.5)
-    const softest = composite('#ffffff', 0.85, brand)
+    const softest = composite(onBrand, 0.85, brand)
     expect(
       contrast(softest, brand),
-      `${contrast(softest, brand).toFixed(2)} —— /85 白压 brand 跌到 4.5 以下了：` +
-        'brand 被调浅、白字余量收窄，重新决定选中胶囊上的字色再拆这条',
+      `${contrast(softest, brand).toFixed(2)} —— /85 深墨压 brand 跌到 4.5 以下了：` +
+        '橙被调浅、深字余量收窄，重新决定选中胶囊上的字色再拆这条',
     ).toBeGreaterThanOrEqual(4.5)
-    // 版面上的锚：提示行那一串里得有「选中 → 纯白」的分支
+    // 版面上的锚：提示行那一串里得有「选中 → 深墨」的分支
     const hi = WORKBENCH.indexOf('block truncate text-xs font-normal')
     expect(hi, '没扫到侧栏提示行的 class 串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
       WORKBENCH.slice(hi, hi + 240),
-      "侧栏提示行没有「选中转 'text-white'」的分支 —— 深浅两态的层次靠它",
-    ).toContain("'text-white'")
+      "侧栏提示行没有「选中转 'text-on-brand'」的分支 —— 深浅两态的层次靠它",
+    ).toContain("'text-on-brand'")
   })
 
   it('白面上的弱化文字：slate-600 过 AA（实算 7.58）—— 043「霜面最深端 4.37」那条推理随玻璃消失', () => {
@@ -2113,12 +2138,13 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     ).toBeGreaterThan(contrast(HEX['slate-500'], face))
   })
 
-  it('页签两串字面量：选中墨色胶囊 / 未选中 slate-600', () => {
+  it('页签两串字面量：选中橙底深字 / 未选中 slate-600', () => {
     // 页签是三块面板上唯一的「一组文字」，两态各钉一串字面量 ——
-    // 它同时是「选中 = brand 实底白字」与「未选中 = 压白面的 slate-600」的锚。
+    // 它同时是「选中 = brand 实底 + on-brand 深字」与「未选中 = 压白面的 slate-600」的锚。
+    // 2026-10-18：太阳橙太亮，选中态的字从 text-white 换成 text-on-brand（8.14:1）。
     expect(
-      WORKBENCH.includes("'border-brand bg-brand font-medium text-white'"),
-      '页签选中态不是「border-brand bg-brand font-medium text-white」',
+      WORKBENCH.includes("'border-brand bg-brand font-medium text-on-brand'"),
+      '页签选中态不是「border-brand bg-brand font-medium text-on-brand」',
     ).toBe(true)
     expect(
       WORKBENCH.includes(
@@ -3248,8 +3274,8 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
      * 应当跟随主色 token。改成从 tailwind 的 brand 取值再比对 —— 比钉死更严：
      * 以后谁把 outline 换成别的深色，这里照样会红。
      */
-    const brandRing = (tokenHex('brand') || '').toLowerCase()
-    expect(brandRing, 'tailwind.config.js 里没有 colors.brand').toBeTruthy()
+    const brandRing = (tokenHex('brand-ink') || '').toLowerCase()
+    expect(brandRing, 'tailwind.config.js 里没有 colors.brand-ink').toBeTruthy()
     expect(
       SRC_TEXT.toLowerCase(),
       '滑块的键盘聚焦环没了 —— EP 默认环被覆写后必须显式补一圈主色 outline',
