@@ -119,11 +119,11 @@ export default {
          * 浅底三档 = EP 的 light-9/8/7 混白公式（brand-50 #E7E7E7 = light-9……），
          * 同源可交叉验证：深字一律 brand-deep；三档全部中性（max−min = 0）。
          */
-        brand: '#1E40AF',
-        'brand-deep': '#18338C',
-        'brand-50': '#E9ECF7',
-        'brand-100': '#D2D9EF',
-        'brand-200': '#BCC6E7',
+        brand: '#B23A0B',
+        'brand-deep': '#8E2E09',
+        'brand-50': '#F7EBE7',
+        'brand-100': '#F0D8CE',
+        'brand-200': '#E8C4B6',
       },
       borderRadius: {
         // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px

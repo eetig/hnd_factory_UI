@@ -476,7 +476,7 @@ const {
 /* 键盘聚焦：EP 自带的焦点表现落在被上面覆写的钮上，这里显式补一圈
    （品牌蓝 = 主色 #1E40AF；更早是墨色 #111111 / #171719） */
 .vessel-level-slider :deep(.el-slider__button-wrapper:focus-visible .el-slider__button) {
-  outline: 2px solid #1E40AF;
+  outline: 2px solid #B23A0B;
   outline-offset: 2px;
 }
 

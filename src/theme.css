@@ -1,24 +1,24 @@
 /*
- * Element Plus 主题覆盖（x-minimalist：高亮色 = 品牌蓝 #1E40AF）。
+ * Element Plus 主题覆盖（x-minimalist：高亮色 = 品牌橙 #C2410C）。
  *
  * ⚠️ 导入顺序是这份文件能不能生效的前提：必须排在 element-plus/dist/index.css **之后**。
  *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
  *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
  *
- * 高亮色 = Tailwind 的 `brand` #1E40AF（minimalist 的签名 CTA：墨色实底 + 白字 +
+ * 高亮色 = Tailwind 的 `brand` #C2410C（minimalist 的签名 CTA：墨色实底 + 白字 +
  * 小圆角、无阴影），手写 markup 与 EP 同一个值。
  * 历史：天蓝（EP 原生 #409eff 并存期）→ 翡翠绿 emerald-700（变更-027~040）→ 苹果蓝
  * （041）→ 石墨黑 #1D1D1F（043）→ linear 薰衣草蓝 #5e6ad2（x-ai，已随分支保留）→
- * 品牌蓝 #1E40AF。每一代都是「整站只有一个高亮色」，这条不变量没变过。
+ * 品牌橙 #C2410C。每一代都是「整站只有一个高亮色」，这条不变量没变过。
  *
- * 墨色的账：白字压 #1E40AF = 8.72:1，余量比石墨那代还大 —— 「白字过不过」在这三代
+ * 墨色的账：白字压 #B23A0B = 5.99:1（白/85 也有 4.74，余量够），余量比石墨那代还大 —— 「白字过不过」在这三代
  * 里都不是悬念；换代的理由是**观感**（minimalist 的墨色 CTA 是它的签名动作），
  * 不是阈值救火。
  */
 
 :root {
-  /* ===== 高亮色：对齐 Tailwind brand #1E40AF ===== */
-  --el-color-primary: #1E40AF;
+  /* ===== 高亮色：对齐 Tailwind brand #C2410C ===== */
+  --el-color-primary: #B23A0B;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -36,12 +36,12 @@
    *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
    *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #6279C7;
-  --el-color-primary-light-5: #8FA0D7;
-  --el-color-primary-light-7: #BCC6E7;
-  --el-color-primary-light-8: #D2D9EF;
-  --el-color-primary-light-9: #E9ECF7;
-  --el-color-primary-dark-2: #18338C;
+  --el-color-primary-light-3: #C97554;
+  --el-color-primary-light-5: #D99D85;
+  --el-color-primary-light-7: #E8C4B6;
+  --el-color-primary-light-8: #F0D8CE;
+  --el-color-primary-light-9: #F7EBE7;
+  --el-color-primary-dark-2: #8E2E09;
 
   /* ===== 圆角：小圆角（minimalist：卡片 8px 上限 / 按钮 4–6px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */
