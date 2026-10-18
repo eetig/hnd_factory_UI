@@ -900,7 +900,13 @@ onUnmounted(cancelMaterialSearch)
                    （/ssc/fee/#/j_path=%2FlistAll&…&criteria=docNumber:<单号>）在未登录时会被
                    302 到 login.jsp，**登录后落回门户首页**（2026-10-18 实测），不会回到那张单；
                    表单页又只认 fdId。所以只能让用户把表单地址复制一次存进来。
-                   没粘过链接 → 保持普通文字（看着像链接点不动最恼人）。 -->
+
+                   三态用颜色分开（变更-101），目的是「一眼看出哪几行还没关联链接」：
+                     ① 已关联 → 品牌蓝、悬停出下划线、可点；
+                     ② 有单号但没粘链接 → **琥珀 700 + 虚线底划线**（虚线 = 还不是真链接），
+                        悬停提示去「编辑」里补；
+                     ③ 连单号都没有 → 灰「—」。
+                   琥珀只能取 700 档：白底 5.02:1 过 AA；400 是 2.56:1，守卫里明令禁止。 -->
               <td class="px-3 py-2 text-slate-600">
                 <a
                   v-if="row.oaUrl"
@@ -910,7 +916,12 @@ onUnmounted(cancelMaterialSearch)
                   class="block truncate text-brand hover:underline"
                   :title="`在 OA 里打开：${row.oaUrl}`"
                 >{{ row.oaNo || '打开 OA' }}</a>
-                <span v-else class="block truncate" :title="row.oaNo || ''">{{ row.oaNo || '—' }}</span>
+                <span
+                  v-else-if="row.oaNo"
+                  class="block cursor-help truncate text-amber-700 underline decoration-amber-400/60 decoration-dashed underline-offset-2 hover:decoration-solid"
+                  title="还没关联 OA 链接 —— 点「编辑」，把 OA 地址粘到单号下面那格"
+                >{{ row.oaNo }}</span>
+                <span v-else class="block text-slate-500">—</span>
               </td>
               <!-- 送货单三态（变更-094）：图片 → 缩略图（点开看原图）；文本 → 原样显示
                    （这一列原本是「送货单号」文本，老数据不许当坏数据）；空 → 未到货。
