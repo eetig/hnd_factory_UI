@@ -1,0 +1,106 @@
+/*
+ * ============================================================
+ * 台账表格的唯一配方（2026-10-18，变更-124）
+ * ============================================================
+ *
+ * 六张表（工单/领料/入库/核算/采购/设备）吃同一套类：`.ledger-table`。
+ *
+ * ## 为什么要有这一层
+ *
+ * 改造前每张表各写各的：有的 `divide-y divide-line`、有的 `divide-y divide-slate-200`、
+ * 有的全边框格子、有的只有 hover。同一个系统里六张表长五个样子 ——
+ * 使用者一眼就能看出"这是不同时间做的"。
+ *
+ * ## 这套配方在做什么（以及为什么这么选）
+ *
+ *   1. **去外框、去竖线**：框线是"表格控件"的语言，不是"数据"的语言。
+ *      数据表靠**对齐**读，不靠网格读；框线越多，眼睛越要跟线打架。
+ *   2. **表头粘顶**：翻到第 12 行时还能知道第 5 列是什么。这是纯粹的可用性。
+ *   3. **2% 斑马纹**：唯一的用途是"防止串行"（24 行时视线容易跨行）。
+ *      再深一档就会和 hover / 选中态抢戏，所以**深度上限写进守卫**。
+ *   4. **行高 40px**：1280×800 下能多看一行是一行。
+ *   5. **hover 浮起用底色+阴影，不用 transform**：
+ *      表格行上的 transform 在 Chrome/Safari 里对 sticky 表头和 td 边框的表现不一致，
+ *      会出现"表头被行盖住一半"这种怪现象。用背景色 + box-shadow 表达同样的意思。
+ *
+ * ## 不在这里做的事
+ *
+ * ⚠️ **不做任何行入场/重排动画**（翻页、筛选、排序都算）。
+ * 这是高频动作，逐行动画一天要看几十次 —— 守卫里有一条专门拦它。
+ * 也不做表头动画、不做视差。
+ */
+
+.ledger-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* ---------- 表头：粘顶 + 一条底线，别的一概不画 ---------- */
+.ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: theme(colors.region);
+  border-bottom: 1px solid theme(colors.line);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgb(71 85 105);
+  /* 表头吸顶时上下各留一点，避免文字贴着数据行 */
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+/* ---------- 行：只有行底一条线 ---------- */
+.ledger-table tbody td {
+  height: 40px;
+  padding: 0 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid theme(colors.line);
+}
+
+.ledger-table tbody tr {
+  position: relative;
+  /* 斑马纹与 hover 都只改背景，不碰布局 —— 布局一动，滚动位置就会跳 */
+  transition: background-color 120ms linear;
+}
+
+/* 2% 的斑马纹：只为了"不串行"，再深就会和 hover 抢注意力（守卫有上限断言） */
+.ledger-table tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.02);
+}
+
+/*
+ * hover：被指到的那一行"浮起来"。
+ *
+ * 用 `background + box-shadow` 而不是 `transform: translateY(-1px)`：
+ *   · 表格行上做 transform，Safari 会把 sticky 表头的 z-index 上下文搞乱；
+ *   · 行高固定 40px 时，位移会让相邻行看起来在抖。
+ * 阴影 + 纯白底在视觉上已经足够"浮起"。
+ */
+.ledger-table tbody tr:hover {
+  background: theme(colors.raised);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
+}
+
+/* 浮起时把行底线藏掉，否则阴影下面还挂着一根灰线 */
+.ledger-table tbody tr:hover td {
+  border-bottom-color: transparent;
+}
+
+/* ---------- 数字列 ---------- */
+.ledger-table td.num,
+.ledger-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * ---------- 减少动效 ----------
+ * 只关过渡，不关 hover 本身：底色变化是"状态指示"，不是装饰。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ledger-table tbody tr {
+    transition: none;
+  }
+}

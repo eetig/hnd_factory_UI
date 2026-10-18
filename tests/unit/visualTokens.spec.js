@@ -3516,3 +3516,122 @@ describe('四个查询框共用一套边打边查接线（变更-060）', () => 
     ).toContain("'**/.*.tmpdir/**'")
   })
 })
+
+
+/* ============================================================================
+ * 变更-124：动效与表格的"禁令"（这一节只拦人，不描述现状）
+ * ============================================================================
+ *
+ * 这几条都是**踩过之后的结论**，写进守卫是因为你和我都会忘：
+ *   · 全站渐变背景 —— 廉价感的头号来源（minimal-field 那道径向光是唯一例外，它是"纸"的质感）
+ *   · 表格行入场/重排动画 —— 一天几十次的翻页动作，逐行动画 = 自找疲劳
+ *   · 滚动视差 / IntersectionObserver 驱动的动画 —— 内网台账不需要叙事
+ *   · 交互态过渡 > 300ms —— 超过这个数，hover 会像"卡了一下"
+ *   · 行高 > 44px、斑马纹 alpha > 0.03 —— 密度与"抢戏"的上限
+ */
+describe('变更-124：动效与表格禁令', () => {
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) return walk(full)
+      return /\.(vue|css|js)$/.test(entry.name) ? [full] : []
+    })
+  const SRC_FILES = walk(SRC)
+
+  it('禁止全站渐变背景（minimal-field 的径向纸纹是唯一例外）', () => {
+    const offenders = []
+    for (const file of SRC_FILES) {
+      const text = read(file)
+      const at = relative(SRC, file)
+      text.split('\n').forEach((line, index) => {
+        // 只看"用法"，不看注释：注释里提到 gradient 是在解释为什么不用它
+        const trimmed = line.trim()
+        if (trimmed.startsWith('*') || trimmed.startsWith('//') || trimmed.startsWith('/*')) return
+        if (/bg-gradient-to-/.test(line)) offenders.push(`${at}:${index + 1} bg-gradient-to-`)
+        if (/linear-gradient\(/.test(line)) offenders.push(`${at}:${index + 1} linear-gradient(`)
+        if (/background-image:\s*linear-gradient/.test(line)) {
+          offenders.push(`${at}:${index + 1} background-image: linear-gradient`)
+        }
+      })
+    }
+    expect(
+      offenders,
+      '出现了渐变背景。台账的底色只允许"纯色 + 一道极淡的径向纸纹"（minimal-field）；' +
+        '渐变是营销站的语言，放在这里会让每一页都像落地页。',
+    ).toEqual([])
+  })
+
+  it('表格行不许有入场/重排动画', () => {
+    const offenders = []
+    for (const file of SRC_FILES) {
+      const text = read(file)
+      const at = relative(SRC, file)
+      text.split('\n').forEach((line, index) => {
+        if (!/^\s*<tr\b/.test(line)) return
+        if (/animate-|animation:/.test(line)) offenders.push(`${at}:${index + 1}`)
+      })
+    }
+    expect(
+      offenders,
+      '表格行上出现了动画。翻页/筛选是高频动作，逐行动画一天要看几十次 —— ' +
+        '这一条是使用方体验的唯一硬保护，不要绕过它。',
+    ).toEqual([])
+  })
+
+  it('禁止滚动视差与 IntersectionObserver 驱动的动画', () => {
+    const offenders = []
+    for (const file of SRC_FILES) {
+      const text = read(file)
+      const at = relative(SRC, file)
+      if (/IntersectionObserver/.test(text)) offenders.push(`${at} IntersectionObserver`)
+      text.split('\n').forEach((line, index) => {
+        const trimmed = line.trim()
+        if (trimmed.startsWith('*') || trimmed.startsWith('//')) return
+        // scroll-behavior: smooth 允许（那是锚点跳转），但把 scroll 塞进 transform/animation 不行
+        if (/(transform|animation)[^;\n]*scroll/i.test(line)) offenders.push(`${at}:${index + 1} 滚动动画`)
+      })
+    }
+    expect(offenders, '台账不需要"叙事型"滚动动效：内网用户是来对账的，不是来看故事的。').toEqual([])
+  })
+
+  it('交互态过渡 ≤ 300ms（数据到达型动画不受此限）', () => {
+    const offenders = []
+    for (const file of SRC_FILES) {
+      const text = read(file)
+      const at = relative(SRC, file)
+
+      // Tailwind 的 duration-* 一律按数值比，不按位数比（duration-150 也是三位数）
+      for (const m of text.matchAll(/duration-(\d+)/g)) {
+        if (Number(m[1]) > 300) offenders.push(`${at} duration-${m[1]}`)
+      }
+
+      /*
+       * CSS 里的 transition：只拦"交互态"（hover/press/focus 那类）。
+       *
+       * 放行清单 = 一次性动作，不是交互态：
+       *   · bar-fill / kpi / rise —— 数据到达时的条形与入场（600/240ms）
+       *   · drawer              —— 抽屉开合，属于"偶尔操作"，200–500ms 是允许区间
+       *   · vessel-canvas       —— 用户主动缩放画布，需要看清过程
+       */
+      for (const m of text.matchAll(/([^{}]{0,160})\{[^{}]*transition:[^{}]*?(\d+)ms/g)) {
+        const selector = (m[1].split('\n').pop() || '').trim()
+        if (/bar-fill|kpi-|rise|drawer|vessel-canvas/.test(selector)) continue
+        if (Number(m[2]) > 300) offenders.push(`${at} transition ${m[2]}ms  ← ${selector.slice(0, 40)}`)
+      }
+    }
+    expect(offenders, '交互态过渡超过 300ms 会让 hover 感觉"卡了一下"（emil 的时长表上限）。').toEqual([])
+  })
+
+  it('台账表格配方：行高 ≤44px、斑马纹 alpha ≤0.03', () => {
+    const css = read(join(SRC, 'table.css'))
+    const tdBlock = css.slice(css.indexOf('.ledger-table tbody td'), css.indexOf('}', css.indexOf('.ledger-table tbody td')))
+    const height = Number((tdBlock.match(/height:\s*(\d+)px/) || [])[1])
+    expect(height, '配方里读不到行高').toBeGreaterThan(0)
+    expect(height, '行高超过 44px：1280×800 下每多 4px 就少看一行').toBeLessThanOrEqual(44)
+
+    const zebra = css.slice(css.indexOf('nth-child(even)'), css.indexOf('}', css.indexOf('nth-child(even)')))
+    const alpha = Number((zebra.match(/rgba\([^)]*?,\s*([\d.]+)\s*\)/) || [])[1])
+    expect(alpha, '配方里读不到斑马纹透明度').toBeGreaterThan(0)
+    expect(alpha, '斑马纹太深：会和 hover / 选中态抢注意力（上限 0.03）').toBeLessThanOrEqual(0.03)
+  })
+})

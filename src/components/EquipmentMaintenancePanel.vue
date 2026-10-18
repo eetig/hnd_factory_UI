@@ -284,7 +284,7 @@ onMounted(() => {
     <!-- 表格区：`min-h-0 flex-1` 拿的是"卡片分给它之后剩下的空间"（定高，不随内容变），
          所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。 -->
     <div class="ledger-scroll min-h-0 flex-1 overflow-auto">
-      <table class="w-full max-w-[1100px] table-fixed text-sm">
+      <table class="ledger-table w-full max-w-[1100px] table-fixed text-sm">
         <colgroup>
           <col v-for="column in orderedColumns" :key="column.key" :class="column.width" />
         </colgroup>
@@ -297,7 +297,7 @@ onMounted(() => {
               :key="column.key"
               scope="col"
               class="whitespace-nowrap px-4 py-2.5 font-medium"
-              :class="column.align === 'right' ? 'text-right' : 'text-left'"
+              :class="column.align === 'right' ? 'num text-right' : 'text-left'"
             >
               {{ column.label }}
             </th>
@@ -319,7 +319,7 @@ onMounted(() => {
               :key="column.key"
               class="px-4 py-2.5"
               :class="[
-                column.align === 'right' ? 'text-right' : 'text-left',
+                column.align === 'right' ? 'num text-right' : 'text-left',
                 column.key === 'equipmentName' ? 'font-medium' : '',
                 column.key === 'index' ? 'text-xs text-slate-500' : '',
               ]"

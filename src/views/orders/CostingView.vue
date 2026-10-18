@@ -132,6 +132,7 @@ onMounted(() => {
         :columns="reportColumns"
         :rows="reportRows"
         empty-text="暂无报工数据"
+        show-footer
         :row-key="statsRowKey"
       />
     </div>
@@ -141,6 +142,7 @@ onMounted(() => {
         :columns="costingColumns"
         :rows="costingRows"
         empty-text="暂无核算数据"
+        show-footer
         :row-key="statsRowKey"
       />
     </div>
@@ -168,6 +170,13 @@ onMounted(() => {
         </button>
       </div>
 
+      <!--
+        ⚠️ 这张表**不开合计行**（变更-124）。
+        理由：原辅料的数量是换算后的口径（×3.2 / ×20 / ×1000），
+        行与行之间单位并不统一（kg / g / 吨混排），而且派生行与源行同时存在 ——
+        求出来的「合计」既跨量纲、又重复计入，是个看起来像合计的错数字。
+        其余两张（工单报工 / 工单核算）同列单位一致，才开 tfoot。
+      -->
       <StatsTable
         :columns="materialCostingColumns"
         :rows="materialCostingDisplayRows"

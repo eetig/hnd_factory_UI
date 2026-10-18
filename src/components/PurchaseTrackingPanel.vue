@@ -226,7 +226,7 @@ onMounted(loadPurchase)
         剩余宽度按比例摊给所有列，数字列右对齐、左边一片空白（本会话踩过两次）。
         封顶 1100px：1280 视口下 8 列刚好，不出现横向滚动条。
       -->
-      <table class="w-full max-w-[1100px] table-fixed text-sm">
+      <table class="ledger-table w-full max-w-[1100px] table-fixed text-sm">
         <colgroup>
           <col v-for="col in orderedColumns" :key="col.key" :class="col.width" />
         </colgroup>
@@ -237,13 +237,13 @@ onMounted(loadPurchase)
               :key="col.key"
               scope="col"
               class="whitespace-nowrap px-3 py-2 text-xs font-medium text-slate-500"
-              :class="col.align === 'right' ? 'text-right' : 'text-left'"
+              :class="col.align === 'right' ? 'num text-right' : 'text-left'"
             >
               {{ col.label }}
             </th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-line">
+        <tbody>
           <tr
             v-for="(row, index) in rows"
             :key="row.id"

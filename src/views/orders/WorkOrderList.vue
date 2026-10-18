@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { useOrderImages } from '../../composables/useOrderImages'
 import OrderImageDialog from '../../components/OrderImageDialog.vue'
@@ -9,6 +9,7 @@ import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { getReportOrderType } from '../../constants/orderTypes'
 import { ElDatePicker, ElPagination } from 'element-plus'
+import KpiCard from '../../components/KpiCard.vue'
 
 /*
  * 工单汇总（原 WorkOrderList.vue 的 `workOrder` 页签）。
@@ -51,17 +52,29 @@ const {
   openOrderNoDialog,
   handleOrderNoSelected,
   clearOrderNoFilter,
+  workOrderSummaryRows,
+  fetchWorkOrderSummary,
 } = useWorkOrderData()
 
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
 
+/*
+ * 列宽（变更-124 重算）：1280 视口下主区可用宽约 926px。
+ *
+ * 原来这 8 列固定宽合计 **1008px** —— 已经比可用宽多 82px，也就是说
+ * 工单汇总在 1280 屏上**一直**有一条横向滚动条（之前的限宽只治了"摊宽"，
+ * 没治"总宽超了"）。这里按内容实测收敛：日期 10 字符、单号 10 位数字、
+ * 类型 4 个汉字、编码 9 位，各自留够即可，剩下的全给「产成品」去换行。
+ *
+ *   新合计 776px + 产成品自适应 ≈ 150px = 926px，正好铺满不留横滚。
+ */
 const columns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'planStartDate', label: '基本开始日期', width: 'w-36' },
-  { key: 'orderNo', label: '工单号', width: 'w-40' },
-  { key: 'orderType', label: '工单类型', width: 'w-32' },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
+  { key: 'index', label: '序号', width: 'w-14' },
+  { key: 'planStartDate', label: '基本开始日期', width: 'w-28' },
+  { key: 'orderNo', label: '工单号', width: 'w-[120px]' },
+  { key: 'orderType', label: '工单类型', width: 'w-[88px]' },
+  { key: 'materialCode', label: '物料编码', width: 'w-28' },
   /*
    * 产成品**故意不给宽度**（2026-10-18，使用方：「表格上总是有大段大段的空白」）。
    *
@@ -74,12 +87,38 @@ const columns = [
    * 宽一点正合适（单元格里有 max-width + 截断，不会把行撑爆）。
    */
   { key: 'materialDesc', label: '产成品' },
-  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
-  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
-  { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
+  { key: 'orderQty', label: '订单数量', width: 'w-24', align: 'right' },
+  { key: 'confirmedQty', label: '确认的产量', width: 'w-24', align: 'right' },
+  { key: 'deliveredQty', label: '已交货数量', width: 'w-24', align: 'right' },
 ]
 
-onMounted(fetchWorkOrders)
+
+/*
+ * ===== KPI（变更-124）=====
+ *
+ * 三个数全部来自 `summary-by-type-material` 的**全区间聚合**，不是当前页 10 行 ——
+ * 分页列表只有 10 行，拿它求和会得到一个随时间变化的假合计。
+ *
+ * 工单数（total）**故意不做卡片**：页头的分页器已经写着「共 N 条」，
+ * 再摆一张卡就是同一个数说两遍。
+ */
+const orderQtyTotal = computed(() =>
+  workOrderSummaryRows.value.reduce((sum, row) => sum + (Number(row.orderQty) || 0), 0),
+)
+const confirmedQtyTotal = computed(() =>
+  workOrderSummaryRows.value.reduce((sum, row) => sum + (Number(row.confirmedQty) || 0), 0),
+)
+/** 完成率：分母为 0 时给 0，不要出现 NaN% 或 Infinity% */
+const completeRate = computed(() =>
+  orderQtyTotal.value > 0 ? (confirmedQtyTotal.value / orderQtyTotal.value) * 100 : 0,
+)
+const showWorkOrderKpi = computed(() => workOrderSummaryRows.value.length > 0)
+
+onMounted(() => {
+  fetchWorkOrders()
+  // 变更-124：KPI 要用全区间聚合，进页面就取一次（改筛选时 reloadWorkOrders 会再取，共用同一个 ref）
+  if (!workOrderSummaryRows.value.length) fetchWorkOrderSummary()
+})
 </script>
 
 <template>
@@ -102,6 +141,23 @@ onMounted(fetchWorkOrders)
     ⚠️ 表格区的纵向滚动是「白捡 + 显式」两笔：`overflow-x:auto` 本来就会把
     `overflow-y` 的 `visible` 计算成 `auto`，显式写上 `overflow-y-auto` 是给下一个人看的。
     -->
+    <!-- KPI（变更-124）：三张卡，口径见下方 `orderQtyTotal` 的注释 -->
+    <div
+      v-if="showWorkOrderKpi"
+      class="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-3"
+    >
+      <KpiCard label="订单数量合计" :value="orderQtyTotal" unit="KG" hint="全区间聚合，不是当前页" />
+      <KpiCard label="确认产量合计" :value="confirmedQtyTotal" unit="KG" />
+      <KpiCard
+        label="报工完成率"
+        :value="completeRate"
+        unit="%"
+        :decimals="1"
+        accent
+        hint="确认产量 ÷ 订单数量"
+      />
+    </div>
+
     <section
       class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
     >
@@ -149,7 +205,7 @@ onMounted(fetchWorkOrders)
 
         <div v-else class="flex min-h-0 flex-1 flex-col">
           <div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table class="w-full max-w-[1280px] table-fixed divide-y divide-line text-left">
+            <table class="ledger-table w-full max-w-[1280px] table-fixed text-left">
               <colgroup>
                 <col v-for="column in columns" :key="column.key" :class="column.width" />
               </colgroup>
@@ -199,7 +255,7 @@ onMounted(fetchWorkOrders)
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-line">
+              <tbody>
                 <tr v-if="tableData.length === 0">
                   <td :colspan="columns.length" class="px-3 py-16 text-center text-sm text-slate-500">
                     没有符合筛选条件的工单
@@ -232,13 +288,13 @@ onMounted(fetchWorkOrders)
                   <td class="whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
                     {{ order.materialDesc }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
+                  <td class="num whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ order.orderQty }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
+                  <td class="num whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ order.confirmedQty }}
                   </td>
-                  <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
+                  <td class="num whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">
                     {{ order.deliveredQty }}
                   </td>
                 </tr>
