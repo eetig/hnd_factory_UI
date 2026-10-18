@@ -53,7 +53,7 @@ function getRowKey(item, index) {
 <template>
   <section class="rounded-card border border-line bg-raised shadow-card">
     <div class="overflow-x-auto">
-      <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+      <table class="w-full max-w-[1280px] table-fixed divide-y divide-slate-200 text-left">
         <colgroup>
           <col v-for="column in columns" :key="column.key" :class="column.width" />
         </colgroup>

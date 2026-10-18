@@ -357,7 +357,7 @@ function handleCalibrated(boundsJson) {
          所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。
          原先这里是 `max-h-[68vh]` —— 那是"最大"，高度仍随每页折行数变，分页行就上下跳。 -->
     <div class="ledger-scroll min-h-0 flex-1 overflow-auto">
-      <table class="w-full text-sm">
+      <table class="w-full max-w-[1280px] text-sm">
         <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line,#e5e7eb)]">
           <tr>
             <th scope="col" class="px-4 py-2.5 text-right font-medium">序号</th>

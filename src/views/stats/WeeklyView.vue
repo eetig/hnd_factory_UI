@@ -204,7 +204,7 @@ const weeklyTitle = computed(() => {
           />
 
           <div v-else class="overflow-x-auto">
-            <table class="w-full table-fixed border-collapse text-center">
+            <table class="w-full max-w-[1280px] table-fixed border-collapse text-center">
               <colgroup>
                 <col class="w-[220px]" />
                 <col class="w-32" />

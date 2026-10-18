@@ -1258,7 +1258,7 @@ onUnmounted(() => {
             </div>
 
             <div class="px-4 pb-4 pt-4">
-              <table v-if="image.table?.rows.length" class="w-full border-collapse text-sm">
+              <table v-if="image.table?.rows.length" class="w-full max-w-[1400px] border-collapse text-sm">
                 <thead>
                   <tr class="bg-region text-slate-600">
                     <th

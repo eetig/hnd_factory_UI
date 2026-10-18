@@ -507,7 +507,7 @@ function handleBackToList() {
         文件校验失败行（共 {{ previewErrors.length }} 行），请修正文件后重新上传
       </h3>
       <div class="mt-3 overflow-x-auto rounded-card">
-        <table class="min-w-full divide-y divide-rose-100 text-left">
+        <table class="w-full max-w-[1400px] divide-y divide-rose-100 text-left">
           <thead class="bg-rose-50">
             <tr>
               <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
@@ -526,7 +526,7 @@ function handleBackToList() {
 
     <section v-if="previewList.length" class="relative mt-6 overflow-hidden rounded-card border border-line bg-raised shadow-card">
       <div class="overflow-x-auto">
-        <table class="min-w-full table-fixed divide-y divide-slate-200 text-left">
+        <table class="w-full max-w-[1400px] table-fixed divide-y divide-slate-200 text-left">
           <colgroup>
             <col v-for="column in columns" :key="column.key" :class="column.width" />
           </colgroup>
@@ -587,7 +587,7 @@ function handleBackToList() {
       <div v-if="importFailRows.length" class="mt-3">
         <h4 class="text-sm font-semibold text-rose-700">导入失败行（共 {{ importFailRows.length }} 行）</h4>
         <div class="mt-3 overflow-x-auto rounded-card border border-rose-100">
-          <table class="min-w-full divide-y divide-rose-100 text-left">
+          <table class="w-full max-w-[1400px] divide-y divide-rose-100 text-left">
             <thead class="bg-rose-50">
               <tr>
                 <th scope="col" class="whitespace-nowrap px-3 py-4 text-xs font-semibold uppercase tracking-wide text-rose-700">行号</th>
