@@ -606,12 +606,18 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     expect(call[1].params.inboundMaterials).toBe('114001897')
     expect(call[1].params.start).toMatch(/^\d{4}-\d{2}-\d{2}$/)
 
-    const table = wrapper.findAll('table').find((node) => node.text().includes('150产品入库数'))
-    expect(table).toBeTruthy()
-    // 接口回的数已经进了表：领用 = 接口值 × 换算系数（氯铂酸 1 × 20）
-    expect(table.text()).toContain('12.5')
-    expect(table.text()).toContain('1000')
-    expect(table.text()).toContain('20')
+    /*
+     * 变更-123：这一页的表格被**故意**换成了 KPI 条 + 物料卡（使用方说"样式好单调"）。
+     * 所以不再找 <table>，改为断言"接口回的数确实上了屏"：
+     *   · 入库 1000 进 KPI
+     *   · 三氯氢硅领用 12.5 进卡片
+     *   · 氯铂酸领用 = 接口值 1 × 换算系数 20 = 20
+     */
+    const text = wrapper.text()
+    expect(text).toContain('150 产品入库')
+    expect(text).toContain('12.5')
+    expect(text).toContain('1000')
+    expect(text).toContain('20')
   })
 
   it('周统计：接口失败时报错，而不是把表默默显示成全 0', async () => {
