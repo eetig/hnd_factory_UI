@@ -208,7 +208,40 @@ const underlayList = tokenHex('canvas') ? [['纸', tokenHex('canvas')]] : []
  */
 const gradientPoints = underlayList
 
-const WORKBENCH = read(join(SRC, 'views', 'WorkOrderList.vue'))
+/*
+ * 工作台源码的**合集**（2026-10 路由化改造）。
+ *
+ * 改造前这里只读一个文件：`views/WorkOrderList.vue`（4115 行的单文件巨石）。
+ * 那个文件已被拆成「壳 + 14 个路由页 + 两份容器 composable」，于是下面那些
+ * 「在工作台源码里找某段 markup / 某串类名 / 某处 scoped CSS」的断言没了唯一入口。
+ *
+ * ⚠️ 不是放宽判据：**字符一个没少**，只是把范围从「一个文件」换成「同一批文件」。
+ * 顺序有意义 —— 复合体放在前面，靠 `indexOf` / `lastIndexOf` 就近取节点的几处
+ * 锚点（侧栏 / 导航条 / 纸 / 主区列）才仍然落在壳里。
+ */
+const WORKBENCH_FILES = [
+  'layouts/AppShell.vue',
+  'nav/index.js',
+  'views/orders/WorkOrderList.vue',
+  'views/orders/PickingList.vue',
+  'views/orders/InboundList.vue',
+  'views/orders/CostingView.vue',
+  'views/materials/StockView.vue',
+  'views/purchase/PurchaseView.vue',
+  'views/equipment/EquipmentView.vue',
+  'views/equipment/VesselView.vue',
+  'views/equipment/ElectricityView.vue',
+  'views/stats/WeeklyView.vue',
+  'views/stats/DailyView.vue',
+  'views/stats/TankLevelView.vue',
+  'views/maintain/ImportView.vue',
+  'views/maintain/ImageParseView.vue',
+  // 体积计算那一段的脚本搬到了这两个 composable（模板与样式仍在 VesselView.vue）
+  'composables/useVesselModel.js',
+  'composables/useVesselCanvas.js',
+]
+
+const WORKBENCH = WORKBENCH_FILES.map((file) => read(join(SRC, file))).join('\n')
 const tokensOf = (classAttr) => classAttr.trim().split(/\s+/).filter(Boolean)
 
 // 侧栏面板：`id="app-sidebar"` 就在它 class 属性的上一行
@@ -216,7 +249,8 @@ const SIDEBAR = tokensOf(
   (WORKBENCH.slice(WORKBENCH.indexOf('id="app-sidebar"')).match(/class="([^"]*)"/) || ['', ''])[1],
 )
 // 导航条：页标题 <h2> 往前数第二个 class 属性 —— 第一个是 h2 自己的，再往前就是它
-const h2At = WORKBENCH.indexOf('{{ activeTabLabel }}')
+//（路由化之后标题读 `pageTitle`：当前页由 route 决定，不再是 activeTab）
+const h2At = WORKBENCH.indexOf('{{ pageTitle }}')
 const navClassAt = WORKBENCH.lastIndexOf('class="', WORKBENCH.lastIndexOf('class="', h2At) - 1)
 const NAV = tokensOf(WORKBENCH.slice(navClassAt + 7, WORKBENCH.indexOf('"', navClassAt + 7)))
 // 主区栏：唯一同时带 `min-h-0` 与 `bg-raised` 的那个 class 属性（走 class 属性、
@@ -266,6 +300,29 @@ const classAttrsOf = (text) =>
   }))
 
 const CARD_RADIUS = /^rounded-(card|[tblr]-card|(?:tl|tr|bl|br)-card)$/
+
+// ---------------------------------------------------------------------------
+// 0.5 工作台源码合集本身（路由化改造后所有「就地取节点」的锚点都落在这批文件里）
+// ---------------------------------------------------------------------------
+
+describe('工作台源码合集：文件齐、壳在最前', () => {
+  it('WORKBENCH_FILES 里列的文件都存在', () => {
+    const missing = WORKBENCH_FILES.filter((file) => !existsSync(join(SRC, file)))
+    expect(
+      missing,
+      '这些工作台文件不见了 —— 页面被移动/改名之后，本文件的 WORKBENCH_FILES 要同步：' +
+        '漏一个不会报错，只会让「某段 markup 不存在」的断言莫名其妙地失败。',
+    ).toEqual([])
+  })
+
+  it('壳排在最前：侧栏 / 导航条 / 纸 / 主区列那几处就近取值才落在壳里', () => {
+    expect(WORKBENCH_FILES[0]).toBe('layouts/AppShell.vue')
+    // 上面几个锚点全部依赖「壳在最前」这一条，这里把三处一起钉住
+    expect(SIDEBAR.length).toBeGreaterThan(0)
+    expect(NAV.length).toBeGreaterThan(0)
+    expect(MAIN.length).toBeGreaterThan(0)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // 1. 禁用类名
@@ -741,7 +798,13 @@ describe('旧蓝全面禁入：037 天蓝 / 041 苹果蓝 / 042 天穹蓝（sky 
      * 引用着 #0071E3 / #0A84FF / #1D1D1F 来说明按钮取值的账 —— 那是记录，
      * 正是最该留的，按原始文本扫会把它们误报成「有人手写了一个色」。
      */
-    const ALLOWED = ['src/theme.css', 'src/glass-effects.css', 'src/views/WorkOrderList.vue']
+    const ALLOWED = [
+      'src/theme.css',
+      'src/glass-effects.css',
+      // 体积计算页的 scoped 块（聚焦环 / 底 —— CSS 里够不着 Tailwind 类）。
+      // 路由化之前这些字面量在工作台的唯一那个 .vue 里，现在跟着模板搬到了这一页。
+      'src/views/equipment/VesselView.vue',
+    ]
     const CURRENT_LITERAL =
       /#(1d1d1f|171719|e8e8e9|d2d2d2|bbbbbc|f1f2f5|ecedf1|e9e9ee)\b|rgba?\(\s*(29[\s,]+29[\s,]+31|210[\s,]+210[\s,]+210)\s*\)/i
     const offenders = []
@@ -2170,21 +2233,33 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
    * 变更-044：月底储罐液位记录（TankLevelPanel）接上同一张方子 —— 使用方
    * 2026-10-11 对这个页签说的是同一句话「翻页组件位置变化，体验不好」，038 的
    * 台账当时就点名过它「是同一个毛病、同一张方子能治」（另有设备保养、文件导入
-   * 预览表，仍未动）。它的链在**面板文件**里，包装层与 `:active` 还在 WorkOrderList
+   * 预览表，仍未动）。它的链在**面板文件**里，包装层在对应页面文件里
    * —— 所以第三条用例扫的是面板源码，时间线那条账也改成五份对账。
    */
   const TABS = ['workOrder', 'material', 'inbound', 'stock']
+  /*
+   * 四个汇总页各自的文件（2026-10 路由化改造）。
+   *
+   * 改造前这四个面板同住一个 WorkOrderList.vue，包装层写作
+   * `v-if="mountedTabs.has(x)" v-show="activeTab === x"`（v-if 管存在、v-show 管可见）。
+   * 拆页之后**包装层就是页面文件的根 div** —— 路由天然「一次只挂一页」，
+   * 存在性不再需要 v-if，可见性不再需要 v-show。判据因此从「找那段指令」变成
+   * 「读这一页模板的第一个 div」，断言的强度不变：缺 flex/h-full/flex-col 一样会红。
+   */
+  const PAGE_FILES = {
+    workOrder: 'views/orders/WorkOrderList.vue',
+    material: 'views/orders/PickingList.vue',
+    inbound: 'views/orders/InboundList.vue',
+    stock: 'views/materials/StockView.vue',
+    // 下面三个是「面板 + 包装层」的页：包装层同样搬到了各自的页面文件
+    tankLevel: 'views/stats/TankLevelView.vue',
+    equipment: 'views/equipment/EquipmentView.vue',
+    purchase: 'views/purchase/PurchaseView.vue',
+  }
   const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
-  // 变更-076 起面板是「首次激活才挂载、之后保留、非当前必须隐藏」：
-  //   v-if 管存在性（没进过的页签不创建），v-show 管可见性 —— 两者缺一不可，
-  //   只有 v-if 会让进来过的面板同时显示、互相叠在一起。
-  // 这条定高链本身没变，变的只是定位写法；锚点再失效时，下面用例的第一条断言会先红。
+  // 锚点再失效时，下面用例的第一条断言会先红（解析出来是空串）。
   const classAttr = (tab) =>
-    WORKBENCH.match(
-      new RegExp(
-        `<div v-if="mountedTabs\\.has\\('${tab}'\\)" v-show="activeTab === '${tab}'" class="([^"]*)"`,
-      ),
-    )?.[1] ?? ''
+    (read(join(SRC, PAGE_FILES[tab])).match(/<template>\s*<div class="([^"]*)"/) || [])[1] ?? ''
   const classAttrsIn = (src) =>
     [...src.matchAll(/(:?)class="([^"]*)"/g)].map((m) => ({
       bound: m[1] === ':',
@@ -2856,6 +2931,24 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
    * 再按精确串计数；列宽那类走 class 属性。
    */
   const SRC_TEXT = stripComments(WORKBENCH)
+
+  /**
+   * 取一个函数体：从 `function xxx` 到它**自己那一级**的收尾 `}`。
+   *
+   * ⚠️ 不能写死 `indexOf('\n}')`：2026-10 路由化改造把这段脚本搬进了
+   * `composables/useVesselCanvas.js`，函数整体缩进了一级、收尾大括号成了 `'  }'`。
+   * 写死"列 0"的切法会一直切到文件末尾，把后面的 `animateVesselTo` 也卷进来，
+   * 于是「拖动路径不得缓动」这条断言的失败原因就变成了假阳性。
+   * 这里按函数自身的缩进找收尾 —— 判据没放松，只是不再假设它写在第 0 列。
+   */
+  const functionBody = (name) => {
+    const at = SRC_TEXT.indexOf(`function ${name}`)
+    if (at < 0) return ''
+    const lineStart = SRC_TEXT.lastIndexOf('\n', at) + 1
+    const indent = SRC_TEXT.slice(lineStart, at)
+    return SRC_TEXT.slice(at, SRC_TEXT.indexOf(`\n${indent}}`, at))
+  }
+
   // 唯一的一根竖轨（自闭合、非贪婪；块内不会再嵌滑块）
   const SLIDER_BLOCKS = [...SRC_TEXT.matchAll(/<el-slider[\s\S]*?\/>/g)].map((m) => m[0])
 
@@ -3005,7 +3098,8 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
       'function setVesselLevelPair([lower, upper])',
     )
     const at = SRC_TEXT.indexOf('function setVesselLevelPair')
-    const body = SRC_TEXT.slice(at, SRC_TEXT.indexOf('\n}', at))
+    expect(at, 'setVesselLevelPair 不见了 —— 拖动路径的映射入口').toBeGreaterThan(-1)
+    const body = functionBody('setVesselLevelPair')
     const snapshot = body.indexOf('if (startIsLower.value)')
     expect(snapshot, '方向快照没了').toBeGreaterThan(-1)
     expect(
@@ -3030,7 +3124,7 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
     // 045 的两条路径分工原样保留：拖动直写（清补间 + 直写显示值）
     const atImm = SRC_TEXT.indexOf('function setVesselLevelImmediate')
     expect(atImm, 'setVesselLevelImmediate 不见了 —— 拖动路径的入口').toBeGreaterThan(-1)
-    const immBody = SRC_TEXT.slice(atImm, SRC_TEXT.indexOf('\n}', atImm))
+    const immBody = functionBody('setVesselLevelImmediate')
     expect(
       immBody,
       '补间没清 —— 拖动时 watcher 里现存的缓动会把液面接着往下拖，跟手感就没了',
@@ -3229,7 +3323,7 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
  * 所以下面钉的是那三层机制本身，而不是"还有没有回车"。
  */
 describe('物料查询边打边查（变更-059）：防抖 + 去重 + 过期响应护栏', () => {
-  const WORKBENCH_SRC = read(join(SRC, 'views', 'WorkOrderList.vue'))
+  const WORKBENCH_SRC = read(join(SRC, 'views', 'materials', 'StockView.vue'))
   const DEBOUNCE_SRC = read(join(SRC, 'utils', 'debounce.js'))
 
   it('节流器的三个动作都在：延迟执行 / flush 立刻执行 / cancel 撤销', () => {

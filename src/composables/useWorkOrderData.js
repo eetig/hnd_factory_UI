@@ -1,8 +1,15 @@
 import { ref } from 'vue'
 import request from '../api/request'
 import { REPORT_ORDER_TYPES, getReportOrderType, getReportOrderTypeKey } from '../constants/orderTypes'
-import { getToday, getFirstDayOfCurrentMonth } from '../utils/format'
 import { normalizeImageList } from '../utils/image'
+// 起止日期与工单类型是**工单组四个页面共享的筛选状态**，定义在 useOrderFilter 的
+// 模块作用域里（拆页后组件会随路由卸载，页面级 ref 会丢，见那份文件的头注）。
+// 这里只消费、不另存一份。
+import {
+  orderEndDate as endDate,
+  orderStartDate as startDate,
+  orderTypeFilter,
+} from './useOrderFilter'
 
 // ===== 工单数据（模块级单例）=====
 //
@@ -24,14 +31,11 @@ const pageSize = ref(10)
 const total = ref(0) // **筛选后**的总条数
 const loading = ref(false)
 const errorMessage = ref('')
-const startDate = ref(getFirstDayOfCurrentMonth())
-const endDate = ref(getToday())
 
-// 三个筛选条件及其弹窗开关
+// 三个筛选条件及其弹窗开关（起止日期与工单类型见文件头：它们来自 useOrderFilter）
 const productDialogVisible = ref(false)
 const productFilter = ref('')
 const orderTypeDialogVisible = ref(false)
-const orderTypeFilter = ref('')
 const orderNoDialogVisible = ref(false)
 const orderNoFilter = ref('')
 

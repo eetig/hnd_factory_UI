@@ -17,13 +17,16 @@ import {
 } from '../composables/useOcrConfirm'
 
 /**
- * 确认入库**成功且有实际写入**后通知调用方（WorkOrderList.vue 的
- * `@confirmed="handleOcrConfirmed"`）。
+ * 确认入库**成功且有实际写入**后通知调用方。
  *
- * ⚠️ 这个事件此前是**死绑定**：本文件全文没有 `defineEmits` / `emit`，而 WorkOrderList.vue
- * 一直挂着 `@confirmed` —— 表现与手机端修过的那个坑完全一样（「入库成功了、领料/入库
- * 汇总却不刷新」，见 WorkOrderList.vue 里 handleOcrConfirmed 上的注释）。
- * 变更-047 两套前端同批，一并补上。
+ * ⚠️ 这个事件此前是**死绑定**：本文件全文没有 `defineEmits` / `emit`，而当时的
+ * 调用方（拆分前的 WorkOrderList.vue）一直挂着 `@confirmed` —— 表现与手机端修过的
+ * 那个坑完全一样（「入库成功了、领料/入库汇总却不刷新」）。变更-047 两套前端同批，
+ * 一并补上。
+ *
+ * 2026-10 路由化改造之后，本页是独立路由（views/maintain/ImageParseView.vue），
+ * 事件仍然照发但**没有订阅者了** —— 列表页改为「进页即取数」，不再需要一条
+ * 「数据脏了」的通知链（见那个包装层文件的头注）。
  */
 const emit = defineEmits(['confirmed'])
 

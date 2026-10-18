@@ -27,8 +27,9 @@ import { useTankLevelImages } from '../composables/useTankLevelImages'
 // 月底储罐液位记录（变更-004 只读落地 → 变更-008 加行内编辑 → 变更-011 图据改多张）
 //
 // 数据层是模块级单例（项目约定 4），所以数据不需要 props：
-// 「首次进 Tab 才加载」交给 WorkOrderList 的 watch(activeTab) —— 面板是 v-show 常驻的，
-// 挂载时机和 Tab 切换不是一回事。
+// 「进这一页才加载」由页面（views/stats/TankLevelView.vue）在 onMounted 里调
+// `ensureTankLevelLoaded()` —— 2026-10 路由化改造前那是 WorkOrderList 的
+// watch(activeTab)（面板当时是 v-show 常驻的，挂载时机与切 Tab 不是一回事）。
 //
 // 变更-044 曾加过一个 `active` prop：唯一的用途是决定要不要挂 `.glass-scroll`
 // （`--main-scroll` 时间线的来源，按 038 的规矩「任何时刻只有一处声明」）。
@@ -75,7 +76,7 @@ const { flush: flushTankLevelQuery, sync: syncTankLevelQuery } = useLiveQuery(
 
 /**
  * 已经有行、又正在查（实时查询的「细化」阶段）：表格不换遮罩，只在计数处提示。
- * 物料查询那处（WorkOrderList.vue 的 stockRefining）先立的规矩，这里补齐 ——
+ * 物料查询那处（views/materials/StockView.vue 的 stockRefining）先立的规矩，这里补齐 ——
  * 遮罩收敛成"只盖首屏"之后，打字期间屏上必须还有一个"在查"的信号（变更-066）。
  */
 const tankLevelRefining = computed(() => tankLevelLoading.value && tankLevelTableData.value.length > 0)
@@ -330,8 +331,8 @@ function handleThumbError(event, image) {
 
 <template>
   <!--
-    变更-044：分页行钉在卡底 —— 与 038 的四个汇总页签同方子（完整链条注释见
-    WorkOrderList.vue 里 workOrder 页签那段）。使用方 2026-10-11：「翻页组件位置
+    变更-044：分页行钉在卡底 —— 与 038 的四个汇总页同方子（完整链条注释见
+    views/orders/WorkOrderList.vue 里那张卡片）。使用方 2026-10-11：「翻页组件位置
     变化，体验不好」：第 4 页只剩 1 行时，文档流里的分页行从卡底跳到第 31 行下面。
     现在表格区是唯一的纵向滚动容器（`flex-1` + `min-h-0`），分页行（连带「新增一行」
     与记录说明）`shrink-0` 钉死，翻页 / 筛选怎么变都不动。

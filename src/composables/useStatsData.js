@@ -11,7 +11,9 @@ import { useGoodsMoveData } from './useGoodsMoveData'
  *
  * 这里的 build* 都是纯函数（输入数组 → 输出行数组），不依赖 Vue，
  * 因此可以脱离组件直接单测（见 tests/unit/stats.spec.js）。
- * 原先它们散在 WorkOrderList.vue 里，只能靠手点页面验证。
+ * 原先它们散在拆分前那个单文件页面（views/WorkOrderList.vue，已拆成
+ * 「壳 + 14 个路由页」）里，只能靠手点页面验证。现在三张表是同一页的三个只读视图
+ * （views/orders/CostingView.vue），这一份仍然是它们唯一的派生逻辑来源。
  */
 
 /**

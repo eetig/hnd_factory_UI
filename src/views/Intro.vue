@@ -50,7 +50,13 @@ import workbenchShot from '../assets/landing/workbench.webp'
 import vesselCanvas from '../assets/landing/vessel-canvas.webp'
 import vesselCalcShot from '../assets/landing/vessel-calc.webp'
 
-/** 分组与页面：与 WorkOrderList.vue 的 TAB_GROUPS 同口径，改了那边记得同步 */
+/**
+ * 分组与页面：与 `src/nav/index.js` 的 NAV_GROUPS / NAV_ITEMS 同口径。
+ *
+ * 这份**是落地页自己的文案快照**，不 import 那份数据：落地页要说的是面向领导的
+ * 「这个系统有什么」，与工作台导航的措辞与颗粒度都不必一致（例如这里把「核算」
+ * 三张表当成三件事讲）。改了导航记得回来对一眼。
+ */
 const GROUPS = [
   {
     key: 'order',

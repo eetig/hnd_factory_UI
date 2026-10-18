@@ -36,3 +36,31 @@ export function normalizeImageList(images) {
 
   return imageValues.map(normalizeImage).filter((image) => image.url)
 }
+
+/**
+ * 列表图片加载失败的逐级降级（整流-001）：
+ *   缩略图失败 → 回退原图 → 仍失败则隐藏，露出底层占位图标
+ *
+ * 领料汇总与入库汇总的「线下单据」列共用这一份（拆页前它是 WorkOrderList 里的
+ * 一个局部函数；两页各抄一份必然漂移 —— 降级级数是最容易被随手改掉的那类细节）。
+ */
+export function handleImgError(event, record) {
+  const el = event.target
+
+  if (record?.imageUrl && el.dataset.thumbFallback !== '1') {
+    el.dataset.thumbFallback = '1'
+    el.src = record.imageUrl
+    return
+  }
+
+  el.style.display = 'none'
+}
+
+/**
+ * 这张单子能不能点开大图 —— 判据与弹窗函数里那道守卫完全一致（只看原图 imageUrl）。
+ * 能点开才把缩略图当按钮（role/tabindex/键盘都跟着它走）；点不开时它只是个占位图标，
+ * 不能变成键盘上停得下来、按下去却没反应的死节点。
+ */
+export function canOpenImage(record) {
+  return Boolean(record?.imageUrl)
+}
