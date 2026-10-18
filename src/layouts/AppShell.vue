@@ -434,7 +434,12 @@ function toggleSidebar() {
                     · 一级（分组）＝ **实底胶囊**：你在哪个功能区
                     · 二级（页面）＝ **不填色**，只换字重/字色 + 左侧 2px 竖条：在这区里的哪一页
                  唯一一个色块就是一级胶囊，对齐问题从根上没了。
-                  缩进改由链接自身的 `pl-8` 承担，容器不再有左右 margin —— 色块和它的父容器同宽。
+                  缩进改由链接自身的内边距承担，容器不再有左右 margin —— 色块和它的父容器同宽。
+
+                  **竖杠与一级文字左对齐（使用方 2026-10-18 指定）**，算式就是一级胶囊的盒模型：
+                    10px(px-2.5) + 36px(h-9 图标块) + 12px(gap-3) = 58px
+                  所以竖杠落在 58px、文字从 70px 起（58 + 2px 竖条 + 10px 间隙）。
+                  以后改一级胶囊的内边距 / 图标尺寸 / 间距，这三个数要一起改，否则又错位。
                 -->
                 <div
                   class="nav-sub mt-1"
@@ -445,10 +450,10 @@ function toggleSidebar() {
                     <li v-for="page in group.items" :key="page.key">
                       <router-link
                         :to="page.path"
-                        class="relative block rounded py-1.5 pl-8 pr-2.5 text-sm transition"
+                        class="relative block rounded py-1.5 pl-[70px] pr-2.5 text-sm transition"
                         :class="
                           route.path === page.path
-                            ? 'font-medium text-accent-ink before:absolute before:top-1.5 before:bottom-1.5 before:left-3 before:w-0.5 before:rounded-full before:bg-brand before:content-[\'\']'
+                            ? 'font-medium text-accent-ink before:absolute before:top-1.5 before:bottom-1.5 before:left-[58px] before:w-0.5 before:rounded-full before:bg-brand before:content-[\'\']'
                             : 'text-slate-700 hover:bg-slate-900/[0.05]'
                         "
                         :aria-current="route.path === page.path ? 'page' : undefined"
