@@ -409,7 +409,7 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-deep"
+        class="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover"
         @click="flushTankLevelQuery"
       >
         查询
@@ -592,7 +592,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -754,7 +754,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-deep disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >

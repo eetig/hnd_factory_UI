@@ -1,13 +1,13 @@
 /*
- * Element Plus 主题覆盖（x-minimalist：高亮色 = 太阳橙 #F59E0B）。
+ * Element Plus 主题覆盖（x-minimalist：高亮色 = 太阳橙（压深档）#E07B00）。
  *
  * ⚠️ 导入顺序是这份文件能不能生效的前提：必须排在 element-plus/dist/index.css **之后**。
  *    两者都是 :root 上的同优先级声明，谁后加载谁赢。所以它由 src/main.js 统一按序导入，
  *    不要在组件里 import —— Vite 按模块求值顺序注入样式，靠组件加载顺序来保证先后太脆。
  *
- * 高亮色 = Tailwind 的 `brand` #F59E0B，手写 markup 与 EP 同一个值。
+ * 高亮色 = Tailwind 的 `brand` #E07B00，手写 markup 与 EP 同一个值。
  * 历史：天蓝 → 翡翠绿 emerald-700（027~040）→ 苹果蓝（041）→ 石墨黑 #1D1D1F（043）
- * → linear 薰衣草蓝（x-ai，随分支保留）→ 焦橙 #B23A0B → **太阳橙 #F59E0B**。
+ * → linear 薰衣草蓝（x-ai，随分支保留）→ 焦橙 #B23A0B → **太阳橙（压深档）#E07B00**。
  * 「整站只有一个高亮色」这条不变量没变过。
  *
  * ⚠️ 太阳橙是**亮底**：白字压它只有 2.15:1，怎么调都不可能过 AA。所以这一代的关键
@@ -26,8 +26,8 @@
 }
 
 :root {
-  /* ===== 高亮色：对齐 Tailwind brand #F59E0B ===== */
-  --el-color-primary: #F59E0B;
+  /* ===== 高亮色：对齐 Tailwind brand #E07B00 ===== */
+  --el-color-primary: #E07B00;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -45,12 +45,12 @@
    *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
    *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #F8BB54;
-  --el-color-primary-light-5: #FACF85;
-  --el-color-primary-light-7: #FCE2B6;
-  --el-color-primary-light-8: #FDECCE;
-  --el-color-primary-light-9: #FEF5E7;
-  --el-color-primary-dark-2: #C47E09;
+  --el-color-primary-light-3: #E9A34D;
+  --el-color-primary-light-5: #F0BD80;
+  --el-color-primary-light-7: #F6D7B3;
+  --el-color-primary-light-8: #F9E5CC;
+  --el-color-primary-light-9: #FCF2E6;
+  --el-color-primary-dark-2: #B36200;
 
   /* ===== 圆角：小圆角（minimalist：卡片 8px 上限 / 按钮 4–6px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */

@@ -616,7 +616,6 @@ describe('主按钮与品牌色的阈值账（变更-043）', () => {
    * ②深字压三档浅底都过 —— 041 时代「brand-200 上不许垫文字」的禁令随之退役。
    */
   const brand = tokenHex('brand')
-  const deep = tokenHex('brand-deep')
   const onBrand = tokenHex('on-brand')
 
   /*
@@ -638,10 +637,20 @@ describe('主按钮与品牌色的阈值账（变更-043）', () => {
     ).toBeLessThan(4.5)
   })
 
-  it('hover 填充（brand-deep）配深墨也过', () => {
-    // 实心按钮 hover 是 bg-brand-deep，字色不变 —— 两个状态都要过。
-    expect(deep, 'tailwind.config.js 里没有 colors.brand-deep').toBeTruthy()
-    expect(contrast(onBrand, deep)).toBeGreaterThanOrEqual(4.5)
+  it('hover 填充走**更亮**一档（brand-hover），深墨压它仍过', () => {
+    /*
+     * 亮橙这类高明度主色不能靠「加深」做 hover：EP 的 dark-2 = 主色×0.8 算出来
+     * #B36200，已经暗到深墨压它只剩 3.88（2026-10-18 实测）—— hover 那一瞬间
+     * 按钮上的字就欠对比度了。所以 hover 改往**亮**走：brand-hover #E38B1A，6.4:1。
+     * brand-deep 仍然保留，只是它的职责只剩「必须与 EP dark-2 同值」那条同源交叉。
+     */
+    const hover = tokenHex('brand-hover')
+    expect(hover, 'tailwind.config.js 里没有 colors.brand-hover').toBeTruthy()
+    expect(contrast(onBrand, hover)).toBeGreaterThanOrEqual(4.5)
+    expect(
+      WORKBENCH.includes('hover:bg-brand-hover'),
+      '按钮 hover 又改回 bg-brand-deep 了？那会把 hover 态的文字拖到 3.88',
+    ).toBe(true)
   })
 
   it('brand-vivid 整键退役 —— 它存在的理由（白字过不了主档）在石墨下不成立', () => {

@@ -417,12 +417,10 @@ function toggleSidebar() {
                      14 条全铺会让侧栏变成一堵墙，而且组与组之间来回跳时高度会跳。
                      `group.items` 来自 useNav().visibleGroups，已经按权限过滤过，
                      所以这里不需要再判一次权限。 -->
-                <!-- 二级展开/收起用 grid-template-rows: 0fr → 1fr 做高度过渡（变更-105）：
-                     这条比 max-height 好——max-height 要写一个猜出来的上限，动画前段
-                     会「先快后空」；1fr 会让浏览器自己插值到内容真实高度，节奏是匀的。
-                     关闭态补 visibility:hidden，否则收起的链接仍会被 Tab 键选中。 -->
+                <!-- 二级展开/收起用 max-height 过渡（变更-105 首次用 grid，2026-10-18 改回 max-height：
+                     grid 在侧栏这种 flex 列里宽度会塌成 min-content，把页面名裁成「工单汇」）。 -->
                 <div
-                  class="nav-sub mt-1 ml-4 border-l border-brand/15 pl-2"
+                  class="nav-sub w-full mt-1 ml-4 border-l border-brand/15 pl-2"
                   :class="{ 'is-open': !collapsed && currentGroup === group.key }"
                   :aria-label="`${group.label}下的页面`"
                 >
@@ -607,7 +605,7 @@ function toggleSidebar() {
                     @click="goLogin"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-on-brand transition group-hover:bg-brand-deep"
+                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-on-brand transition group-hover:bg-brand-hover"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
                       <svg
@@ -823,31 +821,30 @@ function toggleSidebar() {
 
 /*
  * 侧栏二级菜单的展开/收起（变更-105）。
+/*
+ * 二级菜单的展开/收起。
  *
- * `grid-template-rows: 0fr → 1fr` 是给「高度未知」的容器做过渡的正解：
- * 浏览器会插值到内容的真实高度，节奏匀；换成 max-height 就得猜一个上限，
- * 猜大了动画前段「先快后空」，猜小了内容被裁。
- * 收起态必须补 visibility:hidden —— 否则收起的链接仍在 Tab 序里，
- * 键盘用户会跳进一片看不见的东西。
+ * ⚠️ 别再用 `grid-template-rows: 0fr → 1fr` 那一套了（变更-105 用的，2026-10-18 修）：
+ * 在**侧栏这种 flex 列**里，grid 容器的宽度会塌成 min-content（内容最长那个词的宽度），
+ * 于是页面名被裁成「工单汇」、右边留一大片空白。`max-height` 没这个问题。
+ *
+ * 四个页最多 4×26 + 间距 ≈ 120px，上限给 240px 足够；这一档的「先快后空」在
+ * 120px 的高度上肉眼看不出来（换成 600px 的抽屉才需要 grid 那套）。
  */
 .nav-sub {
-  display: grid;
-  grid-template-rows: 0fr;
+  max-height: 0;
   opacity: 0;
   visibility: hidden;
+  overflow: hidden;
   transition:
-    grid-template-rows 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    max-height 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 180ms linear,
     visibility 240ms;
 }
 .nav-sub.is-open {
-  grid-template-rows: 1fr;
+  max-height: 240px;
   opacity: 1;
   visibility: visible;
-}
-.nav-sub > ul {
-  min-height: 0;
-  overflow: hidden;
 }
 
 /*

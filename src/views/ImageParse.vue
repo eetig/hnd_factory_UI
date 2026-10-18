@@ -1099,7 +1099,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -1241,7 +1241,7 @@ onUnmounted(() => {
                 <template v-else>
                   <button
                     type="button"
-                    class="shrink-0 rounded-md bg-brand px-3 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-deep"
+                    class="shrink-0 rounded-md bg-brand px-3 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover"
                     @click="loadDocument(image)"
                   >
                     载入编辑
@@ -1446,7 +1446,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-md bg-brand px-5 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-deep focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-md bg-brand px-5 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >
