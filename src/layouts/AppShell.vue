@@ -758,7 +758,7 @@ function toggleSidebar() {
  */
 .nav-group-btn svg {
   transform-origin: 50% 50%;
-  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 /* 报表是竖条，从底部往上长才像"数据在涨" */
@@ -772,22 +772,22 @@ function toggleSidebar() {
 }
 
 .nav-group-btn[data-group='order'] {
-  --nav-icon-motion: translateY(-1px) rotate(-5deg);
+  --nav-icon-motion: translateY(-3px) rotate(-14deg);
 }
 .nav-group-btn[data-group='materials'] {
-  --nav-icon-motion: translateY(-2px);
+  --nav-icon-motion: translateY(-6px);
 }
 .nav-group-btn[data-group='purchase'] {
-  --nav-icon-motion: translateX(2.5px);
+  --nav-icon-motion: translateX(7px);
 }
 .nav-group-btn[data-group='equipment'] {
-  --nav-icon-motion: rotate(-18deg);
+  --nav-icon-motion: rotate(-40deg);
 }
 .nav-group-btn[data-group='stats'] {
-  --nav-icon-motion: scaleY(1.14);
+  --nav-icon-motion: scaleY(1.42);
 }
 .nav-group-btn[data-group='maintain'] {
-  --nav-icon-motion: scale(1.07);
+  --nav-icon-motion: scale(1.2);
 }
 
 /* 当前分组不参与位移：选中态已由实底胶囊表达，再动会和胶囊边缘打架 */
