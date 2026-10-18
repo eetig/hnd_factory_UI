@@ -2100,7 +2100,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
         '橙被调浅、深字余量收窄，重新决定选中胶囊上的字色再拆这条',
     ).toBeGreaterThanOrEqual(4.5)
     // 版面上的锚：提示行那一串里得有「选中 → 深墨」的分支
-    const hi = WORKBENCH.indexOf('block truncate text-xs font-normal')
+    const hi = WORKBENCH.indexOf('block truncate text-[13px] font-normal')
     expect(hi, '没扫到侧栏提示行的 class 串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
       WORKBENCH.slice(hi, hi + 240),

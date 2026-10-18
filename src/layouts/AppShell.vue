@@ -392,7 +392,7 @@ function toggleSidebar() {
                   </span>
                   <span v-show="!collapsed" class="min-w-0">
                     <span
-                      class="block text-sm"
+                      class="block text-base"
                       :class="
                         currentGroup === group.key ? 'font-medium text-accent-ink' : 'text-slate-900'
                       "
@@ -405,7 +405,7 @@ function toggleSidebar() {
                        （压**墨色**胶囊 18.88 —— x-minimalist 的主色是 #111111）。
                        选中行的层次由字号（14/12）与字重（medium/normal）承担。 -->
                     <span
-                      class="mt-0.5 block truncate text-xs font-normal"
+                      class="mt-0.5 block truncate text-[13px] font-normal"
                       :class="currentGroup === group.key ? 'text-accent-ink' : 'text-slate-600'"
                       >{{ group.hint }}</span
                     >
@@ -424,11 +424,11 @@ function toggleSidebar() {
                   :class="{ 'is-open': !collapsed && currentGroup === group.key }"
                   :aria-label="`${group.label}下的页面`"
                 >
-                  <ul class="space-y-0.5" :aria-hidden="currentGroup === group.key ? undefined : 'true'">
+                  <ul class="space-y-1" :aria-hidden="currentGroup === group.key ? undefined : 'true'">
                     <li v-for="page in group.items" :key="page.key">
                       <router-link
                         :to="page.path"
-                        class="block rounded px-2 py-1 text-xs transition"
+                        class="block rounded px-2.5 py-1.5 text-sm transition"
                         :class="
                           route.path === page.path
                             ? 'bg-accent-soft font-medium text-accent-ink'
