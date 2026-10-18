@@ -417,25 +417,31 @@ function toggleSidebar() {
                      14 条全铺会让侧栏变成一堵墙，而且组与组之间来回跳时高度会跳。
                      `group.items` 来自 useNav().visibleGroups，已经按权限过滤过，
                      所以这里不需要再判一次权限。 -->
-                <ul
-                  v-show="!collapsed && currentGroup === group.key"
-                  class="mt-1 ml-4 space-y-0.5 border-l border-brand/15 pl-2"
+                <!-- 二级展开/收起用 grid-template-rows: 0fr → 1fr 做高度过渡（变更-105）：
+                     这条比 max-height 好——max-height 要写一个猜出来的上限，动画前段
+                     会「先快后空」；1fr 会让浏览器自己插值到内容真实高度，节奏是匀的。
+                     关闭态补 visibility:hidden，否则收起的链接仍会被 Tab 键选中。 -->
+                <div
+                  class="nav-sub"
+                  :class="{ 'is-open': !collapsed && currentGroup === group.key }"
                   :aria-label="`${group.label}下的页面`"
                 >
-                  <li v-for="page in group.items" :key="page.key">
-                    <router-link
-                      :to="page.path"
-                      class="block rounded px-2 py-1 text-xs transition"
-                      :class="
-                        route.path === page.path
-                          ? 'bg-brand/10 font-medium text-brand-deep'
-                          : 'text-slate-700 hover:bg-white/50'
-                      "
-                      :aria-current="route.path === page.path ? 'page' : undefined"
-                      >{{ page.label }}</router-link
-                    >
-                  </li>
-                </ul>
+                  <ul class="space-y-0.5" :aria-hidden="currentGroup === group.key ? undefined : 'true'">
+                    <li v-for="page in group.items" :key="page.key">
+                      <router-link
+                        :to="page.path"
+                        class="block rounded px-2 py-1 text-xs transition"
+                        :class="
+                          route.path === page.path
+                            ? 'bg-brand/10 font-medium text-brand-deep'
+                            : 'text-slate-700 hover:bg-white/50'
+                        "
+                        :aria-current="route.path === page.path ? 'page' : undefined"
+                        >{{ page.label }}</router-link
+                      >
+                    </li>
+                  </ul>
+                </div>
               </div>
             </nav>
 
@@ -730,8 +736,17 @@ function toggleSidebar() {
                  v-if 管存在性 + v-show 管可见性两个一起写才防得住）。
                  代价是页面内的本地状态（滚动位置、未保存的行内编辑）会随切页丢失 ——
                  需要跨页保留的筛选条件已经搬到模块作用域的 composable 里
-                 （见 composables/useOrderFilter.js 的头注）。 -->
-            <router-view />
+                 （见 composables/useOrderFilter.js 的头注）。
+
+                 变更-105：切页加过渡（使用方：「各个组之间切换感觉特别生硬」）。
+                 用 v-slot 拿 Component 再交给 <Transition>，这是 Vue Router 4 的
+                 标准写法 —— 直接包 <router-view /> 不会触发过渡，因为外层元素不变。
+                 `mode="out-in"` 保证先走完旧页再进新页，否则两页会同时在流里叠一下就消失。 -->
+            <router-view v-slot="{ Component, route: viewRoute }">
+              <Transition name="page" mode="out-in">
+                <component :is="Component" :key="viewRoute.path" />
+              </Transition>
+            </router-view>
           </div>
         </div>
       </div>
@@ -802,6 +817,76 @@ function toggleSidebar() {
   }
   .nav-group-btn:hover svg,
   .nav-group-btn:focus-visible svg {
+    transform: none;
+  }
+}
+
+/*
+ * 侧栏二级菜单的展开/收起（变更-105）。
+ *
+ * `grid-template-rows: 0fr → 1fr` 是给「高度未知」的容器做过渡的正解：
+ * 浏览器会插值到内容的真实高度，节奏匀；换成 max-height 就得猜一个上限，
+ * 猜大了动画前段「先快后空」，猜小了内容被裁。
+ * 收起态必须补 visibility:hidden —— 否则收起的链接仍在 Tab 序里，
+ * 键盘用户会跳进一片看不见的东西。
+ */
+.nav-sub {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms linear,
+    visibility 240ms;
+}
+.nav-sub.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+.nav-sub > ul {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/*
+ * 切页过渡（变更-105）。曲线取自 Lucian UX/UI Prompt #321（页面切换）：
+ * 入场用 cubic-bezier(.2,.8,.2,1) —— 起步快、收尾缓，是最像「东西被放到位」的那条。
+ * 时长压到 180ms / 90ms：这是**每次点导航都会播**的过渡，超过 250ms 就开始显慢，
+ * 台账系统的原则是「过渡用来消除跳变，不用来表演」。
+ * 位移只给 6px：页面是整块内容，位移一大就变成幻灯片。
+ */
+.page-enter-active {
+  transition:
+    opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.page-leave-active {
+  transition:
+    opacity 90ms cubic-bezier(0.7, 0, 0.2, 1),
+    transform 90ms cubic-bezier(0.7, 0, 0.2, 1);
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-sub {
+    transition: none;
+  }
+  .page-enter-active,
+  .page-leave-active {
+    transition: none;
+  }
+  .page-enter-from,
+  .page-leave-to {
+    opacity: 1;
     transform: none;
   }
 }
