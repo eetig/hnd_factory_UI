@@ -129,7 +129,7 @@ onMounted(fetchStockRecords)
           <!-- 9 列在窄窗口下会溢出：外层 overflow-x-auto + colgroup 定宽，
            与领料 / 入库汇总那两张表同一套写法 -->
           <div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table class="min-w-full table-fixed divide-y divide-line text-left">
+            <table class="w-full max-w-[1280px] table-fixed divide-y divide-line text-left">
               <colgroup>
                 <col v-for="column in stockColumns" :key="column.key" :class="column.width" />
               </colgroup>

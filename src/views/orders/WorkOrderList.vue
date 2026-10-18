@@ -149,7 +149,7 @@ onMounted(fetchWorkOrders)
 
         <div v-else class="flex min-h-0 flex-1 flex-col">
           <div class="min-h-0 flex-1 overflow-x-auto overflow-y-auto">
-            <table class="min-w-full table-fixed divide-y divide-line text-left">
+            <table class="w-full max-w-[1280px] table-fixed divide-y divide-line text-left">
               <colgroup>
                 <col v-for="column in columns" :key="column.key" :class="column.width" />
               </colgroup>
