@@ -62,7 +62,18 @@ const columns = [
   { key: 'orderNo', label: '工单号', width: 'w-40' },
   { key: 'orderType', label: '工单类型', width: 'w-32' },
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'materialDesc', label: '产成品', width: 'w-[180px]' },
+  /*
+   * 产成品**故意不给宽度**（2026-10-18，使用方：「表格上总是有大段大段的空白」）。
+   *
+   * 原因：`table-fixed` + 每列都写死宽度时，表格被 `min-w-full` 撑到卡片宽度，
+   * 浏览器会把**多出来的宽按比例分给所有列** —— 于是每个数字列都被撑宽，
+   * 数字右对齐、左边留一大片白。看着就像一排排空洞。
+   *
+   * 解法：只留这一列不自定宽。`table-fixed` 会把剩余宽度**全部**给它，
+   * 其余列的宽度就严格按声明值走、不再被摊薄。产成品本来就是最长的文本，
+   * 宽一点正合适（单元格里有 max-width + 截断，不会把行撑爆）。
+   */
+  { key: 'materialDesc', label: '产成品' },
   { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
   { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-32', align: 'right' },
@@ -218,7 +229,7 @@ onMounted(fetchWorkOrders)
                   <td class="whitespace-nowrap px-3 py-2.5 text-sm text-slate-600">
                     {{ order.materialCode }}
                   </td>
-                  <td class="max-w-[180px] whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
+                  <td class="whitespace-normal break-words px-3 py-2.5 text-sm text-slate-700">
                     {{ order.materialDesc }}
                   </td>
                   <td class="whitespace-nowrap py-2.5 pl-3 pr-5 text-right text-sm text-slate-600">

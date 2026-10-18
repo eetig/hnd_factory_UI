@@ -54,7 +54,7 @@ const stockColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'materialCode', label: '物料编码', width: 'w-32' },
   { key: 'materialName', label: '物料名称', width: 'w-[220px]', wrap: true },
-  { key: 'spec', label: '规格', width: 'w-[160px]', wrap: true },
+  { key: 'spec', label: '规格', wrap: true }, /* 不自定宽：吸收剩余宽度（同上） */
   { key: 'storageLocation', label: '存储地点', width: 'w-24' },
   { key: 'unit', label: '基本计量单位', width: 'w-32' },
   { key: 'stockQty', label: '非限制使用的库存', width: 'w-40', align: 'right' },

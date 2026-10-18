@@ -38,7 +38,7 @@ const {
 const pickColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'pickDate', label: '领料时间', width: 'w-36' },
-  { key: 'materialName', label: '物料名称', width: 'w-[200px]', wrap: true },
+  { key: 'materialName', label: '物料名称', wrap: true }, /* 不自定宽：table-fixed 会把剩余宽度全给它，其余列就不再被摊薄（2026-10-18 修「大段空白」） */
   { key: 'materialCode', label: '物料编码', width: 'w-36' },
   { key: 'pickQty', label: '领料数量', width: 'w-28', align: 'right' },
   { key: 'unit', label: '单位', width: 'w-24' },
