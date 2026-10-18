@@ -3242,9 +3242,18 @@ describe('体积计算的液位滑块（变更-046）：一根竖轨两钮、拖
     expect(SRC_TEXT, '钮/轨道没禁 CSS 过渡 —— 钮会自己滑过去而液面是瞬移，肉眼可见地错位').toMatch(
       /\.vessel-level-slider :deep\(\.el-slider__bar\)[\s\S]{0,140}transition: none/,
     )
-    expect(SRC_TEXT, '滑块的键盘聚焦环（墨色）没了 —— EP 默认环被覆写后必须显式补').toContain(
-      'outline: 2px solid #111111',
-    )
+    /*
+     * 2026-10-18 换主色（#111111 石墨 → #1E40AF 品牌蓝）之后，这条不能再钉死字面量：
+     * 它真正要守的是「EP 默认聚焦环被覆写后，我们必须显式补回一圈」，而圈的颜色
+     * 应当跟随主色 token。改成从 tailwind 的 brand 取值再比对 —— 比钉死更严：
+     * 以后谁把 outline 换成别的深色，这里照样会红。
+     */
+    const brandRing = (tokenHex('brand') || '').toLowerCase()
+    expect(brandRing, 'tailwind.config.js 里没有 colors.brand').toBeTruthy()
+    expect(
+      SRC_TEXT.toLowerCase(),
+      '滑块的键盘聚焦环没了 —— EP 默认环被覆写后必须显式补一圈主色 outline',
+    ).toContain(`outline: 2px solid ${brandRing}`)
     // 输入框的悬停/聚焦也换成「三档垫底 + 发丝环」，且挂 token
     expect(SRC_TEXT, '输入框悬停底没挂 token（-lighter 一档浮起）').toContain(
       'background-color: var(--el-fill-color-lighter)',

@@ -422,7 +422,7 @@ function toggleSidebar() {
                      会「先快后空」；1fr 会让浏览器自己插值到内容真实高度，节奏是匀的。
                      关闭态补 visibility:hidden，否则收起的链接仍会被 Tab 键选中。 -->
                 <div
-                  class="nav-sub"
+                  class="nav-sub mt-1 ml-4 border-l border-brand/15 pl-2"
                   :class="{ 'is-open': !collapsed && currentGroup === group.key }"
                   :aria-label="`${group.label}下的页面`"
                 >
