@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { usePickData } from '../../composables/usePickData'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
@@ -7,7 +7,6 @@ import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { canOpenImage, handleImgError } from '../../utils/image'
 import { ElDatePicker, ElDialog, ElPagination } from 'element-plus'
-import KpiCard from '../../components/KpiCard.vue'
 
 /*
  * 领料汇总（原 WorkOrderList.vue 的 `material` 页签）。
@@ -34,28 +33,9 @@ const {
   openPickMaterialDialog,
   handlePickMaterialSelected,
   clearPickMaterialFilter,
-  pickSummaryRows,
-  fetchPickSummary,
 } = usePickData()
 
 
-/*
- * ===== KPI（变更-124）=====
- *
- * ⚠️ **不做「数量合计」**：summary-by-material 的 VO 不带 unit，
- * 把 kg + 个 + 桶 + 米 加起来会得到一个"看起来像合计"的错误数字。
- * 宁可卡片朴素，也不摆假数 —— 所以只放两个**不跨量纲**的指标。
- *
- * ⚠️ **也不做「条数」卡**：页头与分页器已经各显示一次（共 N 条）。
- */
-const pickKindCount = computed(() => pickSummaryRows.value.length)
-const topPickQty = computed(() =>
-  pickSummaryRows.value.reduce((max, row) => Math.max(max, Number(row.pickQty) || 0), 0),
-)
-const topPickName = computed(() => {
-  const top = pickSummaryRows.value.find((row) => (Number(row.pickQty) || 0) === topPickQty.value)
-  return top ? top.materialName : ''
-})
 
 const pickColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
@@ -78,8 +58,6 @@ function openPickImageDialog(record) {
 
 onMounted(() => {
   fetchPickRecords()
-  // 变更-124：KPI 要全区间聚合，进页面取一次（改筛选时 reload 会再取，共用同一个 ref）
-  if (!pickSummaryRows.value.length) fetchPickSummary()
 })
 </script>
 
@@ -87,16 +65,6 @@ onMounted(() => {
   <div class="flex h-full flex-col">
     <!-- 变更-038：与工单汇总同一张方子（定高链 + 表格区自己滚 + 分页行钉底），
          完整理由见 views/orders/WorkOrderList.vue 的模板注释 -->
-    <!-- KPI（变更-124）：两个不跨量纲的指标 -->
-    <div v-if="pickSummaryRows.length" class="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-2">
-      <KpiCard label="物料种类" :value="pickKindCount" unit="种" hint="本区间有领用记录的物料数" />
-      <KpiCard
-        label="领用最多的物料"
-        :value="topPickQty"
-        accent
-        :hint="topPickName + '（单位见下方明细）'"
-      />
-    </div>
 
     <section
       class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"

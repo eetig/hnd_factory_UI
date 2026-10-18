@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { useOrderImages } from '../../composables/useOrderImages'
 import OrderImageDialog from '../../components/OrderImageDialog.vue'
@@ -9,7 +9,6 @@ import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { getReportOrderType } from '../../constants/orderTypes'
 import { ElDatePicker, ElPagination } from 'element-plus'
-import KpiCard from '../../components/KpiCard.vue'
 
 /*
  * 工单汇总（原 WorkOrderList.vue 的 `workOrder` 页签）。
@@ -51,10 +50,7 @@ const {
   clearOrderTypeFilter,
   openOrderNoDialog,
   handleOrderNoSelected,
-  clearOrderNoFilter,
-  workOrderSummaryRows,
-  fetchWorkOrderSummary,
-} = useWorkOrderData()
+  clearOrderNoFilter,} = useWorkOrderData()
 
 // 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
 const { openImageDialog } = useOrderImages()
@@ -93,31 +89,9 @@ const columns = [
 ]
 
 
-/*
- * ===== KPI（变更-124）=====
- *
- * 三个数全部来自 `summary-by-type-material` 的**全区间聚合**，不是当前页 10 行 ——
- * 分页列表只有 10 行，拿它求和会得到一个随时间变化的假合计。
- *
- * 工单数（total）**故意不做卡片**：页头的分页器已经写着「共 N 条」，
- * 再摆一张卡就是同一个数说两遍。
- */
-const orderQtyTotal = computed(() =>
-  workOrderSummaryRows.value.reduce((sum, row) => sum + (Number(row.orderQty) || 0), 0),
-)
-const confirmedQtyTotal = computed(() =>
-  workOrderSummaryRows.value.reduce((sum, row) => sum + (Number(row.confirmedQty) || 0), 0),
-)
-/** 完成率：分母为 0 时给 0，不要出现 NaN% 或 Infinity% */
-const completeRate = computed(() =>
-  orderQtyTotal.value > 0 ? (confirmedQtyTotal.value / orderQtyTotal.value) * 100 : 0,
-)
-const showWorkOrderKpi = computed(() => workOrderSummaryRows.value.length > 0)
 
 onMounted(() => {
   fetchWorkOrders()
-  // 变更-124：KPI 要用全区间聚合，进页面就取一次（改筛选时 reloadWorkOrders 会再取，共用同一个 ref）
-  if (!workOrderSummaryRows.value.length) fetchWorkOrderSummary()
 })
 </script>
 
@@ -141,22 +115,6 @@ onMounted(() => {
     ⚠️ 表格区的纵向滚动是「白捡 + 显式」两笔：`overflow-x:auto` 本来就会把
     `overflow-y` 的 `visible` 计算成 `auto`，显式写上 `overflow-y-auto` 是给下一个人看的。
     -->
-    <!-- KPI（变更-124）：三张卡，口径见下方 `orderQtyTotal` 的注释 -->
-    <div
-      v-if="showWorkOrderKpi"
-      class="mb-3 grid shrink-0 grid-cols-1 gap-3 sm:grid-cols-3"
-    >
-      <KpiCard label="订单数量合计" :value="orderQtyTotal" unit="KG" hint="全区间聚合，不是当前页" />
-      <KpiCard label="确认产量合计" :value="confirmedQtyTotal" unit="KG" />
-      <KpiCard
-        label="报工完成率"
-        :value="completeRate"
-        unit="%"
-        :decimals="1"
-        accent
-        hint="确认产量 ÷ 订单数量"
-      />
-    </div>
 
     <section
       class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card"
