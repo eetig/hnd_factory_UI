@@ -1099,7 +1099,7 @@ onUnmounted(() => {
     <div class="flex justify-end">
       <button
         type="button"
-        class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+        class="rounded-full bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
         :disabled="!images.length || submitting"
         @click="submit"
       >
@@ -1204,7 +1204,7 @@ onUnmounted(() => {
             >
               <template v-if="image.confirm?.status === 'skipped'">
                 <span class="text-slate-600">已整单跳过：本次不写库</span>
-                <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="undoSkip(image)">撤销跳过</button>
+                <button type="button" class="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="undoSkip(image)">撤销跳过</button>
               </template>
 
               <template v-else-if="image.docCheck === 'checking'">
@@ -1213,7 +1213,7 @@ onUnmounted(() => {
 
               <template v-else-if="image.docCheck.error">
                 <span class="text-rose-600">单据号核对失败：{{ image.docCheck.error }}</span>
-                <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="checkDocument(image)">重试</button>
+                <button type="button" class="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="checkDocument(image)">重试</button>
               </template>
 
               <template v-else-if="image.docCheck.exists">
@@ -1234,19 +1234,19 @@ onUnmounted(() => {
                   <span class="text-xs text-slate-600">
                     已载入库中数据：本张图片的识别结果不会合并进来，请直接增删改
                   </span>
-                  <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="skipDocument(image)">
+                  <button type="button" class="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="skipDocument(image)">
                     整单跳过
                   </button>
                 </template>
                 <template v-else>
                   <button
                     type="button"
-                    class="shrink-0 rounded-md bg-brand px-3 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover"
+                    class="shrink-0 rounded-full bg-brand px-3 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover"
                     @click="loadDocument(image)"
                   >
                     载入编辑
                   </button>
-                  <button type="button" class="shrink-0 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="skipDocument(image)">
+                  <button type="button" class="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-700 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink" @click="skipDocument(image)">
                     整单跳过
                   </button>
                 </template>
@@ -1324,7 +1324,7 @@ onUnmounted(() => {
                         />
                         <button
                           type="button"
-                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 transition hover:bg-brand-50 hover:text-brand-ink"
+                          class="absolute right-0.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition hover:bg-brand-50 hover:text-brand-ink"
                           aria-label="搜索物料"
                           title="搜索物料（选中后自动填名称与编码）"
                           @click="openMaterialPicker(row, image)"
@@ -1401,7 +1401,7 @@ onUnmounted(() => {
               <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <button
                   type="button"
-                  class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
+                  class="flex items-center gap-1 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
                   @click="addRow(image)"
                 >
                   <svg
@@ -1446,7 +1446,7 @@ onUnmounted(() => {
 
               <button
                 type="button"
-                class="shrink-0 rounded-md bg-brand px-5 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+                class="shrink-0 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
                 :disabled="!!confirmBlockReason(image) || image.confirm?.status === 'submitting'"
                 @click="submitConfirm(image)"
               >

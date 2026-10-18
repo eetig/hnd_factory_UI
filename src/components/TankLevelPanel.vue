@@ -409,7 +409,7 @@ function handleThumbError(event, image) {
       />
       <button
         type="button"
-        class="rounded-md bg-brand px-4 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover"
+        class="rounded-full bg-brand px-4 py-2.5 text-sm font-medium text-on-brand transition hover:bg-brand-hover"
         @click="flushTankLevelQuery"
       >
         查询
@@ -592,7 +592,7 @@ function handleThumbError(event, image) {
                   <div class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-full bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -754,7 +754,7 @@ function handleThumbError(event, image) {
                   <div v-if="isEditing(record)" class="flex items-center gap-2">
                     <button
                       type="button"
-                      class="rounded-md bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      class="rounded-full bg-brand px-2.5 py-1 text-xs font-medium text-on-brand transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-60"
                       :disabled="saving"
                       @click="saveRow"
                     >
@@ -799,7 +799,7 @@ function handleThumbError(event, image) {
       <div v-if="canCreate" class="flex shrink-0 items-center gap-3 border-t border-line px-6 py-3">
         <button
           type="button"
-          class="flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
+          class="flex items-center gap-1 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 transition hover:border-brand hover:bg-brand-50 hover:text-brand-ink"
           @click="startCreate"
         >
           <svg

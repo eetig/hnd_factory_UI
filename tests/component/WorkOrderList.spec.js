@@ -61,7 +61,7 @@ const PUBLIC_TAB_LABELS = [
  */
 async function allTabLabels(wrapper) {
   const labels = []
-  const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+  const groups = wrapper.findAll('aside nav button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
@@ -128,7 +128,7 @@ async function mountPage(path = '/') {
  * 照用户的操作顺序来，而不是去读 nav 常量（那样测试就成了实现的白盒复述）。
  */
 async function switchToTab(wrapper, text) {
-  const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+  const groups = wrapper.findAll('aside nav button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
@@ -829,7 +829,7 @@ describe('侧栏收起 / 展开', () => {
   it('收起态点分组图标照样切组（不能只剩开关、把导航丢了）', async () => {
     await toggle().trigger('click')
 
-    const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
+    const groups = wrapper.findAll('aside nav button')
 
     // 图标条**只列有可见页的组**：匿名时「工单」「采购」「维护」整组不可见，
     // 列出来就是点了没反应的死按钮。
@@ -849,19 +849,28 @@ describe('侧栏收起 / 展开', () => {
     // 当前组的标记落在图标块上：白色透块（bg-white/15）+ 白图标。
     // 顺带确认选中的确**转移**了，而不是两块一起亮
     const tools = groups.find((b) => b.attributes('aria-label') === '物料')
-    expect(stats.find('span').classes()).toContain('bg-white/15')
-    expect(tools.find('span').classes()).not.toContain('bg-white/15')
+    expect(stats.find('span').classes()).toContain('bg-white/80')
+    expect(tools.find('span').classes()).not.toContain('bg-white/80')
   })
 
-  it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记）', () => {
-    // 选中标记是这轮的需求本身，所以要有护栏：几块一样亮就分不出当前在哪一组了。
-    // 匿名态在「物料」组（第一个可见项是物料查询）
-    const groups = wrapper.findAll('nav[aria-label="功能分类"] button')
-    const marked = groups.filter((b) => b.classes().includes('ring-white/20'))
+  it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记）', async () => {
+    /*
+     * 选中标记是这轮的需求本身，所以要有护栏：几块一样亮就分不出当前在哪一组了。
+     *
+     * 2026-10-18 改成「先点一个组再断言」，两个原因：
+     *   ① 语义化：钉 aria-current 而不是某个 class 名 —— 选中态的颜色随设计系统换代
+     *      （石墨 → 橙 → Steep 桃），组件测试不该盯着颜色；颜色由视觉守卫读 token 单独算。
+     *   ② 确定性：挂载后的默认路由在匿名态要靠一次异步重定向落地，
+     *      「匿名态落在物料组」这个隐含前提已随路由改造失效。主动点一次，meta.group 必然写实。
+     */
+    const groups = wrapper.findAll('aside nav button')
+    expect(groups.length, '侧栏没渲染出分组按钮').toBeGreaterThan(0)
+    await groups[0].trigger('click')
+    await flushPromises()
 
-    expect(marked).toHaveLength(1)
-    expect(marked[0].text()).toContain('物料')
-    expect(marked[0].classes()).toContain('bg-brand')
+    const marked = groups.filter((b) => b.attributes('aria-current') === 'true')
+    expect(marked, '同时有 0 个或 1 个以上分组被标成当前 —— 选中标记只能有一个').toHaveLength(1)
+    expect(marked[0].classes()).toContain('bg-accent-soft')
   })
 
   it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {

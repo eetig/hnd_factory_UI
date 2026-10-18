@@ -133,6 +133,14 @@ export default {
         /* 按钮 hover 的填充：比 brand **亮**一档。亮橙这类高明度主色不能靠加深做 hover ——
          * dark-2(#B36200) 已经暗到深墨压它只剩 3.88。往亮走反而安全：深墨压它 6.4。 */
         'brand-hover': '#E38B1A',
+        /* ===== Steep 风格的两档桃色（2026-10-18）=====
+         * 参考 steep.app 的做法：**饱和色只留小面积（按钮）**，大面积选中态用「极淡的桃」。
+         * 好处是眼睛不用一直对抗高饱和色块 —— 这正是上一版「橙色刺眼」的根因。
+         *   accent-soft #FBE1D1 选中胶囊 / tag 底（面积大、极淡）
+         *   accent-ink  #5D2A1A 压在桃上的字（9.05:1）
+         */
+        'accent-soft': '#FBE1D1',
+        'accent-ink': '#5D2A1A',
         'brand-ink': '#92400E',
         'brand-50': '#FCF2E6',
         'brand-100': '#F9E5CC',
@@ -140,7 +148,7 @@ export default {
       },
       borderRadius: {
         // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px
-        card: '8px',
+        card: '16px',
       },
       boxShadow: {
         /*

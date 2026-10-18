@@ -362,7 +362,7 @@ function toggleSidebar() {
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
                       : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left',
-                    !collapsed && currentGroup === group.key ? 'bg-brand ring-1 ring-white/20' : '',
+                    !collapsed && currentGroup === group.key ? 'bg-accent-soft ring-1 ring-accent-ink/10' : '',
                     !collapsed && currentGroup !== group.key ? 'hover:bg-white/45' : '',
                   ]"
                   :aria-label="collapsed ? group.label : undefined"
@@ -374,7 +374,7 @@ function toggleSidebar() {
                     :class="[
                       collapsed ? 'h-10 w-10' : 'h-9 w-9',
                       currentGroup === group.key
-                        ? 'bg-white/15 text-white'
+                        ? 'bg-white/80 text-accent-ink'
                         : 'bg-white/40 text-slate-600',
                       collapsed && currentGroup !== group.key ? 'hover:bg-white/55' : '',
                     ]"
@@ -394,7 +394,7 @@ function toggleSidebar() {
                     <span
                       class="block text-sm"
                       :class="
-                        currentGroup === group.key ? 'font-medium text-on-brand' : 'text-slate-900'
+                        currentGroup === group.key ? 'font-medium text-accent-ink' : 'text-slate-900'
                       "
                       >{{ group.label }}</span
                     >
@@ -406,7 +406,7 @@ function toggleSidebar() {
                        选中行的层次由字号（14/12）与字重（medium/normal）承担。 -->
                     <span
                       class="mt-0.5 block truncate text-xs font-normal"
-                      :class="currentGroup === group.key ? 'text-on-brand' : 'text-slate-600'"
+                      :class="currentGroup === group.key ? 'text-accent-ink' : 'text-slate-600'"
                       >{{ group.hint }}</span
                     >
                   </span>
@@ -431,7 +431,7 @@ function toggleSidebar() {
                         class="block rounded px-2 py-1 text-xs transition"
                         :class="
                           route.path === page.path
-                            ? 'bg-brand/10 font-medium text-brand-ink'
+                            ? 'bg-accent-soft font-medium text-accent-ink'
                             : 'text-slate-700 hover:bg-white/50'
                         "
                         :aria-current="route.path === page.path ? 'page' : undefined"
@@ -605,7 +605,7 @@ function toggleSidebar() {
                     @click="goLogin"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-brand text-on-brand transition group-hover:bg-brand-hover"
+                      class="flex shrink-0 items-center justify-center rounded-full bg-brand text-on-brand transition group-hover:bg-brand-hover"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
                       <svg

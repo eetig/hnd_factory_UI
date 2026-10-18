@@ -2022,7 +2022,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     ).toEqual([])
   })
 
-  it('侧栏深字族的锚点 —— 三档 slate、白透块三档、墨色胶囊串、焦点环都在', () => {
+  it('侧栏深字族的锚点 —— 三档 slate、白透块三档、Steep 桃色胶囊串、焦点环都在', () => {
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
     const tokens = classAttrsOf(stripComments(asideBlock)).flatMap((a) => a.tokens)
     for (const t of ['text-slate-900', 'text-slate-700', 'text-slate-600']) {
@@ -2030,11 +2030,11 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     }
     // 选中行：墨色胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
     expect(
-      WORKBENCH.includes("'bg-brand ring-1 ring-white/20'"),
-      '侧栏选中行不是「bg-brand + ring-1 + ring-white/20」那串了 —— ' +
+      WORKBENCH.includes("'bg-accent-soft ring-1 ring-accent-ink/10'"),
+      '侧栏选中行不是「bg-accent-soft + ring-1 + ring-accent-ink/10」那串了 —— ' +
         '三段各管一件事（底色/描边粗细/描边色），别拆',
     ).toBe(true)
-    for (const t of ['bg-white/40', 'bg-white/15', 'bg-white/45']) {
+    for (const t of ['bg-white/40', 'bg-white/80', 'bg-white/45']) {
       // /15 是选中图标块、/40 是未选中图标块、/45 是整行 hover —— 三种前缀都算数
       expect(
         tokens.some((tok) => tok === t || tok === `hover:${t}` || tok === `group-hover:${t}`),
@@ -2104,8 +2104,8 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     expect(hi, '没扫到侧栏提示行的 class 串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
       WORKBENCH.slice(hi, hi + 240),
-      "侧栏提示行没有「选中转 'text-on-brand'」的分支 —— 深浅两态的层次靠它",
-    ).toContain("'text-on-brand'")
+      "侧栏提示行没有「选中转 'text-accent-ink'」的分支 —— 深浅两态的层次靠它",
+    ).toContain("'text-accent-ink'")
   })
 
   it('白面上的弱化文字：slate-600 过 AA（实算 7.58）—— 043「霜面最深端 4.37」那条推理随玻璃消失', () => {

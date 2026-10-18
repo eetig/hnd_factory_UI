@@ -166,7 +166,7 @@ const STATS_DETAIL = [
           </nav>
           <RouterLink
             to="/"
-            class="ml-auto rounded-md bg-brand px-4 py-2 text-sm font-medium text-on-brand transition hover:bg-brand-hover active:scale-[0.98]"
+            class="ml-auto rounded-full bg-brand px-4 py-2 text-sm font-medium text-on-brand transition hover:bg-brand-hover active:scale-[0.98]"
           >
             进入工作台
           </RouterLink>
@@ -205,7 +205,7 @@ const STATS_DETAIL = [
           <div class="mt-9 flex flex-wrap items-center gap-3">
             <RouterLink
               to="/"
-              class="rounded-md bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-hover active:scale-[0.98]"
+              class="rounded-full bg-brand px-6 py-3 text-sm font-medium text-on-brand transition hover:bg-brand-hover active:scale-[0.98]"
             >
               进入工作台
             </RouterLink>
@@ -474,7 +474,7 @@ const STATS_DETAIL = [
           </p>
           <RouterLink
             to="/"
-            class="ml-auto rounded-md bg-white px-6 py-3 text-sm font-medium text-brand-ink transition hover:bg-brand-50 active:scale-[0.98]"
+            class="ml-auto rounded-full bg-white px-6 py-3 text-sm font-medium text-brand-ink transition hover:bg-brand-50 active:scale-[0.98]"
           >
             进入工作台
           </RouterLink>
