@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import request from '../api/request'
 import { clearAuth, getRoleName, isLoggedIn } from '../api/auth'
 import { GROUP_ICON_PATHS, useNav } from '../nav'
+import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { ElConfigProvider, ElTooltip } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'dayjs/locale/zh-cn'
@@ -44,6 +45,8 @@ const activeItem = computed(
     null,
 )
 /** 当前页标题（主区顶部） */
+useOrderFilterUrl()
+
 const pageTitle = computed(() => activeItem.value?.label ?? route.meta?.title ?? '')
 /** 面包屑前半段：组名 */
 const groupLabel = computed(
