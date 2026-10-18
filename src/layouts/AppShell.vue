@@ -422,8 +422,22 @@ function toggleSidebar() {
                      所以这里不需要再判一次权限。 -->
                 <!-- 二级展开/收起用 max-height 过渡（变更-105 首次用 grid，2026-10-18 改回 max-height：
                      grid 在侧栏这种 flex 列里宽度会塌成 min-content，把页面名裁成「工单汇」）。 -->
+                <!--
+                  二级页面（2026-10-18 第三轮，使用方圈出「两个颜色块右侧没对齐」）。
+
+                  原来这里同时犯了两个错，只在截图里才看得见：
+                    ① `w-full` + `ml-4` 在 flex 列里让容器宽度算错，右侧比一级胶囊少一截；
+                    ② **一级和二级用了同一个 accent-soft 填充** —— 两个深浅一样的色块
+                       上下叠着、右边还不齐，读起来像"一次没对齐的误操作"而不是层级。
+
+                  现在的分工（跟 Linear / Notion 的两级导航同一套逻辑）：
+                    · 一级（分组）＝ **实底胶囊**：你在哪个功能区
+                    · 二级（页面）＝ **不填色**，只换字重/字色 + 左侧 2px 竖条：在这区里的哪一页
+                 唯一一个色块就是一级胶囊，对齐问题从根上没了。
+                  缩进改由链接自身的 `pl-8` 承担，容器不再有左右 margin —— 色块和它的父容器同宽。
+                -->
                 <div
-                  class="nav-sub w-full mt-1 ml-4 border-l border-brand/15 pl-2"
+                  class="nav-sub mt-1"
                   :class="{ 'is-open': !collapsed && currentGroup === group.key }"
                   :aria-label="`${group.label}下的页面`"
                 >
@@ -431,10 +445,10 @@ function toggleSidebar() {
                     <li v-for="page in group.items" :key="page.key">
                       <router-link
                         :to="page.path"
-                        class="block rounded px-2.5 py-1.5 text-sm transition"
+                        class="relative block rounded py-1.5 pl-8 pr-2.5 text-sm transition"
                         :class="
                           route.path === page.path
-                            ? 'bg-accent-soft font-medium text-accent-ink'
+                            ? 'font-medium text-accent-ink before:absolute before:top-1.5 before:bottom-1.5 before:left-3 before:w-0.5 before:rounded-full before:bg-brand before:content-[\'\']'
                             : 'text-slate-700 hover:bg-white/50'
                         "
                         :aria-current="route.path === page.path ? 'page' : undefined"
