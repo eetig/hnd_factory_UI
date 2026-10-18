@@ -356,7 +356,8 @@ function toggleSidebar() {
               >
                 <button
                   type="button"
-                  class="rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
+                  :data-group="group.key"
+                  class="nav-group-btn rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand active:scale-[0.99]"
                   :class="[
                     collapsed
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
@@ -737,3 +738,71 @@ function toggleSidebar() {
     </main>
   </el-config-provider>
 </template>
+
+<style scoped>
+/*
+ * 侧栏六个分组图标的悬停微动（变更-104）。
+ *
+ * 为什么要动：使用方要的是「质感」，而动效里最便宜、最不打扰的一种就是**只在
+ * 指针停在图标上时给一个和语义相符的小位移** —— 采购是推车（往前滚一下）、
+ * 设备是扳手（拧一下）、报表是柱状图（往上长）、工单是夹纸板（抬一下）、
+ * 物料是箱子（弹一下）、维护是数据库（呼吸一下）。
+ *
+ * 三条分寸：
+ *   1. **只动图标，不动行**：整行位移会让侧栏"抖"，在台账里是噪音。
+ *   2. **不做循环动画**：一切常驻动画最终都会让人烦，只在 hover / focus 时发生一次。
+ *   3. **选中态不动**：选中行已有实底胶囊，再缩放会和胶囊边缘打架。
+ *
+ * 用 CSS 变量承载每个分组的位移，避免写六个几乎相同的规则；`data-group` 由模板
+ * 写在按钮上，key 与 nav/index.js 的 group.key 一一对应。
+ */
+.nav-group-btn svg {
+  transform-origin: 50% 50%;
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 报表是竖条，从底部往上长才像"数据在涨" */
+.nav-group-btn[data-group='stats'] svg {
+  transform-origin: 50% 100%;
+}
+
+.nav-group-btn:hover svg,
+.nav-group-btn:focus-visible svg {
+  transform: var(--nav-icon-motion, none);
+}
+
+.nav-group-btn[data-group='order'] {
+  --nav-icon-motion: translateY(-1px) rotate(-5deg);
+}
+.nav-group-btn[data-group='materials'] {
+  --nav-icon-motion: translateY(-2px);
+}
+.nav-group-btn[data-group='purchase'] {
+  --nav-icon-motion: translateX(2.5px);
+}
+.nav-group-btn[data-group='equipment'] {
+  --nav-icon-motion: rotate(-18deg);
+}
+.nav-group-btn[data-group='stats'] {
+  --nav-icon-motion: scaleY(1.14);
+}
+.nav-group-btn[data-group='maintain'] {
+  --nav-icon-motion: scale(1.07);
+}
+
+/* 当前分组不参与位移：选中态已由实底胶囊表达，再动会和胶囊边缘打架 */
+.nav-group-btn[aria-current='true'] svg {
+  transform: none;
+}
+
+/* 系统开了「减少动态效果」就一律不动 —— 这是可达性要求，不是可选项 */
+@media (prefers-reduced-motion: reduce) {
+  .nav-group-btn svg {
+    transition: none;
+  }
+  .nav-group-btn:hover svg,
+  .nav-group-btn:focus-visible svg {
+    transform: none;
+  }
+}
+</style>
