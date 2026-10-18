@@ -146,6 +146,24 @@ export default {
         'brand-100': '#F9E5CC',
         'brand-200': '#F6D7B3',
       },
+      fontFamily: {
+        /*
+         * 编辑式衬线（2026-10-18，参考 Steep 的 Signifier 标题）。
+         *
+         * ⚠️ 只在**页面大标题**上用（20–24px），正文与表格一律不动：
+         *   Georgia 是屏幕衬线里最稳的；中文走系统宋体（Songti SC / SimSun），
+         *   字体文件 0 字节——不引 webfont，不拖慢首屏。
+         * 小字号下衬线会糊（中文尤甚），所以 font-serif 不进表格、不进按钮。
+         */
+        serif: [
+          'Georgia',
+          '"Times New Roman"',
+          '"Songti SC"',
+          '"Noto Serif SC"',
+          'SimSun',
+          'serif',
+        ],
+      },
       borderRadius: {
         // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px
         card: '16px',

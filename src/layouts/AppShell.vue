@@ -670,7 +670,7 @@ function toggleSidebar() {
           <div
             class="sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-line bg-raised px-6 py-4"
           >
-            <h2 class="mb-3 text-xl font-bold tracking-tight text-slate-900">
+            <h2 class="mb-3 text-2xl font-serif font-bold tracking-tight text-slate-900">
               {{ pageTitle }}
             </h2>
             <!-- 面包屑（组名 › 页面名）：路由化之后「我在哪」不再由一条页签横条
