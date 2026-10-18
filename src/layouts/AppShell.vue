@@ -670,9 +670,9 @@ function toggleSidebar() {
           <div
             class="sticky top-0 z-30 mb-4 shrink-0 rounded-card border border-line bg-raised px-6 py-4"
           >
-            <h2 class="mb-3 text-2xl font-serif font-bold tracking-tight text-slate-900">
+            <h1 class="mb-3 text-2xl font-serif font-bold tracking-tight text-slate-900">
               {{ pageTitle }}
-            </h2>
+    </h1>
             <!-- 面包屑（组名 › 页面名）：路由化之后「我在哪」不再由一条页签横条
                  独自回答 —— 顶栏这行是给深链接进来的人看的（侧栏高亮只说明在哪个组）。 -->
             <nav aria-label="面包屑" class="mb-3 flex items-center gap-2 text-xs text-slate-500">
@@ -771,7 +771,7 @@ function toggleSidebar() {
  */
 .nav-group-btn svg {
   transform-origin: 50% 50%;
-  transition: transform 340ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 /* 报表是竖条，从底部往上长才像"数据在涨" */
@@ -785,22 +785,22 @@ function toggleSidebar() {
 }
 
 .nav-group-btn[data-group='order'] {
-  --nav-icon-motion: translateY(-3px) rotate(-14deg);
+  --nav-icon-motion: translateY(-2px) rotate(-8deg);
 }
 .nav-group-btn[data-group='materials'] {
-  --nav-icon-motion: translateY(-6px);
+  --nav-icon-motion: translateY(-3px);
 }
 .nav-group-btn[data-group='purchase'] {
-  --nav-icon-motion: translateX(7px);
+  --nav-icon-motion: translateX(4px);
 }
 .nav-group-btn[data-group='equipment'] {
-  --nav-icon-motion: rotate(-40deg);
+  --nav-icon-motion: rotate(-20deg);
 }
 .nav-group-btn[data-group='stats'] {
-  --nav-icon-motion: scaleY(1.42);
+  --nav-icon-motion: scaleY(1.2);
 }
 .nav-group-btn[data-group='maintain'] {
-  --nav-icon-motion: scale(1.2);
+  --nav-icon-motion: scale(1.08);
 }
 
 /* 当前分组不参与位移：选中态已由实底胶囊表达，再动会和胶囊边缘打架 */
@@ -854,23 +854,25 @@ function toggleSidebar() {
  * 台账系统的原则是「过渡用来消除跳变，不用来表演」。
  * 位移只给 6px：页面是整块内容，位移一大就变成幻灯片。
  */
+/*
+ * 切页过渡（2026-10-18 按 emil-design-eng 的频率表收紧）。
+ *
+ * 频率判据：点导航一天几十次 → 它的裁定是「去掉或大幅削弱」，并点名
+ * "Raycast 的开合没有动画，那是一天几百次的东西的最优解"。
+ * 所以：**去掉位移**（位移让翻页像幻灯片）、120ms 纯淡入、两侧都用 ease-out
+ * （它明说 UI 里禁用 ease-in —— 起步慢会让人觉得卡）。
+ */
 .page-enter-active {
-  transition:
-    opacity 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .page-leave-active {
-  transition:
-    opacity 90ms cubic-bezier(0.7, 0, 0.2, 1),
-    transform 90ms cubic-bezier(0.7, 0, 0.2, 1);
+  transition: opacity 90ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(6px);
 }
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-3px);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -68,3 +68,18 @@ table {
  * 全站其余动效全是 hover 过渡与 active:scale-[0.98] 按压反馈，不构成前庭
  * 触发源，而全局重置会连 Intro.vue 的按压反馈一起抹掉 —— 那一页受保护。
  */
+
+/*
+ * 弹窗/抽屉里的滚动不许带动页面（2026-10-18，按 Web Interface Guidelines 的
+ * "overscroll-behavior: contain in modals/drawers/sheets"）。
+ *
+ * 症状：弹窗内容滚到底之后继续滚，后面的整页会跟着滚 —— 关掉弹窗时你已经不在
+ * 原来的位置了。15 个 el-dialog 之前一个都没管这条。
+ * 选择器覆盖三种真实承载滚动的元素：overlay 本身、dialog body、drawer body。
+ */
+.el-overlay-dialog,
+.el-dialog__body,
+.el-drawer__body,
+.el-scrollbar__wrap {
+  overscroll-behavior: contain;
+}

@@ -591,6 +591,7 @@ function inputClass(col) {
   return [
     'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
     'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-brand focus:bg-raised',
+      'focus-visible:ring-2 focus-visible:ring-brand-ink/35 focus-visible:ring-inset',
     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : '',
   ]
 }
@@ -1056,7 +1057,7 @@ onUnmounted(() => {
         </p>
         <button
           type="button"
-          class="text-sm text-slate-500 transition hover:text-rose-600 focus:outline-none disabled:cursor-not-allowed disabled:text-slate-300"
+          class="text-sm text-slate-500 transition hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-brand-ink/35 focus-visible:outline-none disabled:cursor-not-allowed disabled:text-slate-300"
           :disabled="submitting"
           @click="clearAll"
         >
@@ -1173,7 +1174,7 @@ onUnmounted(() => {
                   type="text"
                   placeholder="—"
                   aria-label="单据号"
-                  class="w-40 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-brand"
+                  class="w-40 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 outline-none transition hover:border-slate-400 focus:border-brand focus-visible:ring-2 focus-visible:ring-brand-ink/35"
                   @change="onDocumentNoChange(image)"
                 />
               </span>
@@ -1286,7 +1287,8 @@ onUnmounted(() => {
                           :preview-src-list="[image.url]"
                           :preview-teleported="true"
                           fit="cover"
-                          class="h-8 w-8 rounded-md border border-line"
+                  alt="线下单据缩略图（点开可看原图）"
+                  class="h-8 w-8 cursor-zoom-in rounded-md border border-line"
                         />
                       </div>
 
@@ -1477,7 +1479,7 @@ onUnmounted(() => {
           v-model="pickerKeyword"
           type="text"
           placeholder="输入名称、编码或规格，边打边查"
-          class="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand"
+          class="w-full rounded-md border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-brand focus-visible:ring-2 focus-visible:ring-brand-ink/35"
           @keyup.enter="flushPickerSearch"
         />
       </div>

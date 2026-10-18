@@ -180,7 +180,8 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     // `/` 的 redirect 指向「第一个可见页」—— 匿名时「工单汇总」不可见，
     // 停在那里就是一片空白。落地页因此是物料查询。
     expect(activeTabKey(wrapper)).toBe('stock')
-    expect(wrapper.find('h2').text()).toBe('物料查询')
+    // 页面主标题现在是 h1（文档层级要有起点）；h2 留给面板内的空态/分区标题（PanelState 用的就是 h2）。
+    expect(wrapper.find('h1').text()).toBe('物料查询')
   })
 
   it('admin 登录后那几张台账页才出现', async () => {
@@ -750,7 +751,7 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
         await flushPromises()
 
         // 主区标题
-        expect(wrapper.find('h2').text()).toBe(title)
+        expect(wrapper.find('h1').text()).toBe(title)
         // 面包屑两段
         const crumb = wrapper.find('nav[aria-label="面包屑"]').text()
         expect(crumb).toContain(group)

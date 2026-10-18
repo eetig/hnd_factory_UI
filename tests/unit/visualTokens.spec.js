@@ -1014,6 +1014,13 @@ describe('焦点环必须过 1.4.11 的 3:1', () => {
     { ring: 'focus-visible:ring-rose-600', why: '4.70（清除筛选 / 清空），rose 是它的语义色' },
     { ring: 'focus:ring-slate-500', why: '4.76（实心主按钮，环画在 ring-offset 之外的白底上）' },
     {
+      ring: 'focus-visible:ring-brand-ink/35',
+      soft: true,
+      why:
+        '软环（inset，35% 品牌墨）：表内输入框真正的指示者是同行的 focus:border-brand；' +
+        '这条环只是让「键盘焦点落在哪个格子」在 1px 边框之外也看得见（2026-10-18 补）',
+    },
+    {
       ring: 'focus:ring-brand-100',
       soft: true,
       why: '软晕，不承载指示：这些输入框真正的指示者是同一行的 focus:border-brand（16.83）',

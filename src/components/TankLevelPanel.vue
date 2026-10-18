@@ -220,6 +220,7 @@ function inputClass(align) {
   return [
     'w-full rounded-md border border-transparent bg-transparent px-1.5 py-1 text-sm text-slate-900 outline-none',
     'transition placeholder:text-slate-500 hover:border-slate-300 focus:border-brand focus:bg-raised',
+      'focus-visible:ring-2 focus-visible:ring-brand-ink/35 focus-visible:ring-inset',
     align === 'right' ? 'text-right' : '',
   ]
 }
