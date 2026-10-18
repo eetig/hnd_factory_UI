@@ -366,7 +366,7 @@ function toggleSidebar() {
                       ? 'mx-auto flex h-10 w-10 items-center justify-center'
                       : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left',
                     !collapsed && currentGroup === group.key ? 'bg-accent-soft ring-1 ring-accent-ink/10' : '',
-                    !collapsed && currentGroup !== group.key ? 'hover:bg-white/45' : '',
+                    !collapsed && currentGroup !== group.key ? 'hover:bg-slate-900/[0.08]' : '',
                   ]"
                   :aria-label="collapsed ? group.label : undefined"
                   :aria-current="currentGroup === group.key ? 'true' : undefined"
@@ -379,7 +379,7 @@ function toggleSidebar() {
                       currentGroup === group.key
                         ? 'bg-white/80 text-accent-ink'
                         : 'bg-white/40 text-slate-600',
-                      collapsed && currentGroup !== group.key ? 'hover:bg-white/55' : '',
+                      collapsed && currentGroup !== group.key ? 'hover:bg-slate-900/[0.10]' : '',
                     ]"
                   >
                     <svg
@@ -449,7 +449,7 @@ function toggleSidebar() {
                         :class="
                           route.path === page.path
                             ? 'font-medium text-accent-ink before:absolute before:top-1.5 before:bottom-1.5 before:left-3 before:w-0.5 before:rounded-full before:bg-brand before:content-[\'\']'
-                            : 'text-slate-700 hover:bg-white/50'
+                            : 'text-slate-700 hover:bg-slate-900/[0.05]'
                         "
                         :aria-current="route.path === page.path ? 'page' : undefined"
                         >{{ page.label }}</router-link

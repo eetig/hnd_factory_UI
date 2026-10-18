@@ -2041,7 +2041,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
       '侧栏选中行不是「bg-accent-soft + ring-1 + ring-accent-ink/10」那串了 —— ' +
         '三段各管一件事（底色/描边粗细/描边色），别拆',
     ).toBe(true)
-    for (const t of ['bg-white/40', 'bg-white/80', 'bg-white/45']) {
+    for (const t of ['bg-white/40', 'bg-white/80', 'bg-slate-900/[0.08]']) {
       // /15 是选中图标块、/40 是未选中图标块、/45 是整行 hover —— 三种前缀都算数
       expect(
         tokens.some((tok) => tok === t || tok === `hover:${t}` || tok === `group-hover:${t}`),
