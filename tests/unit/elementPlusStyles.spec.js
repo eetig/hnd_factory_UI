@@ -60,6 +60,9 @@ const REQUIRED = {
   'el-checkbox': ['el-checkbox'],
   'el-autocomplete': ['el-autocomplete'],
   'el-slider': ['el-slider'],
+  // 变更-117：采购需求改成「点行开右抽屉 + 列配置 popover」
+  'el-drawer': ['el-drawer'],
+  'el-popover': ['el-popover'],
 }
 
 /**

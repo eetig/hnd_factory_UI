@@ -2312,6 +2312,16 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
   const MAINT_PANEL = read(join(SRC, 'components', 'EquipmentMaintenancePanel.vue'))
   const MAINT_CLASS_ATTRS = classAttrsIn(MAINT_PANEL)
   const PURCHASE_PANEL = read(join(SRC, 'components', 'PurchaseTrackingPanel.vue'))
+/*
+ * 变更-117 把「采购需求」拆成了 面板 + 抽屉 + 字段表。
+ * 断言仍要覆盖整条链路（远程检索、上传控件），所以再拼一个合并视图 ——
+ * 否则"代码搬了个家"会被当成"功能被删了"。
+ */
+const PURCHASE_UI = [
+  PURCHASE_PANEL,
+  read(join(SRC, 'components', 'purchase', 'PurchaseDetailDrawer.vue')),
+  read(join(SRC, 'components', 'purchase', 'fields.js')),
+].join('\n')
   const PURCHASE_DATA = read(join(SRC, 'composables', 'usePurchaseTracking.js'))
   const PURCHASE_CLASS_ATTRS = classAttrsIn(PURCHASE_PANEL)
   const countStatic = (text) => CLASS_ATTRS.filter((a) => !a.bound && a.value === text).length
@@ -2506,21 +2516,23 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
       '采购面板又出现了 el-dialog：使用方明确要求 PC 端不要卡片式弹窗，改成表格第一行直接填、某行原地编辑。',
     ).toBe(false)
 
-    // 两个物料框各在「新增行」与「编辑行」里出现一次 = 4 个 el-autocomplete
+    // 变更-117：字段表驱动渲染，物料名称与物料编码**共用同一个 el-autocomplete**
+    // （由 `field.kind` 决定谁出现）。上一版两行各写一遍才是 2 个、加上新增行是 4 个 ——
+    // 数量变少不是功能缩水，恰恰是"只留一份实现"。
     expect(
-      (PURCHASE_PANEL.match(/<el-autocomplete/g) || []).length,
+      (PURCHASE_UI.match(/<el-autocomplete/g) || []).length,
       '物料名称/物料编码必须是 el-autocomplete 远程检索（普通输入框就没有「实时搜索 + 互相带出」了）',
-    ).toBe(4)
+    ).toBe(1)
     expect(
-      PURCHASE_PANEL.includes('fetchMaterialSuggestions'),
+      PURCHASE_UI.includes('fetchMaterialSuggestions'),
       '两个物料框没有接上防抖远程检索（useMaterialLookup 的 fetchMaterialSuggestions）',
     ).toBe(true)
 
-    // 新增行与编辑行共用同一份字段表：两处各写一遍 9 个 <td> 迟早写歪
+    // 字段表只留一份（fields.js），抽屉按 DRAWER_GROUPS 分组渲染
     expect(
-      (PURCHASE_PANEL.match(/v-for="f in EDIT_FIELDS"/g) || []).length,
-      '新增行与编辑行没有共用 EDIT_FIELDS 字段表（应当各引用一次）',
-    ).toBe(2)
+      PURCHASE_UI.includes('DRAWER_GROUPS'),
+      '抽屉没有按语义分组渲染（15 个字段平铺在一列里，人会找不到到货日期）',
+    ).toBe(true)
   })
 
   it('送货单是图片，不是文本框（变更-094）', () => {
@@ -2532,11 +2544,11 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
      *   · 上传走本服务的转发端点（img-service 不对外、那边也没有鉴权注解）。
      */
     expect(
-      PURCHASE_PANEL.includes('DeliveryNoteUpload'),
-      '送货单那一列又变回文本框了：使用方明确说「送货单是一张图片」。',
+      PURCHASE_UI.includes('DeliveryNoteUpload'),
+      '送货单又变回文本框了：使用方明确说「送货单是一张图片」（变更-117 后上传控件在抽屉里）。',
     ).toBe(true)
     expect(
-      PURCHASE_PANEL.includes('isStoredImage'),
+      PURCHASE_UI.includes('isStoredImage'),
       '只读行没有按形态取图（/files/… 才算图片，文本老数据要照原样显示）。',
     ).toBe(true)
     expect(
