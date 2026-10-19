@@ -1,6 +1,21 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+/*
+ * 本地预览可以**直连线上接口**（变更-096 期间加的，使用方「先就在本地跑，看看效果」）：
+ *
+ *   PowerShell:  $env:HND_REMOTE='https://hbhnd.cloud'; npm run dev
+ *
+ * 为什么需要它：本机没有后端 —— 8084（hnd_factory）与 8082（img-service）都跑在服务器上，
+ * 默认代理会全部连不上，页面只能停在登录页，看不到这次改的样式。
+ * 给了这个变量，/api、/files、/thumbs 整段转发到远端站点：登录后看到的是**线上真实数据**
+ * 配新样式。
+ *
+ * ⚠️ 此时**任何写操作都会直接写进生产**（保存/删除/上传）。只看，别动。
+ * ⚠️ 不给变量时行为与以前**完全一致**（本地 8084 / 8082，含 img-service 的路径重写）。
+ */
+const REMOTE = process.env.HND_REMOTE || ''
+
 export default defineConfig({
   plugins: [vue()],
   server: {
@@ -29,23 +44,33 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/api': {
-        // 后端 hnd_factory 端口（本地与容器统一为 8084）
-        target: 'http://localhost:8084',
+        // 后端 hnd_factory 端口（本地与容器统一为 8084）；设了 HND_REMOTE 则直连远端站点
+        target: REMOTE || 'http://localhost:8084',
         changeOrigin: true,
+        secure: !REMOTE,
         // 删除 rewrite，不去掉 /api，直接原样转发
       },
-      // 单据图片（整改-001）：生产由 Nginx 同源路由，本地开发转发到 img-service
-      // 注意：需重写路径 —— /files/X → /api/img/file/X，/thumbs/X → /api/img/thumb/X
-      '/files': {
-        target: 'http://localhost:8082',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
-      },
-      '/thumbs': {
-        target: 'http://localhost:8082',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
-      }
+      /*
+       * 单据图片（整改-001）：生产由 Nginx 同源路由，本地开发转发到 img-service。
+       *
+       * ⚠️ 那个 rewrite 只对 **img-service** 需要（/files/X → /api/img/file/X）。
+       *    直连远端站点时**绝不能重写** —— 远端是 Nginx 同源路由，原路径就是 /files/X，
+       *    重写成 /api/img/file/X 会 404（这次差点踩到）。
+       */
+      '/files': REMOTE
+        ? { target: REMOTE, changeOrigin: true, secure: false }
+        : {
+            target: 'http://localhost:8082',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/files/, '/api/img/file'),
+          },
+      '/thumbs': REMOTE
+        ? { target: REMOTE, changeOrigin: true, secure: false }
+        : {
+            target: 'http://localhost:8082',
+            changeOrigin: true,
+            rewrite: (path) => path.replace(/^\/thumbs/, '/api/img/thumb'),
+          }
     }
   },
   build: {
