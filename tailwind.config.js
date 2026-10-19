@@ -44,7 +44,12 @@ export default {
          * 与 canvas 的分离比 1.11（spec 实算钉 ≥1.08）—— 外框与纸必须分得开，
          * 否则就是"整屏泛白、看不出有一张纸"（037 使用方原话）。
          */
-        desk: '#F4F3EF',
+        /* 变更-096（2026-10-19）：暖骨 #F4F3EF → **暖灰 #ECECEB**。
+         * 使用方给了参考站 supply.madebyoversight.com（量出来页面底 #ECECEB、纯白卡片压在它上面），
+         * 说「做」。只改这一个值就够：四个页面根都吃 `desk`，而纸/卡片是 `canvas`/`raised`（纯白）——
+         * **桌子变深、纸没动**，白卡片反而更跳。护栏那条「外框与纸的分离比 ≥1.08」只会更宽松
+         * （实测见 spec），「纸运行在桌面上」这个观感从 037 立到现在，这次是被强化而不是被推翻。 */
+        desk: '#ECECEB',
         /*
          * 纸 —— **纯白 #FFFFFF**（x-minimalist；043 的浅中性场 #E9E9EE 已退役）。
          *
@@ -127,7 +132,10 @@ export default {
       },
       borderRadius: {
         // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px
-        card: '8px',
+        // 变更-096 起 16px（原来是 linear 那代的 8px）。参考站 supply.madebyoversight.com 的
+        // 卡片圆角量出来 26px；26 对内部系统的密集表格太软，取 16 ——「一眼看得出是卡片」又不糊。
+        // 护栏钉的是**类名** rounded-card 而不是像素值，改数值不用动 spec。
+        card: '16px',
       },
       boxShadow: {
         /*

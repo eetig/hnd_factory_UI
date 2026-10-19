@@ -21,7 +21,7 @@
   /* 页面底色 = Tailwind 的 `desk`（暖骨桌面，x-minimalist）。那张「纸」**不是**底色，
      是工作台/登录页里那层白面，值在 tailwind.config.js 的 colors.canvas。
      写在这里是为了页脚外露/回弹时不出另一条颜色的边 —— 出的是桌面，不是纸。 */
-  background: #f4f3ef;
+  background: #ececeb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }

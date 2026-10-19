@@ -233,7 +233,17 @@ onUnmounted(cancelMaterialSearch)
   <!-- 定高链（变更-088 的方子）：卡片撑满页签给的高度、表格区自己滚、**分页行钉在卡底** -->
   <section class="flex min-h-0 flex-1 flex-col rounded-card border border-line bg-raised shadow-card">
     <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-3 border-b border-line px-6 py-3">
-      <p class="text-sm font-medium text-slate-700">采购进度跟踪</p>
+      <!-- 变更-096 试点（使用方指定的参考站 supply.madebyoversight.com）：「小标签 + 大标题」两层。
+           标签**照抄仓库已有的眉标写法**（侧栏 FACTORY、登录页 Factory Operations 都是
+           text-xs uppercase tracking-[0.18em]），不另造第三套字号 —— 参考站是 11px/0.08em，
+           这里故意跟仓库一致，否则同一屏会出现两种"小标签"。标题 18px/500 + 收紧字距
+           （照参考站 52px/500/−0.015em 那个"大而不粗"的比例，缩到卡片头放得下的档）。 -->
+      <div class="min-w-0">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Purchase tracking
+        </p>
+        <h2 class="mt-0.5 text-lg font-medium tracking-tight text-slate-900">采购进度跟踪</h2>
+      </div>
       <p class="text-xs text-slate-500">
         <template v-if="loading">查询中…</template>
         <template v-else>共 {{ total }} 条</template>

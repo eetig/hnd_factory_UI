@@ -21,13 +21,15 @@
 |---|---|---|---|---|
 | `main` | 043 中性清水玻璃 | `#E9E9EE` 浅场 + 两团光斑 | 石墨 `#1D1D1F` | 两档半透明玻璃 + 折射层 |
 | ~~`x-ai`~~（分支已删，提交 `09977cb` 在 `x-minimalist` 历史里） | linear 深色 | `#010102` 近黑 | 薰衣草蓝 `#5e6ad2` | 炭灰面板 + hairline |
-| **`x-minimalist`** | **minimalist 文档感** | **纸 `#FFFFFF`／桌 `#F4F3EF`** | **墨色 `#111111`** | **白面 + 1px 发丝线，无玻璃** |
+| **`x-minimalist`** | **minimalist 文档感** | **纸 `#FFFFFF`／桌 `#ECECEB`** | **墨色 `#111111`** | **白面 + 1px 发丝线，无玻璃** |
 
 ## 1. minimalist 的语言（取自 pack 原文，落点见括号）
 
 - **画布**：纯白或暖骨（→ 两层：`canvas` 纯白纸 / `desk` 暖骨桌面）。
 - **描边**：`exactly 1px solid #EAEAEA`（→ 新增令牌 `line`，取代 043 的玻璃白描边）。
-- **形状**：卡片圆角 8px 上限、按钮 4–6px，**不许 rounded-full 用在大容器上**。
+- **形状**：卡片圆角 **16px**、按钮**胶囊**（变更-096 起；pack 原文是"卡片 8px 上限、按钮 4–6px"，
+  为对齐使用方指定的参考站 supply.madebyoversight.com 而放宽 —— **这是本套唯一一处明知故犯的偏离**，
+  按钮是控件不是大容器，所以 pack 那条"`rounded-full` 不许用在大容器上"依然成立）。
 - **高程**：层次来自字阶、对比与空间；阴影"几乎不存在"，真要用也只允许「超大扩散、
   α < 0.05」（→ `shadow-card` 收到 0.04、`shadow-panel` 收到 0.03，两层玻璃内缘光学整组退役）。
 - **颜色稀缺**：强调色只用于语义；主色就是**最深的墨**（→ `#111111` 实底 CTA，白字 18.9:1）。
@@ -45,7 +47,7 @@ x-minimalist 改成**就地替换基础值**，单一事实来源，spec 直接�
 
 | 角色 | 043 原值 | x-minimalist | 依据 / 实算账 |
 |---|---|---|---|
-| `desk` 桌面/外框 | `#DEDFE5` | **`#F4F3EF`** | 暖骨；与纸 **1.11:1**（≥1.08，外框看得见） |
+| `desk` 桌面/外框 | `#DEDFE5` | **`#ECECEB`** | 暖灰（变更-096；原暖骨 `#F4F3EF`）；与纸 **1.18:1**（≥1.08，比 1.11 那代更分得开） |
 | `canvas` 纸 | `#E9E9EE` | **`#FFFFFF`** | 纯白文档面；slate-900 压它 17.9:1 |
 | `raised` 卡面 | `#FFFFFF` | **`#FFFFFF`** | 与纸同色，分层改由 `line` 承担 |
 | `region` 垫底/表头 | `#EEEEF1` | **`#F7F7F5`** | 压白卡 **1.07**（≥1.046，表头带不丢） |
@@ -54,13 +56,14 @@ x-minimalist 改成**就地替换基础值**，单一事实来源，spec 直接�
 | `brand` 主色 | `#1D1D1F` | **`#111111`** | 签名 CTA；白字 **18.9** |
 | `brand-deep` | `#171719` | **`#0E0E0E`** | = brand×0.8 = EP `dark-2`（同源交叉） |
 | `brand-50/100/200` | `#E8E8E9/D2D2D2/BBBBBC` | **`#E7E7E7/#CFCFCF/#B8B8B8`** | = EP `light-9/8/7`（同源交叉） |
-| `card` 圆角 | 20px → 8px | **8px** | pack：卡片 8px 上限 |
+| `card` 圆角 | 20px → 8px | **16px** | 变更-096：为对齐参考站放宽（pack 原文 8px 上限）；护栏钉的是类名 `rounded-card`，不钉像素 |
 | `shadow-card` | 8px/28px 投影 + 两层内缘镜面 | **`0 2px 8px rgba(0,0,0,.04)`** | pack：α < 0.05 |
 | `shadow-panel` | 12px/32px + 色散线 ×4 | **`0 1px 2px rgba(0,0,0,.03)`** | 同上；色散线是玻璃厚度光学，无玻璃即无镶边 |
 
 `theme.css`（EP 变量）同步：`--el-color-primary: #111111` + 六个派生色按 EP 混色公式重算；
-圆角 base 6px / small 4px / 分页 6px / 浮层与弹窗 8px；三档空白填充 = `raised`（纯白），
-`--el-fill-color` = `region`。**§5 那组同源交叉断言一条没改就仍然成立** —— 这是刻意的：
+圆角 base 6px / small 4px / 分页 6px / 浮层与弹窗 8px；**按钮单独收口为胶囊**（`.el-button{border-radius:999px}`，
+变更-096 —— 刻意**不动** `--el-border-radius-base`，否则输入框/下拉/日期选择器会一起变胶囊，在 17 列宽表里是灾难）；
+三档空白填充 = `raised`（纯白），`--el-fill-color` = `region`。**§5 那组同源交叉断言一条没改就仍然成立** —— 这是刻意的：
 EP 与 Tailwind 两侧同值，是这套令牌最容易漂移也最容易守住的地方。
 
 ## 3. 材质层：删掉两层，留下一层
@@ -74,6 +77,7 @@ EP 与 Tailwind 两侧同值，是这套令牌最容易漂移也最容易守住�
 | **改** | 卡片配方 ×17 | `bg-raised/95 border-white/60 backdrop-blur-xl` → `bg-raised border-line` |
 | **改** | `src/style.css` 字体栈 | **去掉 Inter**（pack 点名的反模式），换系统人文无衬线（拉丁 Segoe UI Variable → 中文 PingFang SC / 微软雅黑）；不引入 webfont（内网离线、体积、首屏） |
 | **改** | `index.html` theme-color / `style.css` `:root` 底色 | `#dedfe5` → `#f4f3ef`（= `desk`，与页面外框同值，回弹不出第二条边） |
+| **变更-096 再改** | `index.html` theme-color / `style.css` `:root` 底色 | `#f4f3ef` → `#ececeb`（照参考站 supply.madebyoversight.com 的页面底）。**两处必须始终与 `desk` 同值** —— 这次就是护栏抓到"我只改了令牌、没改这两处"，否则页脚回弹会露出第二种颜色的边 |
 
 `minimal-field.css` 里还留了一段**三代病史**（036 的"平纸上 blur 无物可糊" → 041 蓝底
 让这句话过期 → 043 去色留亮度 → x-minimalist 换的是问题本身：不要玻璃）。留着是因为
