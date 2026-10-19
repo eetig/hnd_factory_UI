@@ -27,8 +27,8 @@ npm run dev          # http://localhost:9091
 |---|---|---|
 | `/api/ocr` | `localhost:8085` | myocr 识别服务。**代理顺序必须在 `/api` 之前**，否则会被 8084 吃掉而 404 |
 | `/api` | `localhost:8084` | hnd_factory 业务后端（不做路径重写） |
-| `/files` | `localhost:8082` | img-service 原图，重写为 `/api/img/file/*` |
-| `/thumbs` | `localhost:8082` | img-service 缩略图，重写为 `/api/img/thumb/*` |
+| `/files` | `localhost:8082` | file-service 原图，重写为 `/api/img/file/*` |
+| `/thumbs` | `localhost:8082` | file-service 缩略图，重写为 `/api/img/thumb/*` |
 
 三个服务都起着，列表页的图片列才不会全空。
 

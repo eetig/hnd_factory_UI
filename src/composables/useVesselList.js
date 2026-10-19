@@ -36,7 +36,7 @@ const VESSEL_IMAGES = import.meta.glob('../assets/vessel*.png', {
 /**
  * 底图地址。两种来源（2026-10-06 起 `image_file` 有两种形态）：
  *   · **纯文件名**（`vessel.png`）—— 内置底图，走下面的 glob 映射到打包后的资源
- *   · **以 `/` 开头**（`/files/xxx.png`）—— 维护页上传的，由 img-service 存 MinIO、
+ *   · **以 `/` 开头**（`/files/xxx.png`）—— 维护页上传的，由 file-service 存 MinIO、
  *     Nginx 同源暴露。**原样返回**：dev 走 vite 代理的 `/files`、生产走 Nginx，都不必加工。
  */
 function imageUrlOf(fileName) {

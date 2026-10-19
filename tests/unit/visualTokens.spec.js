@@ -2541,7 +2541,7 @@ const PURCHASE_UI = [
      *   · 可编辑格里必须是上传控件（回到文本框就白改了）；
      *   · 只读行要判断形态（`/files/…` 才当图，文本照文本显示 —— 这一列原本是送货单号文本，
      *     老数据不能当坏数据）；
-     *   · 上传走本服务的转发端点（img-service 不对外、那边也没有鉴权注解）。
+     *   · 上传走本服务的转发端点（file-service 不对外、那边也没有鉴权注解）。
      */
     expect(
       PURCHASE_UI.includes('DeliveryNoteUpload'),
@@ -2553,7 +2553,7 @@ const PURCHASE_UI = [
     ).toBe(true)
     expect(
       PURCHASE_DATA.includes('/api/purchase/upload-delivery-note'),
-      '送货单上传没有走本服务的转发端点（前端不许直连 img-service）。',
+      '送货单上传没有走本服务的转发端点（前端不许直连 file-service）。',
     ).toBe(true)
   })
 

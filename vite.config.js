@@ -6,13 +6,13 @@ import vue from '@vitejs/plugin-vue'
  *
  *   PowerShell:  $env:HND_REMOTE='https://hbhnd.cloud'; npm run dev
  *
- * 为什么需要它：本机没有后端 —— 8084（hnd_factory）与 8082（img-service）都跑在服务器上，
+ * 为什么需要它：本机没有后端 —— 8084（hnd_factory）与 8082（file-service）都跑在服务器上，
  * 默认代理会全部连不上，页面只能停在登录页，看不到这次改的样式。
  * 给了这个变量，/api、/files、/thumbs 整段转发到远端站点：登录后看到的是**线上真实数据**
  * 配新样式。
  *
  * ⚠️ 此时**任何写操作都会直接写进生产**（保存/删除/上传）。只看，别动。
- * ⚠️ 不给变量时行为与以前**完全一致**（本地 8084 / 8082，含 img-service 的路径重写）。
+ * ⚠️ 不给变量时行为与以前**完全一致**（本地 8084 / 8082，含 file-service 的路径重写）。
  */
 const REMOTE = process.env.HND_REMOTE || ''
 
@@ -51,9 +51,9 @@ export default defineConfig({
         // 删除 rewrite，不去掉 /api，直接原样转发
       },
       /*
-       * 单据图片（整改-001）：生产由 Nginx 同源路由，本地开发转发到 img-service。
+       * 单据图片（整改-001）：生产由 Nginx 同源路由，本地开发转发到 file-service。
        *
-       * ⚠️ 那个 rewrite 只对 **img-service** 需要（/files/X → /api/img/file/X）。
+       * ⚠️ 那个 rewrite 只对 **file-service** 需要（/files/X → /api/img/file/X）。
        *    直连远端站点时**绝不能重写** —— 远端是 Nginx 同源路由，原路径就是 /files/X，
        *    重写成 /api/img/file/X 会 404（这次差点踩到）。
        */

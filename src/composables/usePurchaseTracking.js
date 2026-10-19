@@ -215,10 +215,10 @@ const uploading = ref(false)
 /**
  * 上传一张送货单图片，返回存进 `deliveryNote` 的值。
  *
- * 按 ADR-0004 的固定拼接规则存 **`/files/<fileName>`**（不存裸文件名、也不存 img-service
+ * 按 ADR-0004 的固定拼接规则存 **`/files/<fileName>`**（不存裸文件名、也不存 file-service
  * 给的 URL）—— 缩略图由 storedImageThumb 换成 `/thumbs/…` 拼出来，前端只记一条规则。
  *
- * 上传打到本服务转发（img-service 不对外、那边也没有鉴权）；权限位在服务端那一层。
+ * 上传打到本服务转发（file-service 不对外、那边也没有鉴权）；权限位在服务端那一层。
  */
 export async function uploadDeliveryNote(file) {
   uploading.value = true
@@ -250,7 +250,7 @@ export function isStoredImage(value) {
   return typeof value === 'string' && value.trim().startsWith('/files/')
 }
 
-/** `/files/abc.png` → `/thumbs/abc.png`（img-service 两个前缀都提供）；不是图片则原样返回 */
+/** `/files/abc.png` → `/thumbs/abc.png`（file-service 两个前缀都提供）；不是图片则原样返回 */
 export function storedImageThumb(value) {
   return isStoredImage(value) ? value.trim().replace('/files/', '/thumbs/') : value
 }

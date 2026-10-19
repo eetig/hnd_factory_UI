@@ -150,7 +150,7 @@ const pendingImages = ref([]) // [{ key, file, url }]
 const pendingImageInputRef = ref(null)
 let pendingImageKey = 0
 
-// 只收 PNG / JPG，与后端白名单一致（img-service 只认这两种，收了别的也会在那一步失败）
+// 只收 PNG / JPG，与后端白名单一致（file-service 只认这两种，收了别的也会在那一步失败）
 const IMAGE_ACCEPT = 'image/png,image/jpeg'
 
 function isAllowedImage(file) {

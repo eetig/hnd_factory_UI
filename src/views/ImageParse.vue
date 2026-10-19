@@ -37,7 +37,7 @@ const MAX_COUNT = 5
 const MAX_SIZE = 10 * 1024 * 1024
 
 // 只收 PNG / JPG —— 腾讯云 ExtractDocMulti 本身只支持 PNG/JPG/JPEG（不支持 WEBP/BMP），
-// 而落库时单据图要存入 img-service，它同样只接受 jpg/png。
+// 而落库时单据图要存入 file-service，它同样只接受 jpg/png。
 // 收进来却在识别或存图那一步失败，不如一开始就不让选。
 const ACCEPT = 'image/png,image/jpeg'
 
@@ -766,7 +766,7 @@ function docCheckNames(image) {
 
 /**
  * 横幅缩略图地址：`/thumbs/x.jpg`、`/files/x.jpg` 这类相对路径**原样用**——
- * 开发期由 vite 代理转给 img-service（见 vite.config.js 的 /files、/thumbs），
+ * 开发期由 vite 代理转给 file-service（见 vite.config.js 的 /files、/thumbs），
  * 生产由 Nginx 同源路由，两端都不必加工（与 vesselImageUrl 同口径）。
  */
 function docCheckThumb(image) {
