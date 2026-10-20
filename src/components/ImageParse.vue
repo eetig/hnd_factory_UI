@@ -432,7 +432,7 @@ const {
 
 const pickerCustomStyle = computed(() => {
   const base =
-    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;'
+    'max-height: 80vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
   const kb = pickerKeyboardHeight.value
   if (!kb) return base
 
@@ -1502,7 +1502,7 @@ onUnmounted(() => {
       position="bottom"
       round
       safe-area-inset-bottom
-      custom-style="background-color: var(--ui-glass-fill);"
+      custom-style="background-color: var(--ui-sheet-fill);"
       @close="sourceSheetVisible = false"
     >
       <view class="source-sheet">
@@ -1533,8 +1533,8 @@ onUnmounted(() => {
          overflow-y: auto 是不会滚的，必须用 scroll-view 才滚得起来。 -->
     <!-- ⚠️ custom-style 里的 background-color 不能省：wd-popup 给 .wd-popup 写死了
          `background: #fff`，只有挂 .wot-theme-dark 时才变（本项目用的是自己那套
-         .theme-light / CSS 变量主题，没有这个类）——不覆盖的话，深色主题下整个弹层是块白板，
-         里面的文字反而是 $ui-text 的浅色，等于白底白字。 -->
+         浅色默认 / .theme-dark 的 CSS 变量主题，没有这个类）——不覆盖的话，深色主题下
+         整个弹层是块白板，里面的文字反而是 $ui-text 的浅色，等于白底白字。 -->
     <wd-popup
       v-model="pickerVisible"
       position="bottom"

@@ -1,6 +1,7 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, getCurrentInstance, ref, watch } from 'vue'
 import { useMessage, useToast } from 'wot-design-uni'
+import dayjs from 'dayjs'
 import DateField from './DateField.vue'
 import PhotoGrid from './PhotoGrid.vue'
 import { hasPerm } from '../api/auth'
@@ -13,6 +14,7 @@ import {
 } from '../composables/useTankLevelData'
 import { useTankLevelImages } from '../composables/useTankLevelImages'
 import { chooseImages } from '../utils/chooseImages'
+import { buildStampLines, CANVAS_EDGE, watermarkPhoto } from '../utils/photoWatermark'
 
 /**
  * 月底储罐液位记录的新增 / 编辑表单（底部弹层）。
@@ -44,7 +46,13 @@ const emit = defineEmits(['update:modelValue'])
 const toast = useToast()
 const message = useMessage()
 
-const { saveTankLevelRecord, deleteTankLevelRecord, fetchTankLevelRecords } = useTankLevelData()
+const {
+  saveTankLevelRecord,
+  deleteTankLevelRecord,
+  fetchTankLevelRecords,
+  fetchTankLevelSuggestions,
+  tankLevelSuggestions,
+} = useTankLevelData()
 const { uploadImagesForRecord } = useTankLevelImages()
 const {
   equipmentOptions,
@@ -79,7 +87,7 @@ const {
 
 const popupStyle = computed(() => {
   const base =
-    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-glass-fill); overscroll-behavior: contain;'
+    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
   const kb = liftHeight.value
   if (!kb) return base
 
@@ -88,50 +96,114 @@ const popupStyle = computed(() => {
   return `${base} bottom: ${kb}px; padding-bottom: 0; height: min(86vh, calc(100vh - ${kb}px - 12px));`
 })
 
-// ===== 候选层（下钻）=====
-// '' = 填表；'location' = 选属地；'equipment' = 选容器名称。
+// ===== 输入即查的候选（2026-10-20 改版：取消「选择」按钮）=====
 //
-// 刻意**不在弹层里再开一个弹层**：本项目多处靠「没有 transform 祖先」保证 fixed 浮层
-// 铺满全屏（见 DropdownMenu 的说明），而 wd-popup 动画期间带 transform，
-// 嵌套的 fixed 浮层会跟着它定位。同一个弹层里换内容最稳，各端表现也一致。
-const pickerMode = ref('')
-const equipmentKeyword = ref('')
+// 旧做法是「输入框 + 选择按钮 → 下钻到一个候选层」，一次选择要点三次：
+// 点选择、找条目、点条目。使用方要求改成**聚焦即列全部、打字即收窄、点中即回填**，
+// 少一层、少两次点击（原话：「输入的时候自动查询，不需要后面的选择」）。
+//
+// 候选直接铺在字段下方（跟着内容往下推），不做浮层：
+//   · 浮层要 position: fixed/absolute + 遮挡判断，而弹层里的祖先带 transform 时会被钉住
+//     （本仓踩过多次，见 DateField / DropdownMenu 的注释）；
+//   · 弹层里可滚，候选再多也只是往下长，不存在被裁切的问题。
+const activeField = ref('') // '' | 'location' | 'equipment'
 
-const pickerTitle = computed(() =>
-  pickerMode.value === 'location' ? '选择属地' : '从设备台账选择容器',
-)
+// 失焦到点击命中之间有约 220ms 的窗口：手指点在候选上时，blur 先于 click 触发，
+// 立刻收起列表会让这一下点空（手机上尤其明显）。所以延迟收，点中候选时再取消。
+let blurTimer = null
+const SUGGEST_HIDE_DELAY = 220
 
-function openLocationPicker() {
-  pickerMode.value = 'location'
+/** 属地候选：**库里出现过的** + 固定罐组字典（2026-10-20 起会记住手打过的属地） */
+const locationCandidatePool = computed(() => {
+  const merged = [...tankLevelSuggestions.value.locations, ...TANK_LEVEL_LOCATIONS]
+  return merged.filter((item, index) => item && merged.indexOf(item) === index)
+})
+
+/** 属地候选：固定字典，按已输入的片段做包含匹配 */
+const locationSuggestions = computed(() => {
+  const keyword = String(draft.value.location ?? '').trim()
+  if (!keyword) return locationCandidatePool.value
+  return locationCandidatePool.value.filter((item) => item.includes(keyword))
+})
+
+/**
+ * 容器名称候选 = 设备台账（后端按关键字查，带规格）+ **库里录过的名称**（可手打的新罐）。
+ *
+ * <p>两条来源缺一不可（2026-10-20，变更-129）：
+ *   · 只有台账 → 现场临时编号/新装罐（台账还没录）打完下次就没了；
+ *   · 只有历史 → 第一次录某台设备时没有任何候选。
+ *
+ * <p>空关键字时的排序是**刻意的**：台账前 5 条 + 只出现在历史里的名称。
+ * 全按台账排的话，一屏 8 条全是台账，刚手打过的「171产品」永远在 8 条之外 ——
+ * 使用方要的正是"下次能搜到/看到我自己打的那个名字"。
+ */
+const EQUIPMENT_SUGGEST_LIMIT = 8
+/** 空关键字时台账占前几条（其余名额给历史里独有的名称） */
+const EQUIPMENT_LEDGER_HEAD = 5
+
+const equipmentCandidateNames = computed(() => {
+  const keyword = String(draft.value.tankName ?? '').trim()
+  const ledgerNames = equipmentOptions.value.map((option) => option.name).filter(Boolean)
+  const historyOnly = tankLevelSuggestions.value.tankNames
+    .filter((name) => !ledgerNames.includes(name))
+
+  if (keyword) {
+    const pool = [...ledgerNames, ...historyOnly]
+      .filter((name, index, all) => all.indexOf(name) === index)
+    return pool.filter((name) => name.includes(keyword))
+  }
+
+  return [...ledgerNames.slice(0, EQUIPMENT_LEDGER_HEAD), ...historyOnly]
+})
+
+const equipmentSuggestions = computed(() => {
+  const current = String(draft.value.tankName ?? '').trim()
+  return equipmentCandidateNames.value
+    .filter((name) => name !== current)
+    .slice(0, EQUIPMENT_SUGGEST_LIMIT)
+    .map((name) => ({
+      name,
+      spec: equipmentOptions.value.find((option) => option.name === name)?.spec || '',
+    }))
+})
+
+const equipmentMoreHint = computed(() => {
+  const current = String(draft.value.tankName ?? '').trim()
+  const hidden = equipmentCandidateNames.value.filter((name) => name !== current).length
+    - equipmentSuggestions.value.length
+  return hidden > 0 ? `还有 ${hidden} 个，继续输入可缩小范围` : ''
+})
+
+/** 聚焦：属地列全量；容器名称按当前输入立刻查一次（空关键字 = 全部） */
+function showSuggestions(field) {
+  clearTimeout(blurTimer)
+  activeField.value = field
+  if (field === 'equipment') fetchEquipmentSuggestions(String(draft.value.tankName ?? ''))
 }
 
-function openEquipmentPicker() {
-  pickerMode.value = 'equipment'
-  equipmentKeyword.value = ''
-  // 空关键字 = 台账前 100 条（后端按名称拼音序），点开就列出全部候选，不必先打字
-  fetchEquipmentSuggestions('')
+function hideSuggestionsSoon() {
+  clearTimeout(blurTimer)
+  blurTimer = setTimeout(() => {
+    activeField.value = ''
+  }, SUGGEST_HIDE_DELAY)
 }
 
-function closePicker() {
-  pickerMode.value = ''
+function pickLocation(location) {
+  draft.value.location = location
+  activeField.value = ''
+}
+
+function pickEquipment(option) {
+  draft.value.tankName = option.name
+  activeField.value = ''
   cancelEquipmentSearch()
 }
 
-function selectLocation(location) {
-  draft.value.location = location
-  closePicker()
+/** 容器名称边打边查（useEquipmentLedger 自带 300ms 防抖 + 过期响应丢弃） */
+function onTankNameInput() {
+  if (activeField.value !== 'equipment') activeField.value = 'equipment'
+  fetchEquipmentSuggestions(String(draft.value.tankName ?? ''))
 }
-
-/** 选中台账设备：先只回填名称（用设备位号回填容器编号是电脑端 变更-012 的待办 #1，还没做） */
-function selectEquipment(option) {
-  draft.value.tankName = option.name
-  closePicker()
-}
-
-watch(equipmentKeyword, (value) => {
-  if (pickerMode.value !== 'equipment') return
-  fetchEquipmentSuggestions(value)
-})
 
 // ===== 新增行里先选好的照片 =====
 // 记录还没保存就没有 id，而图据接口挂在 record id 上，所以照片只能先攥在手里，
@@ -139,6 +211,11 @@ watch(equipmentKeyword, (value) => {
 //
 // 编辑已有行不走这条路：那种行本来就有 id，图据弹窗直接可用，不必等保存。
 const pendingPhotos = ref([]) // uni.chooseImage 给的临时路径
+
+// 水印画布（隐藏节点）：**尺寸固定**为 CANVAS_EDGE。
+// 不能按图片尺寸动态改 —— uni-canvas 的像素尺寸在挂载时定死，改 style 只改盒子，
+// 导出会得到"左上角一小块 + 大片白"（2026-10-20 实测）。详见 utils/photoWatermark。
+const WATERMARK_CANVAS_ID = 'tlf-watermark'
 
 /**
  * 拍照 / 从相册选。
@@ -149,20 +226,41 @@ const pendingPhotos = ref([]) // uni.chooseImage 给的临时路径
  *
  * <p>走 utils/chooseImages：「相册」这一支在 App 端去起手机自带的相册（见该文件），
  * 拍照与 H5 / 小程序原样走框架。
+ *
+ * <p>**只有「拍照」加水印**（2026-10-20 使用方要求）：现场取证要能自证"何时何地"。
+ * 相册里的旧图不加 —— 那张照片不是此刻拍的，盖一个当前时间反而在伪造证据。
  */
-function pickPhotos(source) {
+async function pickPhotos(source) {
   chooseImages({
     count: 3,
     sizeType: ['original', 'compressed'],
     sourceType: [source],
-    success: (res) => {
+    success: async (res) => {
       const paths = res.tempFilePaths || []
-      if (paths.length) {
-        // 按路径去重：同一个临时路径进来两次，网格的 :key 会撞车（相册里连点两下就会）
-        const merged = [...pendingPhotos.value, ...paths]
-        pendingPhotos.value = merged.filter((path, i) => merged.indexOf(path) === i)
-      }
+      if (!paths.length) return
+
+      const finalPaths = source === 'camera'
+        ? await Promise.all(paths.map((path) => stampOne(path)))
+        : paths
+
+      // 按路径去重：同一个临时路径进来两次，网格的 :key 会撞车（相册里连点两下就会）
+      const merged = [...pendingPhotos.value, ...finalPaths]
+      pendingPhotos.value = merged.filter((path, i) => merged.indexOf(path) === i)
     },
+  })
+}
+
+/** 给一张刚拍的照片盖章；失败自动退回原图（见 utils/photoWatermark 的取舍） */
+function stampOne(path) {
+  return watermarkPhoto({
+    path,
+    lines: buildStampLines({
+      time: dayjs().format('YYYY-MM-DD HH:mm'),
+      location: draft.value.location,
+      tankName: draft.value.tankName,
+    }),
+    canvasId: WATERMARK_CANVAS_ID,
+    instance: getCurrentInstance()?.proxy,
   })
 }
 
@@ -180,7 +278,11 @@ function clearPendingPhotos() {
 function syncDraft() {
   draft.value = buildTankLevelDraft(props.record)
   clearPendingPhotos()
-  closePicker()
+  clearTimeout(blurTimer)
+  activeField.value = ''
+  cancelEquipmentSearch()
+  // 每次打开都重取候选：刚录过的属地/容器名称要能立刻出现在下一次的候选里
+  fetchTankLevelSuggestions()
 }
 
 watch(
@@ -192,7 +294,7 @@ watch(
     } else {
       stopKeyboardLift()
       cancelEquipmentSearch()
-      pickerMode.value = ''
+      activeField.value = ''
     }
   },
 )
@@ -210,6 +312,38 @@ function close() {
   emit('update:modelValue', false)
 }
 
+/**
+ * 保存一次；碰到「同一天同一容器已存在」先问一句，用户点了「仍要保存」再重提。
+ *
+ * <p>为什么把确认放在这里而不是各调用点：确认的是**这次保存**，与表单状态无关，
+ * 放调用点会让"取消后要不要关弹层"散成两处判断。返回 null 表示用户主动取消。
+ *
+ * <p>为什么不是前端先查当天列表自己拦：同一天同一容器的判定要"去空白后比对名称"，
+ * 那是一份规则；而规则一旦两端各写一份就会漂移（本项目在物料匹配上已经吃过一次）。
+ * 所以判定只在后端（TankLevelRecordServiceImpl.requireNoSameDayTank），
+ * 前端只负责"看到 409 就问一句"（2026-10-20，变更-127）。
+ */
+async function saveWithDuplicateConfirm() {
+  try {
+    return await saveTankLevelRecord(draft.value)
+  } catch (error) {
+    if (!error?.needsConfirm) throw error
+
+    try {
+      await message.confirm({
+        title: '同一天已记过这台容器',
+        msg: error.message,
+        confirmButtonText: '仍要保存',
+        cancelButtonText: '取消',
+      })
+    } catch {
+      return null // 用户取消：本次不保存，也不算失败
+    }
+
+    return await saveTankLevelRecord(draft.value, { confirmDuplicate: true })
+  }
+}
+
 async function handleSave() {
   if (saving.value) return
 
@@ -221,7 +355,9 @@ async function handleSave() {
   try {
     // 校验交给后端（TankLevelValidator 只返回首条错误，且文案就是给用户看的），
     // 前端不再抄一份规则 —— 抄了迟早和后端漂移
-    const saved = await saveTankLevelRecord(draft.value)
+    const saved = await saveWithDuplicateConfirm()
+    // null = 用户在「同一天已记过这台容器」那里点了取消
+    if (!saved) return
     close()
 
     if (!photosToUpload.length) {
@@ -289,74 +425,24 @@ async function handleDelete() {
     <view class="tlf">
       <view class="tlf__grabber"></view>
 
+      <!-- 水印画布：不参与布局（挪到屏幕外），只给 canvasToTempFilePath 读像素。
+           尺寸固定成 CANVAS_EDGE，导出时只取绘制区域（见 utils/photoWatermark）。 -->
+      <canvas
+        :canvas-id="WATERMARK_CANVAS_ID"
+        :id="WATERMARK_CANVAS_ID"
+        class="tlf__watermark"
+        :style="`width:${CANVAS_EDGE}px;height:${CANVAS_EDGE}px;`"
+      ></canvas>
+
       <view class="tlf__head">
-        <!-- 候选层时头部换成「返回」：不新开弹层，只换内容 -->
-        <view v-if="pickerMode" class="tlf__back" @click="closePicker">
-          <wd-icon name="arrow-left" size="18px" />
-        </view>
-        <text class="tlf__title">{{ pickerMode ? pickerTitle : title }}</text>
+        <text class="tlf__title">{{ title }}</text>
         <view class="tlf__close" @click="close">
           <wd-icon name="close" size="18px" />
         </view>
       </view>
 
-      <!-- ===== 候选层：属地 ===== -->
-      <scroll-view v-if="pickerMode === 'location'" class="tlf__body" scroll-y>
-        <view
-          v-for="location in TANK_LEVEL_LOCATIONS"
-          :key="location"
-          class="tlf__option"
-          :class="location === draft.location ? 'is-selected' : ''"
-          @click="selectLocation(location)"
-        >
-          <text class="tlf__option-text">{{ location }}</text>
-          <text v-if="location === draft.location" class="tlf__option-flag">当前</text>
-        </view>
-        <text class="tlf__tip">
-          这里只是常用罐组，列表里没有的照样可以直接打在属地框里。
-        </text>
-      </scroll-view>
-
-      <!-- ===== 候选层：容器名称（设备台账）===== -->
-      <template v-else-if="pickerMode === 'equipment'">
-        <view class="tlf__search">
-          <wd-input
-            v-model="equipmentKeyword"
-            placeholder="输入关键字搜索设备台账"
-            clearable
-            no-border
-          />
-        </view>
-
-        <scroll-view class="tlf__body tlf__body--list" scroll-y>
-          <view
-            v-for="item in equipmentOptions"
-            :key="item.name"
-            class="tlf__option"
-            :class="item.name === draft.tankName ? 'is-selected' : ''"
-            @click="selectEquipment(item)"
-          >
-            <view class="tlf__option-main">
-              <text class="tlf__option-text">{{ item.name }}</text>
-              <text v-if="item.spec" class="tlf__option-sub">{{ item.spec }}</text>
-            </view>
-            <text v-if="item.name === draft.tankName" class="tlf__option-flag">当前</text>
-          </view>
-
-          <view v-if="equipmentSearching && !equipmentOptions.length" class="tlf__empty">
-            <text>正在读取设备台账…</text>
-          </view>
-          <view v-else-if="!equipmentOptions.length" class="tlf__empty">
-            <text>{{ equipmentKeyword.trim() ? '没有匹配的设备' : '暂时取不到设备台账' }}</text>
-            <text class="tlf__empty-hint">
-              台账里没有的设备，把名称直接打在容器名称框里即可。
-            </text>
-          </view>
-        </scroll-view>
-      </template>
-
       <!-- ===== 表单 / 只读详情 ===== -->
-      <scroll-view v-else class="tlf__body" scroll-y>
+      <scroll-view class="tlf__body" scroll-y>
         <!-- 只读详情：无编辑权限时把值按行铺出来，不做成灰掉的输入框
              （灰输入框点不动又像是坏了，不如直接给文本） -->
         <template v-if="readOnly">
@@ -385,39 +471,78 @@ async function handleDelete() {
         <template v-else>
           <view class="tlf__field">
             <text class="tlf__label">记录日期</text>
-            <DateField v-model="draft.recordDate" placeholder="请选择记录日期" />
+            <!-- variant="inline"：表单里不要胶囊，和下面几行的值一样右对齐 -->
+            <DateField v-model="draft.recordDate" variant="inline" placeholder="请选择记录日期" />
           </view>
 
-          <!-- 属地：可填可选 —— 候选就那几个罐组，这里只帮省事，不是必选项 -->
-          <view class="tlf__field">
-            <text class="tlf__label">属地</text>
-            <input
-              v-model="draft.location"
-              class="tlf__input"
-              type="text"
-              placeholder="如：4#"
-              placeholder-class="ui-placeholder"
-            />
-            <view class="tlf__pick" @click="openLocationPicker">
-              <wd-icon name="filter" size="14px" />
-              选择
+          <!-- 属地：可填可选。聚焦即列全部、打字即收窄（2026-10-20 取消「选择」按钮） -->
+          <view class="tlf__field-wrap">
+            <view class="tlf__field">
+              <text class="tlf__label">属地</text>
+              <input
+                v-model="draft.location"
+                class="tlf__input"
+                type="text"
+                placeholder="如：4#"
+                placeholder-class="ui-placeholder"
+                @focus="showSuggestions('location')"
+                @blur="hideSuggestionsSoon"
+              />
+            </view>
+
+            <view v-if="activeField === 'location' && locationSuggestions.length" class="tlf__suggest">
+              <view
+                v-for="item in locationSuggestions"
+                :key="item"
+                class="tlf__suggest-item"
+                @click="pickLocation(item)"
+              >
+                <text>{{ item }}</text>
+                <text v-if="item === draft.location" class="tlf__suggest-flag">当前</text>
+              </view>
+              <text class="tlf__suggest-hint">列表里没有的属地，直接打在框里即可。</text>
             </view>
           </view>
 
-          <!-- 容器名称：候选来自设备台账（点开列全部、按名称拼音序），也能直接手打 ——
+          <!-- 容器名称：候选来自设备台账（聚焦列全部、打字收窄），也能直接手打 ——
                台账里没有的设备照样要录得进去，所以不做成「只能选」 -->
-          <view class="tlf__field">
-            <text class="tlf__label">容器名称</text>
-            <input
-              v-model="draft.tankName"
-              class="tlf__input"
-              type="text"
-              placeholder="请填写容器名称"
-              placeholder-class="ui-placeholder"
-            />
-            <view class="tlf__pick" @click="openEquipmentPicker">
-              <wd-icon name="filter" size="14px" />
-              选择
+          <view class="tlf__field-wrap">
+            <view class="tlf__field">
+              <text class="tlf__label">容器名称</text>
+              <input
+                v-model="draft.tankName"
+                class="tlf__input"
+                type="text"
+                placeholder="请填写容器名称"
+                placeholder-class="ui-placeholder"
+                @focus="showSuggestions('equipment')"
+                @blur="hideSuggestionsSoon"
+                @input="onTankNameInput"
+              />
+            </view>
+
+            <view
+              v-if="activeField === 'equipment' && (equipmentSuggestions.length || equipmentSearching || equipmentMoreHint)"
+              class="tlf__suggest"
+            >
+              <text v-if="equipmentSearching && !equipmentSuggestions.length" class="tlf__suggest-empty">
+                正在读取设备台账…
+              </text>
+              <view
+                v-for="item in equipmentSuggestions"
+                :key="item.name"
+                class="tlf__suggest-item"
+                @click="pickEquipment(item)"
+              >
+                <view class="tlf__suggest-main">
+                  <text class="tlf__suggest-text">{{ item.name }}</text>
+                  <text v-if="item.spec" class="tlf__suggest-sub">{{ item.spec }}</text>
+                </view>
+              </view>
+              <text v-if="equipmentMoreHint" class="tlf__suggest-hint">{{ equipmentMoreHint }}</text>
+              <text v-else-if="!equipmentSearching && !equipmentSuggestions.length" class="tlf__suggest-empty">
+                没有匹配的设备，可直接手打名称。
+              </text>
             </view>
           </view>
 
@@ -477,7 +602,7 @@ async function handleDelete() {
         </template>
       </scroll-view>
 
-      <view v-if="!pickerMode" class="tlf__footer">
+      <view class="tlf__footer">
         <wd-button
           v-if="!readOnly && !isNew && canDelete"
           type="error"
@@ -504,6 +629,13 @@ async function handleDelete() {
   max-height: 86vh;
   flex-direction: column;
 
+  /* 水印画布：挪出可视区但不 display:none —— 隐藏的 canvas 在部分平台导不出像素 */
+  &__watermark {
+    position: fixed;
+    top: -10000px;
+    left: -10000px;
+  }
+
   &__grabber {
     width: 72rpx;
     height: 8rpx;
@@ -523,11 +655,11 @@ async function handleDelete() {
     min-width: 0;
     flex: 1;
     color: $ui-text;
-    font-size: 32rpx;
+    font-size: 34rpx;
     font-weight: 600;
+    letter-spacing: 0.01em;
   }
 
-  &__back,
   &__close {
     display: flex;
     width: 56rpx;
@@ -545,10 +677,6 @@ async function handleDelete() {
     }
   }
 
-  &__search {
-    padding: 0 32rpx 16rpx;
-  }
-
   &__body {
     // scroll-view 必须有确定高度才会滚动；键盘弹起时靠 flex 把剩余空间吃掉
     min-height: 0;
@@ -558,17 +686,80 @@ async function handleDelete() {
     width: auto;
     border-top: 1px solid $ui-hairline;
     padding: 8rpx 32rpx 16rpx;
+  }
 
-    // 候选列表：给一个确定高度，键盘弹起时也留得住
-    &--list {
-      height: 60vh;
-      flex-grow: 0;
+  // 带候选的字段：整块（字段行 + 候选）共用一条底分隔线，
+  // 免得候选铺开后在中间多出一条横线
+  &__field-wrap {
+    border-bottom: 1px solid $ui-hairline;
+
+    .tlf__field {
+      border-bottom: 0;
     }
+  }
+
+  &__suggest {
+    margin: 0 0 14rpx;
+    overflow: hidden;
+    border: 1px solid $ui-border;
+    border-radius: $ui-radius-md;
+    background-color: $ui-surface-2;
+  }
+
+  &__suggest-item {
+    display: flex;
+    min-height: 76rpx;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16rpx;
+    padding: 14rpx 20rpx;
+    color: $ui-text;
+    font-size: 27rpx;
+
+    & + & {
+      border-top: 1px solid $ui-hairline;
+    }
+
+    &:active {
+      background-color: $ui-surface-3;
+    }
+  }
+
+  &__suggest-main {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 4rpx;
+  }
+
+  &__suggest-text {
+    font-size: 27rpx;
+  }
+
+  &__suggest-sub {
+    color: $ui-text-3;
+    font-size: 22rpx;
+  }
+
+  &__suggest-flag {
+    flex-shrink: 0;
+    color: $ui-accent-text;
+    font-size: 22rpx;
+  }
+
+  &__suggest-hint,
+  &__suggest-empty {
+    display: block;
+    padding: 14rpx 20rpx;
+    color: $ui-text-3;
+    font-size: 22rpx;
+    line-height: 1.5;
   }
 
   &__field {
     display: flex;
-    min-height: 92rpx;
+    min-height: 96rpx;
     align-items: center;
     gap: 16rpx;
     border-bottom: 1px solid $ui-hairline;
@@ -578,6 +769,9 @@ async function handleDelete() {
     flex-shrink: 0;
     color: $ui-text-2;
     font-size: 28rpx;
+    // 500 而不是 400：底膜抬亮之后正文与标签的灰度差变小了，
+    // 靠字重把"这是字段名"重新立起来（深色下 400 会糊成一片）
+    font-weight: 500;
   }
 
   &__input {
@@ -588,84 +782,6 @@ async function handleDelete() {
     color: $ui-text;
     font-size: 28rpx;
     text-align: right;
-  }
-
-  /** 「选择」入口：贴着输入框右侧的小胶囊 */
-  &__pick {
-    display: flex;
-    height: 52rpx;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 4rpx;
-    padding: 0 18rpx;
-    border-radius: $ui-radius-pill;
-    background-color: $ui-raise-2;
-    color: $ui-text-2;
-    font-size: 24rpx;
-
-    &:active {
-      background-color: $ui-raise-3;
-      color: $ui-text;
-    }
-  }
-
-  &__option {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16rpx;
-    padding: 26rpx 20rpx;
-    border-radius: $ui-radius-md;
-    color: $ui-text-2;
-
-    &:active {
-      background-color: $ui-raise-2;
-    }
-
-    &.is-selected {
-      background-color: $ui-accent-soft;
-      color: $ui-accent-text;
-    }
-  }
-
-  &__option-main {
-    display: flex;
-    min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: 6rpx;
-  }
-
-  &__option-text {
-    font-size: 28rpx;
-  }
-
-  &__option-sub {
-    color: $ui-text-3;
-    font-size: 22rpx;
-  }
-
-  &__option-flag {
-    flex-shrink: 0;
-    color: $ui-accent-text;
-    font-size: 22rpx;
-  }
-
-  &__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12rpx;
-    padding: 60rpx 20rpx;
-    color: $ui-text-3;
-    font-size: 26rpx;
-    text-align: center;
-  }
-
-  &__empty-hint {
-    color: $ui-text-3;
-    font-size: 24rpx;
-    line-height: 1.6;
   }
 
   /* ===== 图据（新增时先选好，保存后一起传）===== */

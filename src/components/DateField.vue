@@ -34,6 +34,16 @@ const props = defineProps({
   // 任何历史日期都要能选。将来要收紧范围传这两个 prop 即可，置灰态是现成的。
   minDate: { type: String, default: '' },
   maxDate: { type: String, default: '' },
+  /**
+   * 触发器形态：
+   *   'pill'   —— 深色胶囊（筛选行、独立工具条里的默认形态，12 处调用沿用它）
+   *   'inline' —— 无底色、右对齐，长得像同一行里的一枚可点文本（表单弹层里用）
+   *
+   * <p>为什么要有 inline：表单里其余字段都是「左边标签 + 右边值」，日期却是一颗灰色胶囊，
+   * 在一张浅色弹层上当啷一块（2026-10-20 使用方原话「日期的颜色不搭」）。
+   * 形态差异只是外壳，日期逻辑一行不变。
+   */
+  variant: { type: String, default: 'pill' },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -265,21 +275,21 @@ function confirm() {
   <!-- 组件根：把触发器摆好即可。
        这里用 flex 而不是默认块级 —— 触发器是 inline-flex，放在块级容器里会多出
        一截基线（descender）高度，筛选行里的胶囊看起来就"没居中"。 -->
-  <view class="date-picker">
+  <view class="date-picker" :class="{ 'is-inline': variant === 'inline' }">
     <!-- 触发器：深色胶囊，样式与改造前一致；点击由本组件接管
          （原来挂在 wd-datetime-picker 的默认插槽上，由它负责弹层） -->
-    <view class="date-field" @click="openSheet">
+    <view class="date-field" :class="{ 'is-inline': variant === 'inline' }" @click="openSheet">
       <text class="date-field__text" :class="{ 'is-empty': !modelValue }">
         {{ modelValue || placeholder }}
       </text>
-      <wd-icon name="calendar" size="16px" />
+      <wd-icon name="calendar" size="16px" custom-class="date-field__icon" />
     </view>
 
     <wd-popup
       v-model="sheetVisible"
       position="bottom"
       safe-area-inset-bottom
-      custom-style="max-height: 82vh; border-radius: 32rpx 32rpx 0 0; overflow: hidden; background-color: var(--ui-glass-fill);"
+      custom-style="max-height: 82vh; border-radius: 32rpx 32rpx 0 0; overflow: hidden; background-color: var(--ui-sheet-fill);"
     >
       <view class="date-sheet">
         <view class="date-sheet__head">
@@ -410,6 +420,40 @@ function confirm() {
   }
 }
 
+/* 表单内形态（variant="inline"）
+   和同一行的文本框对齐：无底色、无边框、值靠右、日历图标弱化。
+   只在表单弹层里用 —— 筛选行那种独立工具条仍然要胶囊，否则点它这件事看不出来。 */
+.date-picker.is-inline {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+
+.date-field.is-inline {
+  width: 100%;
+  justify-content: flex-end;
+  padding: 16rpx 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+
+  &:active {
+    transform: none;
+    background-color: transparent;
+  }
+
+  .date-field__text {
+    font-size: 28rpx;
+    text-align: right;
+  }
+
+  // wd-icon 是子组件，根节点带的是它自己的 scope id —— 必须 :deep 才够得到
+  :deep(.date-field__icon) {
+    margin-left: 8rpx;
+    color: $ui-text-3;
+  }
+}
+
 /* ===== 日历弹层 =====
    视觉对标企业微信-会议的日期弹层：灰底胶囊（内嵌当前选择）+ 强调色「确定」+
    星期行 + 可按月滚动的月历。弹层外壳（圆角 / 最大高度 / 安全区）交给 wd-popup。 */
@@ -440,8 +484,9 @@ function confirm() {
     gap: 8rpx; // 文字与那颗「点得开年月面板」的小箭头之间
     padding: 12rpx 32rpx;
     border-radius: $ui-radius-pill;
-    // 深色下 $ui-surface-3 比轨道更亮（选中填充）；浅色下由文件末尾那条覆盖成纯白
-    background-color: $ui-surface-3;
+    // 选中段：浅色下用 $ui-surface（纯白）比轨道更亮才对（企微那版就是灰轨道 + 白胶囊）；
+    // 深色下由文件末尾那条覆盖成 $ui-surface-3 —— 它在深色里本就是"比表面更亮"的选中填充
+    background-color: $ui-surface;
     box-shadow: 0 4rpx 12rpx -6rpx $ui-shadow-strong;
     color: $ui-text;
     font-size: 28rpx;
@@ -643,10 +688,10 @@ function confirm() {
   }
 }
 
-// 浅色主题下「选中段」要比轨道更亮才对（企微那版就是灰轨道 + 白胶囊）；
-// 深色主题保持上面的 $ui-surface-3 —— 它在深色里本就是"比表面更亮"的选中填充。
+// 深色主题下「选中段」要比轨道更亮：$ui-surface-3 在深色里就是更亮的那一档填充，
+// 而浅色（默认套）用的是文件里那条 $ui-surface（纯白）。
 // 类名由 useTheme() 挂在页面根 view 上，而 wd-popup 默认不 teleport，所以这里选得到。
-.theme-light .date-sheet__chip {
-  background-color: $ui-surface;
+.theme-dark .date-sheet__chip {
+  background-color: $ui-surface-3;
 }
 </style>

@@ -215,17 +215,21 @@ src/
 
 ```
 小程序 / App：
-  page { --ui-bg: #0b0b0e; --ui-slate-200: #2a2a33; … }         深色（默认）
-  .theme-light { --ui-bg: #f2f3f7; --ui-slate-200: #e3e6ee; … }  浅色（挂在页面根 view 上）
+  page { --ui-bg: #f2f3f7; --ui-slate-200: #e3e6ee; … }         浅色（**默认**，2026-10-20 起）
+  .theme-dark { --ui-bg: #0b1322; --ui-slate-200: #2a2a33; … }  深色（挂在页面根 view 上）
 
 H5：
-  body { --ui-bg: … }                                            深色
-  body.theme-light { … }                                         浅色（类名由 JS 直接挂到 body）
+  body { --ui-bg: … }                                            浅色（默认）
+  body.theme-dark { … }                                          深色（类名由 JS 直接挂到 body）
 ```
 
+> **为什么默认套是浅色、深色用类**（2026-10-20，使用方要求「App 默认亮色」）：
+> 反过来做的话，冷启动会先按深色画一帧再翻成浅色（splash 撤掉那一瞬最明显），
+> 状态栏/窗口底色也会先黑后白。变量铺在 `page` 上是**首帧就有**的，而类要等 JS 挂上。
+
 ⚠️ **H5 的变量必须挂在 `body` 上，不能挂在 `page` 上**。`page` 在 H5 会被编译成
-`uni-page-body`，它一旦自己声明了深色值，就会盖掉 `body` 上的浅色（自定义属性是
-"最近的声明点"胜出）—— 实测症状是"登录页能变浅、首页纹丝不动"。`body` 是页面内容与
+`uni-page-body`，它一旦自己声明了值，就会盖掉 `body` 上的类（自定义属性是
+"最近的声明点"胜出）—— 实测症状是"登录页跟着变、首页纹丝不动"。`body` 是页面内容与
 原生标题栏 `<uni-page-head>` 的共同祖先，挂在这里一次到位；所以 `page` 规则里的
 变量定义用 `/* #ifndef H5 */` 排除掉了。
 
@@ -309,7 +313,7 @@ H5：
   （缩略图上的删除钮、图片查看器的舞台等）各自都有更近的 `relative` 父级；悬浮按钮与
   LoadingMask 也不在任何 `.panel` 内。
 - **为什么不走 `root-portal`**：把弹层搬到页面根同样能绕开包含块，但会把它搬出主题变量的
-  作用域（`--ui-*` 定义在 `page` / `body` 与页面根 view 的 `.theme-light` 上），代价远大于
+  作用域（`--ui-*` 定义在 `page` / `body` 与页面根 view 的 `.theme-dark` 上），代价远大于
   改一行动画。
 
 > 产物校验：`.panel` 的编译结果应为 `position: relative; animation: ui-panel-in 320ms …`
@@ -539,7 +543,7 @@ JS 不再量尺寸、也不再每帧重绘 —— 只剩液位缓动一件事，
   在打开前就定位到选中月（行高由网格自己算、`uni.upx2px` 换算）—— 不用 `scroll-into-view`：
   `wd-popup` 的内容是懒渲染的，节点要等动画中间态才存在。
 - **底色不写死**：浅色下「选中段」是纯白胶囊（`$ui-surface`，对齐企微那种"灰轨道 + 白胶囊"），
-  深色下用 `$ui-surface-3`（深色里它本就是"比表面更亮"的选中填充）。这条覆盖靠 `.theme-light`
+  深色下用 `$ui-surface-3`（深色里它本就是"比表面更亮"的选中填充）。这条覆盖靠 `.theme-dark`
   （挂在页面根 view 上；`wd-popup` 默认不 teleport，所以选得到）。
 - **日期范围默认不限制**：`min-date` / `max-date` 是可选 prop（默认空）。这几张报表的默认区间
   本来就在过去，任何历史日期都要能选。置灰态（`is-disabled`）与样式都已就绪，将来要收紧范围

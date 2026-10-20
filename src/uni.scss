@@ -23,8 +23,8 @@
 //      保留、只换值 —— 老组件一行不改也自动跟随主题，不会漏出白底黑字。
 //
 // ⚠️ 所有颜色令牌都指向 CSS 变量，具体数值按主题定义在 App.vue：
-//      page { --ui-bg: #0b0b0e; … }         ← 深色（默认值）
-//      .theme-light { --ui-bg: #f2f3f7; … }  ← 浅色（挂在页面根 view 上）
+//      page { --ui-bg: #f2f3f7; … }         ← 浅色（**默认套**，2026-10-20 起）
+//      .theme-dark { --ui-bg: #0b1322; … }  ← 深色（挂在页面根 view 上）
 //    于是「切主题」只换一个类名，样式不用重新编译。
 // ⚠️ 代价：令牌的值是变量而不是颜色字面量，**不能**再喂给
 //    rgba()/darken()/lighten()/mix() 这类 SCSS 颜色函数（编译期拿不到值，会报错）。
@@ -101,6 +101,12 @@ $ui-glass-elev: var(--ui-glass-elev);       // 三层方向性投影（外层深
 $ui-glass-blur: var(--ui-glass-blur);       // 模糊半径
 $ui-glass-sat: var(--ui-glass-sat);         // 饱和度增强
 $ui-glass-shadow: var(--ui-glass-shadow);   // 抽屉右缘的**方向性**投影（加在弹层本体上，见 index.vue）
+// 大面积弹层（底部 sheet）专用的一档玻璃膜 + 顶部受光。
+// 为什么不能直接用 $ui-glass-fill：那 5% 是**按表格正文 AA 对比度算出来的**（见
+// theme-dark-vars 里的注释），叠在小卡片/表格上刚好；而一整块盖住半屏的弹层用同一档，
+// 深色下就成了一块黑板 —— 2026-10-20 使用方原话「新增业务记录色调不好看，感觉很暗」。
+$ui-sheet-fill: var(--ui-sheet-fill);
+$ui-sheet-glow: var(--ui-sheet-glow);
 
 // 背景氛围光晕（页面顶部 / 登录页极光）
 $ui-glow: var(--ui-glow);
@@ -429,6 +435,12 @@ $radius-xl: 24rpx;
   // 才够 AA。膜再厚一点，799 行那张表的正文就跌破 4.5:1（详见上面的文字档注释）。
   --ui-glass-fill: rgba(255, 255, 255, 0.05);
   --ui-glass-fill-hover: rgba(255, 255, 255, 0.12);
+  // 大面板（底部弹层）的那一档：11% 白叠在场景上 ≈ #262d3a。
+  // 与上面 5% 分开是刻意的 —— 5% 受表格正文对比度约束，这里受"读起来像一块抬起来的板"约束。
+  // 顶部受光（--ui-sheet-glow）配合 App.vue 里 .wd-popup::before 的径向渐变，
+  // 让光看起来是从页面上方落到弹层顶边上。
+  --ui-sheet-fill: rgba(255, 255, 255, 0.11);
+  --ui-sheet-glow: rgba(255, 255, 255, 0.16);
   --ui-glass-line: rgba(255, 255, 255, 0.15);
   --ui-glass-line-hover: rgba(255, 255, 255, 0.3);
   --ui-glass-blur: 30px;
@@ -562,6 +574,9 @@ $radius-xl: 24rpx;
   // 描边反过来用**淡黑**而不是白：白描边压在白卡上没有边界感。
   --ui-glass-fill: rgba(255, 255, 255, 0.66);
   --ui-glass-fill-hover: rgba(255, 255, 255, 0.82);
+  // 浅色下弹层本来就够亮，只把膜再压实一点，保证输入框/分隔线不被背景透上来干扰
+  --ui-sheet-fill: rgba(255, 255, 255, 0.8);
+  --ui-sheet-glow: rgba(255, 255, 255, 0.9);
   --ui-glass-line: rgba(20, 22, 28, 0.08);
   --ui-glass-line-hover: rgba(20, 22, 28, 0.16);
   --ui-glass-blur: 20px;

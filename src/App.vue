@@ -40,21 +40,24 @@ onLaunch(() => {
      · 组件 SCSS 令牌 → src/uni.scss 里同样映射成 var(--ui-*)
    于是「切主题」= 换一个类名，样式不用重新编译，也不会有漏网的写死色。
 
-   ⚠️ 深色默认值的挂载点两端不同：
-       小程序 / App：page（uni-app 没有 body/:root），浅色类挂在页面根 view 上；
-        H5：body —— 见下面 page 规则与 #ifdef H5 段的注释（踩过的坑都在那里）。
+   ⚠️ **浅色是默认套**（2026-10-20 使用方要求 App 默认亮色）：基础变量铺在 page 上，
+       深色靠 .theme-dark 覆盖 —— 反过来做的话，冷启动会先按深色画一帧再翻成浅色
+       （splash 撤掉的一瞬间最明显），而且状态栏/窗口底色也会先黑后白。
+   ⚠️ 挂载点两端不同：
+        小程序 / App：page（uni-app 没有 body/:root），深色类挂在页面根 view 上；
+         H5：body —— 见下面 page 规则与 #ifdef H5 段的注释（踩过的坑都在那里）。
    ⚠️ 变量值必须是完整的颜色字面量：SCSS 侧拿不到运行时值，
       所以令牌不能再参与 rgba()/darken() 这类编译期颜色运算。
    ========================================================================== */
 
-// ===== 深色（默认）=====
+// ===== 浅色（默认）=====
 // ⚠️ H5 端不要把变量挂在 page 上：page 在 H5 会被编译成 uni-page-body，
-//    它自己一旦声明了深色值，就会**盖掉** body 上的浅色类（自定义属性是"最近的
-//    声明点"胜出）—— 这正是实测里"浅色只对登录页生效、首页纹丝不动"的原因。
+//    它自己一旦声明了值，就会**盖掉** body 上的类（自定义属性是"最近的
+//    声明点"胜出）—— 这正是实测里"主题只对登录页生效、首页纹丝不动"的原因。
 //    H5 的变量统一由下面的 body 规则提供（body 是页面内容与原生标题栏的共同祖先）。
 page {
   /* #ifndef H5 */
-  @include theme-dark-vars;
+  @include theme-light-vars;
   /* #endif */
 
   // uni-app 没有 body/:root，等价选择器是 page。
@@ -93,26 +96,32 @@ page {
   }
 }
 
-// ===== 浅色：只覆盖同一组变量，结构 / 圆角 / 动效全部复用 =====
+// ===== 深色：只覆盖同一组变量，结构 / 圆角 / 动效全部复用 =====
 // 挂在各页面根 view 上（类名由 src/composables/useTheme.js 提供）。
-.theme-light {
-  @include theme-light-vars;
+.theme-dark {
+  @include theme-dark-vars;
 }
 
 /* #ifdef MP-WEIXIN */
 /* ⚠️ 微信小程序**原生不支持 backdrop-filter**（小程序不是浏览器，CSS 是子集）。
-   玻璃膜（--ui-glass-fill 是 8% 白 / 66% 白）在小程序端会退化成"半透明但不模糊" ——
+   玻璃膜（--ui-glass-fill 是 66% 白 / 8% 白）在小程序端会退化成"半透明但不模糊" ——
    背后表格的字和面板里的字叠在一起，两边都看不清。所以整块膜换成近不透明：
    配色、描边、三层投影都保留，只是失去透明的错觉。这就是玻璃在小程序端的兜底。
    （颗粒用的是 SVG data URI，WXSS 对它的支持不保证；不生效也只是少一层质感，不影响可读性。） */
 page {
-  --ui-glass-fill: rgba(20, 35, 58, 0.96);
-  --ui-glass-fill-hover: rgba(28, 46, 74, 0.98);
-}
-
-.theme-light {
+  /* 浅色（默认）：小程序端直接给不透明的白，不做"半透明 + 模糊"的假装 */
   --ui-glass-fill: rgba(255, 255, 255, 0.96);
   --ui-glass-fill-hover: #ffffff;
+  --ui-sheet-fill: #ffffff;
+}
+
+.theme-dark {
+  --ui-glass-fill: rgba(20, 35, 58, 0.96);
+  --ui-glass-fill-hover: rgba(28, 46, 74, 0.98);
+  /* 弹层那一档同样要兜底：--ui-sheet-fill 默认是 11% 白，在**没有模糊**的小程序端
+     会变成"半透明但不模糊"，背后列表的字直接透上来（这正是上面那段注释描述的问题）。
+     这里给一档比玻璃略亮、但不透的近不透明色 —— 观感上仍是"抬起来的一块板"。 */
+  --ui-sheet-fill: rgba(27, 43, 68, 0.98);
 }
 /* #endif */
 
@@ -134,13 +143,17 @@ body {
 
 /* #ifdef H5 */
 /* H5 端的主题入口是 body —— 页面内容与原生标题栏的共同祖先，一次到位：
-     1) 深色默认值铺在 body 上（page/uni-page-body 不再自己声明，见上面 page 的注释）；
-     2) 浅色靠 body 上的 .theme-light 覆盖（由 src/composables/useTheme.js 直接挂类，
+     1) **浅色默认值**铺在 body 上（page/uni-page-body 不再自己声明，见上面 page 的注释）；
+     2) 深色靠 body 上的 .theme-dark 覆盖（由 src/composables/useTheme.js 直接挂类，
         不依赖页面组件的重新渲染）；
      3) 标题栏 <uni-page-head> 的颜色来自 pages.json 编译出的**内联样式**，
         只能用 !important 压掉；返回箭头是内联 <svg fill="#ffffff">，
         用 fill: currentColor 跟着文字色走（表现属性优先级低于任何 CSS 规则）。 */
 body {
+  @include theme-light-vars;
+}
+
+body.theme-dark {
   @include theme-dark-vars;
 }
 
@@ -229,6 +242,15 @@ body.is-drawer-open {
   content: '';
   backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
   -webkit-backdrop-filter: blur($ui-glass-blur) saturate($ui-glass-sat);
+  /* 顶部受光：一层很淡的径向光，从页面上方落到弹层顶边。
+     ⚠️ 只画在 ::before（膜）上，不画在弹层本体 —— 理由同上一条：本体上任何
+        filter/backdrop/transform 都会给后代的 position: fixed 建包含块。
+     浅色主题下 --ui-sheet-glow 是 0.9 白，落在白膜上等于不可见，不会把浅色压脏。 */
+  background-image: radial-gradient(
+    120% 42% at 50% -12%,
+    $ui-sheet-glow 0%,
+    transparent 72%
+  );
   pointer-events: none;
 }
 

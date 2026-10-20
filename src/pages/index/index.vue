@@ -2227,7 +2227,10 @@ const vesselSpecs = computed(() => {
 
   // 数据表的铭牌全容积。**只作对照、不参与计算** —— 它与上面那个按几何算出的总容积对不上，
   // 所以标签里必须带「铭牌」二字，否则两个容积并排会被当成程序算错了一个
-  const nameplateVolume = selectedVessel.value.nameplateVolume
+  // ⚠️ 走上面那个已兜空的 raw（`selectedVessel.value ?? {}`）：清单还没到 / 接口失败时
+  //    selectedVessel 是 null，直接 .value.nameplateVolume 会抛 TypeError，
+  //    整个页面 render 中断（真机与 H5 都实测到过：控制台一条 engine 空指针）。
+  const nameplateVolume = raw.nameplateVolume
   if (nameplateVolume) {
     items.push({ label: '铭牌全容积', value: `${nameplateVolume} m³` })
   }

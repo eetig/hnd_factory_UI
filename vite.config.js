@@ -92,7 +92,20 @@ export default defineConfig({
      * 崩的时候页面还在（浏览器有缓存），很容易误判成"服务好好的"，所以这里显式排除。
      */
     watch: {
-      ignored: ['**/tmp-chrome-profile/**'],
+      ignored: [
+        '**/tmp-chrome-profile/**',
+        /*
+         * 同一个坑的第二种形态（2026-10-20 实测崩溃）：
+         * 编辑器/AI 工具"原子写"文件时会先在目标同目录建一个临时目录再改名：
+         *   src/components/.TankLevelFormDialog.vue.24032.<uuid>.tmpdir/TankLevelFormDialog.vue.tmp
+         * Vite 的监听器会去 watch 这个临时目录，而改名/删除与 watch 建立撞在一起时
+         * 同样抛 EBUSY —— dev server 直接退出（日志见 job 输出）。
+         * 这类目录**只存在一瞬间**，没有任何监听价值，一律排除。
+         */
+        '**/*.tmpdir/**',
+        '**/.*.tmpdir/**',
+        '**/*.tmp',
+      ],
     },
     // ⚠️ 代理仅 H5 端开发期有效，规则见上方 buildProxy()。
     //    切换后端环境请改 src/api/env.js 的 APP_ENV，不要在这里逐个改 target，

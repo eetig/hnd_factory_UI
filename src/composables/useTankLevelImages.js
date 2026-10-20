@@ -13,6 +13,9 @@ import { useTankLevelData } from './useTankLevelData'
 const images = ref([])
 const currentRecordId = ref(null)
 const currentTitle = ref([])
+// 打开弹层时那条记录的原始字段：图据里的**拍照水印**要用它的属地/容器名称
+// （2026-10-20；title 只有「日期 + 容器名称」，缺属地，所以另存一份）
+const currentRecord = ref(null)
 const dialogVisible = ref(false)
 const uploading = ref(false)
 const deleting = ref(false)
@@ -74,6 +77,7 @@ export function useTankLevelImages() {
   /** 打开某条记录的图据弹窗（先用手上这份渲染，再后台刷新） */
   async function openImageDialog(record) {
     currentRecordId.value = record?.id ?? null
+    currentRecord.value = record ?? null
     currentTitle.value = [
       { label: '记录日期', value: record?.recordDate || '-' },
       { label: '容器名称', value: record?.tankName || '-' },
@@ -143,6 +147,7 @@ export function useTankLevelImages() {
   return {
     images,
     currentTitle,
+    currentRecord,
     dialogVisible,
     uploading,
     deleting,

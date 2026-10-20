@@ -29,6 +29,8 @@ const tankLevelLocation = ref('')
 const tankLevelCategory = ref('')
 const tankLevelKeyword = ref('')
 const tankLevelLocations = ref([])
+// 录入候选（属地 + 容器名称，来自库里出现过的值）—— 见 fetchTankLevelSuggestions
+const tankLevelSuggestions = ref({ locations: [], tankNames: [] })
 
 /** 所属（产品/原料）：Excel 表头里就只有这两类，属固定字典，不做成接口 */
 export const TANK_LEVEL_CATEGORIES = ['产品', '原料']
@@ -119,7 +121,9 @@ export function buildTankLevelQuery({ startDate, endDate, location, category, ke
 export function buildTankLevelDraft(record) {
   return {
     id: record?.id ?? null,
-    recordDate: record?.recordDate ?? '',
+    // 新增默认**今天**（2026-10-20 使用方要求）：月底抄表绝大多数就是当天，
+    // 留空等于每次都要多点一次日历。编辑则原样带回记录日期。
+    recordDate: record?.recordDate || getToday(),
     location: record?.location ?? '',
     category: record?.category ?? '',
     materialCode: record?.materialCode ?? '',
@@ -138,8 +142,12 @@ export function buildTankLevelDraft(record) {
  * 与「没填」在语义上是两回事 —— 后端 BigDecimal 收到空串也只会解析失败。
  *
  * <p>`id` 保持 null 表示新增（后端按 id 有无分流）。
+ *
+ * <p>`confirmDuplicate` 是 2026-10-20（变更-127）加的：同一天同一容器重复录入时，
+ * 后端第一次回 409 让人确认；用户点「仍要保存」后由这里带上 true 重提。
+ * **只有 true 才带** —— 不带/undefined 的语义必须是"还没确认"，否则拦不住手滑。
  */
-export function buildTankLevelSavePayload(draft) {
+export function buildTankLevelSavePayload(draft, options) {
   const text = (value) => {
     const trimmed = String(value ?? '').trim()
     return trimmed === '' ? null : trimmed
@@ -150,7 +158,7 @@ export function buildTankLevelSavePayload(draft) {
   const rawId = draft?.id
   const id = rawId === undefined || rawId === null || rawId === '' ? null : rawId
 
-  return {
+  const payload = {
     id,
     recordDate: text(draft?.recordDate),
     location: text(draft?.location),
@@ -162,6 +170,10 @@ export function buildTankLevelSavePayload(draft) {
     levelValue: text(draft?.levelValue),
     theoreticalWeight: text(draft?.theoreticalWeight),
   }
+
+  if (options?.confirmDuplicate === true) payload.confirmDuplicate = true
+
+  return payload
 }
 
 // 属地下拉选项：以库中实际值为准，并把「当前已选但不在选项里」的值补进去，
@@ -246,6 +258,32 @@ async function fetchTankLevelLocations() {
 }
 
 /**
+ * 录入候选：库里出现过的属地与容器名称（2026-10-20，变更-129）。
+ *
+ * <p>为什么要它：手打过的属地/容器名称（比如"包装车间"、台账里还没有的"171产品"）
+ * 如果不进候选，下次录入得再打一遍，还容易打出两种写法 ——
+ * 同一天同一容器的重复提示也就拦不住了。
+ *
+ * <p>取不到就**保持空**，不打断录入：候选是辅助，不是前提。
+ */
+async function fetchTankLevelSuggestions() {
+  try {
+    const res = await request.get('/api/tank-level/suggestions')
+    const data = res.data?.data ?? {}
+    tankLevelSuggestions.value = {
+      locations: Array.isArray(data.locations)
+        ? data.locations.map((v) => String(v ?? '').trim()).filter(Boolean)
+        : [],
+      tankNames: Array.isArray(data.tankNames)
+        ? data.tankNames.map((v) => String(v ?? '').trim()).filter(Boolean)
+        : [],
+    }
+  } catch {
+    // 候选拿不到不影响填表：固定字典与设备台账那两路还在
+  }
+}
+
+/**
  * 首次进入 Tab 时才请求（含属地下拉选项），已取过就不重复打接口。
  * 与电脑端的同名函数一致 —— 手机端也是「进 Tab 才加载」的做法（储罐底图就是这么办的）。
  */
@@ -290,16 +328,33 @@ function reloadTankLevelRecords() {
 
 /** 取后端给的业务错误消息；拿不到就用兜底文案 */
 function toWriteError(error, fallback) {
-  return new Error(error?.response?.data?.msg || error?.message || fallback)
+  const data = error?.response?.data
+  const code = data?.code ?? error?.code ?? null
+  const wrapped = new Error(data?.msg || error?.message || fallback)
+  // code 必须带出来：409 是「同一天同一容器已存在，确认后可继续」，
+  // 调用方据此弹确认框，而不是当成一次普通失败（2026-10-20，变更-127）
+  wrapped.code = code
+  wrapped.needsConfirm = code === 409
+  return wrapped
 }
 
-/** 新增（draft.id 为空）或编辑一条记录，返回保存后的记录 */
-async function saveTankLevelRecord(draft) {
+/**
+ * 新增（draft.id 为空）或编辑一条记录，返回保存后的记录。
+ *
+ * @param {object} options
+ * @param {boolean} [options.confirmDuplicate] 用户已经确认「同一天同一容器再记一条」
+ */
+async function saveTankLevelRecord(draft, options = {}) {
   let saved
   try {
-    const res = await request.post('/api/tank-level/save', buildTankLevelSavePayload(draft))
+    const res = await request.post(
+      '/api/tank-level/save',
+      buildTankLevelSavePayload(draft, { confirmDuplicate: options.confirmDuplicate }),
+    )
     if (res.data?.success === false) {
-      throw new Error(res.data?.msg || '保存失败，请稍后重试。')
+      const rejected = new Error(res.data?.msg || '保存失败，请稍后重试。')
+      rejected.code = res.data?.code ?? null
+      throw rejected
     }
     saved = res.data?.data ?? null
   } catch (error) {
@@ -338,10 +393,12 @@ export function useTankLevelData() {
     tankLevelCategory,
     tankLevelKeyword,
     tankLevelLocations,
+    tankLevelSuggestions,
     tankLevelLocationOptions,
     getTankLevelPageData,
     fetchTankLevelRecords,
     fetchTankLevelLocations,
+    fetchTankLevelSuggestions,
     reloadTankLevelRecords,
     ensureTankLevelLoaded,
     resetTankLevelFilters,

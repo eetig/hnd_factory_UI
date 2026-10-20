@@ -22,11 +22,11 @@
     }
   ],
   "globalStyle": {
-    "navigationBarTextStyle": "white",
+    "navigationBarTextStyle": "black",
     "navigationBarTitleText": "HND生产助手",
-    "navigationBarBackgroundColor": "#0B1322",
-    "backgroundColor": "#0B1322",
-    "backgroundColorTop": "#0B1322",
-    "backgroundColorBottom": "#0B1322"
+    "navigationBarBackgroundColor": "#F2F3F7",
+    "backgroundColor": "#F2F3F7",
+    "backgroundColorTop": "#F2F3F7",
+    "backgroundColorBottom": "#F2F3F7"
   }
 }

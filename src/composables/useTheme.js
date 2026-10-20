@@ -25,9 +25,11 @@ const THEME_EVENT = 'hnd-theme-change'
 const DARK = 'dark'
 const LIGHT = 'light'
 
-// 读持久化的选择；没存过 → 深色（改造前的默认外观）
+// 读持久化的选择；没存过 → **浅色**（2026-10-20 使用方要求 App 默认亮色）。
+// ⚠️ 这里的默认值必须与 App.vue 里「page 上铺的那套变量」一致：那边已把浅色当
+//    基础套、深色靠 .theme-dark 覆盖。只改这一处、不改那边，冷启动会先闪一下深色。
 function readTheme() {
-  return getItem(THEME_KEY) === LIGHT ? LIGHT : DARK
+  return getItem(THEME_KEY) === DARK ? DARK : LIGHT
 }
 
 // 底色与状态栏属于「页面根节点之外」的部分，类名盖不住：
@@ -93,11 +95,11 @@ function applyNativeChrome(value) {
 // #ifdef H5
 // H5 还要把同一个类挂到 <body> 上：原生标题栏 <uni-page-head> 是
 // uni-page-body 的兄弟节点，只有放到共同祖先（body）上，标题栏才读得到变量。
-// 类名与页面根 view 上的一致（.theme-light），所以样式只写了一份。
+// 类名与页面根 view 上的一致（.theme-dark），所以样式只写了一份。
 function applyH5BodyClass(value) {
   try {
     if (typeof document !== 'undefined' && document.body) {
-      document.body.classList.toggle('theme-light', value === LIGHT)
+      document.body.classList.toggle('theme-dark', value === DARK)
     }
   } catch {
     // 取不到 body 就算了：页面部分仍然是正确的
@@ -114,8 +116,8 @@ export function useTheme() {
 
   // 派生值都在这里现算，不要提到模块级 —— 原因见文件头
   const isLight = computed(() => theme.value === LIGHT)
-  // 挂在页面根 view 上的类名：浅色才有类，深色靠 App.vue 里 page 的默认值。
-  const themeClass = computed(() => (isLight.value ? 'theme-light' : ''))
+  // 挂在页面根 view 上的类名：**深色才有类**（浅色是 App.vue 里 page 的默认套）。
+  const themeClass = computed(() => (isLight.value ? '' : 'theme-dark'))
   // 传给 wd-config-provider：wot-design-uni 内部组件（弹层、日期选择器、toast…）
   // 靠它的 wot-theme-* 类切深浅，我们自己的样式则靠 themeClass。
   const wotTheme = computed(() => theme.value)
