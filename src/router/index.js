@@ -17,6 +17,7 @@ import DailyView from '../views/stats/DailyView.vue'
 import TankLevelView from '../views/stats/TankLevelView.vue'
 import ImportView from '../views/maintain/ImportView.vue'
 import ImageParseView from '../views/maintain/ImageParseView.vue'
+import ArchiveView from '../views/archive/ArchiveView.vue'
 
 /*
  * 工作台的路由表（2026-10 路由化改造）。
@@ -121,6 +122,13 @@ export const workbenchRoutes = [
     name: 'ImageParseView',
     component: ImageParseView,
     meta: { group: 'maintain', key: 'imageParse', title: '图片解析', perm: 'work_order:import' },
+  },
+  {
+    path: '/archive',
+    name: 'ArchiveView',
+    component: ArchiveView,
+    // 无 perm：与导航同口径（全员可见）
+    meta: { group: 'maintain', key: 'archive', title: '资料归档' },
   },
 ]
 

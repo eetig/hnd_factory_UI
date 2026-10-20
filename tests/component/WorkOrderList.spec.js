@@ -48,6 +48,8 @@ const PUBLIC_TAB_LABELS = [
   '月底储罐液位记录',
   '压力容器体积计算',
   '电费预提',
+  // 资料归档（变更-126）：Q5「全员可看可下载」⇒ 无 perm、匿名可见
+  '资料归档',
 ]
 
 /**
@@ -161,7 +163,8 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     // 匿名时这三组整组都不可见 —— 列出来就是点了没反应的死按钮，用户会以为页面卡了
     expect(groupText).not.toContain('工单')
     expect(groupText).not.toContain('采购')
-    expect(groupText).not.toContain('维护')
+    // 「维护」原先是整组权限位页（匿名不可见）；变更-126 加了「资料归档」（无 perm、全员可见），
+    // 它成了公开组，所以下面把它放进可见组清单一起断言。
     for (const name of ['物料', '设备', '报表']) {
       expect(groupText).toContain(name)
     }
@@ -841,7 +844,7 @@ describe('侧栏收起 / 展开', () => {
     // 图标条**只列有可见页的组**：匿名时「工单」「采购」「维护」整组不可见，
     // 列出来就是点了没反应的死按钮。
     // 收起后按钮没有可见文字，可访问名就是组名 —— 缺了它读屏只剩一个无名图标
-    expect(groups.map((b) => b.attributes('aria-label'))).toEqual(['物料', '设备', '报表'])
+    expect(groups.map((b) => b.attributes('aria-label'))).toEqual(['物料', '设备', '报表', '维护'])
 
     // 匿名态当前在「物料」组（第一个可见项是物料查询），所以点「报表」才测得出「切」
     expect(activeTabKey(wrapper)).toBe('stock')
