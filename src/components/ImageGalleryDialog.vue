@@ -71,7 +71,7 @@ function handleFileSelected(event) {
       </div>
     </template>
 
-    <div class="flex min-h-[520px] items-center gap-4 overflow-x-auto rounded-card bg-region p-6">
+    <div class="flex min-h-[200px] items-center gap-4 overflow-x-auto rounded-card bg-region p-6">
       <div v-if="currentImage" class="relative flex w-full items-center justify-center">
         <el-button
           v-if="images.length > 1"
@@ -85,7 +85,7 @@ function handleFileSelected(event) {
         <img
           :src="currentImage.url"
           :alt="imageAlt"
-          class="max-h-[70vh] max-w-[85%] rounded-card object-contain"
+          class="max-h-[min(70vh,calc(100vh-320px))] max-w-[85%] rounded-card object-contain"
         />
         <el-button
           v-if="images.length > 1"

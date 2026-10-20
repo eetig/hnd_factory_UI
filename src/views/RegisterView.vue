@@ -37,6 +37,11 @@ async function submit() {
     error.value = '两次输入的密码不一致'
     return
   }
+  // 昵称只允许中文、英文、下划线（后端 RegisterDTO 上有同一条正则，两边口径必须一致）
+  if (form.realName && !/^[\u4e00-\u9fa5A-Za-z_]+$/.test(form.realName)) {
+    error.value = '昵称只能包含中文、英文、下划线'
+    return
+  }
 
   submitting.value = true
   try {
@@ -101,12 +106,13 @@ async function submit() {
         />
       </label>
       <label class="block">
-        <span class="text-sm text-slate-700">姓名（选填）</span>
+        <span class="text-sm text-slate-700">昵称（选填）</span>
         <input
           v-model="form.realName"
           type="text"
+          maxlength="32"
           class="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-          placeholder="填了在审计里更好认"
+          placeholder="只能包含中文、英文、下划线"
         />
       </label>
 

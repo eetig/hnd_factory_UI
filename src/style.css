@@ -121,3 +121,28 @@ table {
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* ==========================================================================
+   图片预览弹窗（ImageGalleryDialog）—— 2026-10-20 修「弹层撑出屏幕」
+   --------------------------------------------------------------------------
+   症状（使用方截图，1683x854）：点图据后只有图片和一行页码，白卡片看不见，
+   页码像飘在页面上。原因是内容高度写死（图片区 min-h 520px + 图片 70vh），
+   窗口一矮就超过视口，Element 的弹层把卡片顶出可视区。
+   这里给弹层一个视口上限，并让 body 内部滚动 —— 矮窗口下图片缩、卡片不跑。
+   ========================================================================== */
+.image-preview-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 6vh);
+  margin-top: 3vh !important;
+  margin-bottom: 3vh !important;
+}
+.image-preview-dialog .el-dialog__header,
+.image-preview-dialog .el-dialog__footer {
+  flex: 0 0 auto;
+}
+.image-preview-dialog .el-dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
