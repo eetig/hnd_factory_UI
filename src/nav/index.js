@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { hasPerm, isAdmin } from '../api/auth'
+import { hasPerm, isAdmin, isLoggedIn } from '../api/auth'
 
 /**
  * 导航数据 —— **唯一真源**（2026-10 路由化改造）。
@@ -158,7 +158,46 @@ export function canSeeNavItem(item) {
  * 放在模块里反而是唯一正确的位置 —— 它读的 `authState` 是 reactive 镜像，
  * 登录 / 退出后自动重算，不需要整页刷新。
  */
-export const visibleNavItems = computed(() => NAV_ITEMS.filter(canSeeNavItem))
+/**
+ * 导航项的三态（变更-129 分层访问）。
+ *
+ * ## 从"看不看得见"改成"点不点得进去"
+ *
+ * 使用方 2026-10-20：「我希望**游客也能看到所有功能**，但是点击某些功能后，
+ * 反馈提示需要注册」。所以导航**不再过滤**，全部渲染；判据变成下面这个三态。
+ *
+ * | 档 | 谁能用 | 说明 |
+ * |---|---|---|
+ * | `available` | 游客 | 只有物料查询 + 压力容器体积计算（后者是纯计算器，不碰业务数据）|
+ * | `locked`(需注册) | 注册用户 | 四个台账、报表三页、资料归档、导入/解析 |
+ * | `locked`(需管理员) | 管理员 | 采购需求详情（带价格与 OA 单号）、设备数据维护 |
+ *
+ * 与后端闸门一一对应：台账读接口是 checkLogin（匿名 401），采购是 checkRole("admin")，
+ * 写操作一律 admin。**两边必须同时改**，否则要么数据公开、要么点进去满屏 403。
+ */
+const PUBLIC_KEYS = new Set(['stock', 'vessel'])
+const ADMIN_KEYS = new Set(['purchase', 'equipment'])
+
+/** `available` = 现在就能用；`locked` = 看得见，点一下提示（提示语按 needAdmin 区分） */
+export function navItemState(item) {
+  if (!item) return 'locked'
+  if (PUBLIC_KEYS.has(item.key)) return 'available'
+  if (ADMIN_KEYS.has(item.key)) return isAdmin() ? 'available' : 'locked'
+  return isLoggedIn() ? 'available' : 'locked'
+}
+
+/** 锁定项点下去该说哪句话：注册也解决不了的，就别说"去注册" */
+export function lockNeedsAdmin(item) {
+  return item ? ADMIN_KEYS.has(item.key) : false
+}
+
+/**
+ * 导航**全部项**（不过滤）。
+ *
+ * 保留 `visibleNavItems` 这个名字是历史原因：路由守卫与 `useNav` 都读它。
+ * 它的语义从"能看见的项"变成"导航里有的项" —— 隐藏不再靠它，靠 `navItemState`。
+ */
+export const visibleNavItems = computed(() => NAV_ITEMS)
 
 /**
  * 第一个可见页的路径。
@@ -172,7 +211,15 @@ export const visibleNavItems = computed(() => NAV_ITEMS.filter(canSeeNavItem))
  * 一个都看不见时落回 `/login`：那是唯一还能正常渲染的页面。
  */
 export function firstVisiblePath() {
-  return visibleNavItems.value[0]?.path ?? '/login'
+  /*
+   * 优先挑**当前账号马上能用**的那一页，而不是导航里的第一项。
+   *
+   * 变更-129 之后导航不再隐藏，如果还取第一项，游客打开 `/` 会落到「工单汇总」——
+   * 那一页对游客是锁定态，进来就是一张提示卡，看起来像坏了。改成优先挑 `available`，
+   * 游客落到物料查询，注册用户落到工单汇总，各得其所。
+   */
+  const available = NAV_ITEMS.find((item) => navItemState(item) === 'available')
+  return (available ?? NAV_ITEMS[0])?.path ?? '/login'
 }
 
 /** 组件里用的导航视图：可见项 / 可见分组 / 首个可见页 */

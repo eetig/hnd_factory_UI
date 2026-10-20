@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { ADMIN_PERM, canSeeNavItem, firstVisiblePath } from '../nav'
+import { ADMIN_PERM, firstVisiblePath } from '../nav'
 import { isLoggedIn } from '../api/auth'
 import AppShell from '../layouts/AppShell.vue'
 import Login from '../views/Login.vue'
+import Register from '../views/RegisterView.vue'
 import WorkOrderList from '../views/orders/WorkOrderList.vue'
 import PickingList from '../views/orders/PickingList.vue'
 import InboundList from '../views/orders/InboundList.vue'
@@ -140,6 +141,15 @@ export const routes = [
   },
   {
     /*
+     * 自助注册（变更-129）：与登录页同级，不需要任何权限（游客就是来注册的）。
+     */
+    path: '/register',
+    name: 'Register',
+    component: Register,
+    meta: { title: '注册' },
+  },
+  {
+    /*
      * 内部推广落地页。给厂内同事与领导的导览页，不是工作台的一部分。
      *
      * 用**懒加载**：这一页要引用三张截图资源，且与工作台的首屏毫无关系。
@@ -202,15 +212,14 @@ router.beforeEach((to, from, next) => {
   }
 
   /*
-   * 没有权限的页面：送到第一个可见页，而不是渲染一张空壳。
+   * 变更-129 分层访问：**不再把没有权限的人重定向走**。
    *
-   * 判据与侧栏、页签完全同一份（`canSeeNavItem` 读的是 authState，
-   * 登录 / 退出后立刻生效）。`meta.perm` 缺省即公开页。
+   * 使用方要求"游客也能看到所有功能，点击锁定的才提示注册"。锁定页必须**能进来**，
+   * 进来后由 AppShell 渲染一张「需要注册 / 需要管理员」的卡片 —— 这样链接可以照常分享，
+   * 打开的人看到的是明确的原因和出口，而不是被无声弹走（那只会让人以为网站坏了）。
+   *
+   * 所以这里只保留"登录页在已登录时跳走"这一条；权限判断全部下放到界面层。
    */
-  if (!canSeeNavItem({ perm: to.meta?.perm })) {
-    next({ path: firstVisiblePath() })
-    return
-  }
 
   next()
 })

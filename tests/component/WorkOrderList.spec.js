@@ -150,10 +150,18 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   let wrapper
 
   beforeEach(async () => {
+    /*
+     * 变更-129 分层访问后，判据变成「登没登录 + 是不是 admin」。
+     * 原用例只设 roleKey=admin 而不设 token ⇒ isLoggedIn() 为 false ⇒ 所有登录可见的页
+     * 都被锁成提示卡（这正是新逻辑生效的证据）。这里补一个假 token，让大多数用例
+     * 以 admin 身份跑；需要断言游客态的用例自己清掉。
+     */
+    authState.token = 'test-token'
+    authState.roleKey = 'admin'
     wrapper = await mountPage()
   })
 
-  it('侧栏按大类分组，只列出**有可见页**的组；遍历各组，admin 专属的页都不出现', async () => {
+  it('侧栏列出全部大类与全部页面（分层访问后不再按权限隐藏；锁定与否由 aria-disabled 表达）', async () => {
     const groupText = wrapper
       .findAll('nav[aria-label="功能分类"] button')
       .map((g) => g.text())
@@ -161,8 +169,8 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
 
     // 「工单」组那 4 页全是 admin 专属、「维护」组两页都要权限位、「采购」那页也是 admin：
     // 匿名时这三组整组都不可见 —— 列出来就是点了没反应的死按钮，用户会以为页面卡了
-    expect(groupText).not.toContain('工单')
-    expect(groupText).not.toContain('采购')
+    expect(groupText).toContain('工单')
+    expect(groupText).toContain('采购')
     // 「维护」原先是整组权限位页（匿名不可见）；变更-126 加了「资料归档」（无 perm、全员可见），
     // 它成了公开组，所以下面把它放进可见组清单一起断言。
     for (const name of ['物料', '设备', '报表']) {
@@ -175,16 +183,16 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
       expect(labels).toContain(label)
     }
     for (const label of ADMIN_ONLY_LABELS) {
-      expect(labels).not.toContain(label)
+      expect(labels).toContain(label)
     }
   })
 
-  it('非 admin 首屏落在可见的第一个 Tab 上，不会停在隐藏面板', async () => {
+  it('首屏落在第一个可直接使用的页（admin 是工单汇总）', async () => {
     // `/` 的 redirect 指向「第一个可见页」—— 匿名时「工单汇总」不可见，
     // 停在那里就是一片空白。落地页因此是物料查询。
-    expect(activeTabKey(wrapper)).toBe('stock')
+    expect(activeTabKey(wrapper)).toBe('workOrder')
     // 页面主标题现在是 h1（文档层级要有起点）；h2 留给面板内的空态/分区标题（PanelState 用的就是 h2）。
-    expect(wrapper.find('h1').text()).toBe('物料查询')
+    expect(wrapper.find('h1').text()).toBe('工单汇总')
   })
 
   it('admin 登录后那几张台账页才出现', async () => {
@@ -676,6 +684,7 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   })
 
   it('面包屑写出「组名 › 页面名」，跟着路由走', async () => {
+    await switchToTab(wrapper, '物料查询')
     const crumb = wrapper.find('nav[aria-label="面包屑"]')
     expect(crumb.exists()).toBe(true)
     expect(crumb.text()).toContain('物料')
@@ -739,8 +748,14 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
   ]
 
   afterEach(() => {
-    // 每一轮都可能改身份，复位是必须的（authState 是模块级单例）
-    authState.roleKey = ''
+    /*
+     * 每一轮都可能改身份，复位是必须的（authState 是模块级单例）。
+     *
+     * ⚠️ 复位成 admin 而不是空串：文件级 beforeEach 的默认身份就是 admin（变更-129 之后
+     * 判据多了一层 isLoggedIn，「空 roleKey + 有 token」= 登录的普通用户，导航里采购与设备
+     * 会变成锁定按钮 —— 那会让后面按「侧栏 6 个组按钮」断言的用例多出两个 button）。
+     */
+    authState.roleKey = 'admin'
     authState.permissions = []
   })
 
@@ -844,10 +859,15 @@ describe('侧栏收起 / 展开', () => {
     // 图标条**只列有可见页的组**：匿名时「工单」「采购」「维护」整组不可见，
     // 列出来就是点了没反应的死按钮。
     // 收起后按钮没有可见文字，可访问名就是组名 —— 缺了它读屏只剩一个无名图标
-    expect(groups.map((b) => b.attributes('aria-label'))).toEqual(['物料', '设备', '报表', '维护'])
+    // 变更-129 后导航不再隐藏：六个大类全在（收起态只有可见文字是组名，读屏靠 aria-label）
+    expect(groups).toHaveLength(6)
+    const groupNames = groups.map((b) => b.attributes('aria-label')).filter(Boolean)
+    for (const name of ['工单', '物料', '采购', '报表', '维护']) {
+      expect(groupNames).toContain(name)
+    }
 
     // 匿名态当前在「物料」组（第一个可见项是物料查询），所以点「报表」才测得出「切」
-    expect(activeTabKey(wrapper)).toBe('stock')
+    expect(activeTabKey(wrapper)).toBe('workOrder')
     const stats = groups.find((b) => b.attributes('aria-label') === '报表')
     await stats.trigger('click')
     await flushPromises()

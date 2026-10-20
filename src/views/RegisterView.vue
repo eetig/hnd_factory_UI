@@ -1,0 +1,127 @@
+<script setup>
+import { reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import request from '../api/request'
+import { saveAuth } from '../api/auth'
+
+/**
+ * 自助注册（变更-129）。
+ *
+ * 设计口径（使用方 2026-10-20 定的）：
+ *   · 不强制任何人注册 —— 游客能看见所有功能，点锁定的才提示注册；
+ *   · 注册后立刻可用、只读（角色由服务端固定成 member）；
+ *   · 写操作仍然要管理员。这句话必须写在页面上，否则人会以为注册完就能改数据。
+ */
+const router = useRouter()
+
+const form = reactive({ username: '', password: '', confirm: '', realName: '' })
+const error = ref('')
+const submitting = ref(false)
+
+async function submit() {
+  error.value = ''
+  if (!form.username.trim()) {
+    error.value = '请填写账号'
+    return
+  }
+  if (form.username.trim().length < 4) {
+    error.value = '账号至少 4 位'
+    return
+  }
+  if (form.password.length < 6) {
+    error.value = '密码至少 6 位'
+    return
+  }
+  if (form.password !== form.confirm) {
+    error.value = '两次输入的密码不一致'
+    return
+  }
+
+  submitting.value = true
+  try {
+    const res = await request.post('/api/register', {
+      username: form.username.trim(),
+      password: form.password,
+      realName: form.realName.trim(),
+    })
+
+    // 注册成功即登录，返回结构与 /api/login 完全一致 —— 这里用同一套解析（含失败时的 { success:false, msg }）
+    const body = res.data || {}
+    const payload = { ...(body.data || {}), ...body }
+    const token = payload.token || payload.accessToken || payload.access_token || payload.jwt
+    if (!token) {
+      throw new Error(body.msg || body.message || '注册成功但没有返回 token，请联系管理员')
+    }
+    saveAuth({ ...payload, token })
+    router.push('/materials')
+  } catch (e) {
+    error.value = e?.response?.data?.msg || e?.message || '注册失败，请稍后再试'
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<template>
+  <div class="mx-auto max-w-md py-10">
+    <h1 class="text-xl font-semibold text-slate-900">注册账号</h1>
+    <p class="mt-2 text-sm text-slate-500">
+      自愿注册。注册后可查看全部台账与报表，<span class="font-medium text-slate-700">写操作仍需要管理员</span>。
+    </p>
+
+    <form class="mt-6 space-y-4" @submit.prevent="submit">
+      <label class="block">
+        <span class="text-sm text-slate-700">账号</span>
+        <input
+          v-model="form.username"
+          type="text"
+          autocomplete="username"
+          class="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+          placeholder="4-32 位，字母或数字"
+        />
+      </label>
+      <label class="block">
+        <span class="text-sm text-slate-700">密码</span>
+        <input
+          v-model="form.password"
+          type="password"
+          autocomplete="new-password"
+          class="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+          placeholder="至少 6 位"
+        />
+      </label>
+      <label class="block">
+        <span class="text-sm text-slate-700">确认密码</span>
+        <input
+          v-model="form.confirm"
+          type="password"
+          autocomplete="new-password"
+          class="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+        />
+      </label>
+      <label class="block">
+        <span class="text-sm text-slate-700">姓名（选填）</span>
+        <input
+          v-model="form.realName"
+          type="text"
+          class="mt-1 w-full rounded-md border border-line px-3 py-2 text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+          placeholder="填了在审计里更好认"
+        />
+      </label>
+
+      <p v-if="error" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
+
+      <button
+        type="submit"
+        :disabled="submitting"
+        class="w-full rounded-md bg-brand px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:ring-offset-2 disabled:opacity-60"
+      >
+        {{ submitting ? '注册中…' : '注册并登录' }}
+      </button>
+    </form>
+
+    <p class="mt-4 text-sm text-slate-500">
+      已有账号？<router-link to="/login" class="text-brand-ink underline">去登录</router-link>
+    </p>
+  </div>
+</template>

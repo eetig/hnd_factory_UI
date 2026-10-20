@@ -4,7 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
 import { clearAuth, getRoleName, isLoggedIn } from '../api/auth'
-import { GROUP_ICON_PATHS, useNav } from '../nav'
+import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
+import LockNotice from '../components/LockNotice.vue'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { ElConfigProvider, ElTooltip } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
@@ -36,6 +37,45 @@ const router = useRouter()
 
 const { visibleGroups } = useNav()
 
+/*
+ * 锁定项的弹框（变更-129）。
+ * 游客点"需要注册"的功能 → 两个出口（去注册 / 我已注册去登录）；
+ * 点采购/设备这种"注册了也打不开的" → 只给"换个管理员账号登录"，不给去注册。
+ */
+const lockDialogOpen = ref(false)
+const lockTarget = ref(null)
+
+function openLock(page) {
+  lockTarget.value = page
+  lockDialogOpen.value = true
+  // 留痕：每会话每功能只记一次（后端有对应端点，游客也能调 —— 它在 WRITE_WHITELIST 里）
+  const key = `hnd-locked-reported:${page?.key || ''}`
+  try {
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, '1')
+      request.post('/api/audit/locked-click', { pageKey: page?.key || '' }).catch(() => {})
+    }
+  } catch {
+    // 隐私模式下 sessionStorage 不可用；记不到就算了
+  }
+}
+
+function goRegisterFromLock() {
+  lockDialogOpen.value = false
+  router.push('/register')
+}
+
+function goLoginFromLock() {
+  lockDialogOpen.value = false
+  router.push('/login')
+}
+
+/** 当前路由是否需要渲染锁定卡（而不是页面本体） */
+const routeLocked = computed(() => {
+  const item = visibleGroups.value.flatMap((g) => g.items).find((i) => i.path === route.path)
+  return item ? navItemState(item) === 'locked' : false
+})
+
 /** 当前页面所属的大类（面包屑前半段、侧栏高亮、组内页签都读它） */
 const currentGroup = computed(() => route.meta?.group ?? '')
 /** 当前页面在 NAV_ITEMS 里的那一条 */
@@ -65,8 +105,17 @@ const groupItems = computed(
  * 所以取它的第一项天然是能看的那一页。
  */
 function selectGroup(key) {
-  const first = visibleGroups.value.find((group) => group.key === key)?.items[0]
-  if (first) router.push(first.path)
+  /*
+   * 变更-129：组内优先挑**马上能用**的那一页；整组都锁定（例如游客点"工单"）
+   * 就弹提示，而不是把人推到一个锁定页上 —— 那看起来像点了没反应。
+   */
+  const items = visibleGroups.value.find((group) => group.key === key)?.items ?? []
+  const usable = items.find((item) => navItemState(item) === 'available')
+  if (usable) {
+    router.push(usable.path)
+    return
+  }
+  if (items[0]) openLock(items[0])
 }
 
 function goToPage(path) {
@@ -448,7 +497,19 @@ function toggleSidebar() {
                 >
                   <ul class="space-y-1" :aria-hidden="currentGroup === group.key ? undefined : 'true'">
                     <li v-for="page in group.items" :key="page.key">
-                      <router-link
+                      <!-- 锁定项：保留可见，点一下弹提示（不是隐藏，也不是点了没反应） -->
+                      <button
+                        v-if="navItemState(page) === 'locked'"
+                        type="button"
+                        class="relative block w-full rounded py-1.5 pl-[70px] pr-2.5 text-left text-sm text-slate-500 opacity-60 transition hover:bg-slate-900/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                        aria-disabled="true"
+                        :title="lockNeedsAdmin(page) ? '需要管理员权限' : '注册后可用'"
+                        @click="openLock(page)"
+                      >
+                        {{ page.label }}
+                        <span class="ml-1 text-[11px]" aria-hidden="true">· 需{{ lockNeedsAdmin(page) ? '管理员' : '注册' }}</span>
+                      </button>
+                      <router-link v-else
                         :to="page.path"
                         class="relative block rounded py-1.5 pl-[70px] pr-2.5 text-sm transition"
                         :class="
@@ -762,7 +823,13 @@ function toggleSidebar() {
                  用 v-slot 拿 Component 再交给 <Transition>，这是 Vue Router 4 的
                  标准写法 —— 直接包 <router-view /> 不会触发过渡，因为外层元素不变。
                  `mode="out-in"` 保证先走完旧页再进新页，否则两页会同时在流里叠一下就消失。 -->
-            <router-view v-slot="{ Component, route: viewRoute }">
+            <!-- 锁定页（变更-129）：渲染提示卡而不是页面本体，避免一进来就打一串 401 -->
+            <LockNotice
+              v-if="routeLocked"
+              :page-key="route.meta?.key || ''"
+              :need-admin="lockNeedsAdmin(visibleGroups.flatMap((g) => g.items).find((i) => i.path === route.path))"
+            />
+            <router-view v-else v-slot="{ Component, route: viewRoute }">
 <!--
                 2026-10-20 去掉 <Transition mode="out-in">（变更-105 加的切页过渡）。
                 症状：首次打开正常 → 切到「核算」→ 再切回「工单汇总」，内容区整个空白，
@@ -782,6 +849,27 @@ function toggleSidebar() {
       </div>
     </main>
   </el-config-provider>
+
+  <!-- 锁定项弹框（变更-129）：两个出口，别让已有账号的人被赶去重复注册 -->
+  <el-dialog v-model="lockDialogOpen" :title="lockTarget?.label || ''" width="420px" align-center>
+    <p class="text-sm text-slate-900">
+      {{ lockNeedsAdmin(lockTarget) ? '这个功能需要管理员权限' : '这个功能需要注册后才能使用' }}
+    </p>
+    <p class="mt-2 text-sm text-slate-500">
+      {{
+        lockNeedsAdmin(lockTarget)
+          ? '它涉及采购价格与单据，只对管理员开放。需要开通请联系管理员。'
+          : '注册只需一次，注册后即可查看；写操作仍然需要管理员。'
+      }}
+    </p>
+    <template #footer>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <button v-if="!lockNeedsAdmin(lockTarget)" type="button" class="rounded-md border border-line px-3 py-1.5 text-sm text-slate-700 transition hover:bg-region" @click="goLoginFromLock">我已注册，去登录</button>
+        <button v-if="!lockNeedsAdmin(lockTarget)" type="button" class="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-ink" @click="goRegisterFromLock">去注册</button>
+        <button v-else type="button" class="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-ink" @click="goLoginFromLock">换个管理员账号登录</button>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

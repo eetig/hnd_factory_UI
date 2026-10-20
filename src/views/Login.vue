@@ -123,6 +123,13 @@ async function handleLogin() {
             {{ loading ? '登录中...' : '登录' }}
           </button>
         </form>
+
+        <!-- 变更-129：不强制注册，但愿意留名的人要有个入口；注册后只读 -->
+        <p class="mt-6 text-center text-sm text-slate-500">
+          没有账号？
+          <router-link to="/register" class="text-brand-ink underline">注册一个（自愿）</router-link>
+        </p>
+        <p class="mt-1 text-center text-xs text-slate-500">注册后可查看全部台账与报表；写操作仍需要管理员</p>
       </div>
     </div>
   </main>
