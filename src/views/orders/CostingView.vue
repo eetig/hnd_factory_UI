@@ -132,7 +132,6 @@ onMounted(() => {
         :columns="reportColumns"
         :rows="reportRows"
         empty-text="暂无报工数据"
-        show-footer
         :row-key="statsRowKey"
       />
     </div>
@@ -142,7 +141,6 @@ onMounted(() => {
         :columns="costingColumns"
         :rows="costingRows"
         empty-text="暂无核算数据"
-        show-footer
         :row-key="statsRowKey"
       />
     </div>
@@ -175,7 +173,7 @@ onMounted(() => {
         理由：原辅料的数量是换算后的口径（×3.2 / ×20 / ×1000），
         行与行之间单位并不统一（kg / g / 吨混排），而且派生行与源行同时存在 ——
         求出来的「合计」既跨量纲、又重复计入，是个看起来像合计的错数字。
-        其余两张（工单报工 / 工单核算）同列单位一致，才开 tfoot。
+          变更-126c 起**三张全关**：工单报工与工单核算的每一行是**不同产品**，跨产品相加没有意义（使用方原话「合计不需要，因为是不同的产品，合计就有点不伦不类了」）。合计行只在"同一计量对象"的表里才有意义。
       -->
       <StatsTable
         :columns="materialCostingColumns"
