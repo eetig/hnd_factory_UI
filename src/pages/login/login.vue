@@ -18,6 +18,11 @@ const focusField = ref('')
 // 深色是默认值（写在 page 上），浅色靠给 .login-page 加 .theme-light。
 const { themeClass, wotTheme, themeVars } = useTheme()
 
+/** 去注册：用 navigateTo（压栈），注册页左上角有返回，能退回登录页 */
+function goRegister() {
+  uni.navigateTo({ url: '/pages/register/register' })
+}
+
 async function handleLogin() {
   const account = username.value.trim()
   const pass = password.value.trim()
@@ -134,6 +139,11 @@ async function handleLogin() {
         >
           {{ loading ? '登录中...' : '登录' }}
         </button>
+
+        <view class="login-links">
+          <text class="login-links__label">没有账号？</text>
+          <text class="login-links__action" @click="goRegister">注册一个</text>
+        </view>
 
         <text class="login-foot">未登录也可以浏览物料、周统计等查询页</text>
       </view>
@@ -302,9 +312,30 @@ async function handleLogin() {
   @include pill-button($ui-text, $ui-on-light, 30rpx);
 }
 
+/* 注册入口：登录按钮下面一行「没有账号？注册一个」—— 与网页端同一句话 */
+.login-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 30rpx;
+
+  &__label {
+    color: $ui-text-3;
+    font-size: 24rpx;
+  }
+
+  &__action {
+    color: $ui-accent-text;
+    font-size: 24rpx;
+    font-weight: 600;
+    text-decoration: underline;
+  }
+}
+
 .login-foot {
   display: block;
-  margin-top: 32rpx;
+  margin-top: 18rpx;
   color: $ui-text-3;
   font-size: 23rpx;
   text-align: center;

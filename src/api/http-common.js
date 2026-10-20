@@ -79,6 +79,26 @@ export function handleUnauthorized(status, body) {
 
   if (!isUnauthorized) return
 
+  /*
+   * 使用方 2026-10-21：「默认不需要登录」。
+   *
+   * 区分两种情况，它们的正确反应完全不同：
+   *   ① **本来就没登录**（游客点了个需要登录的功能）——**不能**跳登录页。
+   *      跳过去会让人以为"这个 App 必须先登录"，而且他连注册入口都找不到；
+   *      正确做法是就地提示一句，留在原地。
+   *   ② **登录过但会话过期**（有 token、服务端说无效）—— 清凭据 + 跳登录页，
+   *      否则他会一直卡在"看得见界面、每个请求都 401"的状态里。
+   *
+   * 之前两者都跳登录页，所以游客一碰工单/领料就"被送进登录页" —— 那正是使用方
+   * 截图里那张"一打开就是登录页"的真因（不是启动就跳）。
+   */
+  const hadToken = !!getToken()
   clearAuth()
+
+  if (!hadToken) {
+    uni.showToast({ title: '该功能需要注册后使用', icon: 'none', duration: 2200 })
+    return
+  }
+
   redirectToLogin()
 }
