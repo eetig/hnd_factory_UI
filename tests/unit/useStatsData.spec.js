@@ -38,7 +38,7 @@ describe('useStatsData：核算表跟随汇总面板的当前筛选结果', () =
     ]
 
     expect(reportRows.value).toEqual([
-      { orderType: '操作工单', materialDesc: 'HND-V150', orderQty: 100, confirmedQty: 40 },
+      { orderType: '操作工单', typeKey: 'operate', materialDesc: 'HND-V150', orderQty: 100, orderQtyRaw: 100, confirmedQty: 40 },
     ])
   })
 

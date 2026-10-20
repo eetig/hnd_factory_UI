@@ -22,7 +22,10 @@ const props = defineProps({
    * **分页列表不能开** —— 当前页 10 行求和得到的是「这一页的合计」，换个页码就变，是假数。
    */
   showFooter: { type: Boolean, default: false },
+  /** 整行可点（会同时补上 tabindex 与回车/空格 —— 护栏要求可点的行必须能键盘激活） */
+  rowClickable: { type: Boolean, default: false },
 })
+const emit = defineEmits(['row-click'])
 
 /**
  * 需要换行的单元格（长物料名）用 max-width 限宽。
@@ -132,7 +135,7 @@ function getRowKey(item, index) {
             v-for="(item, index) in rows"
             :key="getRowKey(item, index)"
             
-          >
+            :tabindex="rowClickable ? 0 : undefined"             :class="rowClickable ? 'cursor-pointer transition-colors hover:bg-region focus-visible:bg-region focus-visible:outline-none' : ''"             @click="rowClickable && emit('row-click', item)"             @keydown.enter.prevent="rowClickable && emit('row-click', item)"             @keydown.space.prevent="rowClickable && emit('row-click', item)"           >
             <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
               {{ index + 1 }}
             </td>

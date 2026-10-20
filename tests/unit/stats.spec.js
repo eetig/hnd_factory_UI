@@ -22,8 +22,8 @@ describe('buildReportRows：工单报工汇总', () => {
     ])
 
     expect(rows).toEqual([
-      { orderType: '操作工单', materialDesc: 'HND-V150', orderQty: 15, confirmedQty: 13 },
-      { orderType: '包装工单', materialDesc: 'HND-V150', orderQty: 1, confirmedQty: 1 },
+      { orderType: '操作工单', typeKey: 'operate', materialDesc: 'HND-V150', orderQty: 15, orderQtyRaw: 15, confirmedQty: 13 },
+      { orderType: '包装工单', typeKey: 'package', materialDesc: 'HND-V150', orderQty: 1, orderQtyRaw: 1, confirmedQty: 1 },
     ])
   })
 
@@ -34,7 +34,7 @@ describe('buildReportRows：工单报工汇总', () => {
     ])
 
     expect(rows).toEqual([
-      { orderType: '操作工单', materialDesc: 'HND-V150', orderQty: 1, confirmedQty: 1 },
+      { orderType: '操作工单', typeKey: 'operate', materialDesc: 'HND-V150', orderQty: 1, orderQtyRaw: 1, confirmedQty: 1 },
     ])
   })
 

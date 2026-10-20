@@ -34,6 +34,8 @@ export function buildReportRows(groupRows) {
     .filter((row) => row?.orderType)
     .map((row) => ({
       orderType: row.orderType,
+      typeKey: row.typeKey,
+      orderQtyRaw: Number(row.orderQty) || 0,
       materialDesc: row.materialName,
       orderQty: formatQty(Number(row.orderQty) || 0),
       confirmedQty: formatQty(Number(row.confirmedQty) || 0),

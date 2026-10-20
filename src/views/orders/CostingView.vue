@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import StatsTable from '../../components/StatsTable.vue'
+import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
 import { useStatsData } from '../../composables/useStatsData'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { useInboundData } from '../../composables/useInboundData'
@@ -47,6 +48,17 @@ const materialCostingDisplayRows = computed(() =>
 const statsRowKey = (item, index) => `${item.orderType ?? item.materialName}-${index}`
 
 // 工单报工表格列
+/**
+ * 工单明细弹窗（变更-126e）：点「工单报工」的一行，看这一行由哪些工单组成。
+ * 口径：同工单类型 + 同产成品、不限日期（与 summary-by-type-material 同口径，明细才能和汇总对上）。
+ */
+const detailDialogOpen = ref(false)
+const detailRow = ref(null)
+
+function openWorkOrderDetail(row) {
+  detailRow.value = row
+  detailDialogOpen.value = true
+}
 const reportColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
   { key: 'orderType', label: '工单类型', width: 'w-40' },
@@ -133,6 +145,8 @@ onMounted(() => {
         :rows="reportRows"
         empty-text="暂无报工数据"
         :row-key="statsRowKey"
+          row-clickable
+          @row-click="openWorkOrderDetail"
       />
     </div>
 
@@ -183,4 +197,11 @@ onMounted(() => {
       />
     </div>
   </div>
+  <WorkOrderDetailDialog
+    v-model="detailDialogOpen"
+    :type-key="detailRow?.typeKey || ''"
+    :type-label="detailRow?.orderType || ''"
+    :material-desc="detailRow?.materialDesc || ''"
+    :summary-qty="detailRow?.orderQtyRaw ?? null"
+  />
 </template>
