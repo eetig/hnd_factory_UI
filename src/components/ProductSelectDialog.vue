@@ -38,6 +38,7 @@ function handleSelect(item) {
 
 <template>
   <el-dialog
+    append-to-body
     :model-value="modelValue"
     width="480px"
     align-center

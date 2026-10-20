@@ -1469,6 +1469,7 @@ onUnmounted(() => {
     <!-- 物料候选：识别出的名称查不到唯一主数据时，给人一个挑选的入口。
          用对话框而不是下拉，是因为表格单元格里放弹层容易被裁切、也不好定位。 -->
     <el-dialog
+      append-to-body
       v-model="pickerVisible"
       title="选择物料"
       width="640px"

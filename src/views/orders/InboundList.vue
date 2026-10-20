@@ -260,7 +260,7 @@ onMounted(() => {
       </div>
     </section>
 
-    <el-dialog v-model="inboundImageDialogVisible" width="70vw" align-center>
+    <el-dialog v-model="inboundImageDialogVisible" width="70vw" align-center append-to-body>
       <div class="flex min-h-[400px] items-center justify-center rounded-card bg-region p-6">
         <img
           v-if="currentInboundImage"

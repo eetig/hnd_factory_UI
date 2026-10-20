@@ -157,6 +157,7 @@ watch(
 
 <template>
   <el-dialog
+    append-to-body
     :model-value="modelValue"
     :title="`${typeLabel || ''} · ${materialDesc || ''}`"
     width="900px"

@@ -62,7 +62,7 @@ function handleFileSelected(event) {
 </script>
 
 <template>
-  <el-dialog v-model="dialogVisible" width="80vw" class="image-preview-dialog" align-center>
+  <el-dialog v-model="dialogVisible" width="80vw" class="image-preview-dialog" align-center append-to-body>
     <template v-if="titleItems.length" #header>
       <div class="flex flex-wrap items-center gap-x-5 gap-y-1 pr-6 text-sm text-slate-700">
         <span v-for="item in titleItems" :key="item.label">

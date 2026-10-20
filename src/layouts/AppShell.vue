@@ -860,7 +860,7 @@ function toggleSidebar() {
   </el-config-provider>
 
   <!-- 锁定项弹框（变更-129）：两个出口，别让已有账号的人被赶去重复注册 -->
-  <el-dialog v-model="lockDialogOpen" :title="lockTarget?.label || ''" width="420px" align-center>
+  <el-dialog v-model="lockDialogOpen" :title="lockTarget?.label || ''" width="420px" align-center append-to-body>
     <p class="text-sm text-slate-900">
       {{ dialogNeedsAdmin ? '这个功能需要管理员权限' : '这个功能需要注册后才能使用' }}
     </p>

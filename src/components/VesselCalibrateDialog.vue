@@ -276,6 +276,7 @@ function handleSave() {
 
 <template>
   <el-dialog
+    append-to-body
     :model-value="modelValue"
     title="标定底图"
     width="900px"
