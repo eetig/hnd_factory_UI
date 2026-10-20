@@ -763,9 +763,18 @@ function toggleSidebar() {
                  标准写法 —— 直接包 <router-view /> 不会触发过渡，因为外层元素不变。
                  `mode="out-in"` 保证先走完旧页再进新页，否则两页会同时在流里叠一下就消失。 -->
             <router-view v-slot="{ Component, route: viewRoute }">
-              <!-- :duration 是必须的：本文件 @media (prefers-reduced-motion: reduce) 把 .page-*-active 的
-                   transition 置成了 none，退场时长变 0 时 mode="out-in" 等不到 afterLeave，新页永远不挂
-                   （2026-10-20 修：切到核算再切回工单汇总白屏、DOM 只剩 <!---->、console 无报错）。 -->
+<!--
+                2026-10-20 去掉 <Transition mode="out-in">（变更-105 加的切页过渡）。
+                症状：首次打开正常 → 切到「核算」→ 再切回「工单汇总」，内容区整个空白，
+                console 没有任何报错、后端也没有请求；刷新才恢复。
+                二分：同一版代码在 ac9644c（更早的构建）上也能复现，与近期改动无关，是老问题。
+                试过无效的两条（记下来省得重走）：给 Transition 加 :duration 强制收尾；
+                运行时注入 CSS 把 .page-*-active 的 transition 置为 none。
+                最终：摘掉 Transition（保留 component :is），两种动效模式实测全部正常
+                （工单汇总 24 行 → 核算 13 行 → 领料 24 行 → 工单汇总 24 行）。
+                代价：切页变硬切。要淡入请用纯 CSS keyframe，不要再用 mode="out-in"。
+                ⚠️ 注意：HTML 注释在第一个 - - > 处就会结束，注释里不要写那三个字符。
+-->
               <component :is="Component" :key="viewRoute.path" />
             </router-view>
           </div>
