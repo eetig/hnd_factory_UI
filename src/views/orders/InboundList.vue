@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useInboundData } from '../../composables/useInboundData'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
@@ -25,6 +25,7 @@ const {
   inboundEndDate,
   inboundMaterialDialogVisible,
   inboundMaterialFilter,
+  inboundSummaryRows,
   inboundMaterialOptions,
   loadInboundPage,
   reloadInboundRecords,
@@ -33,6 +34,25 @@ const {
   handleInboundMaterialSelected,
   clearInboundMaterialFilter,
 } = useInboundData()
+/*
+ * 合计（变更-126d）：与领料页同一口径 —— **只在筛到单一物料时**给数字。
+ * 理由见 PickingList.vue 里 pickFooter 的注释（kg+个+桶 相加是加法错误，变更-125 已写明）。
+ * 数据取自 /api/inbound/summary-by-material（整个日期区间按物料聚合），换页不变。
+ */
+const inboundFooter = computed(() => {
+  const name = String(inboundMaterialFilter.value || '').trim()
+  if (!name) {
+    return { show: true, qty: null, unit: '', note: '多个物料/单位混排，不做合计（筛到单一物料后显示）' }
+  }
+  const row = inboundSummaryRows.value.find(
+    (r) => r.materialCode === name || r.materialName === name,
+  )
+  if (!row) {
+    return { show: false, qty: null, unit: '', note: '' }
+  }
+  const unit = inboundTableData.value.find((r) => r.materialCode === row.materialCode)?.unit || ''
+  return { show: true, qty: Number(row.inboundQty) || 0, unit, note: '' }
+})
 
 
 
@@ -209,6 +229,20 @@ onMounted(() => {
                   </td>
                 </tr>
               </tbody>
+              <!-- 合计：与领料页同口径（只在筛到单一物料时给数字） -->
+              <tfoot v-if="inboundFooter.show">
+                <tr class="border-t border-line bg-region">
+                  <td colspan="4" class="px-3 py-3 text-sm font-semibold text-slate-900">
+                    合计
+                    <span v-if="inboundFooter.note" class="ml-2 text-xs font-normal text-slate-500">{{ inboundFooter.note }}</span>
+                  </td>
+                  <td class="py-3 pl-3 pr-5 text-right text-sm font-semibold text-slate-900">
+                    {{ inboundFooter.qty === null ? '—' : inboundFooter.qty }}
+                  </td>
+                  <td class="px-3 py-3 text-sm font-semibold text-slate-900">{{ inboundFooter.unit }}</td>
+                  <td class="px-3 py-3"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 

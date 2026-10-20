@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { usePickData } from '../../composables/usePickData'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
@@ -26,6 +26,7 @@ const {
   pickEndDate,
   pickMaterialDialogVisible,
   pickMaterialFilter,
+  pickSummaryRows,
   pickMaterialOptions,
   loadPickPage,
   reloadPickRecords,
@@ -34,6 +35,31 @@ const {
   handlePickMaterialSelected,
   clearPickMaterialFilter,
 } = usePickData()
+/*
+ * 合计（变更-126d）：**只在筛到单一物料时**给。
+ *
+ * 为什么不是无条件加总：这一页的"领料数量"混着 kg / 个 / 桶 / 米 —— 变更-125 撤 KPI 时
+ * 已经写明「kg+个+桶 的合计是加法错误」。而使用方的真实操作是"查同一种物料"
+ * （2026-10-20 原话：「操作的时候，会查看同种物料，合计在这里就显得更直观更合适」），
+ * 那种情况下合计才有意义。所以：有筛选才显示数字，没筛选显示「—」并说明原因。
+ *
+ * 数据取自 /api/pick/summary-by-material（**整个日期区间**按物料聚合，不是当前页这 10 行），
+ * 所以换页不会变；单位取自明细行（同一物料单位一致）。
+ */
+const pickFooter = computed(() => {
+  const name = String(pickMaterialFilter.value || '').trim()
+  if (!name) {
+    return { show: true, qty: null, unit: '', note: '多个物料/单位混排，不做合计（筛到单一物料后显示）' }
+  }
+  const row = pickSummaryRows.value.find(
+    (r) => r.materialCode === name || r.materialName === name,
+  )
+  if (!row) {
+    return { show: false, qty: null, unit: '', note: '' }
+  }
+  const unit = pickTableData.value.find((r) => r.materialCode === row.materialCode)?.unit || ''
+  return { show: true, qty: Number(row.pickQty) || 0, unit, note: '' }
+})
 
 
 
@@ -208,6 +234,20 @@ onMounted(() => {
                   </td>
                 </tr>
               </tbody>
+              <!-- 合计：只在筛到单一物料时给数字（理由见 script 里 pickFooter 的注释） -->
+              <tfoot v-if="pickFooter.show">
+                <tr class="border-t border-line bg-region">
+                  <td colspan="4" class="px-3 py-3 text-sm font-semibold text-slate-900">
+                    合计
+                    <span v-if="pickFooter.note" class="ml-2 text-xs font-normal text-slate-500">{{ pickFooter.note }}</span>
+                  </td>
+                  <td class="py-3 pl-3 pr-5 text-right text-sm font-semibold text-slate-900">
+                    {{ pickFooter.qty === null ? '—' : pickFooter.qty }}
+                  </td>
+                  <td class="px-3 py-3 text-sm font-semibold text-slate-900">{{ pickFooter.unit }}</td>
+                  <td class="px-3 py-3"></td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 
