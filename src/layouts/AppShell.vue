@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
-import { clearAuth, getDisplayName, getRoleName, isLoggedIn } from '../api/auth'
+import { authState, clearAuth, getDisplayName, getRoleName, isLoggedIn } from '../api/auth'
 import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
@@ -186,8 +186,21 @@ const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
 
 const displayName = computed(() => getDisplayName() || '用户')
-/** 头像上的字：昵称第一个字符（中文取首字、英文取首字母） */
-const avatarInitial = computed(() => (displayName.value || '?').trim().slice(0, 1).toUpperCase())
+/**
+ * 头像：**随机的可爱小动物**（使用方 2026-10-20 要求）。
+ *
+ * 用确定性"随机"——按账号名做一次 hash 取模，同一个账号每次进来都是同一只动物
+ * （真随机会让人以为换了个人）。emoji 而不是图片：零资源、零请求、深浅底都看得清。
+ */
+const ANIMAL_AVATARS = ['🐱', '🐶', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐮', '🐷', '🐸']
+const avatarAnimal = computed(() => {
+  const key = authState.username || displayName.value || ''
+  let hash = 0
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+  }
+  return ANIMAL_AVATARS[hash % ANIMAL_AVATARS.length]
+})
 
 function goLogin() {
   router.push('/login')
@@ -572,12 +585,12 @@ function toggleSidebar() {
                     :show-after="200"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold uppercase text-on-brand"
+                      class="flex shrink-0 items-center justify-center rounded-full bg-white/55 text-base leading-none ring-1 ring-black/5"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
                       :aria-label="collapsed ? `当前登录：${displayName}（${roleName}）` : undefined"
                     >
-                      {{ avatarInitial }}
+                      {{ avatarAnimal }}
                     </span>
                   </el-tooltip>
                   <div v-show="!collapsed" class="min-w-0 flex-1 leading-tight">
@@ -587,7 +600,7 @@ function toggleSidebar() {
                   <el-tooltip content="退出登录" placement="right" :disabled="collapsed" :show-after="200">
                     <button
                       type="button"
-                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.96]"
+                      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.96]"
                       aria-label="退出登录"
                       @click="handleLogout"
                     >
