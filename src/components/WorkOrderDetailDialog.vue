@@ -98,7 +98,13 @@ async function load() {
         },
       })
       const list = Array.isArray(data?.dataList) ? data.dataList : []
-      fetched = fetched.concat(list)
+      /*
+       * ⚠️ 接口返回的是**嵌套**结构：{ workOrder: {...}, imageList: [] }。
+       * 字段在 workOrder 里面 —— 直接读 item.orderNo 会全是 undefined，表现为"每格都是 —"。
+       * 这里照 useWorkOrderData#normalizeWorkOrder 的做法拍平；item.workOrder 缺失时兜底用 item 本身，
+       * 免得接口哪天改成扁平结构就整张表空掉。
+       */
+      fetched = fetched.concat(list.map((item) => item?.workOrder || item))
       const total = Number(data?.total) || 0
       if (fetched.length >= total || list.length === 0) {
         break
