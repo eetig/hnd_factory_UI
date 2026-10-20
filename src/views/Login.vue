@@ -127,7 +127,7 @@ async function handleLogin() {
         <!-- 变更-129：不强制注册，但愿意留名的人要有个入口；注册后只读 -->
         <p class="mt-6 text-center text-sm text-slate-500">
           没有账号？
-          <router-link to="/register" class="text-brand-ink underline">注册一个（自愿）</router-link>
+          <router-link to="/register" class="text-brand-ink underline">注册一个</router-link>
         </p>
 
       </div>
