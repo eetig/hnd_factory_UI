@@ -249,6 +249,38 @@ function startCreate() {
   clearPendingImages()
 }
 
+/**
+ * 保存一次；碰到「同一天同一容器已存在」先问一句，用户点了「仍要保存」再重提。
+ *
+ * <p>为什么把确认放在这里而不是数据层：数据层只负责"发请求、整形错误"，
+ * 弹什么框是界面的事；而两个前端共用的是"看到 409 就问一句"这条约定。
+ *
+ * <p>为什么不是前端先查当天列表自己拦：同一天同一容器的判定要"去空白后比对名称"，
+ * 那是一份规则；规则两端各写一份必然漂移。判定只在后端
+ * （TankLevelRecordServiceImpl.requireNoSameDayTank），前端只负责这个确认框。
+ *
+ * @returns 保存后的记录；null 表示用户在确认框里点了取消
+ */
+async function saveWithDuplicateConfirm() {
+  try {
+    return await saveTankLevelRecord(draft.value)
+  } catch (error) {
+    if (!error?.needsConfirm) throw error
+
+    try {
+      await ElMessageBox.confirm(error.message, '同一天已记过这台容器', {
+        type: 'warning',
+        confirmButtonText: '仍要保存',
+        cancelButtonText: '取消',
+      })
+    } catch {
+      return null // 用户取消：本次不保存，也不算失败
+    }
+
+    return await saveTankLevelRecord(draft.value, { confirmDuplicate: true })
+  }
+}
+
 async function saveRow() {
   if (saving.value) return
 
@@ -258,7 +290,9 @@ async function saveRow() {
   const filesToUpload = creating ? pendingImages.value.map((item) => item.file) : []
 
   try {
-    const saved = await saveTankLevelRecord(draft.value)
+    const saved = await saveWithDuplicateConfirm()
+    // null = 用户在「同一天已记过这台容器」那里点了取消
+    if (!saved) return
     cancelEdit()
 
     if (!filesToUpload.length) {

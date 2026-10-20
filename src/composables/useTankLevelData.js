@@ -138,8 +138,12 @@ export function buildTankLevelDraft(record) {
  * 与「没填」在语义上是两回事 —— 后端 BigDecimal 收到空串也只会解析失败。
  *
  * <p>`id` 保持 null 表示新增（后端按 id 有无分流）。
+ *
+ * <p>`confirmDuplicate` 是 2026-10-20（变更-127）加的：同一天同一容器重复录入时，
+ * 后端第一次回 409 让人确认；用户点「仍要保存」后由这里带上 true 重提。
+ * **只有 true 才带** —— 不带/undefined 的语义必须是"还没确认"，否则拦不住手滑。
  */
-export function buildTankLevelSavePayload(draft) {
+export function buildTankLevelSavePayload(draft, options) {
   const text = (value) => {
     const trimmed = String(value ?? '').trim()
     return trimmed === '' ? null : trimmed
@@ -150,7 +154,7 @@ export function buildTankLevelSavePayload(draft) {
   const rawId = draft?.id
   const id = rawId === undefined || rawId === null || rawId === '' ? null : rawId
 
-  return {
+  const payload = {
     id,
     recordDate: text(draft?.recordDate),
     location: text(draft?.location),
@@ -162,6 +166,10 @@ export function buildTankLevelSavePayload(draft) {
     levelValue: text(draft?.levelValue),
     theoreticalWeight: text(draft?.theoreticalWeight),
   }
+
+  if (options?.confirmDuplicate === true) payload.confirmDuplicate = true
+
+  return payload
 }
 
 // 属地下拉选项：以库中实际值为准，并把「当前已选但不在选项里」的值补进去，
@@ -308,16 +316,33 @@ function reloadTankLevelRecords() {
 
 /** 取后端给的业务错误消息；拿不到就用兜底文案 */
 function toWriteError(error, fallback) {
-  return new Error(error?.response?.data?.msg || error?.message || fallback)
+  const data = error?.response?.data
+  const code = data?.code ?? error?.code ?? null
+  const wrapped = new Error(data?.msg || error?.message || fallback)
+  // code 必须带出来：409 是「同一天同一容器已存在，确认后可继续」，
+  // 调用方据此弹确认框，而不是当成一次普通失败（2026-10-20，变更-127）
+  wrapped.code = code
+  wrapped.needsConfirm = code === 409
+  return wrapped
 }
 
-/** 新增（draft.id 为空）或编辑一条记录，返回保存后的记录 */
-async function saveTankLevelRecord(draft) {
+/**
+ * 新增（draft.id 为空）或编辑一条记录，返回保存后的记录。
+ *
+ * @param {object} options
+ * @param {boolean} [options.confirmDuplicate] 用户已经确认「同一天同一容器再记一条」
+ */
+async function saveTankLevelRecord(draft, options = {}) {
   let saved
   try {
-    const res = await request.post('/api/tank-level/save', buildTankLevelSavePayload(draft))
+    const res = await request.post(
+      '/api/tank-level/save',
+      buildTankLevelSavePayload(draft, { confirmDuplicate: options.confirmDuplicate }),
+    )
     if (res.data?.success === false) {
-      throw new Error(res.data?.msg || '保存失败，请稍后重试。')
+      const rejected = new Error(res.data?.msg || '保存失败，请稍后重试。')
+      rejected.code = res.data?.code ?? null
+      throw rejected
     }
     saved = res.data?.data ?? null
   } catch (error) {

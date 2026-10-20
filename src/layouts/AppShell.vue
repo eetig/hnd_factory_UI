@@ -763,9 +763,10 @@ function toggleSidebar() {
                  标准写法 —— 直接包 <router-view /> 不会触发过渡，因为外层元素不变。
                  `mode="out-in"` 保证先走完旧页再进新页，否则两页会同时在流里叠一下就消失。 -->
             <router-view v-slot="{ Component, route: viewRoute }">
-              <Transition name="page" mode="out-in">
-                <component :is="Component" :key="viewRoute.path" />
-              </Transition>
+              <!-- :duration 是必须的：本文件 @media (prefers-reduced-motion: reduce) 把 .page-*-active 的
+                   transition 置成了 none，退场时长变 0 时 mode="out-in" 等不到 afterLeave，新页永远不挂
+                   （2026-10-20 修：切到核算再切回工单汇总白屏、DOM 只剩 <!---->、console 无报错）。 -->
+              <component :is="Component" :key="viewRoute.path" />
             </router-view>
           </div>
         </div>
