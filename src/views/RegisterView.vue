@@ -1,6 +1,6 @@
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import request from '../api/request'
 import { saveAuth } from '../api/auth'
 
@@ -13,6 +13,7 @@ import { saveAuth } from '../api/auth'
  *   · 写操作仍然要管理员。这句话必须写在页面上，否则人会以为注册完就能改数据。
  */
 const router = useRouter()
+const route = useRoute()
 
 const form = reactive({ username: '', password: '', confirm: '', realName: '' })
 const error = ref('')
@@ -53,7 +54,9 @@ async function submit() {
       throw new Error(body.msg || body.message || '注册成功但没有返回 token，请联系管理员')
     }
     saveAuth({ ...payload, token })
-    router.push('/materials')
+    // 注册即登录；如果是从某个锁定功能跳过来的，直接送他去那一页
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    await router.replace(redirect || '/')
   } catch (e) {
     error.value = e?.response?.data?.msg || e?.message || '注册失败，请稍后再试'
   } finally {
@@ -65,9 +68,7 @@ async function submit() {
 <template>
   <div class="mx-auto max-w-md py-10">
     <h1 class="text-xl font-semibold text-slate-900">注册账号</h1>
-    <p class="mt-2 text-sm text-slate-500">
-      自愿注册。注册后可查看全部台账与报表，<span class="font-medium text-slate-700">写操作仍需要管理员</span>。
-    </p>
+
 
     <form class="mt-6 space-y-4" @submit.prevent="submit">
       <label class="block">

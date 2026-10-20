@@ -7,7 +7,7 @@ import { clearAuth, getRoleName, isLoggedIn } from '../api/auth'
 import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
-import { ElConfigProvider, ElTooltip } from 'element-plus'
+import { ElConfigProvider, ElDialog, ElTooltip } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
@@ -60,9 +60,19 @@ function openLock(page) {
   }
 }
 
+/**
+ * 弹框该说哪一句：**未登录一律说"需要注册"**。
+ *
+ * 对游客来说，采购/设备这种"注册了也打不开"的功能，第一步同样是注册 ——
+ * 所以先告诉他注册 + 给入口，注册并登录后再由后端 403 提示需要管理员。
+ * 只有**已登录的非管理员**点采购/设备，才直接说"需要管理员"（注册解决不了，别提注册）。
+ */
+const dialogNeedsAdmin = computed(() => isLoggedIn() && lockNeedsAdmin(lockTarget.value))
+
 function goRegisterFromLock() {
   lockDialogOpen.value = false
-  router.push('/register')
+  // 带上原本想去的页：注册成功后直接落到那一页，不用再找一遍
+  router.push({ path: '/register', query: { redirect: lockTarget.value?.path || route.path } })
 }
 
 function goLoginFromLock() {
@@ -503,11 +513,10 @@ function toggleSidebar() {
                         type="button"
                         class="relative block w-full rounded py-1.5 pl-[70px] pr-2.5 text-left text-sm text-slate-500 opacity-60 transition hover:bg-slate-900/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                         aria-disabled="true"
-                        :title="lockNeedsAdmin(page) ? '需要管理员权限' : '注册后可用'"
+                        :aria-label="`${page.label}（需注册后可用）`"
                         @click="openLock(page)"
                       >
                         {{ page.label }}
-                        <span class="ml-1 text-[11px]" aria-hidden="true">· 需{{ lockNeedsAdmin(page) ? '管理员' : '注册' }}</span>
                       </button>
                       <router-link v-else
                         :to="page.path"
@@ -853,19 +862,12 @@ function toggleSidebar() {
   <!-- 锁定项弹框（变更-129）：两个出口，别让已有账号的人被赶去重复注册 -->
   <el-dialog v-model="lockDialogOpen" :title="lockTarget?.label || ''" width="420px" align-center>
     <p class="text-sm text-slate-900">
-      {{ lockNeedsAdmin(lockTarget) ? '这个功能需要管理员权限' : '这个功能需要注册后才能使用' }}
-    </p>
-    <p class="mt-2 text-sm text-slate-500">
-      {{
-        lockNeedsAdmin(lockTarget)
-          ? '它涉及采购价格与单据，只对管理员开放。需要开通请联系管理员。'
-          : '注册只需一次，注册后即可查看；写操作仍然需要管理员。'
-      }}
+      {{ dialogNeedsAdmin ? '这个功能需要管理员权限' : '这个功能需要注册后才能使用' }}
     </p>
     <template #footer>
       <div class="flex flex-wrap items-center justify-end gap-2">
-        <button v-if="!lockNeedsAdmin(lockTarget)" type="button" class="rounded-md border border-line px-3 py-1.5 text-sm text-slate-700 transition hover:bg-region" @click="goLoginFromLock">我已注册，去登录</button>
-        <button v-if="!lockNeedsAdmin(lockTarget)" type="button" class="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-ink" @click="goRegisterFromLock">去注册</button>
+        <button v-if="!dialogNeedsAdmin" type="button" class="rounded-md border border-line px-3 py-1.5 text-sm text-slate-700 transition hover:bg-region" @click="goLoginFromLock">我已注册，去登录</button>
+        <button v-if="!dialogNeedsAdmin" type="button" class="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-ink" @click="goRegisterFromLock">前往注册</button>
         <button v-else type="button" class="rounded-md bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:bg-brand-ink" @click="goLoginFromLock">换个管理员账号登录</button>
       </div>
     </template>

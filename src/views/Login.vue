@@ -129,7 +129,7 @@ async function handleLogin() {
           没有账号？
           <router-link to="/register" class="text-brand-ink underline">注册一个（自愿）</router-link>
         </p>
-        <p class="mt-1 text-center text-xs text-slate-500">注册后可查看全部台账与报表；写操作仍需要管理员</p>
+
       </div>
     </div>
   </main>
