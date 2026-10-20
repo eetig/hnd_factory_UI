@@ -154,10 +154,33 @@ const tabs = [
   // #endif
 ]
 
-// 可见 Tab = 两类过滤的叠加：adminOnly 看角色，其余看权限位
-const visibleTabs = computed(() =>
-  tabs.filter((tab) => (tab.adminOnly ? isAdmin() : hasPerm(tab.perm))),
-)
+/*
+ * Tab 三态（2026-10-21：与 PC 端同步，使用方「手机App和微信小程序权限逻辑和PC端同步」）。
+ *
+ * PC 现在的口径是「**全部可见 + 锁定态**」：游客也看得见所有功能，点锁定的才提示注册。
+ * 之前这里还是老的「按权限隐藏」—— 两个端给同一批人看不同的东西，运维对不上账。
+ *
+ *   available：马上能用
+ *     · 游客：物料查询、压力容器体积计算（纯查询 / 纯计算，零业务风险）
+ *     · 注册用户：除了"管理员专属"的全部
+ *     · 管理员：全部
+ *   locked：可见、灰化、点一下弹提示（未登录说"需要注册"，已登录非管理员说"需要管理员"）
+ */
+const PUBLIC_TAB_KEYS = new Set(['stock', 'vessel'])
+const ADMIN_TAB_KEYS = new Set(['equipment'])
+
+function tabState(tab) {
+  if (!tab) return 'locked'
+  if (PUBLIC_TAB_KEYS.has(tab.key)) return 'available'
+  if (ADMIN_TAB_KEYS.has(tab.key)) return isAdmin() ? 'available' : 'locked'
+  return isLoggedIn() ? 'available' : 'locked'
+}
+
+/** 全部 Tab（不过滤）—— 保留旧名字：下面 watch 与 activeTabMeta 都在读它 */
+const visibleTabs = computed(() => tabs)
+
+/** 当前账号马上能用的 Tab（首屏落地、退出后兜底都读它） */
+const availableTabs = computed(() => tabs.filter((tab) => tabState(tab) === 'available'))
 
 // 抽屉里按大类分组渲染。**只保留有可见页的组** —— 小程序端没有「文件导入」，
 // 数据维护那组只剩两项；将来再少一项时也不该留一个空标题在那里。
@@ -261,7 +284,51 @@ function handleTabChange(key) {
 }
 
 // 抽屉里点某一项：先收起抽屉再切面板 —— 抽屉的收起动画与面板入场动画重叠，观感更顺
+/**
+ * 锁定项的提示（与 PC 的三句话一致）：
+ *   未登录 → 「需要注册」+ 去注册
+ *   已登录非管理员 → 「需要管理员」+ 换个账号登录
+ * 用 showModal 而不是 toast：要给一个**出口**，否则人只能退出去自己找登录/注册入口。
+ */
+function promptLocked(tab) {
+  if (!isLoggedIn()) {
+    uni.showModal({
+      title: '需要注册',
+      content: '这个功能需要注册后才能使用',
+      confirmText: '去注册',
+      cancelText: '以后再说',
+      success: (res) => {
+        if (res.confirm) {
+          closeMenu()
+          uni.navigateTo({ url: '/pages/register/register' })
+        }
+      },
+    })
+    return
+  }
+
+  uni.showModal({
+    title: '需要管理员',
+    content: '这个功能需要管理员权限。可以换个管理员账号登录，或联系管理员开通。',
+    confirmText: '换个账号登录',
+    cancelText: '知道了',
+    success: (res) => {
+      if (res.confirm) {
+        closeMenu()
+        goLogin()
+      }
+    },
+  })
+}
+
 function selectTabFromMenu(key) {
+  const tab = tabs.find((item) => item.key === key)
+  // 锁定项：原地弹提示，**不切换面板** —— 切过去也只会是一片空表格
+  if (tab && tabState(tab) === 'locked') {
+    promptLocked(tab)
+    return
+  }
+
   // 走 closeMenu（带收起动画），不是直接置 false —— 见 NavDrawer 里 close() 的说明
   closeMenu()
   handleTabChange(key)
@@ -318,7 +385,8 @@ const activeTab = ref('workOrder')
 // 而 visibleTabs 只在「值发生变化」时才触发回调，首次渲染的可见列表
 // 是在这之前就定下来的 —— 不加 immediate 页面会停在隐藏面板上，看起来一片空白。
 // 同理，这个 watch 必须放在 activeTab 声明之后（immediate 会立刻读到它，放前面撞 TDZ）。
-watch(visibleTabs, (list) => {
+watch(availableTabs, (list) => {
+  // 兜底只在"当前 Tab 不可用"时动 —— 否则每次权限变化都会把人踢回第一个 Tab
   if (list.length && !list.some((tab) => tab.key === activeTab.value)) {
     activeTab.value = list[0].key
   }
@@ -4355,7 +4423,7 @@ onPullDownRefresh(async () => {
                 v-for="tab in group.tabs"
                 :key="tab.key"
                 class="menu-item"
-                :class="{ 'is-active': activeTab === tab.key }"
+                :class="{ 'is-active': activeTab === tab.key, 'is-locked': tabState(tab) === 'locked' }"
                 @click="selectTabFromMenu(tab.key)"
               >
                 <view class="menu-item__icon">
@@ -4366,6 +4434,7 @@ onPullDownRefresh(async () => {
                   <text class="menu-item__hint">{{ tab.hint }}</text>
                 </view>
                 <wd-icon v-if="activeTab === tab.key" name="check" size="16px" />
+                <wd-icon v-else-if="tabState(tab) === 'locked'" name="lock-on" size="14px" class="menu-item__lock" />
               </view>
             </template>
           </scroll-view>
@@ -4715,6 +4784,11 @@ onPullDownRefresh(async () => {
   color: $ui-text-2;
   transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
 
+  /* 锁定态：可见但压暗（与 PC 的 opacity-60 + 灰字同义），点击弹提示而不是切开 */
+  &.is-locked {
+    opacity: 0.55;
+  }
+
   &.is-active {
     background-color: $ui-accent-soft;
     color: $ui-accent-text;
@@ -4740,6 +4814,11 @@ onPullDownRefresh(async () => {
     min-width: 0;
     flex: 1;
     flex-direction: column;
+  }
+
+  &__lock {
+    flex-shrink: 0;
+    color: $ui-text-3;
   }
 
   &__label {
