@@ -83,3 +83,41 @@ table {
 .el-scrollbar__wrap {
   overscroll-behavior: contain;
 }
+/* ---------------------------------------------------------------------------
+ * 滚动条（2026-10-20，使用方：「不要这种滑块」）
+ *
+ * ① 左侧导航**完全不显示**滚动条：它只有几个大项，平时根本不滚，
+ *    真到窗口特别矮时才需要 —— 那种时候鼠标滚轮照样能滚，只是不要那条粗白杠。
+ * ② 其余容器（表格、弹窗里的列表）换成**细的**、颜色与发丝线同族的滚动条，
+ *    不用系统默认那种粗的：它一出现就把整块留白切得很脏。
+ * 颜色取 #EAEAEA（= border-line）与 #D8D8D8，跟这代 minimalist 的灰阶一致。
+ * ------------------------------------------------------------------------- */
+.nav-scroll {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* 老 Edge / IE */
+}
+.nav-scroll::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / Edge */
+}
+
+* {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #eaeaea transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #eaeaea;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #d8d8d8;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

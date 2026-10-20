@@ -271,7 +271,7 @@ function toggleSidebar() {
           -->
           <div
             id="app-sidebar"
-            class="sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-line bg-veil"
+            class="nav-scroll sticky top-0 m-4 flex h-[calc(100vh-4rem)] flex-col overflow-x-hidden overflow-y-auto rounded-card border border-line bg-veil"
             :class="collapsed ? 'p-2' : 'p-4'"
           >
             <!--
