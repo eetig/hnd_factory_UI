@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { ElDialog, ElPagination } from 'element-plus'
 import request from '../api/request'
 import { STATUS_TEXT } from '../constants/statusTones'
+import { useOrderFilter } from '../composables/useOrderFilter'
 
 /**
  * 工单明细弹窗（变更-126e）：点「核算 → 工单报工」的一行，看这一行由哪些工单组成。
@@ -42,6 +43,27 @@ const COLUMNS = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-[96px]', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-[96px]', align: 'right' },
 ]
+
+/*
+ * 日期区间取**工单组共享的那一份**（模块级 ref，见 useOrderFilter 的注释）。
+ *
+ * ⚠️ 这一条是被使用方纠正过的（2026-10-20）：
+ * 我第一版按"不限日期"查，弹窗合计出 218,065（库里乙炔全部 46 张），
+ * 而行上是 22,000 —— 使用方明确"行上的 22,000 是对的"。
+ * 原因：那一行的汇总 `/api/work-order/summary-by-type-material` 带的是
+ * `dateRangeParams()`，默认范围是「本月 1 号 ~ 今天」；我漏了这个参数，
+ * 于是明细把**范围外**的工单也算进来了。
+ * 所以这里必须与汇总用同一个区间 —— 明细与行上数字才能对得上。
+ */
+const { startDate, endDate } = useOrderFilter()
+
+/** 弹窗里写出来的统计范围（不要让"筛选"是隐形的） */
+const rangeText = computed(() => {
+  const from = startDate.value
+  const to = endDate.value
+  if (!from && !to) return '全部'
+  return `${from || '不限'} ~ ${to || '不限'}`
+})
 
 const PAGE_SIZE = 20
 /** 一次拉多少、最多拉几页（防病态数据把浏览器打爆） */
@@ -95,6 +117,9 @@ async function load() {
           materialDesc: props.materialDesc,
           pageNum: page,
           pageSize: FETCH_PAGE_SIZE,
+          // 与汇总同一区间（空则不带 —— 与 useWorkOrderData#dateRangeParams 的写法保持一致）
+          ...(startDate.value ? { startDate: startDate.value } : {}),
+          ...(endDate.value ? { endDate: endDate.value } : {}),
         },
       })
       const list = Array.isArray(data?.dataList) ? data.dataList : []
@@ -193,7 +218,7 @@ watch(
 
     <div class="mt-3 flex items-center justify-between gap-3">
       <span class="text-xs text-slate-500">
-        口径：同工单类型 + 同产成品，不限日期（与汇总同口径）
+        口径：同工单类型 + 同产成品 · 统计范围 {{ rangeText }}（与汇总同一区间）
       </span>
       <el-pagination
         v-model:current-page="pageNum"

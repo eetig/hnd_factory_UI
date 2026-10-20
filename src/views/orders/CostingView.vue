@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import StatsTable from '../../components/StatsTable.vue'
 import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
 import { useStatsData } from '../../composables/useStatsData'
+import { useOrderFilter } from '../../composables/useOrderFilter'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { useInboundData } from '../../composables/useInboundData'
 import { usePickData } from '../../composables/usePickData'
@@ -23,6 +24,21 @@ import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
  * 「非当前视图必须藏起来」这条没变 —— 三个块都带 v-show，不会叠在一起。
  */
 const { reportRows, costingRows, materialCostingRows } = useStatsData()
+
+/*
+ * 这三张表的数字**都带日期区间**（走 useOrderFilter 的共享状态，默认本月 1 号 ~ 今天），
+ * 但这一页没有日期选择器 —— 使用方看不到、也就不知道数字覆盖哪段时间（2026-10-20 踩过：
+ * 行上 22,000 与"全部"口径的 218,065 对不上，还以为是系统算错）。
+ * 所以把范围显式写出来。
+ */
+const { startDate: statsStartDate, endDate: statsEndDate } = useOrderFilter()
+
+const rangeLabel = computed(() => {
+  const from = statsStartDate.value
+  const to = statsEndDate.value
+  if (!from && !to) return '全部'
+  return `${from || '不限'} ~ ${to || '不限'}`
+})
 const { fetchWorkOrderSummary } = useWorkOrderData()
 const { fetchInboundSummary } = useInboundData()
 const { fetchPickSummary } = usePickData()
@@ -138,6 +154,9 @@ onMounted(() => {
         {{ view.label }}
       </button>
     </div>
+
+<!-- 统计范围显式写出来：这一页没有日期选择器，数字覆盖哪段时间不能靠猜 -->
+<p class="mb-3 text-xs text-slate-500">统计范围：{{ rangeLabel }}</p>
 
     <div v-show="activeView === 'report'">
       <StatsTable
