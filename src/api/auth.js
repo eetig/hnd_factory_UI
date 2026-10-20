@@ -4,6 +4,9 @@ const TOKEN_KEY = 'token'
 const ROLE_KEY = 'roleKey'
 const ROLE_NAME_KEY = 'roleName'
 const PERMISSION_KEY = 'permissions'
+// 昵称（realName）与工号（username）：侧栏账号块显示「昵称」，缺昵称时回落工号
+const REAL_NAME_KEY = 'realName'
+const USERNAME_KEY = 'username'
 
 function readPermissions() {
   try {
@@ -27,6 +30,8 @@ export const authState = reactive({
   // 只写 localStorage 的话，登录/退出后 Tab 要等刷新才会变
   roleKey: localStorage.getItem(ROLE_KEY) || '',
   roleName: localStorage.getItem(ROLE_NAME_KEY) || '',
+  realName: localStorage.getItem(REAL_NAME_KEY) || '',
+  username: localStorage.getItem(USERNAME_KEY) || '',
   permissions: readPermissions(),
 })
 
@@ -54,6 +59,11 @@ export function getRoleName() {
   return authState.roleName
 }
 
+/** 账号块显示用的名字：昵称 → 工号 → 角色名，逐级回落，永远有东西显示 */
+export function getDisplayName() {
+  return authState.realName || authState.username || authState.roleName
+}
+
 export function getPermissions() {
   return authState.permissions
 }
@@ -74,6 +84,15 @@ export function saveAuth(data) {
     authState.roleName = data.roleName
     localStorage.setItem(ROLE_NAME_KEY, data.roleName)
   }
+  // 昵称与工号：侧栏账号块显示昵称（realName），注册时昵称选填、后端会用账号名兜底
+  if (data.realName) {
+    authState.realName = data.realName
+    localStorage.setItem(REAL_NAME_KEY, data.realName)
+  }
+  if (data.username) {
+    authState.username = data.username
+    localStorage.setItem(USERNAME_KEY, data.username)
+  }
   if (Array.isArray(data.permissions)) {
     authState.permissions = data.permissions
     localStorage.setItem(PERMISSION_KEY, JSON.stringify(data.permissions))
@@ -84,11 +103,15 @@ export function clearAuth() {
   authState.token = ''
   authState.roleKey = ''
   authState.roleName = ''
+  authState.realName = ''
+  authState.username = ''
   authState.permissions = []
 
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(ROLE_KEY)
   localStorage.removeItem(ROLE_NAME_KEY)
+  localStorage.removeItem(REAL_NAME_KEY)
+  localStorage.removeItem(USERNAME_KEY)
   localStorage.removeItem(PERMISSION_KEY)
 }
 

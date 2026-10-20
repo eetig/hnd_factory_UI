@@ -90,7 +90,10 @@ installDatePickerFlip()
 
 // 刷新页面后恢复角色与权限：token 在 localStorage，角色信息需重新拉取
 async function restoreAuth() {
-  if (!getToken() || localStorage.getItem('roleKey')) return
+  // 变更-129d：昵称（realName）是后加的，老会话里只有 roleKey —— 缺昵称也要补拉一次，
+  // 否则刷页面后侧栏账号块只能显示角色名
+  if (!getToken()) return
+  if (localStorage.getItem('roleKey') && localStorage.getItem('realName')) return
 
   try {
     const res = await request.get('/api/user/info')

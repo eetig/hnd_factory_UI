@@ -3,7 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
-import { clearAuth, getRoleName, isLoggedIn } from '../api/auth'
+import { clearAuth, getDisplayName, getRoleName, isLoggedIn } from '../api/auth'
 import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
@@ -184,6 +184,10 @@ watch(
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
+
+const displayName = computed(() => getDisplayName() || '用户')
+/** 头像上的字：昵称第一个字符（中文取首字、英文取首字母） */
+const avatarInitial = computed(() => (displayName.value || '?').trim().slice(0, 1).toUpperCase())
 
 function goLogin() {
   router.push('/login')
@@ -544,155 +548,64 @@ function toggleSidebar() {
             条数在工单汇总的分页器上本来就报（`:total="total"`），侧栏再来一遍是重复的。
             未登录即可只读浏览；写入类功能按权限隐藏。
           -->
-            <div class="mt-3 border-t border-brand/10 pt-3 text-sm">
-              <!--
-              2026-10-07 使用方圈出这一块说「有点丑」，重做的思路是**对齐导航行的形体**：
-              上面六组都是「36px 图标块 + 文字」的整行块，这里原先却是两行裸文字。
-
-              身份行**不可点**：它答的是「你是谁」（管理员 / 只读浏览），不是动作 ——
-              图标块照给，只是不响应 hover。退出/登录是动作，**整行可点**：
-              hover 与导航行同一条（整行 bg-white/45），图标块再转成 rose / brand 实心，
-              把「这一下会发生什么」讲清楚。
-
-              收起态**不再另做一套**：行结构不变，文字 v-show 掉、图标块 36 → 40px，
-              身份行由 tooltip + role="img" 的 aria-label 报「当前登录：xx」。
-              仍然**只有一个按钮**（展开的整行与收起的图标块是同一颗），
-              DOM 里「退出登录」不会出现两份。
+            <!--
+            账号卡（2026-10-20 重做）。使用方：「这里显示昵称，而且这里的排版和 UI 重新设计下，当前的不好看」
+            
+            旧版是两行并排的图标+文字：上面一行只报角色（管理员 / 只读浏览），下面一行「退出登录」占满整行。
+            问题有三个：① 显示角色而不是人，看不出「我是谁」；② 两行都很平，跟上面六组导航行糊在一起；
+            ③ 退出登录与身份行同权重，低频动作占了和身份一样的地方。
+            
+            新版是一张卡：圆形头像（昵称首字）+ 昵称（主）+ 角色（次）+ 右侧退出图标（hover 才变红）。
+            身份与动作在**同一行**里靠「主/次/图标」三层分开，纵向只占一行的高度。
+            收起态只留头像，靠 tooltip 报「昵称 · 角色」。未登录时是同一张卡，换成「登录」按钮。
             -->
+            <div class="mt-3 border-t border-brand/10 pt-3">
               <template v-if="loggedIn">
-                <el-tooltip
-                  :content="roleName"
-                  placement="right"
-                  :disabled="!collapsed"
-                  :show-after="200"
+                <div
+                  class="flex items-center gap-2.5 rounded-md px-2 py-2"
+                  :class="collapsed ? 'justify-center' : ''"
                 >
-                  <div
-                    class="flex items-center"
-                    :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
+                  <el-tooltip
+                    :content="`${displayName} · ${roleName}`"
+                    placement="right"
+                    :disabled="!collapsed"
+                    :show-after="200"
                   >
                     <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600"
+                      class="flex shrink-0 items-center justify-center rounded-full bg-brand text-sm font-semibold uppercase text-on-brand"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                       :role="collapsed ? 'img' : undefined"
-                      :aria-label="collapsed ? `当前登录：${roleName}` : undefined"
+                      :aria-label="collapsed ? `当前登录：${displayName}（${roleName}）` : undefined"
                     >
-                      <svg
-                        class="h-5 w-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 0 1-8 0 4 4 0 0 1 8 0z"
-                        />
-                      </svg>
+                      {{ avatarInitial }}
                     </span>
-                    <span
-                      v-show="!collapsed"
-                      class="min-w-0 truncate text-sm font-medium text-slate-700"
-                    >
-                      {{ roleName }}
-                    </span>
+                  </el-tooltip>
+                  <div v-show="!collapsed" class="min-w-0 flex-1 leading-tight">
+                    <p class="truncate text-sm font-medium text-slate-900">{{ displayName }}</p>
+                    <p class="truncate text-xs text-slate-500">{{ roleName }}</p>
                   </div>
-                </el-tooltip>
-                <el-tooltip
-                  content="退出登录"
-                  placement="right"
-                  :disabled="!collapsed"
-                  :show-after="200"
-                >
-                  <button
-                    type="button"
-                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
-                    :class="
-                      collapsed
-                        ? 'mx-auto flex items-center justify-center'
-                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-white/45'
-                    "
-                    :aria-label="collapsed ? '退出登录' : undefined"
-                    @click="handleLogout"
-                  >
-                    <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600 transition"
-                      :class="
-                        collapsed
-                          ? 'h-10 w-10 group-hover:bg-white/55'
-                          : 'h-9 w-9 group-hover:bg-rose-600 group-hover:text-white'
-                      "
+                  <el-tooltip content="退出登录" placement="right" :disabled="collapsed" :show-after="200">
+                    <button
+                      type="button"
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.96]"
+                      aria-label="退出登录"
+                      @click="handleLogout"
                     >
-                      <svg
-                        class="h-5 w-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        aria-hidden="true"
-                      >
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                         <path d="M16 17l5-5-5-5" />
                         <path d="M21 12H9" />
                       </svg>
-                    </span>
-                    <span
-                      v-show="!collapsed"
-                      class="text-sm text-slate-700 transition group-hover:text-rose-700"
-                    >
-                      退出登录
-                    </span>
-                  </button>
-                </el-tooltip>
+                    </button>
+                  </el-tooltip>
+                </div>
               </template>
               <template v-else>
-                <el-tooltip
-                  content="只读浏览"
-                  placement="right"
-                  :disabled="!collapsed"
-                  :show-after="200"
-                >
-                  <div
-                    class="flex items-center"
-                    :class="collapsed ? 'justify-center' : 'gap-3 px-2.5 py-2.5'"
-                  >
-                    <span
-                      class="flex shrink-0 items-center justify-center rounded-md bg-white/40 text-slate-600"
-                      :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
-                      :role="collapsed ? 'img' : undefined"
-                      :aria-label="collapsed ? '未登录，只读浏览' : undefined"
-                    >
-                      <svg
-                        class="h-5 w-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M16 7a4 4 0 0 1-8 0 4 4 0 0 1 8 0z"
-                        />
-                      </svg>
-                    </span>
-                    <span v-show="!collapsed" class="min-w-0 truncate text-sm text-slate-600">
-                      只读浏览
-                    </span>
-                  </div>
-                </el-tooltip>
-                <el-tooltip
-                  content="登录"
-                  placement="right"
-                  :disabled="!collapsed"
-                  :show-after="200"
-                >
+                <el-tooltip content="登录" placement="right" :disabled="!collapsed" :show-after="200">
                   <button
                     type="button"
-                    class="group mt-1 rounded-md transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
-                    :class="
-                      collapsed
-                        ? 'mx-auto flex items-center justify-center'
-                        : 'flex w-full items-center gap-3 px-2.5 py-2.5 text-left hover:bg-white/45'
-                    "
+                    class="group flex items-center gap-2.5 rounded-md px-2 py-2 transition hover:bg-white/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
+                    :class="collapsed ? 'mx-auto justify-center' : 'w-full text-left'"
                     :aria-label="collapsed ? '登录' : undefined"
                     @click="goLogin"
                   >
@@ -700,22 +613,13 @@ function toggleSidebar() {
                       class="flex shrink-0 items-center justify-center rounded-full bg-brand text-on-brand transition group-hover:bg-brand-hover"
                       :class="collapsed ? 'h-10 w-10' : 'h-9 w-9'"
                     >
-                      <svg
-                        class="h-5 w-5"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        aria-hidden="true"
-                      >
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                         <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
                         <path d="M10 17l5-5-5-5" />
                         <path d="M15 12H3" />
                       </svg>
                     </span>
-                    <span v-show="!collapsed" class="text-sm font-medium text-slate-900">
-                      登录
-                    </span>
+                    <span v-show="!collapsed" class="text-sm font-medium text-slate-900">登录</span>
                   </button>
                 </el-tooltip>
               </template>
