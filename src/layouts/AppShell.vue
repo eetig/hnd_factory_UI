@@ -750,7 +750,7 @@ function toggleSidebar() {
           里面那些卡片（各页的 `<section>`）是同一张白面：
           **这块料上，抬起来的一律是白 + 一道发丝线**。
           -->
-          <div class="flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4">
+          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4">
             <!-- 页面的挂载点。路由天然「一次只挂一页」：切走的那页会被卸载，
                  不存在「进来过的面板同时显示、叠在一起」这个隐患（改造前要靠
                  v-if 管存在性 + v-show 管可见性两个一起写才防得住）。
@@ -894,31 +894,35 @@ function toggleSidebar() {
  * 所以：**去掉位移**（位移让翻页像幻灯片）、120ms 纯淡入、两侧都用 ease-out
  * （它明说 UI 里禁用 ease-in —— 起步慢会让人觉得卡）。
  */
-.page-enter-active {
-  transition: opacity 120ms cubic-bezier(0.23, 1, 0.32, 1);
+/*
+ * 切页淡入（2026-10-20，变更-126g 的收尾）。
+ *
+ * 原来用 <Transition name="page" mode="out-in"> 做的淡入淡出，因为
+ * 「退场结束信号有时不来 → 新页永远不挂 → 整页空白且无报错」而被摘掉（详见模板里的注释）。
+ * 现在改成**纯 CSS 动画**：路由切换时 <component> 的 key 变了 ⇒ 元素重建 ⇒ 动画自动重放。
+ * 它**不需要任何结束信号**，所以不存在"卡住"这回事 —— 这正是选它而不是 Transition 的原因。
+ *
+ * 只动 opacity（不动位移）：一天点几十次导航，位移会让翻页像幻灯片；120→160ms 纯淡入。
+ * prefers-reduced-motion 下整组关掉（系统要求减少动效时不硬塞动画）。
+ */
+.page-mount > :first-child {
+  animation: page-fade-in 160ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
-.page-leave-active {
-  transition: opacity 90ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.page-enter-from {
-  opacity: 0;
-}
-.page-leave-to {
-  opacity: 0;
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .nav-sub {
     transition: none;
   }
-  .page-enter-active,
-  .page-leave-active {
-    transition: none;
-  }
-  .page-enter-from,
-  .page-leave-to {
-    opacity: 1;
-    transform: none;
+  .page-mount > :first-child {
+    animation: none;
   }
 }
 </style>
