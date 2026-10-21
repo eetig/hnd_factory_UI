@@ -1,0 +1,94 @@
+/*
+ * 看图器的毛玻璃样式（使用方 2026-10-21：「信息和按钮都设为不透明，不然看都看不见」
+ * + 「做成毛玻璃样式」）。
+ *
+ * ⚠️ **这个文件是全仓唯一允许出现 backdrop-filter 的地方。**
+ *
+ * 背景：项目设计语言（x-minimalist）规定"面是不透明的"，visualTokens.spec.js 里有一条
+ * `backdrop-* 全族零用法`的护栏（042 的玻璃链整份退役过）。使用方明确要为看图器开这个
+ * 口子，所以：
+ *   · 样式单独放这一个文件（不塞进 style.css，避免给全站开口子）
+ *   · 护栏里把"文件白名单"写死成本文件，别的文件沾到 backdrop-filter 一律红
+ *
+ * 为什么非要有模糊：遮罩只有 30%，下层页面（白底表格）会直接透到文字后面，
+ * 顶栏「记录日期 / 容器名称」和页头标题叠在一起完全读不了。半透明 + 模糊给文字一个
+ * 稳定的奶白底，同时保住"浮在页面上"的观感。
+ *
+ * 深浅色跟系统走（纯 CSS 媒体查询；不要改成 JS 加类 —— 那样会和遮罩的 @media 失步）。
+ */
+
+.image-preview-dialog--glass {
+  /* 使用方 2026-10-21：信息与按钮要"看得见"—— 文字改不透明，靠玻璃面板托住 */
+  --ipv-text: rgb(30 41 59);
+  --ipv-text-strong: rgb(15 23 42);
+  --ipv-btn-bg: rgb(255 255 255 / 0.92);
+  --ipv-btn-bg-hover: rgb(255 255 255);
+  --ipv-hairline: rgb(15 23 42 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .image-preview-dialog--glass {
+    --ipv-text: rgb(255 255 255 / 0.92);
+    --ipv-text-strong: rgb(255 255 255);
+    /*
+     * 遮罩只有 30%，下层多半是**浅色**页面 —— 此时"白色 14% 的按钮底"等于没有底，
+     * 白字直接压在白页面上。深色档的按钮底因此换成**深色半透明**：
+     * 无论下层深浅，白字都有约 8:1 的对比度。
+     */
+    --ipv-btn-bg: rgb(15 23 42 / 0.55);
+    --ipv-btn-bg-hover: rgb(15 23 42 / 0.72);
+    --ipv-hairline: rgb(255 255 255 / 0.18);
+  }
+}
+/*
+ * 毛玻璃看图器（使用方 2026-10-21：把信息与按钮"设为不透明"，并做成毛玻璃）。
+ *
+ * ⚠️ 这是全仓**唯一**允许用 backdrop-filter 的地方 —— 项目设计语言（x-minimalist）
+ * 规定"面是不透明的"，visualTokens 里有一条"backdrop-* 全族零用法"的护栏。
+ * 使用方明确要为看图器开这个口子，所以那条护栏改成"除本文件外零用法"，
+ * 并在断言里写明了理由。别把这个类复制到别处。
+ *
+ * 半透明 + 背景模糊：下层页面隐约透出（30% 遮罩仍在），但文字有了稳定的奶白/深灰底
+ * —— 之前文字直接浮在页面上，和页头叠在一起根本读不了。
+ */
+.image-preview-dialog--glass {
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  background: rgb(255 255 255 / 0.66);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 28px 72px -24px rgb(15 23 42 / 0.42);
+}
+
+.image-preview-dialog--glass .el-dialog__header {
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid rgb(15 23 42 / 0.08);
+  background: rgb(255 255 255 / 0.5);
+}
+
+.image-preview-dialog--glass .el-dialog__body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.image-preview-dialog--glass .el-dialog__footer {
+  padding: 0;
+  border-top: 1px solid rgb(15 23 42 / 0.08);
+  background: rgb(255 255 255 / 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  .image-preview-dialog--glass {
+    border-color: rgb(255 255 255 / 0.14);
+    background: rgb(17 20 24 / 0.66);
+    box-shadow: 0 28px 72px -24px rgb(0 0 0 / 0.6);
+  }
+
+  .image-preview-dialog--glass .el-dialog__header,
+  .image-preview-dialog--glass .el-dialog__footer {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.06);
+  }
+}

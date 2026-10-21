@@ -152,58 +152,6 @@ table {
  * 挂不上那个节点（实测：深色下文字仍取到 body 的深墨，等于看不见）。
  */
 /*
- * 配色**只用 CSS 媒体查询**，不再用 JS 读 matchMedia 再挂类。
- *
- * 原因（实测踩到）：JS 读一次 + 监听 change，和样式里的 @media 是两套口径；
- * 系统主题中途切换时，遮罩（@media）已经变浅、类名（JS）还停在 is-dark，
- * 于是白字压在浅色遮罩上 —— 等于看不见。媒体查询是唯一真源，永远同步。
- *
- * 默认浅色，深色用媒体查询覆盖：
- */
-.image-preview-dialog--transparent {
-  --ipv-text: rgb(51 65 85 / 0.85);
-  --ipv-text-strong: rgb(15 23 42);
-  --ipv-btn-bg: rgb(255 255 255 / 0.7);
-  --ipv-btn-bg-hover: rgb(255 255 255 / 0.92);
-  --ipv-hairline: rgb(15 23 42 / 0.12);
-}
-
-@media (prefers-color-scheme: dark) {
-  .image-preview-dialog--transparent {
-    --ipv-text: rgb(255 255 255 / 0.8);
-    --ipv-text-strong: rgb(255 255 255 / 0.97);
-    /*
-     * 遮罩只有 30%，下层多半是**浅色**页面 —— 此时"白色 14% 的按钮底"等于没有底，
-     * 白字直接压在白页面上。深色档的按钮底因此换成**深色半透明**：
-     * 无论下层深浅，白字都有约 8:1 的对比度。
-     */
-    --ipv-btn-bg: rgb(15 23 42 / 0.55);
-    --ipv-btn-bg-hover: rgb(15 23 42 / 0.72);
-    --ipv-hairline: rgb(255 255 255 / 0.18);
-  }
-}
-.image-preview-dialog--transparent {
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.image-preview-dialog--transparent .el-dialog__header {
-  margin: 0;
-  padding: 0;
-}
-
-.image-preview-dialog--transparent .el-dialog__body {
-  padding: 0;
-  overflow: visible;
-}
-
-.image-preview-dialog--transparent .el-dialog__footer {
-  padding: 0;
-}
-
-/*
  * 遮罩浓度 30%（2026-10-21 使用方：「图片预览的透明部分改为 30% 透明」）。
  *
  * 之前是 72% / 78% —— 下层页面基本被洗掉了，看图器像一块独立的面板。

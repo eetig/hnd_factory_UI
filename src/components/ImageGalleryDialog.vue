@@ -219,7 +219,7 @@ function askDelete() {
   <el-dialog
     v-model="dialogVisible"
     width="92vw"
-    class="image-preview-dialog image-preview-dialog--transparent"
+    class="image-preview-dialog image-preview-dialog--glass"
 
     modal-class="image-preview-overlay"
     align-center
@@ -369,7 +369,7 @@ function askDelete() {
  * 遮罩本身在 style.css 里（弹窗被 teleport，遮罩不在这棵子树里），那边用
  * prefers-color-scheme 分别给浅/深两种。
  */
-/* 配色变量声明在 src/style.css（teleport 出去的节点挂不上 scoped 声明）*/
+/* 配色变量声明在 src/style.css（弹窗被 teleport 到 body，scoped 声明挂不上那节点）*/
 
 /*
  * 30% 遮罩下文字会跟背景"混"在一起（深色档尤甚：白字压浅页 ≈ 2:1）。

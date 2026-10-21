@@ -2779,8 +2779,20 @@ describe('042 的边缘光学与真折射样张：整组退场（x-minimalist）
           }
         })
     }
+    /*
+     * 2026-10-21 使用方明确要求「图片预览做成毛玻璃」，所以**看图器那一个文件**豁免
+     * backdrop-filter / -webkit-backdrop-filter 这两个名字（只这两个，其余七个照旧全仓禁）。
+     * 豁免写死成文件名前缀，别的文件沾到一律红 —— 这条口子只留给看图器。
+     * 见 src/components/ImageGalleryDialog.vue 与 style.css 里 .image-preview-dialog--glass 的注释。
+     */
+    const GLASS_ALLOWED_FILE = 'src/styles/image-viewer-glass.css:'
+    const GLASS_ALLOWED_WORDS = new Set(['backdrop-filter', '-webkit-backdrop-filter'])
+    const offendersWithoutGlassViewer = offenders.filter(
+      (entry) =>
+        !(entry.startsWith(GLASS_ALLOWED_FILE) && GLASS_ALLOWED_WORDS.has(entry.split(' ').pop())),
+    )
     expect(
-      offenders,
+      offendersWithoutGlassViewer,
       '042 的折射/玻璃链回流了。这九个名字（backdrop-filter / -webkit-backdrop-filter / ' +
         'url(#lg-refract) / feDisplacementMap / feImage / feColorMatrix / feBlend / ' +
         'backdrop-blur / backdrop-saturate）在这条链上是**载荷**：任何一个回来，' +

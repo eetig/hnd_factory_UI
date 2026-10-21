@@ -73,6 +73,7 @@ import 'element-plus/theme-chalk/el-popover.css'
 import 'element-plus/theme-chalk/el-scrollbar.css'
 import './theme.css'
 import './style.css'
+import './styles/image-viewer-glass.css'
 import './table.css'
 import './minimal-field.css'
 
