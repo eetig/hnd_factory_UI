@@ -33,9 +33,22 @@ let startX = 0
 let maxOffset = 0
 let trackWidth = 0
 
-// 百分比按**轨道宽**算（不是滑块行程）——指示带是按轨道百分比定位的，两边口径必须一致，
-// 否则"看着对准了"和"判定对准了"会差几十像素。
-const percent = computed(() => (trackWidth > 0 ? (offset.value / trackWidth) * 100 : 0))
+/*
+ * 百分比必须按**滑块中心**算，不能按位移算。
+ *
+ * 2026-10-21 使用方实测报 bug：「对准了也不通过」。原因是两边各取了一个基准：
+ *   · 指示带画在 轨道宽 × targetPercent（以轨道左边为 0）
+ *   · 而报给服务端的是 位移 / 轨道宽 —— 位移的 0 点是滑块**左边缘**（还带 2px 内缩）
+ * 于是"眼睛把滑块中心对到指示带中心"时，报出去的百分比比目标小
+ * (2 + 20) / 轨道宽 ≈ 5~9%，正好落在 ±6% 容差之外 ⇒ 永远不通过。
+ *
+ * 现在统一到**滑块中心**：中心 = 2px(内缩) + 位移 + 20px(半径)，指示带也以中心对齐。
+ */
+const THUMB_INSET = 2
+const THUMB_SIZE = 40
+const percent = computed(() =>
+  trackWidth > 0 ? ((offset.value + THUMB_INSET + THUMB_SIZE / 2) / trackWidth) * 100 : 0,
+)
 
 async function load() {
   loading.value = true
