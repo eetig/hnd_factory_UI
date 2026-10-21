@@ -5,6 +5,7 @@ import dayjs from 'dayjs'
 import DateField from './DateField.vue'
 import PhotoGrid from './PhotoGrid.vue'
 import { hasPerm } from '../api/auth'
+import { uploadFile } from '../api/upload'
 import { useEquipmentLedger } from '../composables/useEquipmentLedger'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
 import {
@@ -276,6 +277,198 @@ async function fillLocationFromHistory(tankName) {
   lastLocationHint.value = `属地按上次记录自动填：${found}（改了就以你填的为准）`
 }
 
+/*
+ * ===== 图片识别容器名称（2026-10-21）=====
+ *
+ * 复用 myocr 的 `/api/ocr/recognize`（单据结构化接口）—— **不做服务端改造**。
+ * 实测（生产，真罐体照）：它会把罐体上的字塞进 `items[].materialName`：
+ *   {"items":[{"materialName":{"value":"三氯氢硅储罐B"}}]}
+ * 字段名不对，但**字是准的**。于是：把返回里所有字符串抠出来 → 跟"名册"做模糊匹配
+ * → 给候选列表让人点。名册 = 历史录过的容器名 + 设备台账，都是库里真实存在的写法。
+ *
+ * 为什么必须给候选而不是直接填第一名：罐名几百个，OCR 常错一两个字（"三氯氢硅"
+ * vs "三氯氢硅"），直接填错的名字会污染数据，而且现场还得回头改。
+ */
+const ocrPanelOpen = ref(false)
+const ocrBusy = ref(false)
+const ocrRawText = ref('')
+const ocrCandidates = ref([]) // [{ name, score }]
+
+/** 名册：历史录过的容器名 + 设备台账里搜出来的（都去重） */
+const tankNameRegistry = computed(() => {
+  const set = new Set()
+  for (const name of tankLevelSuggestions.value?.tankNames || []) {
+    if (name) set.add(String(name).trim())
+  }
+  for (const option of equipmentOptions.value || []) {
+    if (option?.name) set.add(String(option.name).trim())
+  }
+  return [...set]
+})
+
+/** 归一化：去所有空白、全角空格、统一大写 —— OCR 常在名字中间插空格 */
+function normalizeName(value) {
+  return String(value ?? '')
+    .replace(/[\s\u3000]+/g, '')
+    .toUpperCase()
+}
+
+/** 编辑距离，用于"认错一个字"的相似度 */
+function distance(a, b) {
+  const m = a.length
+  const n = b.length
+  if (!m) return n
+  if (!n) return m
+  let prev = Array.from({ length: n + 1 }, (_, i) => i)
+  for (let i = 1; i <= m; i++) {
+    const cur = [i]
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    }
+    prev = cur
+  }
+  return prev[n]
+}
+
+function similarity(a, b) {
+  const x = normalizeName(a)
+  const y = normalizeName(b)
+  if (!x || !y) return 0
+  if (x === y) return 1
+  const maxLen = Math.max(x.length, y.length)
+  const base = 1 - distance(x, y) / maxLen
+  // 一边包含另一边（"171精蒸再沸器A" vs "精蒸再沸器A"）：给个下限，别被长度差压死
+  if (x.includes(y) || y.includes(x)) return Math.max(base, 0.82)
+  return base
+}
+
+/** 从 OCR 返回体里抠出所有像"名字"的字符串 */
+function collectOcrTexts(data) {
+  const out = []
+  const skip = /^(不存在|无|null|undefined|—|-)?$/
+  const walk = (node) => {
+    if (!node) return
+    if (typeof node === 'string') {
+      const value = node.trim()
+      if (!skip.test(value) && !/^\d+(\.\d+)?$/.test(value) && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        out.push(value)
+      }
+      return
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk)
+      return
+    }
+    if (typeof node === 'object') {
+      Object.entries(node).forEach(([key, value]) => {
+        // confidence / costMillis / engine 这些不是识别文本
+        if (key === 'confidence' || key === 'costMillis' || key === 'engine') return
+        walk(value)
+      })
+    }
+  }
+  walk(data)
+  return [...new Set(out)]
+}
+
+/** 拿一张图去识别，结果落到候选列表 */
+async function recognizeTankName(filePath, fileName) {
+  if (!filePath || ocrBusy.value) return
+  ocrBusy.value = true
+  ocrCandidates.value = []
+  ocrRawText.value = ''
+
+  try {
+    const res = await uploadFile({
+      url: '/api/ocr/recognize',
+      filePath,
+      name: 'file',
+      formData: { fileName: fileName || 'tank.jpg' },
+    })
+
+    const body = res.data || {}
+    // myocr 的业务错误是 HTTP 200 + code≠200（异常处理器未设响应状态）
+    if (body.code !== 200) {
+      throw new Error(body.message || '识别失败')
+    }
+
+    const texts = collectOcrTexts(body.data)
+    ocrRawText.value = texts.join(' / ').slice(0, 80)
+
+    const registry = tankNameRegistry.value
+    const scored = []
+    for (const text of texts) {
+      for (const name of registry) {
+        const score = similarity(text, name)
+        if (score >= 0.45) scored.push({ name, score })
+      }
+      // 原文本身也当候选：名册里没有的新罐（手打名）也能直接用
+      scored.push({ name: text, score: 0.5 })
+    }
+
+    const seen = new Map()
+    for (const item of scored) {
+      const key = normalizeName(item.name)
+      if (!seen.has(key) || seen.get(key).score < item.score) seen.set(key, item)
+    }
+    ocrCandidates.value = [...seen.values()].sort((a, b) => b.score - a.score).slice(0, 5)
+
+    if (!ocrCandidates.value.length) {
+      toast.warning('没认出容器名称，换个角度重拍，或直接手填')
+    }
+  } catch (error) {
+    toast.error(error?.response?.data?.message || error?.message || '识别失败，请稍后重试')
+  } finally {
+    ocrBusy.value = false
+  }
+}
+
+/** 用「已经上传过的」图据识别：先下载成本地临时文件（uploadFile 只收本地路径） */
+async function recognizeTankFromUploaded(image) {
+  if (!image?.url || ocrBusy.value) return
+  ocrBusy.value = true
+  try {
+    const path = await new Promise((resolve, reject) => {
+      uni.downloadFile({
+        url: image.url,
+        success: (res) => (res.statusCode === 200 ? resolve(res.tempFilePath) : reject(new Error(`下载失败 ${res.statusCode}`))),
+        fail: (err) => reject(new Error(err?.errMsg || '下载失败')),
+      })
+    })
+    ocrBusy.value = false
+    await recognizeTankName(path, image.imageId ? `tank-${image.imageId}.jpg` : 'tank.jpg')
+  } catch (error) {
+    ocrBusy.value = false
+    toast.error(error?.message || '识别失败')
+  }
+}
+
+/** 识别面板里直接拍照/选图：拍到的图**同时进图据**（本来就是这张罐体照） */
+function pickPhotoForOcr(source) {
+  const count = source === 'camera' ? 1 : 9
+  uni.chooseImage({
+    count,
+    sizeType: ['compressed'],
+    sourceType: [source],
+    success: (res) => {
+      const paths = res.tempFilePaths || []
+      if (!paths.length) return
+      pendingPhotos.value = [...pendingPhotos.value, ...paths]
+      recognizeTankName(paths[0], 'tank.jpg')
+    },
+  })
+}
+
+/** 用户点了某个候选：填进容器名称，并顺带把属地填上（复用"填了容器名就带属地"） */
+function applyOcrCandidate(name) {
+  draft.value.tankName = name
+  ocrPanelOpen.value = false
+  ocrCandidates.value = []
+  ocrRawText.value = ''
+  toast.success(`已填：${name}`)
+  void fillLocationFromHistory(name)
+}
+
 /** 手输容器名称：停手 400ms 再查一次，避免每敲一个字都打接口 */
 function scheduleLocationLookup() {
   clearTimeout(locationLookupTimer)
@@ -375,6 +568,10 @@ function syncDraft() {
   draft.value = buildTankLevelDraft(props.record)
   clearPendingPhotos()
   clearTimeout(locationLookupTimer)
+  ocrPanelOpen.value = false
+  ocrCandidates.value = []
+  ocrRawText.value = ''
+  ocrBusy.value = false
   locationAutoFilled.value = false
   lastLocationHint.value = ''
   locationLookupSeq += 1 // 让在途的属地查询作废
@@ -662,6 +859,70 @@ async function handleDelete() {
               />
             </view>
 
+            <!-- 图片识别容器名称：复用 myocr 的单据识别接口，抠出文本再跟名册模糊匹配。
+                 使用方 2026-10-21：要能**指定图据里的某一张**（不一定第一张拍到罐名）。 -->
+            <view class="tlf__ocr">
+              <view class="tlf__ocr-head">
+                <text class="tlf__ocr-label">认不出罐名？拍照自动认</text>
+                <text class="tlf__ocr-toggle" @click="ocrPanelOpen = !ocrPanelOpen">
+                  {{ ocrPanelOpen ? '收起' : '识别' }}
+                </text>
+              </view>
+
+              <view v-if="ocrPanelOpen" class="tlf__ocr-body">
+                <block v-if="pendingPhotos.length || (record && record.images && record.images.length)">
+                  <text class="tlf__ocr-hint">点下面任意一张，用它识别：</text>
+                  <scroll-view class="tlf__ocr-thumbs" scroll-x>
+                    <view
+                      v-for="(path, index) in pendingPhotos"
+                      :key="'ocr-p' + index"
+                      class="tlf__ocr-thumb"
+                      @click="recognizeTankName(path, 'tank-' + index + '.jpg')"
+                    >
+                      <image :src="path" class="tlf__ocr-thumb-img" mode="aspectFill" />
+                    </view>
+                    <view
+                      v-for="image in (record && record.images) || []"
+                      :key="'ocr-r' + image.imageId"
+                      class="tlf__ocr-thumb"
+                      @click="recognizeTankFromUploaded(image)"
+                    >
+                      <image
+                        :src="image.thumbnailUrl || image.url"
+                        class="tlf__ocr-thumb-img"
+                        mode="aspectFill"
+                      />
+                    </view>
+                  </scroll-view>
+                </block>
+                <text v-else class="tlf__ocr-hint">还没有图据，先拍一张罐体照：</text>
+
+                <view class="tlf__ocr-actions">
+                  <view class="tlf__photo-btn" @click="pickPhotoForOcr('camera')">
+                    <text class="tlf__photo-text">拍照识别</text>
+                  </view>
+                  <view class="tlf__photo-btn" @click="pickPhotoForOcr('album')">
+                    <text class="tlf__photo-text">从相册</text>
+                  </view>
+                </view>
+
+                <text v-if="ocrBusy" class="tlf__ocr-busy">识别中…（约 1 秒）</text>
+
+                <block v-if="ocrCandidates.length">
+                  <text class="tlf__ocr-hint">认出这些，点一个填入（原文：{{ ocrRawText }}）</text>
+                  <view
+                    v-for="item in ocrCandidates"
+                    :key="item.name"
+                    class="tlf__ocr-candidate"
+                    @click="applyOcrCandidate(item.name)"
+                  >
+                    <text class="tlf__ocr-candidate-name">{{ item.name }}</text>
+                    <text class="tlf__ocr-candidate-score">{{ Math.round(item.score * 100) }}%</text>
+                  </view>
+                </block>
+              </view>
+            </view>
+
             <view
               v-if="activeField === 'equipment' && (equipmentSuggestions.length || equipmentSearching || equipmentMoreHint)"
               class="tlf__suggest"
@@ -785,6 +1046,95 @@ async function handleDelete() {
     margin: 20rpx auto 0;
     border-radius: $ui-radius-pill;
     background-color: $ui-raise-3;
+  }
+
+  /* 图片识别容器名称：默认只占一行，点「识别」才展开 */
+  &__ocr {
+    margin-top: 12rpx;
+  }
+
+  &__ocr-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__ocr-label {
+    color: $ui-text-3;
+    font-size: 22rpx;
+  }
+
+  &__ocr-toggle {
+    padding: 6rpx 18rpx;
+    border: 1px solid $ui-border;
+    border-radius: 999rpx;
+    color: $ui-accent-text;
+    font-size: 22rpx;
+  }
+
+  &__ocr-body {
+    margin-top: 12rpx;
+    padding: 16rpx;
+    border-radius: $ui-radius-md;
+    background-color: $ui-surface-2;
+  }
+
+  &__ocr-hint {
+    display: block;
+    margin-bottom: 10rpx;
+    color: $ui-text-3;
+    font-size: 22rpx;
+    line-height: 1.4;
+  }
+
+  &__ocr-thumbs {
+    display: flex;
+    margin-bottom: 12rpx;
+    white-space: nowrap;
+  }
+
+  &__ocr-thumb {
+    display: inline-block;
+    margin-right: 12rpx;
+    border-radius: 12rpx;
+    overflow: hidden;
+  }
+
+  &__ocr-thumb-img {
+    width: 120rpx;
+    height: 120rpx;
+  }
+
+  &__ocr-actions {
+    display: flex;
+    gap: 16rpx;
+  }
+
+  &__ocr-busy {
+    display: block;
+    margin-top: 12rpx;
+    color: $ui-accent-text;
+    font-size: 22rpx;
+  }
+
+  &__ocr-candidate {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8rpx;
+    padding: 14rpx 18rpx;
+    border-radius: $ui-radius-md;
+    background-color: $ui-surface;
+  }
+
+  &__ocr-candidate-name {
+    color: $ui-text;
+    font-size: 26rpx;
+  }
+
+  &__ocr-candidate-score {
+    color: $ui-text-3;
+    font-size: 22rpx;
   }
 
   /* 属地自动填充的说明：一行小字，贴在属地输入框下面 */
