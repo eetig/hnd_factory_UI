@@ -38,7 +38,19 @@ function rpxToPx(rpx) {
   return (windowWidth * rpx) / 750
 }
 
-const percent = computed(() => (trackWidthPx > 0 ? (offset.value / trackWidthPx) * 100 : 0))
+/*
+ * 百分比按**滑块中心**算（2026-10-21 使用方报「对准了也不通过」）。
+ *
+ * 之前是按位移算的，而位移 0 点是滑块左边缘（还带 4rpx 内缩），指示带却是按轨道宽画、
+ * 以中心对齐 —— 两套基准差 (4 + 40)rpx / 640rpx ≈ 7%，正好超出 ±6% 容差 ⇒ 永远不过。
+ * 现在统一到中心：中心 = 4rpx + 位移 + 40rpx(半径)。
+ */
+const THUMB_INSET_RPX = 4
+const percent = computed(() => {
+  if (trackWidthPx <= 0) return 0
+  const center = offset.value + rpxToPx(THUMB_INSET_RPX) + rpxToPx(THUMB_RPX) / 2
+  return (center / trackWidthPx) * 100
+})
 
 async function load() {
   loading.value = true
