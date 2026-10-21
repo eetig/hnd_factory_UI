@@ -102,7 +102,12 @@ const popupStyle = computed(() => {
    * 不再自己算 —— 算什么高度都会在某种机型上算错，而钉两条边在各平台都对。
    * 中间是 scroll-view + flex，空间变小就滚动，不会溢出。
    */
-  return `${base} bottom: ${kb}px; top: calc(env(safe-area-inset-top, 0px) + 12px); height: auto; max-height: none; padding-bottom: 0;`
+  /*
+   * top 写两遍是有意的：老 Android WebView（< 69）不认 env()，整条声明会被丢弃，
+   * 于是退回到前一条 56px（状态栏常见高度）。认识 env() 的机型走第二条，精确避让刘海。
+   * CSS 的"无效声明整条忽略"在这里正好当成 fallback 用。
+   */
+  return `${base} bottom: ${kb}px; top: 56px; top: calc(env(safe-area-inset-top, 0px) + 12px); height: auto; max-height: none; padding-bottom: 0;`
 })
 
 // ===== 输入即查的候选（2026-10-20 改版：取消「选择」按钮）=====
