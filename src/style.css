@@ -170,11 +170,16 @@ table {
 
 @media (prefers-color-scheme: dark) {
   .image-preview-dialog--transparent {
-    --ipv-text: rgb(255 255 255 / 0.72);
-    --ipv-text-strong: rgb(255 255 255 / 0.95);
-    --ipv-btn-bg: rgb(255 255 255 / 0.14);
-    --ipv-btn-bg-hover: rgb(255 255 255 / 0.22);
-    --ipv-hairline: rgb(255 255 255 / 0.14);
+    --ipv-text: rgb(255 255 255 / 0.8);
+    --ipv-text-strong: rgb(255 255 255 / 0.97);
+    /*
+     * 遮罩只有 30%，下层多半是**浅色**页面 —— 此时"白色 14% 的按钮底"等于没有底，
+     * 白字直接压在白页面上。深色档的按钮底因此换成**深色半透明**：
+     * 无论下层深浅，白字都有约 8:1 的对比度。
+     */
+    --ipv-btn-bg: rgb(15 23 42 / 0.55);
+    --ipv-btn-bg-hover: rgb(15 23 42 / 0.72);
+    --ipv-hairline: rgb(255 255 255 / 0.18);
   }
 }
 .image-preview-dialog--transparent {

@@ -371,6 +371,32 @@ function askDelete() {
  */
 /* 配色变量声明在 src/style.css（teleport 出去的节点挂不上 scoped 声明）*/
 
+/*
+ * 30% 遮罩下文字会跟背景"混"在一起（深色档尤甚：白字压浅页 ≈ 2:1）。
+ * 加一层很轻的投影：不改变透明度，但把字从背景里"拔"出来 —— 这是阴影最正当的用法。
+ */
+.ipv-meta,
+.ipv-count,
+.ipv-confirm-tip,
+.ipv-chip,
+.ipv-plain,
+.ipv-danger,
+.ipv-primary {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.45);
+}
+
+/* 浅色下深墨字配"亮投影"：下层页面花的时候也能把字托起来。
+   注意用媒体查询而不是 .is-light 类 —— 主题已经完全交给 CSS，不再有那个类。 */
+@media (prefers-color-scheme: light) {
+  .ipv-meta,
+  .ipv-count,
+  .ipv-confirm-tip,
+  .ipv-chip,
+  .ipv-plain {
+    text-shadow: 0 1px 1px rgb(255 255 255 / 0.85);
+  }
+}
+
 .ipv-meta {
   color: var(--ipv-text);
 }
