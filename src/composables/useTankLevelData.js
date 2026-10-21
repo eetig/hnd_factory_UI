@@ -188,11 +188,19 @@ const tankLevelLocationOptions = computed(() => {
   return options
 })
 
+/*
+ * 请求序号（2026-10-21 实时搜索引入）：实时搜索最容易出的 bug 是"打字快时后发的先回、
+ * 前发的后回"，于是列表停在上一轮的关键字上。每次请求自增，await 回来先比一次，
+ * 不是最新那次就把结果丢掉 —— 连 loading 也不许旧请求去清。
+ */
+let fetchSeq = 0
+
 async function fetchTankLevelRecords(options) {
   // 模板里 @change / @click 直接绑了这个函数，会把事件对象当第一个参数传进来 ——
   // 所以只有显式传 { keepPage: true } 才保持当前页，传进来别的东西一律当没传
   const keepPage = options?.keepPage === true
 
+  const seq = ++fetchSeq
   tankLevelLoading.value = true
   tankLevelError.value = ''
 
@@ -208,6 +216,9 @@ async function fetchTankLevelRecords(options) {
         pageSize: tankLevelPageSize.value,
       }),
     })
+
+    // 期间又发了新请求（用户还在打字）：这次的结果作废，别覆盖新列表
+    if (seq !== fetchSeq) return
 
     if (res.data?.success === false) {
       throw new Error(res.data.msg || '月底储罐液位接口返回异常，请稍后重试。')
@@ -230,6 +241,7 @@ async function fetchTankLevelRecords(options) {
       tankLevelPageNum.value = Number(res.data?.pageNum) || tankLevelPageNum.value
     }
   } catch (error) {
+    if (seq !== fetchSeq) return
     tankLevelTableData.value = []
     tankLevelTotal.value = 0
     // 失败不置 loaded：离开再回来会重试一次，比停在一张空表上好
@@ -242,7 +254,7 @@ async function fetchTankLevelRecords(options) {
         error?.response?.data?.msg || error?.message || '月底储罐液位记录加载失败，请稍后重试。'
     }
   } finally {
-    tankLevelLoading.value = false
+    if (seq === fetchSeq) tankLevelLoading.value = false
   }
 }
 
@@ -298,6 +310,30 @@ function ensureTankLevelLoaded() {
 function getTankLevelPageData(page = tankLevelPageNum.value) {
   tankLevelPageNum.value = page
   return fetchTankLevelRecords({ keepPage: true })
+}
+
+/*
+ * 实时搜索（2026-10-21 使用方要求「搜索功能改为实时搜索」）。
+ *
+ * 原来要打字 + 回车/点查询才发请求（老注释写着怕把接口打爆）。改成停手就查：
+ *   · 防抖 350ms —— 打字过程不请求，停手发一次（移动端常用 300~400ms；
+ *     本仓设备台账候选也是 300ms，手感一致）
+ *   · 每次回到第 1 页：换了条件还停在第 5 页多半是空表，像数据丢了
+ *   · 旧响应由 fetchTankLevelRecords 内部的序号护栏丢弃
+ */
+let realtimeTimer = null
+
+function scheduleTankLevelQuery(delay = 350) {
+  clearTimeout(realtimeTimer)
+  realtimeTimer = setTimeout(() => {
+    tankLevelPageNum.value = 1
+    fetchTankLevelRecords()
+  }, delay)
+}
+
+/** 停掉待发的实时查询（离开该页签时用，避免回来又补发一次请求） */
+function cancelTankLevelQuery() {
+  clearTimeout(realtimeTimer)
 }
 
 /** 筛选条上的条件变了：回到第 1 页再查 */
@@ -423,5 +459,7 @@ export function useTankLevelData() {
     saveTankLevelRecord,
     deleteTankLevelRecord,
     fetchLastLocationByTank,
+    scheduleTankLevelQuery,
+    cancelTankLevelQuery,
   }
 }

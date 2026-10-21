@@ -505,6 +505,7 @@ const {
   reloadTankLevelRecords,
   ensureTankLevelLoaded,
   resetTankLevelFilters,
+  scheduleTankLevelQuery,
 } = useTankLevelData()
 
 // 设备数据维护：这里只取「重拉第一页」一个函数 —— 下拉刷新时用它。
@@ -3793,7 +3794,8 @@ onPullDownRefresh(async () => {
           <!-- 筛选行：日期区间 + 属地 + 所属 + 关键字。
                条件全部走**接口查询**（不像物料查询那样前端本地过滤）：记录是按月累积的，
                全量拉到手机上再筛不划算，电脑端也是这么查的。
-               关键字因此不做逐字实时过滤（会把接口打爆），回车 / 键盘搜索键才发请求。 -->
+               关键字**实时搜索**（2026-10-21 使用方要求）：停手 350ms 自动查，不用回车、不用按钮；
+               回车/键盘搜索键仍会立即查一次（"我现在就要结果"）。 -->
           <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-2.5">
             <DateField
               v-model="tankLevelStartDate"
@@ -3833,6 +3835,7 @@ onPullDownRefresh(async () => {
                 placeholder="物料 / 容器名称 / 容器编号"
                 placeholder-class="ui-placeholder"
                 confirm-type="search"
+                @input="scheduleTankLevelQuery()"
                 @confirm="reloadTankLevelRecords"
               />
             </view>
