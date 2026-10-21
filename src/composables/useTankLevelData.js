@@ -380,6 +380,24 @@ async function deleteTankLevelRecord(id) {
 }
 
 export function useTankLevelData() {
+  /**
+   * 某个容器**最近一次**记录的属地（2026-10-21：填了容器名称就自动带出属地）。
+   *
+   * 取不到就返回空串 —— 这是"辅助输入"，查不到不该打断填表（同候选列表、
+   * 属地下拉的处理口径：失败只清空，不报错）。
+   */
+  async function fetchLastLocationByTank(tankName) {
+    const name = String(tankName ?? '').trim()
+    if (!name) return ''
+
+    try {
+      const res = await request.get('/api/tank-level/last-location', { params: { tankName: name } })
+      return String(res.data?.data?.location ?? '').trim()
+    } catch {
+      return ''
+    }
+  }
+
   return {
     tankLevelTableData,
     tankLevelPageNum,
@@ -404,5 +422,6 @@ export function useTankLevelData() {
     resetTankLevelFilters,
     saveTankLevelRecord,
     deleteTankLevelRecord,
+    fetchLastLocationByTank,
   }
 }

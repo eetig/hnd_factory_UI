@@ -52,6 +52,7 @@ const {
   fetchTankLevelRecords,
   fetchTankLevelSuggestions,
   tankLevelSuggestions,
+  fetchLastLocationByTank,
 } = useTankLevelData()
 const { uploadImagesForRecord } = useTankLevelImages()
 const {
@@ -230,18 +231,74 @@ function hideSuggestionsSoon() {
 function pickLocation(location) {
   draft.value.location = location
   activeField.value = ''
+  // 用户自己选了属地：从此不再被他那边自动覆盖
+  locationAutoFilled.value = false
+  lastLocationHint.value = ''
+}
+
+/*
+ * 「填了容器名称就自动带出属地」（2026-10-21 使用方要求）。
+ *
+ * 数据来源：该容器**最近一条**液位记录的属地 —— 不用设备台账，因为台账的
+ * 「车间/装置」（三甲车间、罐区）与液位记录的属地（1#4L、4#3L）不是同一个口径。
+ *
+ * 两条规矩（都是防"越权改用户输入"）：
+ *   ① **只在属地为空、或属地是系统刚自动填进去的那一次**才覆盖；
+ *      用户手打过属地（哪怕只是删了一个字）就再也不覆盖 —— 手填优先。
+ *   ② 取不到就什么也不做，不弹错。这是辅助输入，不该打断填表。
+ */
+const locationAutoFilled = ref(false)
+const lastLocationHint = ref('')
+let locationLookupTimer = null
+let locationLookupSeq = 0
+
+async function fillLocationFromHistory(tankName) {
+  const name = String(tankName ?? '').trim()
+  if (!name) return
+
+  const seq = ++locationLookupSeq
+  const found = await fetchLastLocationByTank(name)
+  // 期间又改了名字 / 关掉了弹层：这次结果作废
+  if (seq !== locationLookupSeq || !props.modelValue) return
+  if (!found) return
+  if (String(draft.value.tankName ?? '').trim() !== name) return
+  if (found === draft.value.location) {
+    locationAutoFilled.value = true
+    lastLocationHint.value = `属地沿用上次记录：${found}`
+    return
+  }
+
+  const current = String(draft.value.location ?? '').trim()
+  if (current && !locationAutoFilled.value) return // 手填过，不覆盖
+
+  draft.value.location = found
+  locationAutoFilled.value = true
+  lastLocationHint.value = `属地按上次记录自动填：${found}（改了就以你填的为准）`
+}
+
+/** 手输容器名称：停手 400ms 再查一次，避免每敲一个字都打接口 */
+function scheduleLocationLookup() {
+  clearTimeout(locationLookupTimer)
+  locationLookupTimer = setTimeout(() => {
+    const name = String(draft.value.tankName ?? '').trim()
+    if (name.length >= 2) fillLocationFromHistory(name)
+  }, 400)
 }
 
 function pickEquipment(option) {
   draft.value.tankName = option.name
   activeField.value = ''
   cancelEquipmentSearch()
+  // 点选候选是明确动作，立刻查，不等防抖
+  clearTimeout(locationLookupTimer)
+  void fillLocationFromHistory(option.name)
 }
 
 /** 容器名称边打边查（useEquipmentLedger 自带 300ms 防抖 + 过期响应丢弃） */
 function onTankNameInput() {
   if (activeField.value !== 'equipment') activeField.value = 'equipment'
   fetchEquipmentSuggestions(String(draft.value.tankName ?? ''))
+  scheduleLocationLookup()
 }
 
 // ===== 新增行里先选好的照片 =====
@@ -317,6 +374,10 @@ function clearPendingPhotos() {
 function syncDraft() {
   draft.value = buildTankLevelDraft(props.record)
   clearPendingPhotos()
+  clearTimeout(locationLookupTimer)
+  locationAutoFilled.value = false
+  lastLocationHint.value = ''
+  locationLookupSeq += 1 // 让在途的属地查询作废
   clearTimeout(blurTimer)
   activeField.value = ''
   cancelEquipmentSearch()
@@ -562,8 +623,12 @@ async function handleDelete() {
                 placeholder-class="ui-placeholder"
                 @focus="showSuggestions('location')"
                 @blur="hideSuggestionsSoon"
+                @input="locationAutoFilled = false; lastLocationHint = ''"
               />
             </view>
+
+            <!-- 属地自动填充的说明：只在真的自动填过时出现，用户一改就消失 -->
+            <text v-if="lastLocationHint" class="tlf__auto-hint">{{ lastLocationHint }}</text>
 
             <view v-if="activeField === 'location' && locationSuggestions.length" class="tlf__suggest">
               <view
@@ -720,6 +785,15 @@ async function handleDelete() {
     margin: 20rpx auto 0;
     border-radius: $ui-radius-pill;
     background-color: $ui-raise-3;
+  }
+
+  /* 属地自动填充的说明：一行小字，贴在属地输入框下面 */
+  &__auto-hint {
+    display: block;
+    margin: 8rpx 0 0 2rpx;
+    color: $ui-accent-text;
+    font-size: 22rpx;
+    line-height: 1.4;
   }
 
   /* 保存后停留的反馈条：贴在标题下面、滚动区上面，不跟着内容滚走 */
