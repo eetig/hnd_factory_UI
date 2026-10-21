@@ -3,26 +3,25 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import request from '../api/request'
 
 /**
- * 滑动拼图验证码（2026-10-21）。
+ * 滑动验证（2026-10-21，第二版）。
  *
- * 视觉与交互照网上那篇 vue3 滑动拼图：背景图 + 六边形缺口 + 跟着滑块走的拼图块 + 进度条。
- * **但比对在后端**：那篇文章是前端自己比 offsetX（±2px 算过），直接调接口就能绕过 ——
- * 这里拖动结束后把 offsetX 发给 `/api/captcha/verify`，由服务端判，通过后发一次性 ticket。
+ * **第一版是拼图**（背景图 + 六边形缺口），使用方看了说不好看，点名要 TMUI 的
+ * xSlideVerify 那种形态 —— 那个组件其实没有图：一条浅灰轨道 + 白色圆形滑块 +
+ * 居中灰字，拖到目标位置变成功色。这一版照那个观感重做，把图整个拿掉。
  *
- * 设计取舍：
- *   · 图与缺口都是服务端 Java2D 画的（不带二进制资源）—— 正确位置只存在服务端，前端拿不到
- *   · 拼接按"画布宽度等比缩放"：手机窄屏也不变形，offset 按比例换算回 320 宽的原坐标
- *   · 鼠标与触摸统一走 pointer 事件（桌面 + 手机浏览器一套代码）
+ * 判定仍在服务端（这一点没让步）：
+ *   · 服务端下发**随机目标百分比**（40%~85%），前端只知道"该停在哪"，不知道答案对不对
+ *   · 停在 ±6% 内算过；一次性 ticket，错 3 次作废，2 分钟过期
+ *
+ * ⚠️ 指示带是画出来的，脚本读得到 ⇒ 它挡的是"随手写循环"的脚本，挡不住针对性脚本。
+ * 真要抗刷得靠限流（待办 D6 记着）。
  */
 defineProps({
   modelValue: { type: String, default: '' },
 })
 const emit = defineEmits(['update:modelValue'])
 
-const CANVAS_WIDTH = 320
-const TOLERANCE_LABEL = '拖动滑块完成拼图'
-
-const captcha = ref(null) // { id, background, piece, width, height, pieceSize, pieceTop }
+const challenge = ref(null) // { id, targetPercent, tolerance }
 const loading = ref(false)
 const dragging = ref(false)
 const offset = ref(0)
@@ -31,28 +30,25 @@ const message = ref('')
 
 const trackRef = ref(null)
 let startX = 0
-let scale = 1
+let maxOffset = 0
+let trackWidth = 0
 
-const maxOffset = computed(() => {
-  if (!captcha.value) return 0
-  const canvasW = trackRef.value ? trackRef.value.clientWidth : CANVAS_WIDTH
-  return Math.max(0, canvasW - captcha.value.pieceSize * (canvasW / CANVAS_WIDTH))
-})
-const thumbLeft = ref(0)
+// 百分比按**轨道宽**算（不是滑块行程）——指示带是按轨道百分比定位的，两边口径必须一致，
+// 否则"看着对准了"和"判定对准了"会差几十像素。
+const percent = computed(() => (trackWidth > 0 ? (offset.value / trackWidth) * 100 : 0))
 
 async function load() {
   loading.value = true
   message.value = ''
   status.value = 'idle'
   offset.value = 0
-  thumbLeft.value = 0
   emit('update:modelValue', '')
   try {
     const res = await request.get('/api/captcha/new')
     const body = res.data || {}
-    captcha.value = body.data || body
+    challenge.value = body.data || body
   } catch {
-    message.value = '验证码加载失败，点这里重试'
+    message.value = '验证加载失败，点这里重试'
   } finally {
     loading.value = false
   }
@@ -60,10 +56,20 @@ async function load() {
 
 load()
 
+function refreshMaxOffset() {
+  const el = trackRef.value
+  if (!el) return
+  trackWidth = el.clientWidth
+  // 滑块行程 = 轨道宽 - 滑块宽（滑块 40px）
+  maxOffset = Math.max(0, trackWidth - 40)
+}
+
 function onPointerDown(event) {
   if (status.value === 'ok' || loading.value) return
+  refreshMaxOffset()
+  const clientX = event.touches ? event.touches[0].clientX : event.clientX
   dragging.value = true
-  startX = (event.touches ? event.touches[0].clientX : event.clientX) - offset.value
+  startX = clientX - offset.value
   status.value = 'idle'
   message.value = ''
   window.addEventListener('pointermove', onPointerMove)
@@ -75,8 +81,7 @@ function onPointerDown(event) {
 function onPointerMove(event) {
   if (!dragging.value) return
   const clientX = event.touches ? event.touches[0].clientX : event.clientX
-  const raw = clientX - startX
-  offset.value = Math.min(Math.max(0, raw), maxOffset.value)
+  offset.value = Math.min(Math.max(0, clientX - startX), maxOffset)
 }
 
 async function onPointerUp() {
@@ -87,37 +92,21 @@ async function onPointerUp() {
   window.removeEventListener('touchmove', onPointerMove)
   window.removeEventListener('touchend', onPointerUp)
 
-  // 把屏幕上的位移换算回 320 宽画布的原坐标（前端缩放不能影响判定）
-  const canvasW = trackRef.value ? trackRef.value.clientWidth : CANVAS_WIDTH
-  scale = canvasW > 0 ? CANVAS_WIDTH / canvasW : 1
-  const offsetX = Math.round(offset.value * scale)
-
+  const pct = Math.round(percent.value)
   status.value = 'verifying'
   try {
-    const res = await request.post('/api/captcha/verify', {
-      id: captcha.value?.id,
-      offsetX,
-    })
+    const res = await request.post('/api/captcha/verify', { id: challenge.value?.id, percent: pct })
     const body = res.data || {}
     const ticket = (body.data || {}).ticket
-    if (!ticket) {
-      throw new Error(body.msg || '验证失败')
-    }
+    if (!ticket) throw new Error(body.msg || '验证失败')
     status.value = 'ok'
     message.value = '验证通过'
     emit('update:modelValue', ticket)
   } catch (error) {
     status.value = 'error'
-    message.value =
-      error?.response?.data?.msg || error?.message || '位置不对，再试一次'
-    // 回位重来（真机上"差一点"是常事，别让人刷新页面）
+    message.value = error?.response?.data?.msg || error?.message || '没对准，再试一次'
     offset.value = 0
-    setTimeout(() => {
-      if (status.value === 'error') status.value = 'idle'
-    }, 600)
     load()
-  } finally {
-    status.value = status.value === 'ok' ? 'ok' : status.value
   }
 }
 
@@ -130,175 +119,180 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="slider-captcha">
-    <div class="slider-captcha__stage" :style="{ aspectRatio: `${captcha?.width || 320} / ${captcha?.height || 160}`, maxHeight: '220px' }">
-      <img v-if="captcha" :src="captcha.background" alt="滑动验证码背景" class="slider-captcha__bg" />
-      <img
-        v-if="captcha"
-        :src="captcha.piece"
-        alt=""
+  <div class="slide-verify" :class="`is-${status}`">
+    <div ref="trackRef" class="slide-verify__track">
+      <!-- 目标指示带：告诉人"停在这一段里"，位置每次由服务端随机给 -->
+      <div
+        v-if="challenge && !loading"
+        class="slide-verify__target"
+        :style="{ left: `${challenge.targetPercent}%` }"
         aria-hidden="true"
-        class="slider-captcha__piece"
-        :style="{
-          left: `${(offset * (100 / (maxOffset + 1))) * 0}px`,
-          top: `${captcha.pieceTop}px`,
-          transform: `translateX(${offset}px)`,
-        }"
-      />
-      <button
-        v-if="loading || status === 'error'"
-        type="button"
-        class="slider-captcha__reload"
-        @click="load"
-      >
-        {{ loading ? '加载中…' : '看不清？换一张' }}
-      </button>
-    </div>
+      ></div>
 
-    <div ref="trackRef" class="slider-captcha__track" :class="{ 'is-ok': status === 'ok' }">
-      <div class="slider-captcha__progress" :style="{ width: `${offset + 20}px` }"></div>
-      <span class="slider-captcha__tip">
-        {{ status === 'ok' ? '验证通过' : status === 'verifying' ? '校验中…' : TOLERANCE_LABEL }}
+      <div class="slide-verify__progress" :style="{ width: `${offset + 20}px` }"></div>
+
+      <span class="slide-verify__tip">
+        {{
+          status === 'ok'
+            ? '验证通过'
+            : status === 'verifying'
+              ? '校验中…'
+              : loading
+                ? '加载中…'
+                : '按住滑块，拖到亮块处'
+        }}
       </span>
+
       <button
         type="button"
-        class="slider-captcha__thumb"
-        :class="{ 'is-dragging': dragging, 'is-ok': status === 'ok' }"
+        class="slide-verify__thumb"
         :style="{ transform: `translateX(${offset}px)` }"
-        :aria-label="status === 'ok' ? '验证已通过' : '按住并拖动完成验证'"
-        :disabled="status === 'ok'"
+        :aria-label="status === 'ok' ? '验证已通过' : '按住并拖动滑块'"
+        :disabled="status === 'ok' || loading"
         @pointerdown.prevent="onPointerDown"
         @touchstart.prevent="onPointerDown"
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true">
           <path v-if="status === 'ok'" d="M20 6L9 17l-5-5" />
-          <path v-else d="M9 6l6 6-6 6" />
+          <path v-else d="M9 5l7 7-7 7" />
         </svg>
       </button>
     </div>
 
-    <p v-if="message" class="slider-captcha__msg" :class="{ 'is-error': status === 'error' }">
-      {{ message }}
-    </p>
+    <p v-if="message" class="slide-verify__msg">{{ message }}</p>
   </div>
 </template>
 
 <style scoped>
-.slider-captcha {
+.slide-verify {
   width: 100%;
 }
 
-.slider-captcha__stage {
+/* 轨道照 TMUI xSlideVerify 的观感：浅灰、整条药丸、无边框 */
+.slide-verify__track {
   position: relative;
-  width: 100%;
+  height: 44px;
   overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid var(--line, #eaeaea);
-  background: #f4f4f2;
+  border-radius: 999px;
+  background: #eef0f3;
   user-select: none;
+  transition: background-color 160ms ease;
 }
 
-.slider-captcha__bg {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
+.slide-verify.is-ok .slide-verify__track {
+  background: #e8f5ec;
 }
 
-.slider-captcha__piece {
+.slide-verify.is-error .slide-verify__track {
+  background: #fdeced;
+  animation: slide-shake 260ms ease;
+}
+
+/* 发丝级虚线指示带（不走 Tailwind 语义色，避免碰到色板护栏） */
+.slide-verify__target {
   position: absolute;
-  width: 15%;
-  pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.35));
+  top: 7px;
+  bottom: 7px;
+  width: 40px;
+  margin-left: -20px;
+  border-radius: 999px;
+  border: 1px dashed #c3c9d2;
+  background: rgb(255 255 255 / 0.9);
+  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 0.6);
 }
 
-.slider-captcha__reload {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  border: 0;
-  background: rgb(0 0 0 / 0.35);
-  color: #fff;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.slider-captcha__track {
-  position: relative;
-  height: 40px;
-  margin-top: 8px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--region, #f1f1ef);
-  border: 1px solid var(--line, #eaeaea);
-}
-
-.slider-captcha__track.is-ok {
+.slide-verify.is-ok .slide-verify__target {
   border-color: #a7d7b5;
-  background: #f0f9f2;
 }
 
-.slider-captcha__progress {
+.slide-verify__progress {
   position: absolute;
-  inset: 0 auto 0 0;
-  background: rgb(17 17 17 / 0.08);
-  transition: width 60ms linear;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: rgb(17 17 17 / 0.05);
 }
 
-.slider-captcha__tip {
+.slide-verify__tip {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #6b7280;
+  color: #7b8494;
   font-size: 13px;
   letter-spacing: 0.02em;
   pointer-events: none;
 }
 
-.slider-captcha__thumb {
+.slide-verify.is-ok .slide-verify__tip {
+  color: #15803d;
+}
+
+.slide-verify.is-error .slide-verify__tip {
+  color: #b91c1c;
+}
+
+/* 滑块：白色圆钮 + 细微投影（TMUI 的 btnColor=white + round=25 就是这个意思） */
+.slide-verify__thumb {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 2px;
+  left: 2px;
   display: flex;
   width: 40px;
   height: 40px;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--line, #e5e5e5);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 999px;
   background: #fff;
   color: #111;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.14);
   cursor: grab;
   touch-action: none;
-  transition: background-color 120ms ease;
+  transition: background-color 140ms ease;
 }
 
-.slider-captcha__thumb.is-dragging {
+.slide-verify__thumb:active {
   cursor: grabbing;
-  background: #fafafa;
 }
 
-.slider-captcha__thumb.is-ok {
-  border-color: #a7d7b5;
-  background: #ecf7ef;
+.slide-verify.is-ok .slide-verify__thumb {
   color: #15803d;
   cursor: default;
 }
 
-.slider-captcha__thumb svg {
-  width: 16px;
-  height: 16px;
+.slide-verify__thumb svg {
+  width: 18px;
+  height: 18px;
 }
 
-.slider-captcha__msg {
-  margin-top: 6px;
-  color: #6b7280;
+.slide-verify__msg {
+  margin-top: 8px;
+  color: #7b8494;
   font-size: 12px;
 }
 
-.slider-captcha__msg.is-error {
+.slide-verify.is-error .slide-verify__msg {
   color: #b91c1c;
+}
+
+@keyframes slide-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-verify.is-error .slide-verify__track {
+    animation: none;
+  }
 }
 </style>
