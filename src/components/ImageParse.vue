@@ -267,7 +267,10 @@ async function recognizeOne(image) {
   // uni.request 在任何端都发不了 multipart（H5 端也一样），改走 uni.uploadFile。
   // 这个接口本来就是单文件，正好对上 uploadFile 一次一个文件的限制。
   const res = await uploadFile({
-    url: '/api/ocr/recognize',
+    // 走本服务的转发端点（不是 myocr 的 /api/ocr/recognize）：
+    // 公网 443 前面那道 relay 把 /api/ocr 劫去了一条死上游，实测 502。
+    // 见 hnd_factory 的 OcrProxyController。
+    url: '/api/ocr-proxy/recognize',
     filePath: image.filePath,
     name: 'file',
     formData: { fileName: image.name },
@@ -275,18 +278,28 @@ async function recognizeOne(image) {
 
   const body = res.data || {}
 
-  // myocr 的业务错误是 HTTP 200 + code≠200（异常处理器未设响应状态），
-  // 不判 code 会把失败当成成功
+  // 业务错误是 HTTP 200 + code≠200（本服务与 myocr 都是这个约定），
+  // 不判 code 会把失败当成成功。字段名两套都要认：本服务用 msg，myocr 用 message
   if (body.code !== 200) {
-    throw new Error(body.message || '识别失败')
+    throw new Error(body.msg || body.message || '识别失败')
   }
   return body.data || {}
 }
 
 function toErrorText(error) {
   if (error?.response) {
-    const body = error.response.data || {}
-    return body.message || body.msg || `识别服务返回 ${error.response.status}`
+    const body = error.response.data
+    // 只有 JSON 才用它的文案；网关的 502/503 会返回一坨 HTML，弹到手机上是一屏代码
+    if (body && typeof body === 'object') {
+      const text = body.msg || body.message
+      if (text) return String(text).slice(0, 80)
+    }
+    const status = error.response.status
+    if (status === 502 || status === 503 || status === 504) {
+      return '识别服务暂时不可用，请稍后重试'
+    }
+    if (status === 413) return '图片太大，换一张再试'
+    return `识别服务返回 ${status}`
   }
   // 改造前判的是 axios 的 error.code === 'ERR_NETWORK'；
   // 新的请求层没有这个码，网络层失败统一标 isNetworkError（见 api/http-common.js）

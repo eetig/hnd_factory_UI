@@ -379,17 +379,26 @@ async function recognizeTankName(filePath, fileName) {
   ocrRawText.value = ''
 
   try {
+    /*
+     * 走**本服务转发**，不是 myocr 的 /api/ocr/recognize：
+     * 公网 443 前面还有一道 relay，它的 /api/ocr 上游是死的（实测 502）；
+     * 而 /api/ocr-proxy/** 是新前缀，relay 按 /api 通配转发，由后端用容器名去访问 myocr。
+     * 见 hnd_factory 的 OcrProxyService。
+     */
     const res = await uploadFile({
-      url: '/api/ocr/recognize',
+      url: '/api/ocr-proxy/recognize',
       filePath,
       name: 'file',
       formData: { fileName: fileName || 'tank.jpg' },
     })
 
     const body = res.data || {}
-    // myocr 的业务错误是 HTTP 200 + code≠200（异常处理器未设响应状态）
-    if (body.code !== 200) {
-      throw new Error(body.message || '识别失败')
+    // 两种情况都要认：本服务的 {code,msg,data} 与 myocr 的 {code,message,data}
+    if (body.code !== undefined && body.code !== 200) {
+      throw new Error(body.msg || body.message || '识别失败')
+    }
+    if (body.success === false) {
+      throw new Error(body.msg || '识别失败')
     }
 
     const texts = collectOcrTexts(body.data)
@@ -417,10 +426,45 @@ async function recognizeTankName(filePath, fileName) {
       toast.warning('没认出容器名称，换个角度重拍，或直接手填')
     }
   } catch (error) {
-    toast.error(error?.response?.data?.message || error?.message || '识别失败，请稍后重试')
+    toast.error(friendlyOcrError(error))
   } finally {
     ocrBusy.value = false
   }
+}
+
+/**
+ * 把后端的失败翻成一句人话。
+ *
+ * <p>2026-10-21 实测踩过：网关返回 **502 的 HTML 页面**，老代码直接把
+ * `error.response.data.message` 弹出来 —— 手机上是一大段 `<html><head><title>502…`
+ * （使用方截图报的正是这个）。所以这里先判断响应是不是 JSON，不是就按状态码给话。
+ */
+function friendlyOcrError(error) {
+  const data = error?.response?.data
+  if (data && typeof data === 'object') {
+    const message = data.msg || data.message
+    if (message) return String(message).slice(0, 80)
+  }
+
+  const status = error?.response?.status
+  if (status === 502 || status === 503 || status === 504) {
+    return '识别服务暂时不可用，请稍后重试（或直接手填）'
+  }
+  if (status === 401 || status === 403) {
+    return '登录已过期或没有权限，请重新登录后再试'
+  }
+  if (status === 413) {
+    return '图片太大，换一张再试'
+  }
+  if (error?.isNetworkError) {
+    return '网络不通，请检查信号后重试'
+  }
+  const text = String(error?.message || '')
+  // 兜底：任何像 HTML 的东西都不往界面上弹
+  if (/<\/?[a-z][^>]*>/i.test(text) || text.length > 100) {
+    return '识别失败，请稍后重试（或直接手填）'
+  }
+  return text || '识别失败，请稍后重试'
 }
 
 /** 用「已经上传过的」图据识别：先下载成本地临时文件（uploadFile 只收本地路径） */
