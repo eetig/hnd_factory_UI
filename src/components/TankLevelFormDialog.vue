@@ -72,6 +72,17 @@ const draft = ref(buildTankLevelDraft(null))
 const saving = ref(false)
 const deleting = ref(false)
 
+/*
+ * 「保存后继续录」(2026-10-21 使用方要求)：新增保存后**不关弹层**，清空液位与图据，
+ * 停在表单里接着录下一个罐。停着不动必须给反馈，否则人会怀疑到底存没存 ——
+ * 所以记两个数：本次已录入几条、刚保存的是哪台罐多少液位。
+ *
+ * 注意「本次」不是「今天」：真正的当日条数要额外查一次接口，这里不为了一个数字多打一次；
+ * 本次会话内连续录几条是这个场景真正关心的量。
+ */
+const savedCount = ref(0)
+const lastSavedText = ref('')
+
 const title = computed(() => {
   if (isNew.value) return '新增液位记录'
   return readOnly.value ? '记录详情' : '编辑液位记录'
@@ -120,6 +131,20 @@ const popupStyle = computed(() => {
 //   · 浮层要 position: fixed/absolute + 遮挡判断，而弹层里的祖先带 transform 时会被钉住
 //     （本仓踩过多次，见 DateField / DropdownMenu 的注释）；
 //   · 弹层里可滚，候选再多也只是往下长，不存在被裁切的问题。
+/*
+ * 每次打开弹层都把"本次已录入"清零 —— 否则上一次会话的 3 条会带进来，
+ * 让人以为这一轮也录过了。新增才需要这个计数，编辑（readOnly/编辑）不显示。
+ */
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open && isNew.value) {
+      savedCount.value = 0
+      lastSavedText.value = ''
+    }
+  },
+)
+
 const activeField = ref('') // '' | 'location' | 'equipment'
 
 // 失焦到点击命中之间有约 220ms 的窗口：手指点在候选上时，blur 先于 click 触发，
@@ -372,7 +397,35 @@ async function handleSave() {
     const saved = await saveWithDuplicateConfirm()
     // null = 用户在「同一天已记过这台容器」那里点了取消
     if (!saved) return
-    close()
+
+    /*
+     * 编辑：保存即关闭（使用方 2026-10-21：只有新增停留）。
+     * 编辑是"改一条"，停留没意义；而且列表此刻已经刷新，停在表单上容易看花。
+     */
+    if (!creating) {
+      close()
+    } else {
+      /*
+       * 新增：**不关闭**，停在表单里接着录下一个罐（使用方原话：
+       * 「保存一天记录后，不要关闭这个窗体，液位和图片清空」）。
+       *
+       * 清空：容器液位 + 理论质量 + 图据
+       * 保留：记录日期 + 属地 + **容器名称**（使用方 Q1 明确"不清"）
+       *   —— 同一天连录同属地的几个罐时省一次选择；误录重复会被后端
+       *      「同一天已记过这台容器」拦下来问一次，不会悄悄产生重复行。
+       */
+      savedCount.value += 1
+      lastSavedText.value = [
+        draft.value.location,
+        draft.value.tankName,
+        draft.value.levelValue ? `${draft.value.levelValue}mm` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      clearPendingPhotos()
+      draft.value.levelValue = ''
+      draft.value.theoreticalWeight = ''
+    }
 
     if (!photosToUpload.length) {
       toast.success(creating ? '新增成功' : '保存成功')
@@ -456,6 +509,13 @@ async function handleDelete() {
       </view>
 
       <!-- ===== 表单 / 只读详情 ===== -->
+      <!-- 保存后停留时的反馈：本次已录入几条 + 刚保存的是哪台罐（使用方 Q3 要的） -->
+      <view v-if="isNew && savedCount > 0" class="tlf__saved">
+        <text class="tlf__saved-title">本次已录入 {{ savedCount }} 条</text>
+        <text v-if="lastSavedText" class="tlf__saved-detail">刚保存：{{ lastSavedText }}</text>
+        <text class="tlf__saved-hint">液位和图据已清空，接着录下一个罐；容器名称保留着，改了再存。</text>
+      </view>
+
       <scroll-view class="tlf__body" scroll-y>
         <!-- 只读详情：无编辑权限时把值按行铺出来，不做成灰掉的输入框
              （灰输入框点不动又像是坏了，不如直接给文本） -->
@@ -633,7 +693,7 @@ async function handleDelete() {
         <view class="tlf__footer-gap"></view>
         <wd-button v-if="!readOnly" plain @click="close">取消</wd-button>
         <wd-button v-if="!readOnly" type="primary" :loading="saving" @click="handleSave">
-          保存
+          {{ isNew ? '保存并继续' : '保存' }}
         </wd-button>
         <wd-button v-else type="primary" @click="close">关闭</wd-button>
       </view>
@@ -660,6 +720,34 @@ async function handleDelete() {
     margin: 20rpx auto 0;
     border-radius: $ui-radius-pill;
     background-color: $ui-raise-3;
+  }
+
+  /* 保存后停留的反馈条：贴在标题下面、滚动区上面，不跟着内容滚走 */
+  &__saved {
+    display: flex;
+    flex-direction: column;
+    gap: 4rpx;
+    margin: 0 32rpx 12rpx;
+    padding: 16rpx 20rpx;
+    border-radius: $ui-radius-md;
+    background-color: $ui-surface-2;
+  }
+
+  &__saved-title {
+    color: $ui-text;
+    font-size: 26rpx;
+    font-weight: 600;
+  }
+
+  &__saved-detail {
+    color: $ui-accent-text;
+    font-size: 24rpx;
+  }
+
+  &__saved-hint {
+    color: $ui-text-3;
+    font-size: 22rpx;
+    line-height: 1.45;
   }
 
   &__head {
