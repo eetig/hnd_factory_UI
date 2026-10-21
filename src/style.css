@@ -133,13 +133,80 @@ table {
 .image-preview-dialog {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 6vh);
-  margin-top: 3vh !important;
-  margin-bottom: 3vh !important;
+  max-height: calc(100vh - 3vh);
+  margin-top: 1.5vh !important;
+  margin-bottom: 1.5vh !important;
 }
 .image-preview-dialog .el-dialog__header,
 .image-preview-dialog .el-dialog__footer {
   flex: 0 0 auto;
+}
+/*
+ * 图片看图器（2026-10-21 第三版）。使用方逐项定的口径：
+ *   · 图片周围**透明** —— 弹窗本体不铺底色，看到的是被压暗的下层页面
+ *   · **跟随系统深浅色** —— 浅色用浅白遮罩 + 深墨字，深色用深遮罩 + 白字
+ * 弹窗被 teleport 到 body，所以这些"外壳"样式必须写在全局；组件内部只管变量与排版。
+ */
+/*
+ * 看图器的两套配色变量**必须放全局**：弹窗被 teleport 到 body，组件里的 scoped 声明
+ * 挂不上那个节点（实测：深色下文字仍取到 body 的深墨，等于看不见）。
+ */
+/*
+ * 配色**只用 CSS 媒体查询**，不再用 JS 读 matchMedia 再挂类。
+ *
+ * 原因（实测踩到）：JS 读一次 + 监听 change，和样式里的 @media 是两套口径；
+ * 系统主题中途切换时，遮罩（@media）已经变浅、类名（JS）还停在 is-dark，
+ * 于是白字压在浅色遮罩上 —— 等于看不见。媒体查询是唯一真源，永远同步。
+ *
+ * 默认浅色，深色用媒体查询覆盖：
+ */
+.image-preview-dialog--transparent {
+  --ipv-text: rgb(51 65 85 / 0.85);
+  --ipv-text-strong: rgb(15 23 42);
+  --ipv-btn-bg: rgb(255 255 255 / 0.7);
+  --ipv-btn-bg-hover: rgb(255 255 255 / 0.92);
+  --ipv-hairline: rgb(15 23 42 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  .image-preview-dialog--transparent {
+    --ipv-text: rgb(255 255 255 / 0.72);
+    --ipv-text-strong: rgb(255 255 255 / 0.95);
+    --ipv-btn-bg: rgb(255 255 255 / 0.14);
+    --ipv-btn-bg-hover: rgb(255 255 255 / 0.22);
+    --ipv-hairline: rgb(255 255 255 / 0.14);
+  }
+}
+.image-preview-dialog--transparent {
+  overflow: visible;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.image-preview-dialog--transparent .el-dialog__header {
+  margin: 0;
+  padding: 0;
+}
+
+.image-preview-dialog--transparent .el-dialog__body {
+  padding: 0;
+  overflow: visible;
+}
+
+.image-preview-dialog--transparent .el-dialog__footer {
+  padding: 0;
+}
+
+/* 遮罩：不盖成纯黑。浅色下把页面洗淡、深色下压暗，图片都是唯一清晰的东西 */
+.image-preview-overlay {
+  background-color: rgb(248 250 252 / 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  .image-preview-overlay {
+    background-color: rgb(9 11 14 / 0.78);
+  }
 }
 .image-preview-dialog .el-dialog__body {
   flex: 1 1 auto;
