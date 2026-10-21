@@ -3,6 +3,7 @@ import {
   buildCostingRows,
   buildMaterialCostingRows,
   buildReportedQtyMap,
+  lookupReportedQty,
   buildReportRows,
 } from '../../src/composables/useStatsData'
 
@@ -69,16 +70,57 @@ describe('buildReportRows：工单报工汇总', () => {
   })
 })
 
-describe('buildReportedQtyMap：已报工数按归一化产成品名汇总', () => {
-  it('忽略空格/下划线差异', () => {
+describe('buildReportedQtyMap：已报工数按【产成品编码】汇总，名称兜底（变更-140）', () => {
+  it('名称兜底仍忽略空格/下划线差异', () => {
     const map = buildReportedQtyMap([
       { materialName: '氯铂酸_150', confirmedQty: 2 },
       { materialName: '氯铂酸 150', confirmedQty: 3 },
       { materialName: '', confirmedQty: 9 },
     ])
 
-    expect(map.get('氯铂酸150')).toBe(5)
-    expect(map.size).toBe(1)
+    expect(map.byName.get('氯铂酸150')).toBe(5)
+    expect(map.byName.size).toBe(1)
+  })
+
+  it('同样的名称、不同的编码不再混算（这是这次改动的全部理由）', () => {
+    const map = buildReportedQtyMap([
+      { materialName: '同名产品', materialCode: 'C1', confirmedQty: 10 },
+      { materialName: '同名产品', materialCode: 'C2', confirmedQty: 4 },
+    ])
+
+    expect(map.byCode.get('C1')).toBe(10)
+    expect(map.byCode.get('C2')).toBe(4)
+    // 名称维度上仍会合起来（只作兜底，编码在时不会用到）
+    expect(map.byName.get('同名产品')).toBe(14)
+  })
+
+  it('lookupReportedQty：编码优先，编码缺失才用名称', () => {
+    const map = buildReportedQtyMap([
+      { materialName: '产品甲', materialCode: 'C1', confirmedQty: 10 },
+      { materialName: '产品乙', confirmedQty: 7 },
+    ])
+
+    // 编码命中：即使名称写得不一样也认
+    expect(lookupReportedQty(map, { materialName: '产品甲(旧写法)', materialCode: 'C1' })).toBe(10)
+    // 编码没命中 → 名称兜底
+    expect(lookupReportedQty(map, { materialName: '产品乙', materialCode: 'C9' })).toBe(7)
+    // 都对不上 → 0（不是"没数据"，是这行确实没有报工）
+    expect(lookupReportedQty(map, { materialName: '产品丙', materialCode: 'C8' })).toBe(0)
+  })
+})
+
+describe('buildCostingRows：按编码把报工数挂到入库行上', () => {
+  it('入库行有编码、工单汇总有同名不同码时，按编码各归各的', () => {
+    const rows = buildCostingRows(
+      [{ materialName: '产品甲', materialCode: 'C1', inboundQty: 100 }],
+      [
+        { materialName: '产品甲', materialCode: 'C1', confirmedQty: 60 },
+        { materialName: '产品甲', materialCode: 'C2', confirmedQty: 40 },
+      ],
+    )
+
+    expect(rows[0].reportedQty).toBe(60)
+    expect(rows[0].unreportedQty).toBe(40)
   })
 })
 
@@ -89,15 +131,17 @@ describe('buildCostingRows：工单核算（入库口径）', () => {
       [{ materialName: 'HND-V150', confirmedQty: 40 }],
     )
 
-    expect(rows).toEqual([
-      {
-        materialName: 'HND-V150',
-        materialCode: 'C1',
-        inboundQty: 100,
-        reportedQty: 40,
-        unreportedQty: 60,
-      },
-    ])
+    // 行上多了一个 drill（钻取配方，变更-140），数值口径没变 —— 用 toMatchObject 钉数值那几项
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      materialName: 'HND-V150',
+      materialCode: 'C1',
+      inboundQty: 100,
+      reportedQty: 40,
+      unreportedQty: 60,
+    })
+    expect(rows[0].drill.inbound).toMatchObject({ materialCode: 'C1', materialName: 'HND-V150' })
+    expect(rows[0].drill.workorder).toMatchObject({ materialName: 'HND-V150' })
   })
 
   it('名称归一化只忽略空格/下划线，连字符差异匹配不上（对不上就是 0）', () => {
@@ -145,15 +189,14 @@ describe('buildMaterialCostingRows：原辅料核算（领料口径）', () => {
       goodsMoveRecords: [],
     })
 
-    expect(rows).toEqual([
-      {
-        materialName: '三氯氢硅',
-        materialCode: 'X1',
-        pickQty: 15,
-        reportedQty: 12,
-        unreportedQty: 3,
-      },
-    ])
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      materialName: '三氯氢硅',
+      materialCode: 'X1',
+      pickQty: 15,
+      reportedQty: 12,
+      unreportedQty: 3,
+    })
   })
 
   it('配置了换算系数的物料（辅料包 ×3.2）领料数会被放大', () => {

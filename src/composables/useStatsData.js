@@ -51,18 +51,46 @@ export function buildReportRows(groupRows) {
     })
 }
 
-/** 已报工数量：按归一化产成品名称汇总确认产量（入参是服务端分组结果，理由见 buildReportRows） */
+/**
+ * 已报工数量：**按产成品编码**汇总确认产量，名称作为兜底（2026-10-21 变更-140）。
+ *
+ * <p>为什么改：原先只按归一化名称匹配。名称里带 `_`、空格、中英混排，入库侧和工单侧
+ * 写差一个字符（`HND-2171_5KG方形塑料桶_华耐德外部贸易_白色_华耐德外贸桶` 这种），
+ * 报工数就被算成 0 —— 表里看着像"这批货没报工"，其实是键对不上。
+ * 编码是主键级别的键。名称只在编码缺失时才用（老数据可能没有编码）。
+ *
+ * @returns {{ byCode: Map<string, number>, byName: Map<string, number> }}
+ */
 export function buildReportedQtyMap(groupRows) {
-  const map = new Map()
+  const byCode = new Map()
+  const byName = new Map()
 
   for (const row of groupRows || []) {
-    const key = normalizeMaterialName(row.materialName)
-    if (!key) continue
+    const qty = Number(row.confirmedQty) || 0
+    const code = String(row.materialCode ?? '').trim()
+    const name = normalizeMaterialName(row.materialName)
 
-    map.set(key, (map.get(key) || 0) + (Number(row.confirmedQty) || 0))
+    if (code) {
+      byCode.set(code, (byCode.get(code) || 0) + qty)
+    }
+    if (name) {
+      byName.set(name, (byName.get(name) || 0) + qty)
+    }
   }
 
-  return map
+  return { byCode, byName }
+}
+
+/** 取某一行应得的已报工数：先编码、后名称、都没有就是 0 */
+export function lookupReportedQty(map, row) {
+  if (!map) return 0
+  const code = String(row?.materialCode ?? '').trim()
+  if (code && map.byCode?.has(code)) return map.byCode.get(code)
+
+  const name = normalizeMaterialName(row?.materialName)
+  if (name && map.byName?.has(name)) return map.byName.get(name)
+
+  return 0
 }
 
 /**
@@ -94,15 +122,21 @@ export function buildCostingRows(inboundRecords, groupRows) {
     rows.get(key).inboundQty += Number(record.inboundQty) || 0
   }
 
-  // 已报工数：按产成品名称匹配工单报工数据
+  // 已报工数：先按产成品编码匹配，编码对不上再用名称兜底（见 buildReportedQtyMap 的理由）
   const reportedQtyMap = buildReportedQtyMap(groupRows)
   for (const row of rows.values()) {
-    row.reportedQty = reportedQtyMap.get(normalizeMaterialName(row.materialName)) || 0
+    row.reportedQty = lookupReportedQty(reportedQtyMap, row)
   }
 
   return [...rows.values()]
     .map((row) => ({
       ...row,
+      // 钻取配方（变更-140）：告诉弹窗这两段明细各按什么查
+      drill: {
+        inbound: { materialCode: row.materialCode, materialName: row.materialName, multiplier: 1 },
+        // 工单侧也按**编码**查：入库名常是长包材名，工单名是短名，按名称查会一条都查不到
+        workorder: { materialCode: row.materialCode, materialName: row.materialName, multiplier: 1 },
+      },
       inboundQty: formatQty(row.inboundQty),
       reportedQty: formatQty(row.reportedQty),
       unreportedQty: formatQty(row.inboundQty - row.reportedQty),
@@ -169,11 +203,22 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
   // 领料数换算系数 + 已报工数：按物料编码处理
   for (const row of rows.values()) {
     const code = String(row.materialCode ?? '').trim()
+    const pickFactor = MATERIAL_COSTING_QTY_FACTORS[code] ?? 1
 
     // 领料数乘以该物料的换算系数（无配置则为 1）
-    row.pickQty *= MATERIAL_COSTING_QTY_FACTORS[code] ?? 1
+    row.pickQty *= pickFactor
     // 已报工数按物料编码汇总货物移动数量，先求和再取绝对值
     row.reportedQty = Math.abs(goodsMoveQtyMap?.get(code) || 0)
+
+    /*
+     * 钻取配方（变更-140）：基础行的明细就是"按编码查、不换算"。
+     * 弹窗要乘的系数必须和这里的算式**同源**，否则明细合计永远对不上行上的数字
+     * （2026-10-21 实测踩过：派生行漏了 ×1000 与库位筛选，明细 75 vs 行上 25）。
+     */
+    row.drill = {
+      pick: { materialCode: code, materialName: row.materialName, multiplier: pickFactor },
+      move: { materialCode: code, multiplier: 1 },
+    }
   }
 
   // 派生行：领料数由源物料折算；报工数按物料编码 + 来源库位筛选货物移动后求和取绝对值
@@ -208,6 +253,19 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
       materialCode: derived.materialCode,
       pickQty,
       reportedQty: Math.abs(moveSum) * (derived.reportedMultiplier ?? 1),
+      // 派生行的明细来自**另一个**物料：领料看源物料 ×系数；报工看派生编码 + 指定库位 ×系数
+      drill: {
+        pick: {
+          materialCode: derived.sourceMaterialCode,
+          materialName: derived.sourceMaterialName,
+          multiplier: derived.qtyMultiplier ?? 1,
+        },
+        move: {
+          materialCode: derived.materialCode,
+          fromLocation: derived.fromLocation,
+          multiplier: derived.reportedMultiplier ?? 1,
+        },
+      },
     })
   }
 

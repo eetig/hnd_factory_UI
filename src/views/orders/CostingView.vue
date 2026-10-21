@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import StatsTable from '../../components/StatsTable.vue'
 import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
+import CostingDrilldownDialog from '../../components/CostingDrilldownDialog.vue'
 import { useStatsData } from '../../composables/useStatsData'
 import { useOrderFilter } from '../../composables/useOrderFilter'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
@@ -74,6 +75,24 @@ const detailRow = ref(null)
 function openWorkOrderDetail(row) {
   detailRow.value = row
   detailDialogOpen.value = true
+}
+
+/*
+ * 核算钻取（变更-140，2026-10-21 使用方要求）。
+ *
+ * 工单核算与原辅料核算两张表的行都能点开，看这一行的每个数字由哪些明细组成：
+ *   · 工单核算：入库明细（入库汇总）+ 报工明细（工单汇总）
+ *   · 原辅料核算：领料明细（领料汇总）+ 报工明细（货物移动）
+ * 明细的口径、日期、以及"明细合计 vs 行上数字"的自检都在弹窗里（见该组件）。
+ */
+const drillMode = ref('costing')
+const drillRow = ref(null)
+const drillDialogOpen = ref(false)
+
+function openDrilldown(row, mode) {
+  drillRow.value = row
+  drillMode.value = mode
+  drillDialogOpen.value = true
 }
 const reportColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
@@ -175,7 +194,13 @@ onMounted(() => {
         :rows="costingRows"
         empty-text="暂无核算数据"
         :row-key="statsRowKey"
+        row-clickable
+        @row-click="(row) => openDrilldown(row, 'costing')"
       />
+      <!-- 可点这件事要写出来：这一页原本没有可点的行，不说没人会去点 -->
+      <p class="mt-2 text-xs text-slate-500">
+        点任意一行看明细：入库数来自入库汇总，已报工数来自工单汇总（确认的产量）。
+      </p>
     </div>
 
     <div v-show="activeView === 'materialCosting'">
@@ -213,9 +238,23 @@ onMounted(() => {
         :rows="materialCostingDisplayRows"
         empty-text="暂无核算数据"
         :row-key="statsRowKey"
+        row-clickable
+        @row-click="(row) => openDrilldown(row, 'materialCosting')"
       />
+      <p class="mt-2 text-xs text-slate-500">
+        点任意一行看明细：领料数来自领料汇总，已报工数来自货物移动（报工）。
+      </p>
     </div>
   </div>
+  <!-- 核算钻取：两张核算表共用一个弹窗，靠 mode 区分两段来源（变更-140） -->
+  <CostingDrilldownDialog
+    v-model="drillDialogOpen"
+    :row="drillRow"
+    :mode="drillMode"
+    :start-date="statsStartDate"
+    :end-date="statsEndDate"
+  />
+
   <WorkOrderDetailDialog
     v-model="detailDialogOpen"
     :type-key="detailRow?.typeKey || ''"

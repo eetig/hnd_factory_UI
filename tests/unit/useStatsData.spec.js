@@ -55,23 +55,21 @@ describe('useStatsData：核算表跟随汇总面板的当前筛选结果', () =
       { typeKey: 'operate', orderType: '操作工单', materialName: 'HND-V150', orderQty: 60, confirmedQty: 40 },
     ]
 
-    expect(costingRows.value).toEqual([
-      {
-        materialName: 'HND-V150',
-        materialCode: 'C1',
-        inboundQty: 100,
-        reportedQty: 40,
-        unreportedQty: 60,
-      },
-      // 没有对应报工的那一行：已报工数 0，未报工数就是入库数
-      {
-        materialName: 'HND-V171',
-        materialCode: 'C2',
-        inboundQty: 50,
-        reportedQty: 0,
-        unreportedQty: 50,
-      },
-    ])
+    expect(costingRows.value).toHaveLength(2)
+    expect(costingRows.value[0]).toMatchObject({
+      materialName: 'HND-V150',
+      materialCode: 'C1',
+      inboundQty: 100,
+      reportedQty: 40,
+      unreportedQty: 60,
+    })
+    expect(costingRows.value[1]).toMatchObject({
+      materialName: 'HND-V171',
+      materialCode: 'C2',
+      inboundQty: 50,
+      reportedQty: 0,
+      unreportedQty: 50,
+    })
   })
 
   it('原辅料核算：汇总为空时为空行（派生行也留不下来）', () => {
@@ -82,14 +80,13 @@ describe('useStatsData：核算表跟随汇总面板的当前筛选结果', () =
     pick.pickSummaryRows.value = [{ materialName: '电石', materialCode: 'X1', pickQty: 100 }]
     goodsMove.goodsMoveSummaryRows.value = [{ materialCode: 'X1', fromLocation: '5001', moveQty: -60 }]
 
-    expect(materialCostingRows.value).toEqual([
-      {
-        materialName: '电石',
-        materialCode: 'X1',
-        pickQty: 100,
-        reportedQty: 60,
-        unreportedQty: 40,
-      },
-    ])
+    expect(materialCostingRows.value).toHaveLength(1)
+    expect(materialCostingRows.value[0]).toMatchObject({
+      materialName: '电石',
+      materialCode: 'X1',
+      pickQty: 100,
+      reportedQty: 60,
+      unreportedQty: 40,
+    })
   })
 })
