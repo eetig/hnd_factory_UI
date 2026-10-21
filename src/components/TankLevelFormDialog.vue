@@ -91,9 +91,18 @@ const popupStyle = computed(() => {
   const kb = liftHeight.value
   if (!kb) return base
 
-  // 键盘弹起时用「底边上移 + 高度写成确定值」而不是 padding —— 本项目没有全局
-  // box-sizing 重置，.wd-popup 是 content-box，padding 会把弹层顶出屏幕上沿
-  return `${base} bottom: ${kb}px; padding-bottom: 0; height: min(86vh, calc(100vh - ${kb}px - 12px));`
+  /*
+   * 2026-10-21 修（使用方截图）：输入时键盘弹出，卡片被"挤到上面去"，标题行看不见。
+   *
+   * 原来的算法是「bottom = 键盘高度 + height = 100vh - 键盘高度 - 12px」——
+   * 代入一下，顶边正好落在 12px。而状态栏（含刘海/挖孔）有 24~44px，
+   * 于是弹层的头部（标题 + 关闭）被状态栏压住，看起来就是"卡片被顶到屏幕外"。
+   *
+   * 现在改成上下都钉：底边贴键盘上沿，顶边贴安全区下方。中间高度由两者相减得出，
+   * 不再自己算 —— 算什么高度都会在某种机型上算错，而钉两条边在各平台都对。
+   * 中间是 scroll-view + flex，空间变小就滚动，不会溢出。
+   */
+  return `${base} bottom: ${kb}px; top: calc(env(safe-area-inset-top, 0px) + 12px); height: auto; max-height: none; padding-bottom: 0;`
 })
 
 // ===== 输入即查的候选（2026-10-20 改版：取消「选择」按钮）=====
@@ -482,6 +491,8 @@ async function handleDelete() {
               <input
                 v-model="draft.location"
                 class="tlf__input"
+              :adjust-position="false"
+                :adjust-position="false"
                 type="text"
                 placeholder="如：4#"
                 placeholder-class="ui-placeholder"
@@ -512,6 +523,8 @@ async function handleDelete() {
               <input
                 v-model="draft.tankName"
                 class="tlf__input"
+              :adjust-position="false"
+                :adjust-position="false"
                 type="text"
                 placeholder="请填写容器名称"
                 placeholder-class="ui-placeholder"
@@ -552,6 +565,7 @@ async function handleDelete() {
             <input
               v-model="draft.levelValue"
               class="tlf__input"
+              :adjust-position="false"
               type="digit"
               placeholder="—"
               placeholder-class="ui-placeholder"
@@ -563,6 +577,7 @@ async function handleDelete() {
             <input
               v-model="draft.theoreticalWeight"
               class="tlf__input"
+              :adjust-position="false"
               type="digit"
               placeholder="—"
               placeholder-class="ui-placeholder"
