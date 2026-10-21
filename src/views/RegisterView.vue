@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import request from '../api/request'
 import { saveAuth } from '../api/auth'
+import SliderCaptcha from '../components/SliderCaptcha.vue'
 
 /**
  * 自助注册（变更-129）。
@@ -17,6 +18,8 @@ const route = useRoute()
 
 const form = reactive({ username: '', password: '', confirm: '', realName: '' })
 const error = ref('')
+// 滑动验证通过后由子组件回填的一次性 ticket（服务端消费，过期/用过即失效）
+const captchaTicket = ref('')
 const submitting = ref(false)
 
 async function submit() {
@@ -42,6 +45,11 @@ async function submit() {
     error.value = '昵称只能包含中文、英文、下划线'
     return
   }
+  // 滑动验证（2026-10-21）：没过就不能提交，服务端也会再验一次
+  if (!captchaTicket.value) {
+    error.value = '请先拖动滑块完成验证'
+    return
+  }
 
   submitting.value = true
   try {
@@ -49,6 +57,7 @@ async function submit() {
       username: form.username.trim(),
       password: form.password,
       realName: form.realName.trim(),
+      captchaTicket: captchaTicket.value,
     })
 
     // 注册成功即登录，返回结构与 /api/login 完全一致 —— 这里用同一套解析（含失败时的 { success:false, msg }）
@@ -64,6 +73,8 @@ async function submit() {
     await router.replace(redirect || '/')
   } catch (e) {
     error.value = e?.response?.data?.msg || e?.message || '注册失败，请稍后再试'
+    // ticket 是一次性的：服务端已消费 / 已过期，重试前必须重新滑
+    captchaTicket.value = ''
   } finally {
     submitting.value = false
   }
@@ -115,6 +126,11 @@ async function submit() {
           placeholder="只能包含中文、英文、下划线"
         />
       </label>
+
+      <div>
+        <span class="mb-1 block text-sm text-slate-700">滑动验证</span>
+        <SliderCaptcha v-model="captchaTicket" />
+      </div>
 
       <p v-if="error" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{{ error }}</p>
 
