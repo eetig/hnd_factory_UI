@@ -1,8 +1,6 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
-import { useOrderImages } from '../../composables/useOrderImages'
-import OrderImageDialog from '../../components/OrderImageDialog.vue'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
@@ -50,10 +48,9 @@ const {
   clearOrderTypeFilter,
   openOrderNoDialog,
   handleOrderNoSelected,
-  clearOrderNoFilter,} = useWorkOrderData()
+  clearOrderNoFilter,
+} = useWorkOrderData()
 
-// 工单图片弹窗：状态与请求逻辑见 useOrderImages，与 <OrderImageDialog /> 共用同一份状态
-const { openImageDialog } = useOrderImages()
 
 /*
  * 列宽（变更-124 重算）：1280 视口下主区可用宽约 926px。
@@ -219,14 +216,18 @@ onMounted(() => {
                     没有符合筛选条件的工单
                   </td>
                 </tr>
+                <!--
+                  2026-10-21 使用方：工单汇总**不要再点一行就弹图片预览**。
+                  原来整行是 role=button + cursor-pointer，一点就开图 —— 而这一页根本没有
+                  图据列，"行可点"是个看不见的入口，误触率很高。
+                  现在行是**纯展示**：不响应点击、不进 Tab 序列、鼠标也不变手型。
+                  （工单图据的弹窗组件 OrderImageDialog 仍在仓里，将来若要在别的入口看图
+                   直接挂 <OrderImageDialog /> 即可，见该组件头部注释。）
+                -->
                 <tr
                   v-for="(order, index) in tableData"
                   :key="`${order.orderNo}-${index}`"
-                  tabindex="0"
-                  class="cursor-pointer transition hover:bg-region focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand"
-                  @click="openImageDialog(order)"
-                  @keydown.enter.self.prevent="openImageDialog(order)"
-                  @keydown.space.self.prevent="openImageDialog(order)"
+                  class="transition hover:bg-region"
                 >
                   <td class="whitespace-nowrap px-3 py-2.5 text-sm font-semibold text-slate-900">
                     {{ (pageNum - 1) * pageSize + index + 1 }}
@@ -273,9 +274,6 @@ onMounted(() => {
         </div>
       </div>
     </section>
-
-    <!-- 工单图片弹窗：状态在 useOrderImages（模块级单例），组件只负责渲染 -->
-    <OrderImageDialog />
 
     <ProductSelectDialog
       v-model="productDialogVisible"

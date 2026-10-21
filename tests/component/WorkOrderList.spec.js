@@ -267,12 +267,37 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     }
   })
 
-  it('图片弹窗挂在页面里（工单汇总行点击的入口组件）', async () => {
+  it('工单汇总不再有点整行开图的入口（2026-10-21 使用方要求撤掉）', async () => {
+    /*
+     * 这条原先断言"图片弹窗挂在页面里" —— 那时整行是 role=button + cursor-pointer，
+     * 一点就开图。使用方 2026-10-21 反馈「点击任意一行会弹出图片预览，但是这个页面不要
+     * 这个图片预览」：这一页根本没有图据列，行可点是个看不见的入口，误触率高。
+     *
+     * 现在钉两件事：
+     *   ① 页面里**没有** <OrderImageDialog />
+     *   ② 数据行**不是**可点的：没有 cursor-pointer、没有 tabindex=0、点击不弹窗
+     * 若哪天有人把行点击加回来，这条会红。
+     */
     authState.roleKey = 'admin'
     await nextTick()
     try {
       await switchToTab(wrapper, '工单汇总')
-      expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(true)
+      expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(false)
+
+      // 行可点的痕迹一个都不许留（不依赖是否有数据：空表时这条也有意义）
+      expect(wrapper.html()).not.toContain('cursor-pointer')
+      const clickableRows = wrapper
+        .findAll('tbody tr')
+        .filter((row) => row.classes().includes('cursor-pointer') || row.attributes('tabindex') !== undefined)
+      expect(clickableRows).toHaveLength(0)
+
+      // 有数据就真点一下：不该冒出任何弹窗
+      const rows = wrapper.findAll('tbody tr')
+      if (rows.length) {
+        await rows[0].trigger('click')
+        await flushPromises()
+      }
+      expect(wrapper.findComponent(OrderImageDialog).exists()).toBe(false)
     } finally {
       authState.roleKey = ''
       await nextTick()

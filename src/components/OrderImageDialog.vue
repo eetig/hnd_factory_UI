@@ -6,7 +6,11 @@ import { useOrderImages } from '../composables/useOrderImages'
 /**
  * 工单图片弹窗：查看 / 上传 / 删除。
  *
- * <p>状态与请求逻辑全部在 `useOrderImages`（模块级单例），弹窗的**渲染**交给
+ * <p><b>现状（2026-10-21）</b>：使用方要求工单汇总**不要点一行就弹图**，那一页已不再挂本组件，
+ * 目前仓里**没有页面使用它**。保留是因为工单图据仍然存在（work_order_image 表），将来若要
+ * 在工单明细或某个图据列里看图，直接挂 `<OrderImageDialog />` 即可。
+ *
+* <p>状态与请求逻辑全部在 `useOrderImages`（模块级单例），弹窗的**渲染**交给
  * `ImageGalleryDialog`（与储罐液位图据共用同一个组件）。本组件只做「把两边接起来」，
  * 所以页面里写 `<OrderImageDialog />` 即可，不需要传 props。
  *
