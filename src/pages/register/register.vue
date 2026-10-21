@@ -4,6 +4,7 @@ import request from '../../api/request'
 import { saveAuth } from '../../api/auth'
 import ThemeToggle from '../../components/ThemeToggle.vue'
 import { useTheme } from '../../composables/useTheme'
+import SliderCaptcha from '../../components/SliderCaptcha.vue'
 
 /**
  * 自助注册（2026-10-21，与网页端 RegisterView 同一套口径）。
@@ -24,6 +25,8 @@ const confirm = ref('')
 const nickname = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
+// 滑动验证通过后由子组件回填的一次性 ticket（服务端消费，用过即失效）
+const captchaTicket = ref('')
 
 // 小程序端 :focus 伪类不生效，用聚焦态类名统一三端反馈（与登录页同一手法）
 const focusField = ref('')
@@ -54,6 +57,10 @@ async function handleRegister() {
     errorMessage.value = '昵称只能包含中文、英文、下划线'
     return
   }
+  if (!captchaTicket.value) {
+    errorMessage.value = '请先拖动滑块完成验证'
+    return
+  }
 
   loading.value = true
   errorMessage.value = ''
@@ -63,6 +70,7 @@ async function handleRegister() {
       username: account,
       password: pass,
       realName: nickname.value.trim(),
+      captchaTicket: captchaTicket.value,
     })
 
     // 注册成功即登录，返回结构与 /api/login 完全一致（含失败时 { success:false, msg }）
@@ -78,6 +86,8 @@ async function handleRegister() {
     uni.showToast({ title: '注册成功', icon: 'success', duration: 1200 })
     uni.reLaunch({ url: '/pages/index/index' })
   } catch (error) {
+    // ticket 一次性：服务端已消费或已过期，重试前必须重新滑
+    captchaTicket.value = ''
     errorMessage.value =
       error?.response?.data?.msg ||
       error?.response?.data?.message ||
@@ -173,6 +183,11 @@ function goLogin() {
             @focus="focusField = 'nickname'"
             @blur="focusField = ''"
           />
+        </view>
+
+        <view class="reg-captcha">
+          <text class="reg-label">滑动验证</text>
+          <SliderCaptcha v-model="captchaTicket" />
         </view>
 
         <text v-if="errorMessage" class="reg-error">{{ errorMessage }}</text>
@@ -308,6 +323,10 @@ function goLogin() {
 
 .reg-placeholder {
   color: $ui-text-3;
+}
+
+.reg-captcha {
+  margin-top: 28rpx;
 }
 
 .reg-error {
