@@ -48,18 +48,27 @@ describe('默认列', () => {
     expect(DEFAULT_VISIBLE_KEYS).toHaveLength(8)
   })
 
-  it('8 列的固定宽度合计 + 唯一自适应列 ≤ 1100px（1280 视口不横滚的前提）', () => {
+  it('每一列都必须有固定宽度（否则列一多就会被压成 0 宽，2026-10-22 的 bug）', () => {
+    /*
+     * 那次 bug：表格封顶 1100px，唯一不自定宽的「物料名称」在固定宽合计超标后
+     * 剩余空间为负 → 被压成 0 宽 → 使用方勾了它却"表格里没显示"。
+     * 现在每列都有宽，不够就横向滚动（表格 min-width 由可见列求和）。
+     */
+    const noWidth = ALL_COLUMNS.filter((c) => !c.width)
+    expect(
+      noWidth.map((c) => c.key),
+      '这些列没有宽度：列一多它们会被压成 0 宽，请给 w-[Npx]',
+    ).toEqual([])
+  })
+
+  it('默认 8 列的宽度合计 ≤ 1100px（1280 视口不横滚的前提）', () => {
     const px = (cls) => {
       const m = /w-\[(\d+)px\]/.exec(cls ?? '')
       return m ? Number(m[1]) : 0
     }
     const defs = ALL_COLUMNS.filter((c) => DEFAULT_VISIBLE_KEYS.includes(c.key))
     const fixed = defs.reduce((sum, c) => sum + px(c.width), 0)
-    const auto = defs.filter((c) => !c.width)
-    expect(auto, '必须有且只有一列自适应（其余列写死，否则剩余宽度会被摊成空白）').toHaveLength(1)
-    expect(fixed, `固定列合计 ${fixed}px 已超过预算`).toBeLessThanOrEqual(1100)
-    // 自适应那一列至少还要剩 200px 才有意义
-    expect(1100 - fixed).toBeGreaterThanOrEqual(200)
+    expect(fixed, `默认 8 列合计 ${fixed}px 已超过预算`).toBeLessThanOrEqual(1100)
   })
 })
 

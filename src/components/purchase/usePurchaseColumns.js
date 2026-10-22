@@ -11,6 +11,12 @@ import { computed, ref } from 'vue'
  * 所以默认只开「录一条需求时需要看的」8 列，其余 7 列（编码 / 用途 / OA / 送货单 /
  * 实际到货 / 备注 / 提出日期）**默认关、可勾开**。这不是删功能，是换默认值。
  *
+ * ⚠️ 2026-10-22（变更-143）改掉了这里原本"物料名称这一列自适应"的写法：
+ * 使用方把列勾到 13 个之后，「物料名称」**在表格里直接消失**了 ——
+ * 因为表格封顶 1100px、其余列固定宽合计已经超过它，自适应那一列算出来的剩余空间是负数，
+ * 浏览器把它压成 0 宽。现在**每一列都有固定宽度**，宽度不够就让表格横向滚动
+ * （scroll 容器本来就有），而不是压缩某一列。
+ *
  * ## 宽度预算（8 列必须 ≤ 1100px）
  *
  *   序号 56 + 进度 92 + 规格 150 + 类别 76 + 数量 92 + 要求到货 116 + 需求人 84
@@ -25,7 +31,7 @@ import { computed, ref } from 'vue'
 export const DEFAULT_COLUMNS = [
   { key: 'index', label: '序号', width: 'w-[56px]' },
   { key: 'status', label: '进度', width: 'w-[92px]' },
-  { key: 'materialName', label: '物料名称' },
+  { key: 'materialName', label: '物料名称', width: 'w-[240px]' },
   { key: 'spec', label: '规格型号', width: 'w-[150px]' },
   { key: 'category', label: '类别', width: 'w-[76px]' },
   { key: 'quantity', label: '数量', width: 'w-[92px]', align: 'right' },
@@ -45,6 +51,17 @@ export const OPTIONAL_COLUMNS = [
 ]
 
 export const ALL_COLUMNS = [...DEFAULT_COLUMNS, ...OPTIONAL_COLUMNS]
+
+/** 从 `w-[116px]` 里取 116；没有宽度的列返回 0（现在不该再出现这种列） */
+export function columnWidthPx(column) {
+  const match = /w-\[(\d+)px\]/.exec(column?.width ?? '')
+  return match ? Number(match[1]) : 0
+}
+
+/** 一组列的宽度合计 —— 表格用它当 min-width：不够就横向滚动，而不是压缩某一列 */
+export function columnsWidthPx(columns) {
+  return (columns || []).reduce((sum, column) => sum + columnWidthPx(column), 0)
+}
 
 export const COLUMNS_STORAGE_KEY = 'hnd-purchase-columns'
 

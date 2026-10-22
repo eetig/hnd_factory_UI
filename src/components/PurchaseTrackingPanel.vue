@@ -11,7 +11,7 @@ import {
 import PurchaseColumnPicker from './purchase/PurchaseColumnPicker.vue'
 import PurchaseDetailDrawer from './purchase/PurchaseDetailDrawer.vue'
 import PurchaseFilterBar from './purchase/PurchaseFilterBar.vue'
-import { usePurchaseColumns } from './purchase/usePurchaseColumns.js'
+import { columnsWidthPx, usePurchaseColumns } from './purchase/usePurchaseColumns.js'
 
 /**
  * 采购需求详情（变更-117，2026-10-18：交互模型重构）。
@@ -242,7 +242,18 @@ onMounted(loadPurchase)
         剩余宽度按比例摊给所有列，数字列右对齐、左边一片空白（本会话踩过两次）。
         封顶 1100px：1280 视口下 8 列刚好，不出现横向滚动条。
       -->
-      <table class="ledger-table w-full max-w-[1100px] table-fixed text-sm">
+      <!--
+        宽度：**每一列都有固定宽度**，表格的 min-width 按当前可见列求和。
+        列开得多（>1100px）时由外层 .purchase-scroll 横向滚动，**不压缩任何一列**。
+
+        ⚠️ 2026-10-22（变更-143）：这里原来是 `w-full max-w-[1100px]` + 只有「物料名称」
+        一列不写宽度（自适应）。使用方勾到 13 列后那一列直接消失 —— 固定宽合计超过 1100，
+        自适应列算出来的剩余空间是负的，被压成 0 宽。
+      -->
+      <table
+        class="ledger-table w-full table-fixed text-sm"
+        :style="{ minWidth: columnsWidthPx(orderedColumns) + 'px' }"
+      >
         <colgroup>
           <col v-for="col in orderedColumns" :key="col.key" :class="col.width" />
         </colgroup>
