@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BOARD_COLUMNS,
+  requestAgeLabel,
   OPEN_STATUSES,
   columnOfStatus,
   dueLabel,
@@ -133,5 +134,24 @@ describe('卡片文案', () => {
     expect(quantityText({ quantity: 2.5, unit: 'kg' })).toBe('2.5 kg')
     expect(quantityText({ quantity: 1, unit: '' })).toBe('1')
     expect(quantityText({})).toBe('—')
+  })
+})
+
+describe('"提了多久"（卡片底部那一格）', () => {
+  const today = new Date(2026, 9, 22) // 2026-10-22 本地日
+
+  it('按本地日算天数，不因时区/夏令时差一天', () => {
+    expect(requestAgeLabel({ requestDate: '2026-10-22' }, today)).toBe('今天提出')
+    expect(requestAgeLabel({ requestDate: '2026-10-21' }, today)).toBe('昨天提出')
+    expect(requestAgeLabel({ requestDate: '2026-10-19' }, today)).toBe('提出 3 天')
+  })
+
+  it('缺日期/格式不对时明说「未填」，不显示 0 天', () => {
+    expect(requestAgeLabel({}, today)).toBe('未填提出日期')
+    expect(requestAgeLabel({ requestDate: '2026/10/19' }, today)).toBe('未填提出日期')
+  })
+
+  it('未来日期（手误）不显示成负数', () => {
+    expect(requestAgeLabel({ requestDate: '2026-12-01' }, today)).toBe('今天提出')
   })
 })

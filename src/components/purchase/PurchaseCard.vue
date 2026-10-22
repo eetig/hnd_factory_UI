@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { dueLabel, quantityText } from './boardGroups.js'
+import { dueLabel, quantityText, requestAgeLabel } from './boardGroups.js'
 
 /*
  * 采购看板的一张卡（变更-148）。
@@ -20,6 +20,7 @@ const props = defineProps({
 })
 
 const due = computed(() => dueLabel(props.row))
+const requestAge = computed(() => requestAgeLabel(props.row))
 const qty = computed(() => quantityText(props.row))
 
 const dueToneClass = computed(() => {
@@ -80,10 +81,12 @@ const badge = computed(() => {
 
     <div class="mt-1.5 flex items-center justify-between gap-2 border-t border-line pt-1.5 text-xs">
       <span class="truncate text-slate-600">{{ row.requester || '未填需求人' }}</span>
-      <span v-if="row.oaNo" class="shrink-0 truncate text-slate-500" :title="row.oaNo"
-        >OA 已提</span
-      >
-      <span v-else class="shrink-0 text-brand-ink">待提单</span>
+      <!--
+        这一格原来写「OA 已提 / 待提单」—— 那是**每一列都已经知道**的信息
+        （待提单列里全是待提单），纯噪音。换成"提了多久"，回答的是另一个问题：
+        这件事拖了几天。卡片上别处都看不到这个数。
+      -->
+      <span class="shrink-0 tabular-nums text-slate-500">{{ requestAge }}</span>
     </div>
   </button>
 </template>

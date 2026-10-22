@@ -72,6 +72,14 @@ async function loadBoard() {
 }
 
 const columns = computed(() => groupBoard(rows.value))
+
+/**
+ * 关掉「显示已到货」时，已到货那一列**永远为空**（那些状态根本没请求）——
+ * 留一个空列白占 1/4 宽度是纯浪费，所以它跟着开关一起消失。
+ */
+const visibleColumns = computed(() =>
+  showArrived.value ? columns.value : columns.value.filter((c) => c.key !== 'arrived'),
+)
 const totalShown = computed(() => rows.value.length)
 
 function toggleArrived() {
@@ -173,9 +181,12 @@ onMounted(loadBoard)
     </p>
 
     <!-- 四列：列内自己滚，页面不滚（与汇总页的定高方子一致） -->
-    <div class="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div
+      class="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2"
+      :class="showArrived ? 'xl:grid-cols-4' : 'xl:grid-cols-3'"
+    >
       <section
-        v-for="col in columns"
+        v-for="col in visibleColumns"
         :key="col.key"
         class="flex min-h-0 flex-col rounded-card border border-line bg-region/40"
         :aria-label="`${col.label}（${col.rows.length} 条）`"

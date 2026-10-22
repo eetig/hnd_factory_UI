@@ -99,13 +99,14 @@ describe('采购看板', () => {
     expect(call[1].params.pageSize).toBe(200)
   })
 
-  it('四列都渲染，卡片落在对应列里', async () => {
+  it('默认三列（已到货列关掉时不渲染，免得白占 1/4 宽度），卡片落在对应列里', async () => {
     const wrapper = await mountBoard()
     const heads = wrapper.findAll('section h3').map((h) => h.text())
     expect(heads.some((t) => t.startsWith('待提单'))).toBe(true)
     expect(heads.some((t) => t.startsWith('等货'))).toBe(true)
     expect(heads.some((t) => t.startsWith('超期'))).toBe(true)
-    expect(heads.some((t) => t.startsWith('已到货'))).toBe(true)
+    // 默认不请求已到货，所以那一列必然是空的 —— 不渲染
+    expect(heads.some((t) => t.startsWith('已到货'))).toBe(false)
 
     // 超期那张卡必须出现在「超期」列里，而不是「等货」列
     const sections = wrapper.findAll('section')
@@ -114,6 +115,14 @@ describe('采购看板', () => {
     const waiting = sections.find((s) => (s.find('h3').text() || '').startsWith('等货'))
     expect(waiting.text()).toContain('电磁隔膜计量泵')
     expect(waiting.text()).not.toContain('立式长杆泥浆泵')
+  })
+
+  it('关掉「显示已到货」时不渲染永远空的已到货列（列数跟着开关走）', async () => {
+    const wrapper = await mountBoard()
+    const labelOf = (s) => (s.find('h3') ? s.find('h3').text() : '')
+    const heads = wrapper.findAll('section').map(labelOf)
+    expect(heads.some((t) => t.startsWith('已到货'))).toBe(false)
+    expect(heads).toHaveLength(3)
   })
 
   it('点卡片打开抽屉（复用录入页的抽屉）', async () => {

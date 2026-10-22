@@ -109,3 +109,33 @@ export function quantityText(row = {}) {
   if (q === null || q === undefined || q === '') return unit || '—'
   return unit ? `${q} ${unit}` : String(q)
 }
+
+/**
+ * 「这需求提了多久」——卡片底部右侧用。
+ *
+ * 为什么用它、而不是显示 "OA 已提 / 待提单"：
+ * 那两个字**每一列都知道**（待提单列里全是待提单、等货列里全是已提单），
+ * 在卡片上再写一遍是纯噪音。这一格换上"提出 N 天"，回答的是另一个问题：
+ * **这件事拖了多久**。看板上其他位置都没有这个信息。
+ *
+ * 日期按**本地日**比较：后端给的是 `YYYY-MM-DD`（没有时区），
+ * 用 Date.UTC 拼出来再相减，避免夏令时/时区把天数算成 0.99 天。
+ *
+ * @param {object} row 采购行
+ * @param {Date} [today] 注入"今天"，便于单测
+ */
+export function requestAgeLabel(row = {}, today = new Date()) {
+  const raw = String(row.requestDate || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '未填提出日期'
+
+  const [y, m, d] = raw.split('-').map(Number)
+  const [ty, tm, td] = [today.getFullYear(), today.getMonth() + 1, today.getDate()]
+  const a = Date.UTC(y, m - 1, d)
+  const b = Date.UTC(ty, tm - 1, td)
+  const days = Math.round((b - a) / 86400000)
+
+  if (!Number.isFinite(days)) return '未填提出日期'
+  if (days <= 0) return '今天提出'
+  if (days === 1) return '昨天提出'
+  return `提出 ${days} 天`
+}
