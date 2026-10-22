@@ -114,6 +114,35 @@ const dirty = computed(() => JSON.stringify(form.value) !== snapshot)
 
 const materialNameRef = ref(null)
 
+/*
+ * 抽屉内容入场动画（2026-10-22，变更-145）。
+ *
+ * 为什么自己做而不是靠 Element Plus：
+ * EP 的位移是 `.el-drawer-fade-enter-from .rtl { transform: translate(100%) }` 配
+ * `.el-drawer { transition: all var(--el-transition-duration) }`。绘制 200ms+ 的挂载
+ * 让 Vue 的 enter-from / enter-to 落在**同一帧**上，浏览器合并成一次样式计算 ——
+ * 位移的起点和终点相同，**动画不发生**（用 Web Animations API 实测：
+ * runningTransitions 为空，抽屉 80ms 内直接出现在终点）。
+ *
+ * 内容层的动画不受这个时机影响：类一加上就播。所以：
+ *   · 打开时加 `is-entering` 类（420ms：淡入 + 轻微上移 12px），播完再摘掉；
+ *   · 同时保留 theme.css 里放慢的 --el-transition-duration（遮罩淡入也跟着慢下来）。
+ */
+const entering = ref(false)
+let enterTimer = null
+
+function playEnterAnimation() {
+  entering.value = false
+  clearTimeout(enterTimer)
+  // 先摘一帧再加，保证同样的类能再次触发动画（连续开关抽屉时）
+  requestAnimationFrame(() => {
+    entering.value = true
+    enterTimer = setTimeout(() => {
+      entering.value = false
+    }, 460)
+  })
+}
+
 /** el-autocomplete 的 ref 回调：新建模式打开后要把光标放进物料名称 */
 function setMaterialNameRef(el) {
   materialNameRef.value = el
@@ -153,6 +182,7 @@ watch(
     }
     form.value = props.mode === 'edit' && props.row ? { ...blankDraft(), ...props.row } : blankDraft()
     snapshot = JSON.stringify(form.value)
+    playEnterAnimation()
     await nextTick()
     if (isCreate.value) {
       /*
@@ -298,7 +328,8 @@ function fieldsOf(group) {
 
     <!-- 回车提交（在输入框里敲回车就能存），Esc 关闭。都挂在内容区，不污染全局 -->
     <div
-      class="flex min-h-full flex-col gap-6 pb-2"
+      class="drawer-enter flex min-h-full flex-col gap-6 pb-2"
+      :class="{ 'is-entering': entering }"
       @keydown.enter.exact="onEnter"
       @keydown.esc.stop.prevent="requestClose"
     >
@@ -502,6 +533,32 @@ function fieldsOf(group) {
 /* 抽屉内滚动不带动页面（全局 style.css 已有一条，这里按组件再兜一次） */
 .purchase-drawer :deep(.el-drawer__body) {
   overscroll-behavior: contain;
+}
+
+/*
+ * 内容入场：淡入 + 上移 12px，420ms，无过冲。
+ * 只动 opacity / transform（合成层），不动 height / margin —— 前者不触发重排。
+ */
+.drawer-enter.is-entering {
+  animation: purchase-drawer-enter 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes purchase-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-enter.is-entering {
+    animation-duration: 1ms;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
