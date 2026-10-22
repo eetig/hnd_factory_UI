@@ -153,7 +153,7 @@
 }
 
 /* ============================================================
- * 抽屉开合：只调时长与缓动（2026-10-22，变更-145）
+ * 抽屉开合：只调时长与缓动（2026-10-22，变更-145 → 变更-151 重定参）
  * ============================================================
  *
  * 这条改了三版，把弯路记在这里免得再踩：
@@ -162,29 +162,37 @@
  *   ② 变更-145 第一版：换成自写 @keyframes。用 Web Animations API 实测发现动画对象
  *      反复被 cancelled —— 它跟 Element Plus 的 `enter-active` 类生命周期打架，
  *      表现是"一顿就到位"，比原来更糟。
- *   ③ 现在（这一版）：**完全不碰 keyframes**，只调 EP 自己的两个旋钮。
+ *   ③ 变更-145 定稿：不碰 keyframes，只调 EP 的时长/缓动，但**把时长拉到了 560ms**
+ *      （想用"慢"换"舒缓"）。
+ *   ④ 变更-151（这次）：**时长回到 300ms**，改用强 ease-out。依据 apple-design：
+ *
+ *      · 「弹层/抽屉 200–500ms，UI 动画应控制在 300ms 内」——
+ *        560ms 已经越界，而抽屉是每天点很多次的东西。
+ *      · 「不要靠拉长时长获得从容」：**愿意等的时间由曲线决定，不由时长决定**。
+ *        强 ease-out（起步就把大部分位移走掉）在 300ms 里比 Material 标准曲线
+ *        在 560ms 里更"稳"——前者是"滑进去停住"，后者是"一直在慢慢挪"。
+ *      · **关闭快于打开**（非对称）：关的时候人已经决定了，不需要从容。
+ *
+ * 为什么仍不用真弹簧：变更-124 的过冲被使用方否过（"动作太大"），
+ * 而无过冲的弹簧和强 ease-out 在视觉上区别极小 —— 用更简单的实现，
+ * 少一个"EP 类时序 vs 动画对象"的冲突面。
  *
  * 依据（读的 element-plus/theme-chalk/el-drawer.css）：
  *   `.el-drawer { transition: all var(--el-transition-duration); position: absolute }`
  *   `.el-drawer-fade-enter-from .rtl { transform: translate(100%) }`
  * 也就是说位移是**纯 transition**，由 EP 的类名时序驱动 ——
  * 改时长与缓动就够，框架自己负责什么时候加/摘类。
- *
- * · 时长 560ms（EP 默认 300ms；组件里那条 260ms 覆盖已在变更-144 删掉）；
- * · 缓动 `cubic-bezier(0.4, 0, 0.2, 1)`（Material 标准）：两头软、中间快，
- *   全程单调**没有过冲** —— "舒缓"的关键在这里，不只是把时间拉长；
- * · 关闭 420ms：关的时候不需要那么从容。
  */
 .el-drawer {
   /* EP 用这个变量算 transition 时长，也用它决定何时摘掉 enter-active 类 —— 天然同步 */
-  --el-transition-duration: 560ms;
-  /* `transition: all <时长>` 的简写会把缓动设成 ease，这里覆盖成无过冲的缓动 */
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  --el-transition-duration: 300ms;
+  /* `transition: all <时长>` 的简写会把缓动设成 ease，这里覆盖成强 ease-out（无过冲） */
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 关闭快一点：只覆盖时长，不动缓动 */
+/* 关闭快一点：只覆盖时长，不动缓动（人已经决定了，不需要从容） */
 .el-drawer-fade-leave-active .el-drawer {
-  transition-duration: 420ms;
+  transition-duration: 220ms;
 }
 
 @media (prefers-reduced-motion: reduce) {

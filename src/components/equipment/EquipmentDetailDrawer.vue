@@ -445,14 +445,15 @@ function fieldsOf(group) {
 
 <style scoped>
 /*
- * 抽屉进出场（变更-118）：Ionic 的抽屉曲线 + 260ms，与采购页同一个口径
- * （emil-design-eng 给的 `--ease-drawer`，也是"抽屉/弹窗"这一档的中段）。
- * 只动 transform，不动 width/left —— 后两者会每帧重排。
+ * ⚠️ 这里**故意不写** transition（2026-10-22 变更-151 删掉）。
+ *
+ * 原来这条是 `transition: transform 260ms cubic-bezier(.32,.72,0,1)`，于是三个抽屉
+ * 出现两个来源：采购页读 theme.css（300ms 强 ease-out），设备与归档页读自己这条
+ * （260ms Ionic 曲线）—— 同一个系统里抽屉手感不一样，而且改 theme.css 只对其中一页
+ * 生效，调参的人会以为"没生效"。
+ *
+ * 抽屉开合的唯一来源：src/theme.css 的 .el-drawer / .el-drawer-fade-leave-active。
  */
-.equipment-drawer :deep(.el-drawer) {
-  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
 /* 抽屉内滚动不带动页面（全局 style.css 已有一条，这里按组件再兜一次） */
 .equipment-drawer :deep(.el-drawer__body) {
   overscroll-behavior: contain;

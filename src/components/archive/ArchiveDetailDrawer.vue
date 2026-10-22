@@ -352,11 +352,11 @@ function onDelete() {
 </template>
 
 <style scoped>
-/* 与采购抽屉同一条曲线（Ionic --ease-drawer），只动 transform 不动 width/left */
-.archive-drawer :deep(.el-drawer) {
-  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-
+/*
+ * ⚠️ 这里**故意不写** transition（2026-10-22 变更-151 删掉）。
+ * 原因同设备抽屉：曾经三个抽屉两个来源，改 theme.css 只对采购页生效。
+ * 唯一来源：src/theme.css 的 .el-drawer 两段。
+ */
 .archive-drawer :deep(.el-drawer__body) {
   overscroll-behavior: contain;
 }

@@ -536,17 +536,24 @@ function fieldsOf(group) {
 }
 
 /*
- * 内容入场：淡入 + 上移 12px，420ms，无过冲。
+ * 内容入场：淡入 + 上移 4px，**160ms**（变更-151 从 420ms/12px 收紧）。
+ *
+ * 为什么收：抽屉本身已经用 300ms 滑进来了，内容再叠一段 420ms 的位移，
+ * 观感是"两段动画接力"——打开一个抽屉逼近 0.7 秒。apple-design 的判据是
+ * 「内容跟着容器一起出现，不要二次编排」；真要保留层次，就把幅度和时长都压小，
+ * 让它读起来是"容器在动、内容在里面沉了一下"，而不是"又一个东西飞进来"。
+ *
+ * 4px 这个幅度是刻意的：位移不超过行高的一半，眼睛不会把它当成独立的运动对象。
  * 只动 opacity / transform（合成层），不动 height / margin —— 前者不触发重排。
  */
 .drawer-enter.is-entering {
-  animation: purchase-drawer-enter 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: purchase-drawer-enter 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes purchase-drawer-enter {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(4px);
   }
 
   to {
