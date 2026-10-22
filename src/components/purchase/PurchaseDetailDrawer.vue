@@ -119,6 +119,30 @@ function setMaterialNameRef(el) {
   materialNameRef.value = el
 }
 
+/**
+ * 保存成功后"接着录下一条"（2026-10-22，变更-142；使用方原话
+ * 「新增后，清空物料名称，物料编码，规格型号」）。
+ *
+ * 只清这三样 + 数量复位 1：
+ *   · 清物料三件套 —— 它们是由"选了哪个物料"派生出来的，留着必然导致下一条存成上一个物料；
+ *   · 数量复位 1 —— 上一行常是 100 台/20 米，下一条多数不是同一个数，留着更容易存错；
+ *   · **保留**需求人 / 提出需求日期 / 类别 / 用途 / 要求到货日期 / 单位 ——
+ *     同一批需求连着录几条物料时，这些是共用的，重填一遍纯属浪费。
+ *
+ * 清完把快照对齐（否则关闭时会误判"有未保存改动"而弹确认），并把光标放回物料名称。
+ */
+function resetForNextEntry() {
+  form.value.materialName = ''
+  form.value.materialCode = ''
+  form.value.spec = ''
+  form.value.quantity = 1
+  snapshot = JSON.stringify(form.value)
+  cancelMaterialSearch()
+  nextTick(() => materialNameRef.value?.focus?.())
+}
+
+defineExpose({ resetForNextEntry })
+
 /** 打开：按模式装填表单、记快照、新建时聚焦物料名称 */
 watch(
   () => props.modelValue,

@@ -121,6 +121,9 @@ function dayHint(row) {
   return ''
 }
 
+/** 抽屉实例：新增保存后要让它清空物料三件套（见 handleSave） */
+const drawerRef = ref(null)
+
 function openCreate() {
   drawerMode.value = 'create'
   drawerRow.value = null
@@ -153,7 +156,20 @@ async function handleSave(payload) {
   try {
     // gotoFirstPage：排序是"提出需求日期倒序"，翻在第 2 页时新加的行看不见
     await savePurchase(payload, { gotoFirstPage: drawerMode.value === 'create' })
-    // 新建存完也关抽屉：使用者通常要接着录下一条，下次点「新增需求」又是空表
+
+    /*
+     * 新建：**不关抽屉**，清掉物料三件套继续录（2026-10-22，变更-142）。
+     * 原先这里存完就关，但使用方要的是"同一批需求连着录几条物料"——
+     * 关掉再点「新增需求」虽然也是空表，但需求人/日期/用途全要重填一遍。
+     * 编辑仍然关：改一条就是一条。
+     */
+    if (drawerMode.value === 'create') {
+      drawerRef.value?.resetForNextEntry?.()
+      drawerMessage.value = ''
+      ElMessage.success('已保存，接着录下一条（物料已清空）')
+      return
+    }
+
     drawerOpen.value = false
     drawerRow.value = null
     drawerMessage.value = ''
@@ -408,6 +424,7 @@ onMounted(loadPurchase)
     </div>
 
     <PurchaseDetailDrawer
+    ref="drawerRef"
       v-model="drawerOpen"
       :mode="drawerMode"
       :row="drawerRow"
