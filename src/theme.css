@@ -201,3 +201,50 @@
     transition-duration: 1ms;
   }
 }
+/* ============================================================
+ * 弹层（el-dialog）与抽屉同一个口径（2026-10-22，变更-152）
+ * ============================================================
+ *
+ * 现状：EP 的 dialog 动画读 `--el-transition-duration`（默认 300ms），
+ * 位移是 `translateY(-20px)`。而抽屉那套已经定在 300/220ms + 强 ease-out。
+ * 同一个系统里，弹层比抽屉慢、位移比抽屉大 5 倍 —— 手感是分裂的。
+ *
+ * 这里做两件事（都不改结构）：
+ *   ① 覆盖变量到 240ms：弹层比抽屉更"轻"（它面积小、出现更频繁）；
+ *   ② 重定义 keyframes，位移 20px → 8px。
+ *      20px 在 1080p 上是半行文字的高度，读起来是"从上面砸下来"；
+ *      8px 只是"沉了一下"，与抽屉的 4px 内容位移同一量级。
+ *
+ * ⚠️ `.el-overlay` 是 transition 的根元素（`.dialog-fade-*` 类挂在它身上），
+ *    所以变量必须写在这里，写在 `.el-dialog` 上父元素读不到。
+ * ⚠️ 重定义 @keyframes 同名即可生效（后定义者胜），不需要动 EP 的 CSS 文件。
+ *    代价是 EP 升级若改了这些名字，覆盖会静默失效 —— 表现为"位移又变回 20px"，
+ *    不会报错。升级后请顺手看一眼。
+ */
+.el-overlay {
+  --el-transition-duration: 240ms;
+}
+
+@keyframes dialog-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dialog-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
