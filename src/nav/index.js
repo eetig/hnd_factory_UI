@@ -71,10 +71,19 @@ export const NAV_ITEMS = [
   // 所以这里只有一条导航项 —— 它们共用一份筛选区间，本来就不该是三个入口。
   { key: 'costing', label: '核算', path: '/orders/costing', perm: ADMIN_PERM, group: 'order' },
   { key: 'stock', label: '物料查询', path: '/materials', group: 'materials' },
+  // 采购两页（变更-148）：看板在前 —— 进「采购」先看"今天要催谁"，
+  // 录入是低频动作，排在后面。两页平级，不是同一页的两个 Tab（各有自己的数据视角）。
+  {
+    key: 'purchaseBoard',
+    label: '采购看板',
+    path: '/purchase/board',
+    perm: ADMIN_PERM,
+    group: 'purchase',
+  },
   {
     key: 'purchase',
-    label: '采购需求详情',
-    path: '/purchase',
+    label: '采购录入',
+    path: '/purchase/entry',
     perm: ADMIN_PERM,
     group: 'purchase',
   },

@@ -10,6 +10,7 @@ import InboundList from '../views/orders/InboundList.vue'
 import CostingView from '../views/orders/CostingView.vue'
 import StockView from '../views/materials/StockView.vue'
 import PurchaseView from '../views/purchase/PurchaseView.vue'
+import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
 import VesselView from '../views/equipment/VesselView.vue'
 import ElectricityView from '../views/equipment/ElectricityView.vue'
@@ -71,10 +72,28 @@ export const workbenchRoutes = [
     meta: { group: 'materials', key: 'stock', title: '物料查询' },
   },
   {
+    /*
+     * 采购拆成两页（变更-148，2026-10-22）：
+     *   /purchase/board  看板 —— 四列、只看未到货，"今天该催谁"
+     *   /purchase/entry  录入 —— 原来那张 10 列表，擅长填不擅长读
+     *
+     * `/purchase` 保留成**重定向**，不是简单改路径：抽屉/收藏里已有的 `/purchase`
+     * 链接（以及后端日志里的 referer）都还会打到这里，404 是最难解释的那种故障。
+     */
     path: '/purchase',
+    redirect: '/purchase/board',
+  },
+  {
+    path: '/purchase/board',
+    name: 'PurchaseBoardView',
+    component: PurchaseBoardView,
+    meta: { group: 'purchase', key: 'purchaseBoard', title: '采购看板', perm: ADMIN_PERM },
+  },
+  {
+    path: '/purchase/entry',
     name: 'PurchaseView',
     component: PurchaseView,
-    meta: { group: 'purchase', key: 'purchase', title: '采购需求详情', perm: ADMIN_PERM },
+    meta: { group: 'purchase', key: 'purchase', title: '采购录入', perm: ADMIN_PERM },
   },
   {
     path: '/equipment',

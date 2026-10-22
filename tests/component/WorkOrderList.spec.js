@@ -35,9 +35,11 @@ const ADMIN_ONLY_LABELS = [
   '领料汇总',
   '入库汇总',
   '核算',
-  // 变更-096/097：采购需求详情（原「采购进度跟踪」）原先免登录、所有人可见；使用方确认「这页只有管理员能看」，
+  // 变更-096/097：采购（原「采购进度跟踪」）原先免登录、所有人可见；使用方确认「这页只有管理员能看」，
   // 后端已把 /api/purchase/** 收进 ADMIN_READ_PATTERNS，前端页签同步改成 adminOnly。
-  '采购需求详情',
+  // 变更-148：拆成「看板 + 录入」两页，两条都要在 admin 名单里。
+  '采购看板',
+  '采购录入',
 ]
 
 // 非 admin 也能看见的：台账之外的查询/计算页（不含需要权限位的「文件导入」「图片解析」）
@@ -743,7 +745,8 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
     { path: '/orders/inbound', title: '入库汇总', group: '工单', key: 'inbound', role: 'admin' },
     { path: '/orders/costing', title: '核算', group: '工单', key: 'costing', role: 'admin' },
     { path: '/materials', title: '物料查询', group: '物料', key: 'stock' },
-    { path: '/purchase', title: '采购需求详情', group: '采购', key: 'purchase', role: 'admin' },
+    { path: '/purchase/board', title: '采购看板', group: '采购', key: 'purchaseBoard', role: 'admin' },
+    { path: '/purchase/entry', title: '采购录入', group: '采购', key: 'purchase', role: 'admin' },
     {
       path: '/equipment',
       title: '设备数据维护',
