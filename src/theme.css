@@ -165,8 +165,10 @@
  * 手装 8~10 个 tarball 的解析风险远大于收益 —— 而 `linear()` 表达同样一条曲线
  * 是 0 依赖的，浏览器原生插值。
  *
- * 时长 320ms 落在"偶尔操作"的 200–500ms 区间（emil 的频率表），
- * 抽屉是低频动作，可以比 hover 慢。
+ * 时长（2026-10-22，变更-144）：**开 460ms / 关 360ms**。
+ * 使用方反馈"弹出的动画太快"—— 原来 320ms，而且被抽屉组件自己的一条
+ * `transition: transform 260ms` 覆盖成更短（那条已删，动画只留这一处）。
+ * 开着慢一点显得从容，关着快一点显得利落，这是抽屉类交互的常规取舍。
  */
 .el-drawer-fade-enter-active .rtl,
 .el-drawer-fade-enter-active .ltr,
@@ -174,7 +176,8 @@
 .el-drawer-fade-enter-active .btt,
 .el-drawer-fade-leave-active .rtl,
 .el-drawer-fade-leave-active .ltr {
-  transition: transform 320ms
+  /* 开 460ms / 关 360ms（见上面的注释）—— 同一段弹簧曲线，只改时长 */
+  transition: transform 460ms
     linear(
       0,
       0.009,

@@ -158,7 +158,7 @@ watch(
       /*
        * ⚠️ 不能只 `nextTick` 就聚焦：el-drawer 打开时会把焦点陷阱（focus trap）
        * 抢到容器上，紧接着的 focus() 会被它盖掉 —— 表现为"自动聚焦没生效"。
-       * 等一帧再聚焦（抽屉过渡 260ms，但陷阱在首帧就装好；60ms 足够且感知不到）。
+       * 等一帧再聚焦（抽屉过渡现在 460ms，但焦点陷阱在首帧就装好；60ms 足够且感知不到）。
        */
       setTimeout(() => materialNameRef.value?.focus?.(), 60)
     }
@@ -486,13 +486,18 @@ function fieldsOf(group) {
 /*
  * 抽屉的进出场（变更-117）。
  *
- * 曲线用 Ionic 的抽屉曲线 `cubic-bezier(0.32, 0.72, 0, 1)`、260ms —— 这是
- * emil-design-eng 给的 `--ease-drawer`，也是"弹窗/抽屉"这一档（200–500ms）的中段。
- * 只动 transform，不动 width/left：后两者会让浏览器每帧重排。
+ * 曲线与时长都在 src/theme.css 的 .el-drawer-fade-* 那段（开 460ms / 关 360ms 的弹簧），
+ * 这里只留一条"滚动不带动页面"的规则。
+ * 只动 transform、不动 width/left：后两者会让浏览器每帧重排。
  */
-.purchase-drawer :deep(.el-drawer) {
-  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
-}
+/*
+ * ⚠️ 这里**不要**再写 transition（2026-10-22，变更-144）。
+ *
+ * 原先这里有一条 `transition: transform 260ms cubic-bezier(...)`，把 theme.css 里
+ * 那条 320ms 的弹簧曲线**覆盖**成了 260ms —— 使用方就是在这个状态下反馈"动画太快"。
+ * 抽屉的开合动画只有一个来源：src/theme.css 的 .el-drawer-fade-* 那段
+ * （现在是开 460ms / 关 360ms）。再加一条，两边迟早又对不上。
+ */
 
 /* 抽屉内滚动不带动页面（全局 style.css 已有一条，这里按组件再兜一次） */
 .purchase-drawer :deep(.el-drawer__body) {

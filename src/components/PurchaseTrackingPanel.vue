@@ -12,6 +12,7 @@ import PurchaseColumnPicker from './purchase/PurchaseColumnPicker.vue'
 import PurchaseDetailDrawer from './purchase/PurchaseDetailDrawer.vue'
 import PurchaseFilterBar from './purchase/PurchaseFilterBar.vue'
 import { columnsWidthPx, usePurchaseColumns } from './purchase/usePurchaseColumns.js'
+import { buildCopyText, copyText, isCopyColumn } from '../utils/clipboard.js'
 
 /**
  * 采购需求详情（变更-117，2026-10-18：交互模型重构）。
@@ -143,6 +144,49 @@ function requiredProblem(source) {
   if (!source.requester?.trim()) return '需求人不能为空'
   if (!source.materialName?.trim()) return '物料名称不能为空'
   return ''
+}
+
+/**
+ * 单元格点击复制（2026-10-22，变更-144；使用方确认四条）：
+ *   · 点**序号** → 复制「物料名称 ⇥ 物料编码 ⇥ 规格型号」一行三列（能直接粘进 Excel）
+ *   · 点**物料名称 / 物料编码 / 规格型号** → 复制那一项
+ *   · 这四个格子**只复制、不开抽屉**（其它列仍然点开抽屉）—— 复制是高频动作，
+ *     每点一次都弹抽屉太吵
+ *   · 成功：toast 说明复制了什么 + 单元格闪一下（从哪个格复制的）
+ */
+const flashedCell = ref('') // `${rowId}:${key}`，闪 700ms
+let flashTimer = null
+
+async function handleCellClick(row, key) {
+  if (!isCopyColumn(key)) return
+
+  const { text, label, empty } = buildCopyText(row, key)
+  if (empty) {
+    ElMessage.warning(`这一行的${label || '这一项'}是空的，没有可复制的内容`)
+    return
+  }
+
+  const ok = await copyText(text)
+  if (!ok) {
+    ElMessage.error('复制失败：浏览器拒绝了剪贴板访问，请手动选中复制')
+    return
+  }
+
+  flashedCell.value = `${row.id}:${key}`
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => {
+    flashedCell.value = ''
+  }, 700)
+
+  // 多行内容不往 toast 里塞（会撑得很长），只报"复制了三样"
+  ElMessage.success(key === 'index' ? `已复制${label}` : `已复制${label}：${text.slice(0, 40)}`)
+}
+
+/** 可复制单元格的公共类：手型 + 悬停提示 + 刚复制过的底色 */
+function cellClass(row, key) {
+  if (!isCopyColumn(key)) return ''
+  const flashing = flashedCell.value === `${row.id}:${key}`
+  return `cursor-pointer transition-colors ${flashing ? 'bg-region' : 'hover:bg-region'}`
 }
 
 /** 抽屉里点保存（新建与编辑同一个入口，靠 id 有没有值区分） */
@@ -282,10 +326,18 @@ onMounted(loadPurchase)
             @keydown.space.self.prevent="openDetail(row)"
           >
             <template v-for="col in orderedColumns" :key="col.key">
-              <!-- 序号：跨页连续 -->
+              <!-- 序号：跨页连续。点它复制「物料名称 ⇥ 物料编码 ⇥ 规格型号」（可粘进 Excel） -->
               <td
                 v-if="col.key === 'index'"
                 class="px-3 py-2 text-xs font-medium text-slate-500"
+                :class="cellClass(row, 'index')"
+                tabindex="0"
+                role="button"
+                :title="`点击复制：物料名称 / 物料编码 / 规格型号`"
+                :aria-label="`复制第 ${(pageNum - 1) * pageSize + index + 1} 行的物料名称、编码、规格型号`"
+                @click.stop="handleCellClick(row, 'index')"
+                @keydown.enter.self.stop.prevent="handleCellClick(row, 'index')"
+                @keydown.space.self.stop.prevent="handleCellClick(row, 'index')"
               >
                 {{ (pageNum - 1) * pageSize + index + 1 }}
               </td>
@@ -303,13 +355,32 @@ onMounted(loadPurchase)
               <td
                 v-else-if="col.key === 'materialName'"
                 class="px-3 py-2 text-slate-700"
+                :class="cellClass(row, 'materialName')"
+                tabindex="0"
+                role="button"
+                title="点击复制物料名称"
+                :aria-label="`复制物料名称 ${row.materialName || ''}`"
+                @click.stop="handleCellClick(row, 'materialName')"
+                @keydown.enter.self.stop.prevent="handleCellClick(row, 'materialName')"
+                @keydown.space.self.stop.prevent="handleCellClick(row, 'materialName')"
               >
                 <div class="line-clamp-2" :title="row.materialName || ''">
                   {{ row.materialName || '—' }}
                 </div>
               </td>
 
-              <td v-else-if="col.key === 'spec'" class="px-3 py-2 text-slate-600">
+              <td
+                v-else-if="col.key === 'spec'"
+                class="px-3 py-2 text-slate-600"
+                :class="cellClass(row, 'spec')"
+                tabindex="0"
+                role="button"
+                title="点击复制规格型号"
+                :aria-label="`复制规格型号 ${row.spec || ''}`"
+                @click.stop="handleCellClick(row, 'spec')"
+                @keydown.enter.self.stop.prevent="handleCellClick(row, 'spec')"
+                @keydown.space.self.stop.prevent="handleCellClick(row, 'spec')"
+              >
                 <div class="line-clamp-2" :title="row.spec || ''">{{ row.spec || '—' }}</div>
               </td>
 
@@ -342,7 +413,18 @@ onMounted(loadPurchase)
                 {{ row.requestDate || '—' }}
               </td>
 
-              <td v-else-if="col.key === 'materialCode'" class="px-3 py-2 text-slate-600">
+              <td
+                v-else-if="col.key === 'materialCode'"
+                class="px-3 py-2 text-slate-600"
+                :class="cellClass(row, 'materialCode')"
+                tabindex="0"
+                role="button"
+                title="点击复制物料编码"
+                :aria-label="`复制物料编码 ${row.materialCode || ''}`"
+                @click.stop="handleCellClick(row, 'materialCode')"
+                @keydown.enter.self.stop.prevent="handleCellClick(row, 'materialCode')"
+                @keydown.space.self.stop.prevent="handleCellClick(row, 'materialCode')"
+              >
                 <span class="tabular-nums">{{ row.materialCode || '—' }}</span>
               </td>
 
