@@ -51,8 +51,12 @@ let wrapper
 async function open(props = {}) {
   wrapper = mount(PurchaseDetailDrawer, {
     attachTo: document.body,
-    props: { modelValue: true, mode: 'create', canEdit: true, row: null, ...props },
-    global: { plugins: [ElementPlus] },
+    // 抽屉默认 append-to-body（变更-141），测试里关掉，DOM 留在原地
+    props: { modelValue: true, mode: 'create', canEdit: true, row: null, appendToBody: false, ...props },
+    global: {
+      plugins: [ElementPlus],
+      stubs: {},
+    },
   })
   await flushPromises()
   await nextTick()

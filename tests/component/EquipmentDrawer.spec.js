@@ -51,7 +51,8 @@ let wrapper
 async function open(props = {}) {
   wrapper = mount(EquipmentDetailDrawer, {
     attachTo: document.body,
-    props: { modelValue: true, mode: 'create', canEdit: true, row: null, ...props },
+    // 抽屉默认 append-to-body（变更-141），测试里关掉，DOM 留在原地
+    props: { modelValue: true, mode: 'create', canEdit: true, row: null, appendToBody: false, ...props },
     global: {
       plugins: [ElementPlus],
       // 标定器要 canvas，这里只验抽屉本身；它是否被正确调用由面板测试与手测覆盖

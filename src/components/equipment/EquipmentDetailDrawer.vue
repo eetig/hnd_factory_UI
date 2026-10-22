@@ -41,6 +41,14 @@ import { CONTAINER_OPTIONS, DRAWER_GROUPS, FOCUS_FIELD_ON_CREATE, blankDraft, fi
  * 单独提交 id+imageBounds 会把其余字段清成 NULL（变更-065/082 的契约）。
  */
 const props = defineProps({
+  /*
+   * 遮罩要不要挂到 body（默认 true，2026-10-22 变更-141）。
+   *
+   * 必须是 true：抽屉如果渲染在页面容器里，页面头卡所在的兄弟层叠上下文会把它压住
+   * （采购需求抽屉的标题就这样被吃掉过）。留成 prop 只为一件事 —— 组件测试可以传 false，
+   * 让 DOM 留在原地供 wrapper.find 查询（teleport 打桩在 ElSelect 上会触发递归更新）。
+   */
+  appendToBody: { type: Boolean, default: true },
   modelValue: { type: Boolean, default: false },
   mode: { type: String, default: 'edit' }, // 'create' | 'edit'
   row: { type: Object, default: null },
@@ -215,6 +223,7 @@ function fieldsOf(group) {
 <template>
   <el-drawer
     :model-value="modelValue"
+    :append-to-body="appendToBody"
     direction="rtl"
     :size="'min(560px, 100vw)'"
     :close-on-press-escape="false"

@@ -12,6 +12,14 @@ import { expireBadge, fileSizeText } from './useArchiveColumns'
  * <p>与采购抽屉同一条不易：Esc / 点遮罩 / 点 × 都先问「有未保存改动」，别让改了半天悄悄丢。
  */
 const props = defineProps({
+  /*
+   * 遮罩要不要挂到 body（默认 true，2026-10-22 变更-141）。
+   *
+   * 必须是 true：抽屉如果渲染在页面容器里，页面头卡所在的兄弟层叠上下文会把它压住
+   * （采购需求抽屉的标题就这样被吃掉过）。留成 prop 只为一件事 —— 组件测试可以传 false，
+   * 让 DOM 留在原地供 wrapper.find 查询（teleport 打桩在 ElSelect 上会触发递归更新）。
+   */
+  appendToBody: { type: Boolean, default: true },
   modelValue: { type: Boolean, default: false },
   mode: { type: String, default: 'edit' }, // 'create' | 'edit'
   row: { type: Object, default: null },
@@ -193,6 +201,7 @@ function onDelete() {
 <template>
   <el-drawer
     :model-value="modelValue"
+    :append-to-body="appendToBody"
     direction="rtl"
     :size="'min(520px, 100vw)'"
     :close-on-press-escape="false"
