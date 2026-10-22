@@ -87,6 +87,14 @@ export const NAV_ITEMS = [
     perm: ADMIN_PERM,
     group: 'purchase',
   },
+  // 设备两页（变更-150）：看板在前 —— 进「设备」先看还缺什么。
+  {
+    key: 'equipmentBoard',
+    label: '设备看板',
+    path: '/equipment/board',
+    perm: 'equipment:edit',
+    group: 'equipment',
+  },
   {
     key: 'equipment',
     label: '设备数据维护',

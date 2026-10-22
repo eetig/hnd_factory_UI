@@ -12,6 +12,7 @@ import StockView from '../views/materials/StockView.vue'
 import PurchaseView from '../views/purchase/PurchaseView.vue'
 import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
+import EquipmentBoardView from '../views/equipment/EquipmentBoardView.vue'
 import VesselView from '../views/equipment/VesselView.vue'
 import ElectricityView from '../views/equipment/ElectricityView.vue'
 import WeeklyView from '../views/stats/WeeklyView.vue'
@@ -94,6 +95,16 @@ export const workbenchRoutes = [
     name: 'PurchaseView',
     component: PurchaseView,
     meta: { group: 'purchase', key: 'purchase', title: '采购录入', perm: ADMIN_PERM },
+  },
+  {
+    /*
+     * 设备也拆两页（变更-150）：看板看「还缺什么」，维护页负责填与细筛。
+     * /equipment 保持指向维护页 —— 它已经在书签和文档里被引用过，改它没有收益。
+     */
+    path: '/equipment/board',
+    name: 'EquipmentBoardView',
+    component: EquipmentBoardView,
+    meta: { group: 'equipment', key: 'equipmentBoard', title: '设备看板', perm: 'equipment:edit' },
   },
   {
     path: '/equipment',

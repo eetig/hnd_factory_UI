@@ -748,6 +748,13 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
     { path: '/purchase/board', title: '采购看板', group: '采购', key: 'purchaseBoard', role: 'admin' },
     { path: '/purchase/entry', title: '采购录入', group: '采购', key: 'purchase', role: 'admin' },
     {
+      path: '/equipment/board',
+      title: '设备看板',
+      group: '设备',
+      key: 'equipmentBoard',
+      permissions: ['equipment:edit'],
+    },
+    {
       path: '/equipment',
       title: '设备数据维护',
       group: '设备',
