@@ -201,7 +201,14 @@ onMounted(loadBoard)
           </div>
         </header>
 
-        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+        <!--
+          pt-2 是给**悬停阴影**留位置的（变更-166）。
+          原来只有 px-2 pb-2：第一张卡贴着滚动容器上边缘，hover 的 shadow 与
+          -translate-y 一起工作时，上边框会被容器裁掉/被阴影糊住 ——
+          使用方看到的就是"鼠标放到第一张卡上，上边缘那条线被覆盖了"。
+          顺手也去掉了 -translate-y-px：位移会把上边框推上去和列头叠在一起。
+        -->
+        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2 pt-2">
           <PurchaseCard
             v-for="row in col.rows"
             :key="row.id"

@@ -5,15 +5,17 @@ import { dueLabel, quantityText, requestAgeLabel } from './boardGroups.js'
 /*
  * 采购看板的一张卡（变更-148）。
  *
- * 显示五行，顺序按"扫一眼要什么"排：
+ * 显示六行，顺序按"扫一眼要什么"排：
  *   ① 物料名称（最多两行，超出省略）
  *   ② 规格型号（一行，省略）—— 采购员认料主要靠这一行
  *   ③ 数量 + 单位 ｜ 类别徽标
- *   ④ 要求到货 · 还剩 N 天（超期标红）
- *   ⑤ 需求人
+ *   ④ **OA 单号**（2026-10-23，变更-166 使用方要求：催单要直接念单号，不想再点开）
+ *   ⑤ 要求到货 · 还剩 N 天（超期标红）
+ *   ⑥ 需求人 · 提了几天
  *
- * **OA 单号不上卡**：它长、而且只有真要催单时才需要 —— 点开抽屉里有。
- * 卡片的目标是"横向比较谁更急"，不是"看全所有字段"。
+ * 关于 OA 单号位置：原来（变更-148）**故意不上卡**，理由是"它长、只有催单才需要"。
+ * 使用方 2026-10-23 明确要放上来 —— 那就放，但只占一行、超出省略、悬停看全，
+ * 卡片高度基本不变；空值直接不渲染（不留一条"—"占位，那才是噪音）。
  */
 const props = defineProps({
   row: { type: Object, required: true },
@@ -48,7 +50,7 @@ const badge = computed(() => {
 <template>
   <button
     type="button"
-    class="w-full rounded-card border border-line bg-raised p-3 text-left transition hover:-translate-y-px hover:border-slate-400 hover:shadow-card focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+    class="w-full rounded-card border border-line bg-raised p-3 text-left transition hover:border-slate-400 hover:shadow-card focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
     :aria-label="`${row.materialName || '采购需求'}，${row.statusLabel || ''}，${due.text}`"
   >
     <div class="flex items-start justify-between gap-2">
@@ -73,6 +75,11 @@ const badge = computed(() => {
         row.category
       }}</span>
     </div>
+
+    <!-- OA 单号（2026-10-23，变更-166）：一行、超出省略、悬停看全；空值不渲染 -->
+    <p v-if="row.oaNo" class="mt-1 truncate text-[11px] tabular-nums text-slate-500" :title="row.oaNo">
+      OA {{ row.oaNo }}
+    </p>
 
     <div class="mt-1.5 flex items-center justify-between gap-2 text-xs">
       <span class="tabular-nums text-slate-500">{{ row.requiredArrivalDate || '未填到货日' }}</span>
