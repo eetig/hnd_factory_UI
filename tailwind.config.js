@@ -44,7 +44,7 @@ export default {
          * 与 canvas 的分离比 1.11（spec 实算钉 ≥1.08）—— 外框与纸必须分得开，
          * 否则就是"整屏泛白、看不出有一张纸"（037 使用方原话）。
          */
-        desk: '#F4F3EF',
+        desk: '#F2EEE6',
         /*
          * 纸 —— **纯白 #FFFFFF**（x-minimalist；043 的浅中性场 #E9E9EE 已退役）。
          *
@@ -81,7 +81,7 @@ export default {
          * 它是全站唯一的垫底档：不许 slate-50/100 之类的调色板灰回流
          * （spec 有一条反扫钉着这个角色）。EP 的 --el-fill-color 与它同值。
          */
-        region: '#F7F7F5',
+        region: '#F6F3EC',
         /*
          * 侧栏面 —— 暖骨一档 #F7F6F3（043 的冷灰纱 #CED0D4 已退役）。
          *
@@ -93,7 +93,7 @@ export default {
          * 纱面**托不住浅色字**（这条从 043 起没变）：侧栏字族是 slate 深字族，
          * 白色只留在选中胶囊（墨色实底，18.9）里面。
          */
-        veil: '#F7F6F3',
+        veil: '#F6F3EC',
         /*
          * 发丝线 —— **1px #EAEAEA**（minimalist 的形状条直接点名这个值）。
          *
@@ -102,7 +102,7 @@ export default {
          * 键名是 `line` 而不是 `border` —— 与 Tailwind 自己的 borderWidth 键区分开，
          * 也避免与 `borderColor` 的角色名撞车（spec §14 钉着命名不许撞）。
          */
-        line: '#EAEAEA',
+        line: '#E8E2D6',
         /*
          * 品牌色族 —— **墨色 #111111**（x-minimalist；043 的石墨 #1D1D1F 与
          * x-ai 分支的薰衣草蓝 #5e6ad2 都在 git 历史里）。
@@ -119,32 +119,32 @@ export default {
          * 浅底三档 = EP 的 light-9/8/7 混白公式（brand-50 #E7E7E7 = light-9……），
          * 同源可交叉验证：深字一律 brand-deep；三档全部中性（max−min = 0）。
          */
-        brand: '#E07B00',
+        brand: '#5A92E5',
         /* 橙底上的字。白字压太阳橙只有 2.15:1（远不过 AA），所以橙底一律配深墨：
          *#1C1917 压 #E07B00 = 5.83:1。这是「亮橙 + 白字」这个组合在这种色相上根本做不了
          *的证明 —— 想让它可读，只能改字色，不能改橙。 */
-        'on-brand': '#1C1917',
+        'on-brand': '#08182B',
         /* hover 填充 = EP dark-2（同源交叉那条守卫要求两者同值）。
          *注意它只适合当**填充**：白字压它 2.0、浅底上当文字 2.6，都不够。
          *浅底上的文字与焦点环用下面的 brand-ink。 */
-        'brand-deep': '#B36200',
+        'brand-deep': '#4875B7',
         /* 浅底上的品牌文字 / 焦点环：#92400E 压白底 7.09:1。
          *这一档是「亮橙做不了文字色」的唯一出路 —— 不是审美选择，是对比度算出来的。 */
         /* 按钮 hover 的填充：比 brand **亮**一档。亮橙这类高明度主色不能靠加深做 hover ——
          * dark-2(#B36200) 已经暗到深墨压它只剩 3.88。往亮走反而安全：深墨压它 6.4。 */
-        'brand-hover': '#E38B1A',
+        'brand-hover': '#74A4EA',
         /* ===== Steep 风格的两档桃色（2026-10-18）=====
          * 参考 steep.app 的做法：**饱和色只留小面积（按钮）**，大面积选中态用「极淡的桃」。
          * 好处是眼睛不用一直对抗高饱和色块 —— 这正是上一版「橙色刺眼」的根因。
          *   accent-soft #FBE1D1 选中胶囊 / tag 底（面积大、极淡）
          *   accent-ink  #5D2A1A 压在桃上的字（9.05:1）
          */
-        'accent-soft': '#FBE1D1',
-        'accent-ink': '#5D2A1A',
-        'brand-ink': '#92400E',
-        'brand-50': '#FCF2E6',
-        'brand-100': '#F9E5CC',
-        'brand-200': '#F6D7B3',
+        'accent-soft': '#E8F0FC',
+        'accent-ink': '#24476F',
+        'brand-ink': '#2C5FA8',
+        'brand-50': '#EFF4FC',
+        'brand-100': '#DEE9FA',
+        'brand-200': '#CEDEF7',
       },
       fontFamily: {
         /*

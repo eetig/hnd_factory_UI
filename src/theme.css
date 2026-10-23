@@ -27,7 +27,7 @@
 
 :root {
   /* ===== 高亮色：对齐 Tailwind brand #E07B00 ===== */
-  --el-color-primary: #E07B00;
+  --el-color-primary: #5A92E5;
 
   /*
    * 色阶不是手挑的，是按 Element Plus 自己的混色规则算出来的，
@@ -45,12 +45,12 @@
    *    下拉选中项这类地方露出上一代主色的残影。tests/unit/visualTokens.spec.js
    *    有一条护栏拿主色实算这六个数再比对，改一半会直接失败。
    */
-  --el-color-primary-light-3: #E9A34D;
-  --el-color-primary-light-5: #F0BD80;
-  --el-color-primary-light-7: #F6D7B3;
-  --el-color-primary-light-8: #F9E5CC;
-  --el-color-primary-light-9: #FCF2E6;
-  --el-color-primary-dark-2: #B36200;
+  --el-color-primary-light-3: #8CB3ED;
+  --el-color-primary-light-5: #ADC9F2;
+  --el-color-primary-light-7: #CEDEF7;
+  --el-color-primary-light-8: #DEE9FA;
+  --el-color-primary-light-9: #EFF4FC;
+  --el-color-primary-dark-2: #4875B7;
 
   /* ===== 圆角：小圆角（minimalist：卡片 8px 上限 / 按钮 4–6px）===== */
   /* 控件：输入框、按钮、下拉、日期选择器、消息条（el-message 用的就是 base） */
@@ -109,11 +109,11 @@
    * 出现在哪一页都该是同一种材质（现在是白纸上的白面 + 发丝线）。
    */
   --el-bg-color: #ffffff;
-  --el-bg-color-overlay: #ffffff;
-  --el-fill-color-blank: #ffffff;
-  --el-fill-color-lighter: #fbfbfa;
-  --el-fill-color-light: #f9f9f8;
-  --el-fill-color: #f7f7f5;
+  --el-bg-color-overlay: #FFFFFF;
+  --el-fill-color-blank: #FFFFFF;
+  --el-fill-color-lighter: #FCFAF6;
+  --el-fill-color-light: #FAF7F1;
+  --el-fill-color: #F6F3EC;
 }
 
 /*
