@@ -165,11 +165,18 @@ export async function circularRevealSwitch({
     return 'no-anim'
   }
 
+  /*
+   * 看门狗：VT 回调/ready 卡住时也要切（applyOnce 幂等）。
+   * 这是"点了没反应"从设计上消失的保证 —— 切换永远不依赖动画链路是否顺利。
+   */
+  const watchdog = setTimeout(() => applyOnce(), 200)
+
   const geometry = revealGeometry(originElement.getBoundingClientRect(), {
     width: globalThis.innerWidth || 0,
     height: globalThis.innerHeight || 0,
   })
   if (!geometry) {
+    clearTimeout(watchdog)
     applyOnce()
     return 'no-anim'
   }
@@ -191,11 +198,19 @@ export async function circularRevealSwitch({
         { clipPath: [from, to] },
         { duration, easing: 'ease-out', pseudoElement: '::view-transition-new(root)' },
       )
+      /*
+       * ⚠️ 不要 `await anim.finished`（2026-10-23 实测）：
+       * 伪元素动画的 finished 在部分情况下**永远不 resolve**，于是调用方的 busy 一直为 true，
+       * 表现就是"第一次点有效、第二次点没反应"。改成定时器等一个确定的时长。
+       */
       try {
-        await anim?.finished
+        anim?.finished?.catch?.(() => {})
       } catch {
-        /* 被打断也继续 */
+        /* ignore */
       }
+      await new Promise((r) => setTimeout(r, duration + 60))
+      clearTimeout(watchdog)
+      applyOnce()
       return 'view-transition'
     } catch {
       // 掉到退化路径（apply 可能已经执行过，applyOnce 保证不会重复）
@@ -207,6 +222,7 @@ export async function circularRevealSwitch({
   } catch {
     /* 动画失败不影响切换 */
   }
+  clearTimeout(watchdog)
   applyOnce()
   return 'overlay'
 }
