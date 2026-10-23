@@ -4,6 +4,10 @@
 > `../hnd_factory/AGENTS.md`，或用浏览器看
 > <https://github.com/eetig/hnd_factory/blob/main/AGENTS.md>。**先读它**。
 
+## 发版
+
+一行命令：`.\scripts\deploy-web.ps1`（门禁 + 构建 + 备份 + 上传 + 原子切换 + 验收）。
+完整流程、踩过的坑、回滚方式见**后端仓** `docs/部署手册.md`。
 ## 这个仓库特有的
 
 - **工作分支是 `x-minimalist`**，不是 `main`。`main` 停在很老的一次提交上；**不要**在 `main` 上改，
