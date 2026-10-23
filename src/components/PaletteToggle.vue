@@ -29,9 +29,16 @@ async function onClick() {
    * 所以这里不再需要 260ms 保险丝 —— 有它反而会双切一次（2026-10-23 性能改造时移除）。
    * 动画期间按钮不响应重复点击。
    */
+  /*
+   * targetColor = **目标**配色的纸色：
+   * 没有 VT 的浏览器上，圆用这个颜色扩散（圆里滚的是新主题，不是旧的）；
+   * 有 VT 时忽略它 —— 那边圆里是真实的新界面。
+   */
+  const targetColor = next.value.key === 'violet' ? '#FBFAFF' : '#FFFFFF'
   try {
     await circularRevealSwitch({
       originElement: buttonRef.value,
+      targetColor,
       apply: () => togglePalette(),
     })
   } finally {

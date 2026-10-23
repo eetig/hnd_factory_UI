@@ -1,29 +1,27 @@
 /**
- * 圆形揭露转场（Circular Reveal）—— 2026-10-23，变更-170 续（性能版）。
+ * 圆形揭露转场（Circular Reveal）—— 2026-10-23，变更-170 第三版。
  *
- * ## 为什么从 View Transitions 换成"自己画一层小圆"
+ * ## 使用方指出的真问题（这是设计口径，不是性能问题）
  *
- * 使用方反馈「不行，体验不好，特别卡」。两条实测原因：
- *   ① VT 每次切换要给**整页拍快照**（页面有 27 行表格 + 侧栏），那一下就是明显掉帧；
- *   ② 原来的圆按"直径 = 2 × 半径"建（1280×720 上约 2700px），
- *      几百万像素一片实色、又没提升为合成层 ⇒ 每帧重绘整屏。
+ *   「圆圈切换的时候，用**要切换的主题**去扩散」
  *
- * 现在的做法：
- *   · 一个 **固定 240px** 的小圆，用 `transform: scale(k)` 放大到铺满 ——
- *     光栅化面积小两个数量级，缩放走合成器（GPU）
- *   · `will-change: transform` + `backface-visibility: hidden` 明确提升为合成层
- *   · 不拍快照、不动文档结构
+ * 前两版的错：
+ *   ① 先画一个**旧底色**的圆、铺满之后才切主题 ⇒ 看起来是"一个圈慢慢扩开、然后整屏跳一下"，
+ *      感官上就是卡；圈里滚的根本不是新东西。
+ *   ② 我当时把"卡"归因给 View Transitions 的快照，其实那正是**唯一能实现正确观感**的机制：
+ *      VT 的 new(root) 快照里就是**新主题**，用 `clip-path: circle()` 裁一下 ——
+ *      圆扩到哪里，新主题就露到哪里，中间没有硬切。
  *
- * ## 圆的几何（仍是使用方的口径）
- *   圆心 = **按钮中心**（不是屏幕中心）；半径 = 圆心到**四个角**的最远距离（保证铺满）
+ * 所以这一版：
+ *   · **有 VT 就走 VT**（默认），`apply()` 放在 VT 回调里 ⇒ 快照即新主题 ✓
+ *   · 没有 VT（老 WebView / 小程序）⇒ 退化成"**新主题底色**的圆扩散"，铺满后再真正切换
+ *     （此刻整屏已被圆盖住，切换看不出来）—— 圆里滚的是新主题的颜色，不是旧的
  *
- * ## 顺序
- *   **先把圆铺满，再真正切主题**：切换引起的整页重排发生在圆盖住之后，看不到掉帧。
- *   反过来（一边动画一边重排）正是"特别卡"的来源之一。
+ * 几何仍是使用方口径：圆心 = **按钮中心**；半径 = 到**四个角**最远距离（保证铺满）。
  *
- * 开关：`?vt=1` 用回 View Transitions（对比用）；`?noVT=1` 直接无动画切。
+ * 开关：`?noVT=1` 直接无动画切（现场排查用）。
  */
-export const REVEAL_DURATION = 520
+export const REVEAL_DURATION = 480
 
 /** 小圆的基准直径（CSS px）：放大倍数 = 目标直径 / 这个值 */
 export const BASE_CIRCLE_PX = 240
@@ -47,24 +45,22 @@ export function revealGeometry(rect, viewport) {
   return { cx, cy, radius }
 }
 
-/** URL 开关：?vt=1 用 View Transitions，?noVT=1 直接切 */
+/** 只有 `?noVT=1` 才跳过动画；其余情况优先 VT（观感正确比省一次快照重要） */
 export function readRevealMode(search) {
   try {
     const params = new URLSearchParams(search ?? globalThis.location?.search ?? '')
     if (params.get('noVT') === '1') return 'none'
-    if (params.get('vt') === '1') return 'view-transition'
   } catch {
     /* ignore */
   }
-  return 'overlay'
+  return 'auto'
 }
 
 /**
- * 画一层会放大的小圆，铺满后 resolve。
+ * 没有 VT 时的退化路径：画一个**新主题底色**的圆放大铺满，铺满后再执行切换。
  * @param {{cx:number, cy:number, radius:number}} geo
- * @param {number} duration
  */
-function playOverlayCircle(geo, duration) {
+function playOverlayCircle(geo, duration, targetColor) {
   const { cx, cy, radius } = geo
   const base = BASE_CIRCLE_PX
   const scale = (radius * 2) / base
@@ -82,8 +78,8 @@ function playOverlayCircle(geo, duration) {
   style.width = `${base}px`
   style.height = `${base}px`
   style.borderRadius = '50%'
-  // 底色取新主题的纸色（CSS 变量由调用方/主题层提供），铺满瞬间不会整屏跳
-  style.background = 'var(--hnd-reveal-color, #ffffff)'
+  // ★ 关键：用**目标主题**的底色，而不是当前主题的
+  style.background = targetColor || 'var(--hnd-reveal-color, #ffffff)'
   style.pointerEvents = 'none'
   style.transformOrigin = 'center center'
   style.willChange = 'transform'
@@ -106,15 +102,26 @@ function playOverlayCircle(geo, duration) {
 
 /**
  * 切主题 + 圆形揭露。
+ *
  * @param {object} options
  * @param {() => void} options.apply 真正切主题的操作（同步）
  * @param {Element} [options.originElement] 圆形扩散的起点（按钮）
+ * @param {string} [options.targetColor] 没有 VT 时，圆用什么颜色扩散（= 目标主题的纸色）
  * @param {number} [options.duration]
  * @param {string} [options.mode] 覆盖 URL 开关（测试用）
- * @returns {Promise<'overlay' | 'view-transition' | 'no-anim'>}
+ * @returns {Promise<'view-transition' | 'overlay' | 'no-anim'>}
  */
-export async function circularRevealSwitch({ apply, originElement, duration = REVEAL_DURATION, mode }) {
-  const applySafe = () => {
+export async function circularRevealSwitch({
+  apply,
+  originElement,
+  targetColor,
+  duration = REVEAL_DURATION,
+  mode,
+}) {
+  let applied = false
+  const applyOnce = () => {
+    if (applied) return
+    applied = true
     try {
       apply()
     } catch {
@@ -124,7 +131,7 @@ export async function circularRevealSwitch({ apply, originElement, duration = RE
 
   const resolvedMode = mode || readRevealMode()
   if (resolvedMode === 'none' || !originElement) {
-    applySafe()
+    applyOnce()
     return 'no-anim'
   }
 
@@ -133,17 +140,20 @@ export async function circularRevealSwitch({ apply, originElement, duration = RE
     height: globalThis.innerHeight || 0,
   })
   if (!geometry) {
-    applySafe()
+    applyOnce()
     return 'no-anim'
   }
 
-  // 可选：View Transitions（?vt=1），代价是整页快照
-  if (
-    resolvedMode === 'view-transition' &&
-    typeof globalThis.document?.startViewTransition === 'function'
-  ) {
+  /*
+   * ★ 首选：View Transitions。
+   * apply() 在回调里同步执行 ⇒ new 快照就是**新主题**；再把 new(root) 用
+   * clip-path: circle() 从小裁到大 —— 圆扩到哪，新主题露到哪，没有硬切。
+   */
+  if (typeof globalThis.document?.startViewTransition === 'function') {
     try {
-      const transition = globalThis.document.startViewTransition(() => {})
+      const transition = globalThis.document.startViewTransition(() => {
+        applyOnce()
+      })
       await transition.ready
       const from = `circle(0px at ${geometry.cx}px ${geometry.cy}px)`
       const to = `circle(${geometry.radius}px at ${geometry.cx}px ${geometry.cy}px)`
@@ -154,20 +164,19 @@ export async function circularRevealSwitch({ apply, originElement, duration = RE
       try {
         await anim?.finished
       } catch {
-        /* ignore */
+        /* 被打断也继续 */
       }
-      applySafe()
       return 'view-transition'
     } catch {
-      // 落到 overlay
+      // 掉到退化路径（apply 可能已经执行过，applyOnce 保证不会重复）
     }
   }
 
   try {
-    await playOverlayCircle(geometry, duration)
+    await playOverlayCircle(geometry, duration, targetColor)
   } catch {
     /* 动画失败不影响切换 */
   }
-  applySafe()
+  applyOnce()
   return 'overlay'
 }

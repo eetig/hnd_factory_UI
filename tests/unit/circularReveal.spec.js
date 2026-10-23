@@ -77,9 +77,8 @@ describe('性能版遮罩（使用方反馈"特别卡"之后的口径）', () =>
     expect(BASE_CIRCLE_PX).toBeLessThan(400)
   })
 
-  it('默认走 overlay（VT 要给整页拍快照，是卡的那一下）；?vt=1 才走 VT，?noVT=1 直接切', () => {
-    expect(readRevealMode('')).toBe('overlay')
-    expect(readRevealMode('?vt=1')).toBe('view-transition')
+  it('默认优先 VT（观感正确比省一次快照重要）；只有 ?noVT=1 才跳过', () => {
+    expect(readRevealMode('')).toBe('auto')
     expect(readRevealMode('?noVT=1')).toBe('none')
   })
 
@@ -125,7 +124,7 @@ describe('切主题的顺序与降级', () => {
 
   it('没有按钮元素 ⇒ 直接切、返回 no-anim', async () => {
     let applied = 0
-    const mode = await circularRevealSwitch({ apply: () => (applied += 1), originElement: null, mode: 'overlay' })
+    const mode = await circularRevealSwitch({ apply: () => (applied += 1), originElement: null })
     expect(mode).toBe('no-anim')
     expect(applied).toBe(1)
   })
