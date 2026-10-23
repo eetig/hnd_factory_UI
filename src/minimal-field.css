@@ -56,6 +56,8 @@
  * 中间留白给内容，视线仍然落在表格上。
  */
 .minimal-field {
+  /* 圆形揭露的遮罩色 = 纸色（铺满那一刻不跳色）；见 src/utils/circularReveal.js */
+  --hnd-reveal-color: #ffffff;
   background-color: #ffffff;
   background-image:
     radial-gradient(58% 52% at 12% -6%, rgb(187 173 230 / 0.18), rgb(187 173 230 / 0) 62%),

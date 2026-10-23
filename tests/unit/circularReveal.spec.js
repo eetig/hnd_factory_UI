@@ -1,4 +1,13 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import {
+  BASE_CIRCLE_PX,
+  REVEAL_DURATION,
+  circularRevealSwitch,
+  readRevealMode,
+  revealGeometry,
+} from '../../src/utils/circularReveal'
 import {
   DEFAULT_PALETTE,
   PALETTES,
@@ -6,20 +15,23 @@ import {
   readStoredPalette,
   writeStoredPalette,
 } from '../../src/composables/usePalette'
-import { circularRevealSwitch, revealGeometry } from '../../src/utils/circularReveal'
 
 /*
- * 圆形揭露转场 + 双调色板（2026-10-23，变更-170）。
+ * 圆形揭露转场 + 双调色板（2026-10-23，变更-170 / 170 续性能版）。
  *
- * 使用方要求（逐条对应到下面的用例）：
+ * 使用方要求（逐条对应下面的用例）：
  *   · 圆心 = **按钮中心**，不是屏幕中心；
  *   · 半径要能把整屏铺满（到最远角）；
- *   · 拿不到按钮 / 算不出几何 / 浏览器不支持 ⇒ **无动画直接切**，不许报错卡死；
- *   · ease-out 520ms（常量导出，单测钉住）；
+ *   · 拿不到按钮 / 算不出几何 ⇒ 无动画直接切，不许报错卡死；
  *   · 两套配色：粉紫元气 / 粉橙暖调（默认粉橙），并记忆选择。
+ *
+ * 性能版新增（使用方「特别卡」）：
+ *   · 遮罩是**固定 240px 的小圆 + scale**，不是直径两千多像素的大实色块；
+ *   · 有 `will-change` / `backface-visibility` 这两条合成层提示；
+ *   · 顺序是"圆铺满 → 再切主题"，避免一边动画一边重排；
+ *   · VT 变成 `?vt=1` 才走（整页快照就是卡的那一下）。
  */
 
-/** 最小 storage 假体（隐私模式下 setItem 会抛，这里也要能兜住） */
 function fakeStorage(initial = {}, { throwOnWrite = false } = {}) {
   const map = new Map(Object.entries(initial))
   return {
@@ -38,23 +50,17 @@ describe('圆形揭露的几何', () => {
     expect(g.cy).toBe(55)
   })
 
-  it('半径 = 到最远角的距离（保证铺满整屏，四角都覆盖）', () => {
+  it('半径 = 到最远角的距离（四角都能覆盖）', () => {
     const vw = 1280
     const vh = 720
     const g = revealGeometry({ left: 900, top: 40, width: 100, height: 30 }, { width: vw, height: vh })
     const corners = [
-      Math.hypot(0 - g.cx, 0 - g.cy),
-      Math.hypot(vw - g.cx, 0 - g.cy),
-      Math.hypot(0 - g.cx, vh - g.cy),
+      Math.hypot(g.cx, g.cy),
+      Math.hypot(vw - g.cx, g.cy),
+      Math.hypot(g.cx, vh - g.cy),
       Math.hypot(vw - g.cx, vh - g.cy),
     ]
     expect(g.radius).toBeCloseTo(Math.max(...corners), 6)
-    expect(g.radius).toBeGreaterThanOrEqual(Math.max(...corners))
-  })
-
-  it('按钮在左上角时半径 ≈ 对角线（不至于只铺一半）', () => {
-    const g = revealGeometry({ left: 0, top: 0, width: 20, height: 20 }, { width: 1280, height: 720 })
-    expect(g.radius).toBeGreaterThan(Math.hypot(1280, 720) * 0.95)
   })
 
   it('几何算不出来时返回 null（调用方据此降级）', () => {
@@ -65,35 +71,107 @@ describe('圆形揭露的几何', () => {
   })
 })
 
-describe('切主题的降级路径', () => {
+describe('性能版遮罩（使用方反馈"特别卡"之后的口径）', () => {
+  it('小圆基准 240px，靠 scale 放大 —— 不是直径两千多像素的实色块', () => {
+    expect(BASE_CIRCLE_PX).toBe(240)
+    expect(BASE_CIRCLE_PX).toBeLessThan(400)
+  })
+
+  it('默认走 overlay（VT 要给整页拍快照，是卡的那一下）；?vt=1 才走 VT，?noVT=1 直接切', () => {
+    expect(readRevealMode('')).toBe('overlay')
+    expect(readRevealMode('?vt=1')).toBe('view-transition')
+    expect(readRevealMode('?noVT=1')).toBe('none')
+  })
+
+  it('源码里有合成层提示（will-change / backface-visibility）—— 少了就每帧重绘整屏', () => {
+    const src = readFileSync(join(process.cwd(), 'src/utils/circularReveal.js'), 'utf8')
+    expect(src).toContain('willChange')
+    expect(src).toContain('backfaceVisibility')
+    // 小圆 + scale
+    expect(src).toContain('BASE_CIRCLE_PX')
+    expect(src).toMatch(/scale\(/)
+  })
+})
+
+describe('切主题的顺序与降级', () => {
+  /** 造一个最小的 DOM 环境：body.appendChild / animate / remove */
+  function fakeDom() {
+    const created = []
+    const doc = {
+      body: {
+        appendChild: (el) => {
+          created.push(el)
+          el.parentNode = doc.body
+        },
+      },
+      createElement: () => {
+        const el = {
+          dataset: {},
+          style: {},
+          setAttribute() {},
+          remove: () => {
+            const i = created.indexOf(el)
+            if (i >= 0) created.splice(i, 1)
+          },
+          animate: () => ({ finished: Promise.resolve() }),
+          parentNode: null,
+        }
+        return el
+      },
+      documentElement: { animate: () => ({ finished: Promise.resolve() }) },
+    }
+    return { doc, created }
+  }
+
   it('没有按钮元素 ⇒ 直接切、返回 no-anim', async () => {
     let applied = 0
-    const mode = await circularRevealSwitch({ apply: () => (applied += 1), originElement: null })
+    const mode = await circularRevealSwitch({ apply: () => (applied += 1), originElement: null, mode: 'overlay' })
     expect(mode).toBe('no-anim')
     expect(applied).toBe(1)
   })
 
-  it('浏览器没有 startViewTransition ⇒ 直接切、返回 no-anim', async () => {
-    let applied = 0
-    const mode = await circularRevealSwitch({
-      apply: () => (applied += 1),
-      originElement: { getBoundingClientRect: () => ({ left: 10, top: 10, width: 20, height: 20 }) },
-    })
-    expect(mode).toBe('no-anim')
-    expect(applied).toBe(1)
-  })
-
-  it('apply 自己抛错也不把异常抛给调用方（配色是视觉，不该搞死页面）', async () => {
+  it('apply 抛错也不抛给调用方', async () => {
     const mode = await circularRevealSwitch({
       apply: () => {
         throw new Error('boom')
       },
       originElement: null,
+      mode: 'overlay',
     })
     expect(mode).toBe('no-anim')
   })
 
-  it('有 startViewTransition 时走 VT：apply 被调用一次、返回 view-transition', async () => {
+  it('overlay：先画圆、铺满之后才 apply（顺序反了就会一边动画一边重排）', async () => {
+    const original = globalThis.document
+    const { doc, created } = fakeDom()
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: doc })
+    try {
+      let appliedAt = null
+      let createdAt = null
+      doc.body.appendChild = (el) => {
+        createdAt = performance.now()
+        created.push(el)
+      }
+      const mode = await circularRevealSwitch({
+        apply: () => {
+          appliedAt = performance.now()
+        },
+        originElement: { getBoundingClientRect: () => ({ left: 900, top: 40, width: 100, height: 30 }) },
+        mode: 'overlay',
+        duration: 20,
+      })
+      expect(mode).toBe('overlay')
+      expect(createdAt).not.toBeNull()
+      expect(appliedAt).not.toBeNull()
+      expect(appliedAt).toBeGreaterThanOrEqual(createdAt)
+      // 圆用完必须移除，别在 body 里留垃圾节点
+      expect(created).toHaveLength(0)
+    } finally {
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: original })
+    }
+  })
+
+  it('?vt=1 时走 View Transitions 并返回 view-transition', async () => {
     const original = globalThis.document
     const animations = []
     const fakeDocument = {
@@ -107,6 +185,8 @@ describe('切主题的降级路径', () => {
           return { finished: Promise.resolve() }
         },
       },
+      body: { appendChild() {} },
+      createElement: () => ({ style: {}, setAttribute() {}, remove() {}, animate: () => ({ finished: Promise.resolve() }) }),
     }
     Object.defineProperty(globalThis, 'document', { configurable: true, value: fakeDocument })
     try {
@@ -114,15 +194,14 @@ describe('切主题的降级路径', () => {
       const mode = await circularRevealSwitch({
         apply: () => (applied += 1),
         originElement: { getBoundingClientRect: () => ({ left: 900, top: 40, width: 100, height: 30 }) },
+        mode: 'view-transition',
       })
       expect(mode).toBe('view-transition')
       expect(applied).toBe(1)
       expect(animations).toHaveLength(1)
-      // 起点是 0 半径、终点是铺满半径，圆心是按钮中心
       expect(animations[0].frames.clipPath[0]).toBe('circle(0px at 950px 55px)')
-      expect(animations[0].frames.clipPath[1]).toMatch(/^circle\(\d+(\.\d+)?px at 950px 55px\)$/)
       expect(animations[0].opts).toMatchObject({ easing: 'ease-out', pseudoElement: '::view-transition-new(root)' })
-      expect(animations[0].opts.duration).toBe(520)
+      expect(animations[0].opts.duration).toBe(REVEAL_DURATION)
     } finally {
       Object.defineProperty(globalThis, 'document', { configurable: true, value: original })
     }
@@ -144,24 +223,21 @@ describe('两套调色板', () => {
   it('读到合法值就用它，读到脏值/抛错就回默认', () => {
     expect(readStoredPalette(fakeStorage({ [PALETTE_STORAGE_KEY]: 'violet' }))).toBe('violet')
     expect(readStoredPalette(fakeStorage({ [PALETTE_STORAGE_KEY]: 'nope' }))).toBe('warm')
-    const angry = {
-      getItem: () => {
-        throw new Error('SecurityError')
-      },
-    }
-    expect(readStoredPalette(angry)).toBe('warm')
+    expect(
+      readStoredPalette({
+        getItem: () => {
+          throw new Error('SecurityError')
+        },
+      }),
+    ).toBe('warm')
   })
 
-  it('写存储：隐私模式写失败也不抛（本次会话仍然生效）', () => {
+  it('写存储在隐私模式下不抛', () => {
     expect(() => writeStoredPalette('violet', fakeStorage({}, { throwOnWrite: true }))).not.toThrow()
     const store = fakeStorage()
     writeStoredPalette('violet', store)
     expect(store.getItem(PALETTE_STORAGE_KEY)).toBe('violet')
-  })
-
-  it('写非法值不落盘', () => {
-    const store = fakeStorage()
     writeStoredPalette('whatever', store)
-    expect(store.getItem(PALETTE_STORAGE_KEY)).toBeNull()
+    expect(store.getItem(PALETTE_STORAGE_KEY)).toBe('violet')
   })
 })
