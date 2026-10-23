@@ -10,6 +10,7 @@ import InboundList from '../views/orders/InboundList.vue'
 import CostingView from '../views/orders/CostingView.vue'
 import StockView from '../views/materials/StockView.vue'
 import MaterialMasterView from '../views/materials/MasterView.vue'
+import MaterialImportView from '../views/materials/ImportView.vue'
 import PurchaseView from '../views/purchase/PurchaseView.vue'
 import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
@@ -72,6 +73,13 @@ export const workbenchRoutes = [
     name: 'MaterialMasterView',
     component: MaterialMasterView,
     meta: { group: 'materials', key: 'master', title: '物料主数据' },
+  },
+  {
+    // 物料导入（变更-159）：admin 专用，两阶段（预览差异 → 确认写入）
+    path: '/materials/import',
+    name: 'MaterialImportView',
+    component: MaterialImportView,
+    meta: { group: 'materials', key: 'import', title: '物料导入', perm: ADMIN_PERM },
   },
   {
     // 物料主数据（变更-159）与库存查询是两个视角：这里回答「这个物料是什么」，库存页回答「我还有多少」。

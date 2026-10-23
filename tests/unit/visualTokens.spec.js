@@ -1495,7 +1495,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
     expect(offenders, '工作台里还有冷灰垫底，改用 bg-region（#F7F7F5，暖中性一档）。').toEqual([])
   })
 
-  it('卡片配方：bg-raised + border-line + shadow-card 三者同串，且恰好 22 处', () => {
+  it('卡片配方：bg-raised + border-line + shadow-card 三者同串，且恰好 25 处', () => {
     /*
      * 配方整串锚定而不是逐处点名：041 把「卡片」从一张卡的写法升格成一条材质规则，
      * 全站（工作台各汇总卡 + 各面板的 section 卡）都是同一串。
@@ -1525,7 +1525,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
     expect(
       count,
       'bg-raised + shadow-card 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整',
-    ).toBe(22)
+    ).toBe(25)
   })
 
   it('旧玻璃卡片配方整串禁入：bg-raised/95、border-white/60、backdrop-blur-xl、shadow-panel', () => {
