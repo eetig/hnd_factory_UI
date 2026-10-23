@@ -51,7 +51,7 @@ async function onClick() {
   <button
     ref="buttonRef"
     type="button"
-    class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-raised px-2.5 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+    class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-raised px-2.5 py-1.5 text-xs text-slate-600 transition hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none active:scale-[0.97]"
     :aria-label="`切换配色：当前「${current.label}」，点击切到「${next.label}」`"
     :title="`配色：${current.label} → ${next.label}`"
     @click="onClick"

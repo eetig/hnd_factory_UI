@@ -19,9 +19,38 @@
  *
  * 几何仍是使用方口径：圆心 = **按钮中心**；半径 = 到**四个角**最远距离（保证铺满）。
  *
+ * ## 关于"只动 transform / opacity"这条
+ *
+ * `ui-taste` §4 要求只动 transform / opacity。本效果的主路径动的是 `clip-path`
+ * —— 这是**有意的例外**，理由一句话：主题切换需要"新界面从按钮里长出来"，
+ * 而裁切快照是唯一能表达这件事的手段（换成 scale 一层纯色，圆里滚的就不是真界面）。
+ * 退化路径（无 VT）仍然遵守该规则：那层用 `transform: scale()`。
+ * 时长/缓动按 skill 的区间取（320ms / ease-out），并且尊重 `prefers-reduced-motion`。
+ *
  * 开关：`?noVT=1` 直接无动画切（现场排查用）。
  */
-export const REVEAL_DURATION = 480
+/**
+ * 时长 320ms —— 按 `ui-taste` 的 motion 区间定的：
+ *   · 状态切换 200–300ms、页面/弹层 300–500ms；主题切换属于**状态切换**，
+ *     取两个区间的交界 320ms：既看得出"从按钮长出来"，又不拖。
+ *   · 之前用 480/520ms 偏"页面级"，使用方反馈"感官上很卡"——
+ *     全屏裁切每多 100ms，掉帧就多几帧。
+ */
+export const REVEAL_DURATION = 320
+
+/**
+ * 是否允许播放动画。
+ *
+ * `ui-taste` §2 把这条列为**硬性**：任何超出 hover/press 的动效都必须尊重
+ * `prefers-reduced-motion`，并且退化为静止。这里是全屏裁切，量级远超 hover ⇒ 必须遵守。
+ */
+export function prefersReducedMotion() {
+  try {
+    return Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches)
+  } catch {
+    return false
+  }
+}
 
 /** 小圆的基准直径（CSS px）：放大倍数 = 目标直径 / 这个值 */
 export const BASE_CIRCLE_PX = 240
@@ -130,7 +159,8 @@ export async function circularRevealSwitch({
   }
 
   const resolvedMode = mode || readRevealMode()
-  if (resolvedMode === 'none' || !originElement) {
+  // 减弱动效 / 显式关闭 / 没有起点 ⇒ 直接切（无障碍硬性要求）
+  if (resolvedMode === 'none' || prefersReducedMotion() || !originElement) {
     applyOnce()
     return 'no-anim'
   }

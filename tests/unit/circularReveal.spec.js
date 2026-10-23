@@ -5,6 +5,7 @@ import {
   BASE_CIRCLE_PX,
   REVEAL_DURATION,
   circularRevealSwitch,
+  prefersReducedMotion,
   readRevealMode,
   revealGeometry,
 } from '../../src/utils/circularReveal'
@@ -80,6 +81,33 @@ describe('性能版遮罩（使用方反馈"特别卡"之后的口径）', () =>
   it('默认优先 VT（观感正确比省一次快照重要）；只有 ?noVT=1 才跳过', () => {
     expect(readRevealMode('')).toBe('auto')
     expect(readRevealMode('?noVT=1')).toBe('none')
+  })
+
+  it('时长落在 ui-taste 的区间内（状态切换 200–300 / 页面级 300–500）：取 320ms', () => {
+    expect(REVEAL_DURATION).toBe(320)
+    expect(REVEAL_DURATION).toBeGreaterThanOrEqual(200)
+    expect(REVEAL_DURATION).toBeLessThanOrEqual(500)
+  })
+
+  it('尊重 prefers-reduced-motion：开了减弱动效就不播，直接切', async () => {
+    const originalMatch = globalThis.matchMedia
+    Object.defineProperty(globalThis, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: true }),
+    })
+    try {
+      expect(prefersReducedMotion()).toBe(true)
+      let applied = 0
+      const mode = await circularRevealSwitch({
+        apply: () => (applied += 1),
+        // 几何完全合法，但减弱动效应当压过它
+        originElement: { getBoundingClientRect: () => ({ left: 900, top: 40, width: 100, height: 30 }) },
+      })
+      expect(mode).toBe('no-anim')
+      expect(applied).toBe(1)
+    } finally {
+      Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: originalMatch })
+    }
   })
 
   it('源码里有合成层提示（will-change / backface-visibility）—— 少了就每帧重绘整屏', () => {
