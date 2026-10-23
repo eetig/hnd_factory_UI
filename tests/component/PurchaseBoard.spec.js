@@ -127,7 +127,8 @@ describe('采购看板', () => {
 
   it('点卡片打开抽屉（复用录入页的抽屉）', async () => {
     const wrapper = await mountBoard()
-    const firstCard = wrapper.find('section button[aria-label]')
+    // 卡片根已从 <button> 改成 div[role=button]（变更-167：里面要放 OA 链接）
+  const firstCard = wrapper.find('section [role="button"][aria-label]')
     expect(firstCard.exists()).toBe(true)
     await firstCard.trigger('click')
     await nextTick()

@@ -5,7 +5,7 @@ import request from '../../api/request'
 import { hasPerm } from '../../api/auth'
 import PurchaseCard from './PurchaseCard.vue'
 import PurchaseDetailDrawer from './PurchaseDetailDrawer.vue'
-import { BOARD_COLUMNS, OPEN_STATUSES, groupBoard } from './boardGroups.js'
+import { BOARD_COLUMNS, OPEN_STATUSES, groupBoardByOa } from './boardGroups.js'
 import { savePurchase, deletePurchase, usePurchaseTracking } from '../../composables/usePurchaseTracking.js'
 
 /*
@@ -71,7 +71,9 @@ async function loadBoard() {
   }
 }
 
-const columns = computed(() => groupBoard(rows.value))
+// 按 **OA 单号** 合并成卡片（变更-168）：一个 OA 通常就是一批采购，含多条物料。
+// 卡片归哪一列由组内**最急**那条的状态决定，见 boardGroups.groupBoardByOa。
+const columns = computed(() => groupBoardByOa(rows.value))
 
 /**
  * 关掉「显示已到货」时，已到货那一列**永远为空**（那些状态根本没请求）——
@@ -189,13 +191,15 @@ onMounted(loadBoard)
         v-for="col in visibleColumns"
         :key="col.key"
         class="flex min-h-0 flex-col rounded-card border border-line bg-region/40"
-        :aria-label="`${col.label}（${col.rows.length} 条）`"
+        :aria-label="`${col.label}（${col.cardCount} 张卡，${col.rowCount} 条物料）`"
       >
         <header class="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
           <div class="min-w-0">
             <h3 class="text-sm font-semibold text-slate-900">
               {{ col.label }}
-              <span class="ml-1 font-normal tabular-nums text-slate-500">{{ col.rows.length }}</span>
+              <span class="ml-1 font-normal tabular-nums text-slate-500">
+                {{ col.cardCount }}<span class="mx-0.5">张</span>·<span class="ml-0.5">{{ col.rowCount }}</span>条
+              </span>
             </h3>
             <p class="truncate text-[11px] text-slate-500">{{ col.hint }}</p>
           </div>
@@ -210,14 +214,15 @@ onMounted(loadBoard)
         -->
         <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2 pt-2">
           <PurchaseCard
-            v-for="row in col.rows"
-            :key="row.id"
-            :row="row"
-            @click="openCard(row)"
+            v-for="card in col.cards"
+            :key="card.key"
+            :card="card"
+            @open="openCard(card.lead)"
+            @open-row="openCard($event)"
           />
 
           <p
-            v-if="!col.rows.length"
+            v-if="!col.cards.length"
             class="rounded-md border border-dashed border-line px-3 py-6 text-center text-xs text-slate-500"
           >
             {{ loading ? '加载中…' : '这一列是空的' }}
