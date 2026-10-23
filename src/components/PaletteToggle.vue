@@ -23,12 +23,29 @@ const next = computed(() => PALETTES[(PALETTES.findIndex((p) => p.key === palett
 async function onClick() {
   if (busy.value) return
   busy.value = true
+
+  /*
+   * 保险丝（2026-10-23，变更-170 续）。
+   *
+   * 使用方报过「电脑端没反应」：View Transitions 在少数情况下会被**跳过**或
+   * `ready` 被拒绝（正在播另一段转场、标签页被判定不可见、系统开了减弱动效…），
+   * 那条路径上如果只在 VT 回调里切主题，就会表现为"点了完全没反应"。
+   *
+   * 这里再兜一层：起手记下当前配色，260ms 后若还没变（= 动画/回调卡住），
+   * 直接强切。宁可少一段动画，也不能点了没反应。
+   */
+  const startKey = palette.value
+  const guard = setTimeout(() => {
+    if (palette.value === startKey) togglePalette()
+  }, 260)
+
   try {
     await circularRevealSwitch({
       originElement: buttonRef.value,
       apply: () => togglePalette(),
     })
   } finally {
+    clearTimeout(guard)
     // 动画期间按钮不响应重复点击（连点两下会把圆画歪）
     busy.value = false
   }

@@ -56,8 +56,20 @@ export async function circularRevealSwitch({ apply, originElement, duration = RE
     return 'no-anim'
   }
 
+  /*
+   * 逃生开关（2026-10-23，变更-170 续）：地址里带 `?noVT=1` 就跳过 View Transitions、
+   * 直接切配色。现场遇到"点了会变色但没有圆形扩散"时，用它把问题一步定位到
+   * "VT 在这台机器上没跑起来"，而不是在代码里猜。
+   */
+  let vtDisabledByQuery = false
+  try {
+    vtDisabledByQuery = new URLSearchParams(globalThis.location?.search || '').get('noVT') === '1'
+  } catch {
+    vtDisabledByQuery = false
+  }
+
   // 没有按钮 / 没有 VT / 浏览器不支持 animate ⇒ 直接切
-  const startViewTransition = globalThis.document?.startViewTransition
+  const startViewTransition = vtDisabledByQuery ? undefined : globalThis.document?.startViewTransition
   if (!originElement || typeof startViewTransition !== 'function') return fallback()
 
   const geometry = revealGeometry(originElement.getBoundingClientRect(), {
