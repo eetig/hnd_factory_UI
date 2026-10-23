@@ -70,6 +70,7 @@ export const NAV_ITEMS = [
   // 核算：工单报工 / 工单核算 / 原辅料核算三张只读表合成一页（页内切换），
   // 所以这里只有一条导航项 —— 它们共用一份筛选区间，本来就不该是三个入口。
   { key: 'costing', label: '核算', path: '/orders/costing', perm: ADMIN_PERM, group: 'order' },
+  { key: 'master', label: '物料主数据', path: '/materials/master', group: 'materials' },
   { key: 'stock', label: '物料查询', path: '/materials', group: 'materials' },
   // 采购两页（变更-148）：看板在前 —— 进「采购」先看"今天要催谁"，
   // 录入是低频动作，排在后面。两页平级，不是同一页的两个 Tab（各有自己的数据视角）。

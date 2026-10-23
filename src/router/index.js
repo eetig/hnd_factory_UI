@@ -9,6 +9,7 @@ import PickingList from '../views/orders/PickingList.vue'
 import InboundList from '../views/orders/InboundList.vue'
 import CostingView from '../views/orders/CostingView.vue'
 import StockView from '../views/materials/StockView.vue'
+import MaterialMasterView from '../views/materials/MasterView.vue'
 import PurchaseView from '../views/purchase/PurchaseView.vue'
 import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
@@ -67,6 +68,13 @@ export const workbenchRoutes = [
     meta: { group: 'order', key: 'costing', title: '核算', perm: ADMIN_PERM },
   },
   {
+    path: '/materials/master',
+    name: 'MaterialMasterView',
+    component: MaterialMasterView,
+    meta: { group: 'materials', key: 'master', title: '物料主数据' },
+  },
+  {
+    // 物料主数据（变更-159）与库存查询是两个视角：这里回答「这个物料是什么」，库存页回答「我还有多少」。
     path: '/materials',
     name: 'StockView',
     component: StockView,
