@@ -182,10 +182,19 @@ const FIELD_BLOBS = [...fieldBlock.matchAll(/rgb\(\s*(\d+)\s+(\d+)\s+(\d+)\s*\/\
   }),
 )
 const FIELD_ALPHAS = FIELD_BLOBS.map((b) => b.alpha)
-/** 径向主色的 α —— **硬上限 0.04**（详见 minimal-field.css 头注与 §10 的实算） */
+/** 每团弥散的 α —— **硬上限 0.18**（密集后台；详见 minimal-field.css 头注） */
 const FIELD_ALPHA = FIELD_ALPHAS.length ? Math.max(...FIELD_ALPHAS) : NaN
-/** 径向主色的十六进制（暖褐 rgb(120 100 60)）—— 暖度由 §10 实算钉着 */
-const FIELD_TINT = FIELD_BLOBS[0] ? FIELD_BLOBS[0].hex : null
+/**
+ * 有 α 的那半（= 团的颜色）。
+ *
+ * 2026-10-23（变更-169）：纸从「一道暖径向」改成「三团弥散」，
+ * 原来的单一 FIELD_TINT（暖褐）换成集合 FIELD_TINTS；
+ * FIELD_TINT 保留指向第一团，别的引用点不必跟着改。
+ */
+const FIELD_TINTS = FIELD_BLOBS.filter((b) => b.alpha > 0).map((b) => b.hex)
+
+/** 弥散底允许的三色（使用方 2026-10-23 指定：#BBADE6 / #FEC96D / #E2ADB4） */
+const FIELD_ALLOWED_TINTS = ['#bbade6', '#fec96d', '#e2adb4']
 
 /**
  * 「面」的**代表底色** —— 纸、侧栏面、白面。
@@ -1235,12 +1244,14 @@ describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + �
     // 下面几组（文字安全、白面卡片）都拿解析出来的纸色当面色的底算账。
     // 与其让它们报出莫名其妙的 NaN 失败，不如在这里说清楚是解析断了。
     expect(fieldBlock, '没从 minimal-field.css 里解析到 .minimal-field 的样式块').toBeTruthy()
-    expect(FIELD_BLOBS, '径向是「主色 + 同色 0 α 收尾」两条 rgb(… / α)').toHaveLength(2)
+    // 每团都是「主色 α + 同色 0 α」两停 ⇒ 总数必须偶数；团数 = 有 α 的那一半
+    expect(FIELD_BLOBS.length % 2, '每组径向必须「主色 + 同色 0 α」成对出现').toBe(0)
+    expect(FIELD_TINTS.length, '至少要有一团弥散').toBeGreaterThanOrEqual(1)
     expect(Number.isFinite(FIELD_ALPHA), '没解析出径向主色的 α').toBe(true)
     expect(underlayList, '纸的代表底色没建起来（colors.canvas 断了？）').toHaveLength(1)
   })
 
-  it('配方本身：radial-gradient、底色逐位等于 colors.canvas、α ≤ 0.04、没有 linear-gradient 与 transparent', () => {
+  it('配方本身：radial-gradient、底色逐位等于 colors.canvas、每团 α ≤ 0.18、三色白名单、没有 linear-gradient 与 transparent', () => {
     expect(fieldBlock, '没解析到 .minimal-field 的样式块').toBeTruthy()
     // 纸只剩**一道径向**：036~043 的三段线性渐变 + 斜光带是「给玻璃吸的」，随玻璃退役
     expect(
@@ -1273,15 +1284,15 @@ describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + �
     expect(FIELD_ALPHA).toBeGreaterThan(0)
     expect(
       FIELD_ALPHA,
-      `径向主色 α=${FIELD_ALPHA} 超过 0.04 —— 宽表里会看出色斑，发丝线也会被淹`,
-    ).toBeLessThanOrEqual(0.04)
+      `弥散团 α=${FIELD_ALPHA} 超过 0.18 —— 宽表里会看出色斑，发丝线也会被淹`,
+    ).toBeLessThanOrEqual(0.18)
     expect(
       FIELD_ALPHAS.filter((a) => a === 0),
       '径向的收尾停点必须是**同色 0 α**（另一条 rgb(… / 0)）',
-    ).toHaveLength(1)
+    ).toHaveLength(FIELD_TINTS.length)
   })
 
-  it('径向是**暖**的、不是冷的：R > G > B，且 B−R ≤ −30（minimalist 的 faint warm radial）', () => {
+  it('弥散只用指定的三色（#BBADE6 / #FEC96D / #E2ADB4）—— 换别的颜色就红', () => {
     /*
      * 043 那代这条是「三通道极差 ≤ 6 的中性度」——「不要蓝色」的字面落点。
      * minimalist 换了问题：这一道径向**故意是暖的**（暖褐 rgb(120 100 60)），
@@ -1294,14 +1305,18 @@ describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + �
      *     分离比 1.11 还在、观感却已经不是这一代的东西了）。
      * 实算：rgb(120 100 60) → R−G = 20、G−B = 40、B−R = −60。
      */
-    expect(FIELD_TINT, '没解析到径向的主色（rgb(r g b / α) 形式）').toBeTruthy()
-    const [r, g, b] = rgbOf(FIELD_TINT)
-    expect(r, `径向主色 R=${r} 不大于 G=${g} —— 这不是暖色`).toBeGreaterThan(g)
-    expect(g, `径向主色 G=${g} 不大于 B=${b} —— 这不是暖色`).toBeGreaterThan(b)
-    expect(
-      b - r,
-      `径向主色的 B−R = ${b - r}，暖度不够（要求 ≤ −30）—— 纸会从暖骨漂成冷白`,
-    ).toBeLessThanOrEqual(-30)
+    expect(FIELD_TINTS.length, '没解析到弥散团的主色（rgb(r g b / α) 形式）').toBeGreaterThan(0)
+    /*
+     * 2026-10-23（变更-169）：原来的"暖度"断言（R>G>B 且 B−R ≤ −30）钉的是**单一暖褐**。
+     * 现在使用方指定三色（含淡紫 #BBADE6，B 明显大于 R），那条暖度规则**作废**，
+     * 换成更贴合意图的白名单：只许这三色，多一个都红 —— 免得哪天被顺手换成中性灰。
+     */
+    for (const tint of FIELD_TINTS) {
+      expect(
+        FIELD_ALLOWED_TINTS,
+        `弥散用了不在白名单里的颜色 ${tint} —— 只许 ${FIELD_ALLOWED_TINTS.join(' / ')}`,
+      ).toContain(tint.toLowerCase())
+    }
   })
 
   it('四个页面根元素一律 bg-desk —— 纸是页内元素，桌面才是底', () => {
