@@ -172,3 +172,32 @@ table {
   min-height: 0;
   overflow: auto;
 }
+/* ==========================================================================
+   业务域身份色（2026-10-23，变更-162）
+   ==========================================================================
+
+   使用方反馈「整体太单调」—— 八色盘只落在物料类型徽标上，其他页仍是白纸 + 一条蓝。
+   这里给六个业务域各配一个**低饱和身份色**，只做三处小面积：侧栏选中态、页签选中态、
+   页面顶部的一道极淡渐变。面积小、饱和度低，所以六个域来回切也不会"花"。
+
+   取值全部来自那八个色，并且都取**深一档**做 ink（要压在浅底上当文字）：
+     工单 暖阳橙 / 物料 矢车菊蓝 / 采购 梅洛粉 / 设备 皇家紫 / 报表 翠微 / 维护 碧青
+   archive 没有专属色，落到暖灰（它只有一页，且是历史归档，不该抢戏）。
+
+   ⚠️ 只在 main[data-section] 下生效：登录/注册页在壳外，仍是全站主色矢车菊蓝。
+   ========================================================================== */
+main[data-section] {
+  --sec-ink: #2c5fa8;
+  --sec-soft: rgba(90, 146, 229, 0.1);
+  --sec-line: rgba(90, 146, 229, 0.24);
+  --sec-glow: rgba(90, 146, 229, 0.1);
+  /* 注意：这里**不画渐变**。护栏有一条「禁止全站渐变背景」（台账不是营销站），
+     身份色只通过选中态与强调件表达。 */
+}
+main[data-section='order'] { --sec-ink: #a85f0c; --sec-soft: rgba(219, 122, 14, 0.1); --sec-line: rgba(219, 122, 14, 0.24); --sec-glow: rgba(219, 122, 14, 0.11); }
+main[data-section='materials'] { --sec-ink: #3f73c4; --sec-soft: rgba(90, 146, 229, 0.1); --sec-line: rgba(90, 146, 229, 0.24); --sec-glow: rgba(90, 146, 229, 0.1); }
+main[data-section='purchase'] { --sec-ink: #b84a72; --sec-soft: rgba(235, 109, 152, 0.1); --sec-line: rgba(235, 109, 152, 0.24); --sec-glow: rgba(235, 109, 152, 0.1); }
+main[data-section='equipment'] { --sec-ink: #6e2a66; --sec-soft: rgba(114, 33, 105, 0.08); --sec-line: rgba(114, 33, 105, 0.2); --sec-glow: rgba(114, 33, 105, 0.09); }
+main[data-section='stats'] { --sec-ink: #4c6b2a; --sec-soft: rgba(94, 128, 52, 0.1); --sec-line: rgba(94, 128, 52, 0.24); --sec-glow: rgba(94, 128, 52, 0.1); }
+main[data-section='maintain'] { --sec-ink: #2e7f8a; --sec-soft: rgba(65, 181, 194, 0.12); --sec-line: rgba(65, 181, 194, 0.26); --sec-glow: rgba(65, 181, 194, 0.11); }
+main[data-section='archive'] { --sec-ink: #6b6355; --sec-soft: rgba(107, 99, 85, 0.09); --sec-line: rgba(107, 99, 85, 0.2); --sec-glow: rgba(107, 99, 85, 0.07); }

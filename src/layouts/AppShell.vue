@@ -277,7 +277,7 @@ function toggleSidebar() {
       （实测：主区栏 619 → 3157 → 3381px，整页多出一条滚动条）。
       定高之后纸正好是一整屏，页面自己不再滚动，滚动都在两块面板内部。
     -->
-    <main class="min-h-screen bg-desk p-4">
+    <main class="min-h-screen bg-desk p-4" :data-section="currentGroup || ''">
       <!--
       外壳**不再限宽居中**（原先这里挂的是 mx-auto max-w-[1600px]）。
       留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
@@ -444,6 +444,7 @@ function toggleSidebar() {
                     !collapsed && currentGroup === group.key ? 'bg-accent-soft ring-1 ring-accent-ink/10' : '',
                     !collapsed && currentGroup !== group.key ? 'hover:bg-slate-900/[0.08]' : '',
                   ]"
+                  :style="currentGroup === group.key ? { backgroundColor: 'var(--sec-soft)', color: 'var(--sec-ink)' } : null"
                   :aria-label="collapsed ? group.label : undefined"
                   :aria-current="currentGroup === group.key ? 'true' : undefined"
                   @click="selectGroup(group.key)"
@@ -712,6 +713,7 @@ function toggleSidebar() {
                     ? 'border-brand bg-brand font-medium text-on-brand'
                     : 'border-line text-slate-600 hover:border-slate-300 hover:text-slate-800'
                 "
+                :style="activeItem?.key === tab.key ? { backgroundColor: 'var(--sec-ink)', borderColor: 'var(--sec-ink)' } : null"
                 @click="goToPage(tab.path)"
               >
                 {{ tab.label }}
