@@ -84,6 +84,12 @@ function formatPrice(row) {
   return unit === 1 ? `¥${text}` : `¥${text} / ${unit.toLocaleString('zh-CN')}`
 }
 
+/** 上次更改：后端是 LocalDate（yyyy-MM-dd），空值显示「—」 */
+function formatDate(value) {
+  if (!value) return '—'
+  return String(value).slice(0, 10)
+}
+
 function formatUnit(row) {
   const unit = Number(row.priceUnit) || 1
   return unit === 1 ? row.unit || '—' : `${row.unit || ''}（每 ${unit}）`
@@ -109,10 +115,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 gap-4">
+  <div class="relative flex h-full min-h-0">
     <!-- ===== 左栏：状态 / 类型 ===== -->
     <aside
-      class="flex w-56 shrink-0 flex-col overflow-y-auto rounded-card border border-line bg-raised shadow-card"
+      class="mr-4 flex w-56 shrink-0 flex-col overflow-y-auto rounded-card border border-line bg-raised shadow-card"
     >
       <div class="border-b border-line px-4 py-3">
         <p class="text-sm font-semibold text-slate-900">筛选</p>
@@ -198,13 +204,14 @@ onMounted(async () => {
         />
 
         <div v-else class="min-h-0 flex-1 overflow-auto">
-          <table class="w-full min-w-[620px] table-fixed divide-y divide-line text-left">
+          <table class="w-full min-w-[720px] table-fixed divide-y divide-line text-left">
             <colgroup>
               <col class="w-[100px]" />
               <col />
               <col class="w-[88px]" />
               <col class="w-[56px]" />
               <col class="w-[120px]" />
+              <col class="w-[96px]" />
               <col class="w-[76px]" />
             </colgroup>
             <thead class="sticky top-0 z-10 bg-region">
@@ -214,6 +221,7 @@ onMounted(async () => {
                 <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">类型</th>
                 <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">单位</th>
                 <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">价格</th>
+                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">上次更改</th>
                 <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">状态</th>
               </tr>
             </thead>
@@ -251,6 +259,7 @@ onMounted(async () => {
                 <td class="whitespace-nowrap px-3 py-2.5 text-right text-sm tabular-nums" :class="row.price ? 'text-slate-800' : 'text-slate-500'">
                   {{ formatPrice(row) }}
                 </td>
+                <td class="whitespace-nowrap px-3 py-2.5 text-sm tabular-nums text-slate-500">{{ formatDate(row.changedAt) }}</td>
                 <td class="whitespace-nowrap px-3 py-2.5 text-sm">
                   <span class="rounded-full px-2 py-0.5 text-xs" :class="statusClass(row.status)">
                     {{ STATUS_TEXT[row.status] || '—' }}
@@ -279,9 +288,12 @@ onMounted(async () => {
     </section>
 
     <!-- ===== 右侧：详情 ===== -->
-    <aside
-      class="flex w-[380px] shrink-0 flex-col overflow-y-auto rounded-card border border-line bg-raised shadow-card"
-    >
+    <transition name="detail">
+      <aside
+        v-if="selectedCode"
+        class="absolute inset-y-0 right-0 z-20 flex w-[380px] flex-col overflow-y-auto rounded-card border border-line bg-raised shadow-card"
+        aria-label="物料详情"
+      >
       <div class="flex items-center justify-between border-b border-line px-4 py-3">
         <p class="text-sm font-semibold text-slate-900">物料详情</p>
         <button
@@ -291,11 +303,7 @@ onMounted(async () => {
           @click="closeDetail"
         >关闭</button>
       </div>
-
-      <div v-if="!selectedCode" class="px-4 py-10 text-center text-sm text-slate-500">
-        在左侧列表里点一行看详情
-      </div>
-      <div v-else-if="detailLoading" class="px-4 py-10 text-center text-sm text-slate-500">读取中…</div>
+      <div v-if="detailLoading" class="px-4 py-10 text-center text-sm text-slate-500">读取中…</div>
 
       <div v-else-if="detail" class="px-4 py-3 text-sm">
         <p class="font-mono text-base font-semibold text-slate-900">{{ detail.material.code }}</p>
@@ -361,6 +369,14 @@ onMounted(async () => {
             <dt class="text-slate-500">价格控制</dt>
             <dd class="mt-0.5 text-slate-800">{{ detail.material.priceControl || '—' }}</dd>
           </div>
+          <div>
+            <dt class="text-slate-500">上次更改</dt>
+            <dd class="mt-0.5 text-slate-800">{{ formatDate(detail.material.changedAt) }}</dd>
+          </div>
+          <div>
+            <dt class="text-slate-500">创建人</dt>
+            <dd class="mt-0.5 text-slate-800">{{ detail.material.creator || '—' }}</dd>
+          </div>
         </dl>
 
         <div v-if="detail.valuations && detail.valuations.length" class="mt-5">
@@ -388,6 +404,20 @@ onMounted(async () => {
           </p>
         </div>
       </div>
-    </aside>
+      </aside>
+    </transition>
   </div>
 </template>
+<style scoped>
+/* 详情浮层：从右侧滑入一点点，够暗示「它是叠在列表上的」，又不会让人等动画 */
+.detail-enter-active,
+.detail-leave-active {
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.detail-enter-from,
+.detail-leave-to {
+  transform: translateX(12px);
+  opacity: 0;
+}
+</style>
