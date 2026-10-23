@@ -6,6 +6,8 @@ import request from '../api/request'
 import { authState, clearAuth, getDisplayName, getRoleName, isLoggedIn } from '../api/auth'
 import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
+import PaletteToggle from '../components/PaletteToggle.vue'
+import { usePalette } from '../composables/usePalette'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { ElConfigProvider, ElDialog, ElTooltip } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
@@ -239,6 +241,13 @@ function readCollapsedFlag() {
  */
 const collapsed = ref(readCollapsedFlag())
 
+/*
+ * 配色（2026-10-23，变更-170）：纸上的 data-palette 由状态驱动，
+ * 圆形揭露动画切的就是这个值 —— 值一变，minimal-field.css 里那块的
+ * background-image 跟着换，视觉上就是"新配色从按钮铺开"。
+ */
+const { palette } = usePalette()
+
 watch(collapsed, (value) => {
   try {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0')
@@ -283,7 +292,7 @@ function toggleSidebar() {
       留着它，那块浮动面板离视口左边就是 (视口−1600)/2 + 16 —— 1664 的屏上量出来 48px，
       跟使用方要的「四边 16px」对不上；屏幕越宽偏得越多。
     -->
-      <div class="minimal-field flex h-[calc(100vh-2rem)] rounded-card border border-line bg-canvas">
+      <div class="minimal-field flex h-[calc(100vh-2rem)] rounded-card border border-line bg-canvas" :data-palette="palette">
         <!--
         左侧栏：用户信息 + 六个大类 + 账号（dashboard 布局）。
 
@@ -685,11 +694,16 @@ function toggleSidebar() {
     </h1>
             <!-- 面包屑（组名 › 页面名）：路由化之后「我在哪」不再由一条页签横条
                  独自回答 —— 顶栏这行是给深链接进来的人看的（侧栏高亮只说明在哪个组）。 -->
-            <nav aria-label="面包屑" class="mb-3 flex items-center gap-2 text-xs text-slate-500">
-              <span>{{ groupLabel }}</span>
-              <span aria-hidden="true">›</span>
-              <span class="font-medium text-slate-700">{{ pageTitle }}</span>
-            </nav>
+            <div class="mb-3 flex items-center gap-3">
+              <nav aria-label="面包屑" class="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                <span>{{ groupLabel }}</span>
+                <span aria-hidden="true">›</span>
+                <span class="font-medium text-slate-700">{{ pageTitle }}</span>
+              </nav>
+              <!-- 配色切换（2026-10-23，变更-170）：右上角，与面包屑同一行。
+                   ml-auto 把它推到右边；面包屑 min-w-0 保证长标题不会把它挤出去。 -->
+              <PaletteToggle class="ml-auto" />
+            </div>
             <!--
           横向滚动：
           · overflow-x-auto 会让 overflow-y 也算作 auto，补 pb-px 把边兜回来；
