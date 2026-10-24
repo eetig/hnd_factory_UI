@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import request from '../../api/request'
+import { isGuest } from '../../api/auth'
 
 /*
  * 我的考勤 · PC 看板（2026-10-24，变更-171 续）。
@@ -23,6 +24,12 @@ const TYPE_TEXT = {
   rest: '休息',
   comp: '调休',
 }
+
+/*
+ * 游客（roleKey = guest）能看到这个入口，但用不了（2026-10-24 使用方口径）。
+ * 后端 `/api/attendance/**` 也拦了一道，这里只是不给"空月历"的错觉。
+ */
+const guest = isGuest()
 
 const month = ref('')
 const days = ref([])
@@ -86,7 +93,7 @@ function shift(delta) {
 
 onMounted(() => {
   month.value = thisMonth()
-  load()
+  if (!guest) load()
 })
 
 /** 42 格（6 行）固定，切月不跳高度 */
@@ -163,6 +170,18 @@ const completenessHint = computed(() => {
 
 <template>
   <div class="flex flex-col gap-4">
+    <!-- 游客：看得见入口，但不能用 -->
+    <section
+      v-if="guest"
+      class="rounded-card border border-line bg-raised px-6 py-10 text-center shadow-card"
+    >
+      <p class="text-sm font-semibold text-slate-800">该功能需要注册账号</p>
+      <p class="mt-2 text-xs text-slate-500">
+        考勤按人隔离，每个账号只能看到自己的记录。注册并登录后即可使用。
+      </p>
+    </section>
+
+    <template v-else>
     <!-- 头部：月份 + 四个数 -->
     <section class="rounded-card border border-line bg-raised shadow-card">
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4">
@@ -301,5 +320,6 @@ const completenessHint = computed(() => {
         这一页是只读看板；录改在手机 App 的「考勤」页。
       </p>
     </section>
+    </template>
   </div>
 </template>
