@@ -112,6 +112,9 @@ export const NAV_ITEMS = [
   { key: 'weekly', label: '周统计', path: '/stats/weekly', group: 'stats' },
   { key: 'daily', label: '日报表记录', path: '/stats/daily', group: 'stats' },
   { key: 'tankLevel', label: '月底储罐液位记录', path: '/stats/tank-level', group: 'stats' },
+  // 我的考勤（2026-10-24，变更-171 续）：PC 是只读看板，录改在手机 App；
+  // 接口按登录人隔离，所以不设 perm（全员可看自己的）。
+  { key: 'attendance', label: '我的考勤', path: '/stats/attendance', group: 'stats' },
   {
     key: 'import',
     label: '文件导入',

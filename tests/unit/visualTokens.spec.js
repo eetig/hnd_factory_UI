@@ -1540,7 +1540,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
     expect(
       count,
       'bg-raised + shadow-card 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整',
-    ).toBe(25)
+    ).toBe(37)
   })
 
   it('旧玻璃卡片配方整串禁入：bg-raised/95、border-white/60、backdrop-blur-xl、shadow-panel', () => {

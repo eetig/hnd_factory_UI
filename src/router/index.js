@@ -20,6 +20,7 @@ import ElectricityView from '../views/equipment/ElectricityView.vue'
 import WeeklyView from '../views/stats/WeeklyView.vue'
 import DailyView from '../views/stats/DailyView.vue'
 import TankLevelView from '../views/stats/TankLevelView.vue'
+import AttendanceView from '../views/stats/AttendanceView.vue'
 import ImportView from '../views/maintain/ImportView.vue'
 import ImageParseView from '../views/maintain/ImageParseView.vue'
 import ArchiveView from '../views/archive/ArchiveView.vue'
@@ -157,6 +158,14 @@ export const workbenchRoutes = [
     name: 'TankLevelView',
     component: TankLevelView,
     meta: { group: 'stats', key: 'tankLevel', title: '月底储罐液位记录' },
+  },
+  {
+    // 我的考勤（2026-10-24，变更-171 续）：PC 只读看板，录改在手机 App。
+    // 不加 perm —— 接口按登录人隔离，谁都只看得到自己的。
+    path: '/stats/attendance',
+    name: 'AttendanceView',
+    component: AttendanceView,
+    meta: { group: 'stats', key: 'attendance', title: '我的考勤' },
   },
   {
     path: '/maintain/import',
