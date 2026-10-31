@@ -43,17 +43,60 @@ const COLUMNS = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-[96px]', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-[96px]', align: 'right' },
   /*
-   * 投料与单耗（2026-10-31，变更-172）。
+   * 单耗（2026-10-31，变更-172）。
    *
-   * 使用方：「工单详情页面，要显示投料情况」。
-   * 投料来自 `material_movement` 的 261/262（不是领料单 —— 领料单里没有工单号），
-   * 后端 `/api/work-order/materials` 已经按工单聚合成净投料。
-   * 单耗 = 净投料 ÷ 确认的产量，单位一致时才有意义（mixedUnit 时只显示 "—"）。
+   * 使用方：「工单详情页面，要显示投料情况」；两轮打磨后定为：
+   * **每种物料一列**（电石 / 次氯酸钠 / 无水氯化钙 … 见下方的动态表头），
+   * 再加这一列"总投料 ÷ 确认产量"。
+   * 单耗单位混合时没有意义（mixedUnit），那时显示「—」。
    */
-  // 投料列现在是"物料名 + 数量"的清单，必须给宽度（原来只有 104px 放个总数）
-  { key: 'materials', label: '投料（物料 · 净重）', width: 'w-[300px]' },
-  { key: 'perUnit', label: '单耗', width: 'w-[76px]', align: 'right' },
+  { key: 'perUnit', label: '单耗', width: 'w-[84px]', align: 'right' },
 ]
+
+/**
+ * 动态物料列（2026-10-31，使用方：「电石，次钠，这些做成表头」）。
+ *
+ * 从**全部行**里取物料并集（不是当前页 —— 否则翻页时列会跳来跳去），
+ * 按"该物料在这批工单里的净投料总量"降序：最常投的料排最左，一眼就能看到。
+ * 表头带单位（`电石 (KG)`）；同一物料出现两种单位时只写名称，不去猜哪个对。
+ */
+const materialColumns = computed(() => {
+  const byName = new Map()
+  for (const row of rows.value) {
+    for (const item of row.material?.items || []) {
+      const name = String(item.materialDesc ?? '').trim() || String(item.materialCode ?? '').trim()
+      if (!name) continue
+      const acc = byName.get(name) || { name, code: item.materialCode, total: 0, units: new Set() }
+      acc.total += Number(item.qty) || 0
+      if (item.unit) acc.units.add(item.unit)
+      byName.set(name, acc)
+    }
+  }
+  return [...byName.values()]
+    .sort((a, b) => b.total - a.total)
+    .map((acc) => ({
+      key: `material:${acc.name}`,
+      materialName: acc.name,
+      label: acc.units.size === 1 ? `${acc.name} (${[...acc.units][0]})` : acc.name,
+      width: 'w-[110px]',
+      align: 'right',
+    }))
+})
+
+/** 表格的总列数（含动态物料列），合计行的 colspan 要用 */
+const totalColumnCount = computed(() => COLUMNS.length + materialColumns.value.length)
+
+/** 某张工单在某个物料列上的净投料（没有该物料 = 0，显示「—」更干净） */
+function materialQtyOf(row, materialName) {
+  const item = (row.material?.items || []).find(
+    (it) =>
+      (String(it.materialDesc ?? '').trim() || String(it.materialCode ?? '').trim()) ===
+      materialName,
+  )
+  if (!item) return null
+  const qty = Number(item.qty)
+  return Number.isFinite(qty) ? qty : null
+}
 
 /**
  * 点击复制（使用方 2026-10-31：「点击工单号，数量，可以复制」，并明确要**单击**）。
@@ -90,6 +133,16 @@ async function copyText(value, label = '内容') {
   }
 }
 
+/**
+ * 弹层宽度跟着列数走：物料种类多时加宽（最多 92vw），少时保持 900px。
+ * 用 window.innerWidth 算，不引入响应式依赖 —— 这个弹层是 on-demand 打开的，
+ * 打开那一刻算一次就够（期间不会改窗口尺寸）。
+ */
+const dialogWidth = computed(() => {
+  const need = 220 + 5 * 96 + materialColumns.value.length * 110
+  return `${Math.min(Math.max(900, need), Math.round(window.innerWidth * 0.92))}px`
+})
+
 /** 展开中的工单号（点行切换）；展开区显示按物料的投料明细 */
 const expanded = ref('')
 
@@ -111,31 +164,8 @@ function toggleExpand(row) {
  * 好处是不用展开就能看到全部投料；成本是投料种类特别多时这一行会换行变高，
  * 弹层本身可滚动，可以接受。
  */
-function materialText(m) {
-  if (!m?.items?.length) return '—'
-  const items = [...m.items].sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0))
-  const show = items
-  const parts = show.map((item) => {
-    const name = shortMaterialName(item.materialDesc, item.materialCode)
-    const qty = Number(item.qty)
-    const qtyText = Number.isFinite(qty)
-      ? qty.toLocaleString('zh-CN', { maximumFractionDigits: 1 })
-      : ''
-    // 单位一致（绝大多数工单是 KG）时不逐项重复，省得一行太长
-    return m.mixedUnit && item.unit ? `${name} ${qtyText}${item.unit}` : `${name} ${qtyText}`
-  })
-  let text = parts.join(' · ')
-  // 全部铺开：不再追加「等 N 种」
-  if (!m.mixedUnit && m.unit) text += ` (${m.unit})`
-  return text
-}
 
-/** 物料名太长时截断（弹层是表格，一行放不下 22 个字的名字） */
-function shortMaterialName(desc, code) {
-  const name = String(desc ?? '').trim() || String(code ?? '').trim()
-  if (!name) return '未知物料'
-  return name.length > 12 ? `${name.slice(0, 12)}…` : name
-}
+
 
 /** 单耗：净投料 ÷ 确认产量；缺任意一边或单位混合就不给（宁可不显示，也不给错数） */
 function perUnitText(row) {
@@ -286,7 +316,7 @@ watch(
     append-to-body
     :model-value="modelValue"
     :title="`${typeLabel || ''} · ${materialDesc || ''}`"
-    width="900px"
+    :width="dialogWidth"
     align-center
     class="work-order-detail-dialog"
     @update:model-value="(v) => emit('update:modelValue', v)"
@@ -298,22 +328,40 @@ watch(
       投料数没取到（{{ materialError }}）—— 工单明细仍然可用，投料列显示「—」
     </p>
 
+    <!-- 横向滚动：物料多的时候列会很宽，宁可滚也不挤 -->
     <div class="max-h-[60vh] overflow-auto">
       <table class="w-full table-fixed text-sm">
         <thead>
           <tr class="border-b border-line text-left text-xs font-medium text-slate-500">
-            <th v-for="col in COLUMNS" :key="col.key" scope="col"
-                class="whitespace-nowrap px-2 py-2" :class="[col.width, col.align === 'right' ? 'text-right' : '']">
+            <!-- 前 5 列固定；中间是动态物料列（每种物料一列）；最后是单耗 -->
+            <template v-for="col in COLUMNS" :key="col.key">
+              <th
+                v-if="col.key !== 'perUnit'"
+                scope="col"
+                class="whitespace-nowrap px-2 py-2"
+                :class="[col.width, col.align === 'right' ? 'text-right' : '']"
+              >
+                {{ col.label }}
+              </th>
+            </template>
+            <th
+              v-for="col in materialColumns"
+              :key="col.key"
+              scope="col"
+              class="whitespace-nowrap px-2 py-2 text-right"
+              :class="col.width"
+            >
               {{ col.label }}
             </th>
+            <th scope="col" class="w-[84px] whitespace-nowrap px-2 py-2 text-right">单耗</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="loading">
-            <td :colspan="COLUMNS.length" class="px-2 py-10 text-center text-sm text-slate-500">加载中…</td>
+            <td :colspan="totalColumnCount" class="px-2 py-10 text-center text-sm text-slate-500">加载中…</td>
           </tr>
           <tr v-else-if="!rows.length">
-            <td :colspan="COLUMNS.length" class="px-2 py-10 text-center text-sm text-slate-500">
+            <td :colspan="totalColumnCount" class="px-2 py-10 text-center text-sm text-slate-500">
               这段时间里没有匹配的工单
             </td>
           </tr>
@@ -367,7 +415,21 @@ watch(
                   title="点击复制"
                   @click="copyText(row.deliveredQty, '已交货数量')"
                 >{{ fmt(row.deliveredQty) }}</td>
-                <td class="px-2 py-2 text-right text-slate-900">{{ materialText(row.material) }}</td>
+                <!-- 每种物料一列：只显示这种料的净投料，没有就「—」 -->
+                <td
+                  v-for="col in materialColumns"
+                  :key="`${row.orderNo}-${col.key}`"
+                  class="select-text px-2 py-2 text-right tabular-nums"
+                  :class="materialQtyOf(row, col.materialName) === null ? 'text-slate-500' : 'text-slate-900'"
+                  title="点击复制"
+                  @click="
+                    materialQtyOf(row, col.materialName) === null
+                      ? null
+                      : copyText(materialQtyOf(row, col.materialName), col.materialName)
+                  "
+                >
+                  {{ materialQtyOf(row, col.materialName) === null ? '—' : fmt(materialQtyOf(row, col.materialName)) }}
+                </td>
                 <td class="px-2 py-2 text-right text-slate-600">
                   {{ perUnitText(row) }}
                   <span v-if="perUnitText(row) !== '—'" class="ml-0.5 text-xs text-slate-500">
@@ -377,7 +439,7 @@ watch(
               </tr>
               <!-- 展开：按物料的投料明细（261/262 相抵后的净重） -->
               <tr v-if="expanded === row.orderNo" class="border-b border-line bg-region">
-                <td :colspan="COLUMNS.length" class="px-3 py-3">
+                <td :colspan="totalColumnCount" class="px-3 py-3">
                   <p class="mb-2 text-xs text-slate-500">
                     投料明细 · 净重（261 投料与 262 冲销相抵，按物料汇总）
                   </p>
