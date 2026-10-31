@@ -42,7 +42,44 @@ const COLUMNS = [
   { key: 'orderQty', label: '订单数量', width: 'w-[96px]', align: 'right' },
   { key: 'confirmedQty', label: '确认的产量', width: 'w-[96px]', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-[96px]', align: 'right' },
+  /*
+   * 投料与单耗（2026-10-31，变更-172）。
+   *
+   * 使用方：「工单详情页面，要显示投料情况」。
+   * 投料来自 `material_movement` 的 261/262（不是领料单 —— 领料单里没有工单号），
+   * 后端 `/api/work-order/materials` 已经按工单聚合成净投料。
+   * 单耗 = 净投料 ÷ 确认的产量，单位一致时才有意义（mixedUnit 时只显示 "—"）。
+   */
+  { key: 'materials', label: '投料', width: 'w-[104px]', align: 'right' },
+  { key: 'perUnit', label: '单耗', width: 'w-[76px]', align: 'right' },
 ]
+
+/** 展开中的工单号（点行切换）；展开区显示按物料的投料明细 */
+const expanded = ref('')
+
+function toggleExpand(row) {
+  if (!row?.material?.items?.length) return
+  expanded.value = expanded.value === row.orderNo ? '' : row.orderNo
+}
+
+/** 投料显示：净投料 + 单位；混合单位时只给"多种物料" */
+function materialText(m) {
+  if (!m) return '—'
+  if (m.mixedUnit) return `${m.materialCount} 种`
+  const n = Number(m.net)
+  if (!Number.isFinite(n)) return '—'
+  return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 1 })}${m.unit ? ' ' + m.unit : ''}`
+}
+
+/** 单耗：净投料 ÷ 确认产量；缺任意一边或单位混合就不给（宁可不显示，也不给错数） */
+function perUnitText(row) {
+  const m = row?.material
+  const out = Number(row?.confirmedQty)
+  if (!m || m.mixedUnit || !Number.isFinite(out) || out <= 0) return '—'
+  const n = Number(m.net)
+  if (!Number.isFinite(n)) return '—'
+  return (n / out).toFixed(2)
+}
 
 /*
  * 日期区间取**工单组共享的那一份**（模块级 ref，见 useOrderFilter 的注释）。
@@ -99,6 +136,28 @@ function fmt(value) {
   return n.toLocaleString('zh-CN', { maximumFractionDigits: 3 })
 }
 
+/**
+ * 批量取投料（一次请求多张工单，不按行发请求）。
+ * 失败**不阻塞**明细：投料那一列显示「—」，并在弹层里给一句提示 ——
+ * 明细本身有用，不能因为投料接口挂了整张表不可读。
+ */
+const materialError = ref('')
+
+async function loadMaterials(list) {
+  materialError.value = ''
+  const orderNos = list.map((r) => r?.orderNo).filter(Boolean)
+  if (!orderNos.length) return
+  try {
+    const { data } = await request.get('/api/work-order/materials', {
+      params: { orderNos: orderNos.slice(0, 200).join(',') },
+    })
+    const map = data?.data && typeof data.data === 'object' ? data.data : {}
+    rows.value = rows.value.map((row) => ({ ...row, material: map[row.orderNo] || null }))
+  } catch (e) {
+    materialError.value = e?.response?.data?.msg || e?.message || '投料加载失败'
+  }
+}
+
 /** 拉全量（有上限）。失败时保留错误文案，弹窗里显示，不静默空表。 */
 async function load() {
   rows.value = []
@@ -139,6 +198,7 @@ async function load() {
       }
     }
     rows.value = fetched
+    await loadMaterials(fetched)
   } catch (e) {
     error.value = e?.response?.data?.msg || e?.message || '加载明细失败'
   } finally {
@@ -168,6 +228,9 @@ watch(
     <p v-if="error" role="alert" class="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
       {{ error }}
     </p>
+    <p v-if="materialError" class="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+      投料数没取到（{{ materialError }}）—— 工单明细仍然可用，投料列显示「—」
+    </p>
 
     <div class="max-h-[60vh] overflow-auto">
       <table class="w-full table-fixed text-sm">
@@ -189,13 +252,60 @@ watch(
             </td>
           </tr>
           <template v-else>
-            <tr v-for="row in pagedRows" :key="row.orderNo" class="border-b border-line">
-              <td class="px-2 py-2 text-slate-900">{{ row.orderNo }}</td>
-              <td class="px-2 py-2 whitespace-nowrap text-slate-600">{{ row.planStartDate || '—' }}</td>
-              <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.orderQty) }}</td>
-              <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.confirmedQty) }}</td>
-              <td class="px-2 py-2 text-right text-slate-600">{{ fmt(row.deliveredQty) }}</td>
-            </tr>
+            <template v-for="row in pagedRows" :key="row.orderNo">
+              <!-- 整行可点 ⇒ 必须同时能被键盘激活（仓库的变更-033 守卫会拦） -->
+              <tr
+                class="border-b border-line transition"
+                :class="row.material?.items?.length ? 'cursor-pointer hover:bg-region focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-ink' : ''"
+                :tabindex="row.material?.items?.length ? 0 : -1"
+                @click="toggleExpand(row)"
+                @keydown.enter.prevent="toggleExpand(row)"
+                @keydown.space.prevent="toggleExpand(row)"
+              >
+                <td class="px-2 py-2 text-slate-900">
+                  <span v-if="row.material?.items?.length" class="mr-1 text-xs text-slate-500">
+                    {{ expanded === row.orderNo ? '▾' : '▸' }}
+                  </span>
+                  {{ row.orderNo }}
+                </td>
+                <td class="px-2 py-2 whitespace-nowrap text-slate-600">{{ row.planStartDate || '—' }}</td>
+                <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.orderQty) }}</td>
+                <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.confirmedQty) }}</td>
+                <td class="px-2 py-2 text-right text-slate-600">{{ fmt(row.deliveredQty) }}</td>
+                <td class="px-2 py-2 text-right text-slate-900">{{ materialText(row.material) }}</td>
+                <td class="px-2 py-2 text-right text-slate-600">
+                  {{ perUnitText(row) }}
+                  <span v-if="perUnitText(row) !== '—'" class="ml-0.5 text-xs text-slate-500">
+                    {{ row.material?.unit }}/{{ row.material?.unit }}
+                  </span>
+                </td>
+              </tr>
+              <!-- 展开：按物料的投料明细（261/262 相抵后的净重） -->
+              <tr v-if="expanded === row.orderNo" class="border-b border-line bg-region">
+                <td :colspan="COLUMNS.length" class="px-3 py-3">
+                  <p class="mb-2 text-xs text-slate-500">
+                    投料明细 · 净重（261 投料与 262 冲销相抵，按物料汇总）
+                  </p>
+                  <div class="grid gap-1">
+                    <div
+                      v-for="item in row.material.items"
+                      :key="item.materialCode"
+                      class="flex items-center justify-between rounded-md border border-line bg-raised px-3 py-1.5 text-xs"
+                    >
+                      <span class="min-w-0 truncate text-slate-700">
+                        {{ item.materialCode }} · {{ item.materialDesc || '—' }}
+                      </span>
+                      <span class="ml-3 shrink-0 tabular-nums text-slate-900">
+                        {{ fmt(item.qty) }} {{ item.unit || '' }}
+                        <span class="ml-1 text-slate-500">
+                          {{ item.issueRows }} 笔{{ item.reversed ? ' · 有冲销' : '' }}
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </template>
         </tbody>
         <tfoot v-if="rows.length">
