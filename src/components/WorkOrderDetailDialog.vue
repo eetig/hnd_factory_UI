@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElDialog, ElPagination } from 'element-plus'
+import { ElDialog, ElMessage, ElPagination } from 'element-plus'
 import request from '../api/request'
 import { STATUS_TEXT } from '../constants/statusTones'
 import { useOrderFilter } from '../composables/useOrderFilter'
@@ -50,9 +50,45 @@ const COLUMNS = [
    * 后端 `/api/work-order/materials` 已经按工单聚合成净投料。
    * 单耗 = 净投料 ÷ 确认的产量，单位一致时才有意义（mixedUnit 时只显示 "—"）。
    */
-  { key: 'materials', label: '投料', width: 'w-[104px]', align: 'right' },
+  // 投料列现在是"物料名 + 数量"的清单，必须给宽度（原来只有 104px 放个总数）
+  { key: 'materials', label: '投料（物料 · 净重）', width: 'w-[300px]' },
   { key: 'perUnit', label: '单耗', width: 'w-[76px]', align: 'right' },
 ]
+
+/**
+ * 双击复制（使用方 2026-10-31：「点击工单号，数量，可以复制」）。
+ *
+ * 为什么是双击而不是单击：这些格子就在表格里，单击要留给"选中文字"（拖选复制一段），
+ * 单击触发复制会把正常选择打断。双击则是业界惯例，且不干扰选区。
+ *
+ * 降级：navigator.clipboard 在非 https / 老浏览器下不可用，退到 execCommand('copy')；
+ * 两者都失败时明确告诉他"复制失败"，不假装成功（宁可报错，也别让他粘出旧内容）。
+ */
+async function copyText(value, label = '内容') {
+  const text = value === null || value === undefined ? '' : String(value)
+  if (!text || text === '—') {
+    ElMessage.info(`${label}为空，没有可复制的内容`)
+    return
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const input = document.createElement('textarea')
+      input.value = text
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.appendChild(input)
+      input.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(input)
+      if (!ok) throw new Error('execCommand copy 返回 false')
+    }
+    ElMessage.success(`已复制${label}：${text}`)
+  } catch {
+    ElMessage.error(`复制失败，请手动选中${label}后按 Ctrl+C`)
+  }
+}
 
 /** 展开中的工单号（点行切换）；展开区显示按物料的投料明细 */
 const expanded = ref('')
@@ -62,13 +98,42 @@ function toggleExpand(row) {
   expanded.value = expanded.value === row.orderNo ? '' : row.orderNo
 }
 
-/** 投料显示：净投料 + 单位；混合单位时只给"多种物料" */
+/*
+ * 投料列：显示**具体物料名**（使用方 2026-10-31：'投料改为具体物料名称：比如电石，次钠等'）。
+ *
+ * 之前只给一个净投料总数（9,554.8 KG），看不出投的是哪几种料 —— 而这张表就是给核算看的，
+ * 光有总数没法判断配比。
+ *
+ * 形如：`电石 8,443 · 次氯酸钠 978.8 · 无水氯化钙 133`（数量默认不重复单位，
+ * 列尾统一标一次；单位不一致时每个物料各自带单位）。
+ * 超过 4 种时只列前 4 种 + `等 N 种`，完整清单在展开区。
+ */
+const MATERIAL_INLINE_LIMIT = 4
+
 function materialText(m) {
-  if (!m) return '—'
-  if (m.mixedUnit) return `${m.materialCount} 种`
-  const n = Number(m.net)
-  if (!Number.isFinite(n)) return '—'
-  return `${n.toLocaleString('zh-CN', { maximumFractionDigits: 1 })}${m.unit ? ' ' + m.unit : ''}`
+  if (!m?.items?.length) return '—'
+  const items = [...m.items].sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0))
+  const show = items.slice(0, MATERIAL_INLINE_LIMIT)
+  const parts = show.map((item) => {
+    const name = shortMaterialName(item.materialDesc, item.materialCode)
+    const qty = Number(item.qty)
+    const qtyText = Number.isFinite(qty)
+      ? qty.toLocaleString('zh-CN', { maximumFractionDigits: 1 })
+      : ''
+    // 单位一致（绝大多数工单是 KG）时不逐项重复，省得一行太长
+    return m.mixedUnit && item.unit ? `${name} ${qtyText}${item.unit}` : `${name} ${qtyText}`
+  })
+  let text = parts.join(' · ')
+  if (items.length > show.length) text += ` 等 ${items.length} 种`
+  if (!m.mixedUnit && m.unit) text += ` (${m.unit})`
+  return text
+}
+
+/** 物料名太长时截断（弹层是表格，一行放不下 22 个字的名字） */
+function shortMaterialName(desc, code) {
+  const name = String(desc ?? '').trim() || String(code ?? '').trim()
+  if (!name) return '未知物料'
+  return name.length > 12 ? `${name.slice(0, 12)}…` : name
 }
 
 /** 单耗：净投料 ÷ 确认产量；缺任意一边或单位混合就不给（宁可不显示，也不给错数） */
@@ -253,25 +318,51 @@ watch(
           </tr>
           <template v-else>
             <template v-for="row in pagedRows" :key="row.orderNo">
-              <!-- 整行可点 ⇒ 必须同时能被键盘激活（仓库的变更-033 守卫会拦） -->
-              <tr
-                class="border-b border-line transition"
-                :class="row.material?.items?.length ? 'cursor-pointer hover:bg-region focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-ink' : ''"
-                :tabindex="row.material?.items?.length ? 0 : -1"
-                @click="toggleExpand(row)"
-                @keydown.enter.prevent="toggleExpand(row)"
-                @keydown.space.prevent="toggleExpand(row)"
-              >
+              <!--
+                行本身**不再可点**（使用方 2026-10-31：'点击最前面的小三角展开明细'）。
+                两个原因：
+                  · 整行可点会连带一个 focus 描边，看起来是"红框"，很难看；
+                  · 整行可点还会挡住文字选中 —— 而使用方要能直接复制工单号、数量。
+                所以可点区域收窄到最前面的小三角（真正的 <button>，键盘天然可达）。
+              -->
+              <tr class="border-b border-line transition hover:bg-region/60">
                 <td class="px-2 py-2 text-slate-900">
-                  <span v-if="row.material?.items?.length" class="mr-1 text-xs text-slate-500">
-                    {{ expanded === row.orderNo ? '▾' : '▸' }}
+                  <span class="flex items-center gap-1">
+                    <button
+                      v-if="row.material?.items?.length"
+                      type="button"
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs text-slate-500 transition hover:bg-region hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                      :aria-expanded="expanded === row.orderNo ? 'true' : 'false'"
+                      :aria-label="`展开工单 ${row.orderNo} 的投料明细`"
+                      @click="toggleExpand(row)"
+                    >
+                      {{ expanded === row.orderNo ? '▾' : '▸' }}
+                    </button>
+                    <span v-else class="inline-block h-5 w-5 shrink-0"></span>
+                    <!-- 工单号可选中；双击直接复制 -->
+                    <span
+                      class="select-text"
+                      title="双击复制工单号"
+                      @dblclick="copyText(row.orderNo, '工单号')"
+                    >{{ row.orderNo }}</span>
                   </span>
-                  {{ row.orderNo }}
                 </td>
                 <td class="px-2 py-2 whitespace-nowrap text-slate-600">{{ row.planStartDate || '—' }}</td>
-                <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.orderQty) }}</td>
-                <td class="px-2 py-2 text-right text-slate-900">{{ fmt(row.confirmedQty) }}</td>
-                <td class="px-2 py-2 text-right text-slate-600">{{ fmt(row.deliveredQty) }}</td>
+                <td
+                  class="select-text px-2 py-2 text-right text-slate-900"
+                  title="双击复制"
+                  @dblclick="copyText(row.orderQty, '订单数量')"
+                >{{ fmt(row.orderQty) }}</td>
+                <td
+                  class="select-text px-2 py-2 text-right text-slate-900"
+                  title="双击复制"
+                  @dblclick="copyText(row.confirmedQty, '确认的产量')"
+                >{{ fmt(row.confirmedQty) }}</td>
+                <td
+                  class="select-text px-2 py-2 text-right text-slate-600"
+                  title="双击复制"
+                  @dblclick="copyText(row.deliveredQty, '已交货数量')"
+                >{{ fmt(row.deliveredQty) }}</td>
                 <td class="px-2 py-2 text-right text-slate-900">{{ materialText(row.material) }}</td>
                 <td class="px-2 py-2 text-right text-slate-600">
                   {{ perUnitText(row) }}
@@ -293,7 +384,8 @@ watch(
                       class="flex items-center justify-between rounded-md border border-line bg-raised px-3 py-1.5 text-xs"
                     >
                       <span class="min-w-0 truncate text-slate-700">
-                        {{ item.materialCode }} · {{ item.materialDesc || '—' }}
+                        {{ item.materialDesc || '—' }}
+                        <span class="ml-1 text-slate-500">{{ item.materialCode }}</span>
                       </span>
                       <span class="ml-3 shrink-0 tabular-nums text-slate-900">
                         {{ fmt(item.qty) }} {{ item.unit || '' }}
