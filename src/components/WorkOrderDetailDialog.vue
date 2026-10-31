@@ -56,10 +56,10 @@ const COLUMNS = [
 ]
 
 /**
- * 双击复制（使用方 2026-10-31：「点击工单号，数量，可以复制」）。
+ * 点击复制（使用方 2026-10-31：「点击工单号，数量，可以复制」，并明确要**单击**）。
  *
- * 为什么是双击而不是单击：这些格子就在表格里，单击要留给"选中文字"（拖选复制一段），
- * 单击触发复制会把正常选择打断。双击则是业界惯例，且不干扰选区。
+ * 我原来做成双击（怕打断拖选），使用方选了单击 —— 那就单击：
+ * 单元格仍保留 `select-text`，需要拖选一段时照样能选（只是单击会先复制一次）。
  *
  * 降级：navigator.clipboard 在非 https / 老浏览器下不可用，退到 execCommand('copy')；
  * 两者都失败时明确告诉他"复制失败"，不假装成功（宁可报错，也别让他粘出旧内容）。
@@ -106,14 +106,15 @@ function toggleExpand(row) {
  *
  * 形如：`电石 8,443 · 次氯酸钠 978.8 · 无水氯化钙 133`（数量默认不重复单位，
  * 列尾统一标一次；单位不一致时每个物料各自带单位）。
- * 超过 4 种时只列前 4 种 + `等 N 种`，完整清单在展开区。
+ *
+ * **全部铺开**（使用方 2026-10-31 明确：'全部铺开'）—— 不再截断成"前 4 种 + 等 N 种"。
+ * 好处是不用展开就能看到全部投料；成本是投料种类特别多时这一行会换行变高，
+ * 弹层本身可滚动，可以接受。
  */
-const MATERIAL_INLINE_LIMIT = 4
-
 function materialText(m) {
   if (!m?.items?.length) return '—'
   const items = [...m.items].sort((a, b) => (Number(b.qty) || 0) - (Number(a.qty) || 0))
-  const show = items.slice(0, MATERIAL_INLINE_LIMIT)
+  const show = items
   const parts = show.map((item) => {
     const name = shortMaterialName(item.materialDesc, item.materialCode)
     const qty = Number(item.qty)
@@ -124,7 +125,7 @@ function materialText(m) {
     return m.mixedUnit && item.unit ? `${name} ${qtyText}${item.unit}` : `${name} ${qtyText}`
   })
   let text = parts.join(' · ')
-  if (items.length > show.length) text += ` 等 ${items.length} 种`
+  // 全部铺开：不再追加「等 N 种」
   if (!m.mixedUnit && m.unit) text += ` (${m.unit})`
   return text
 }
@@ -339,29 +340,32 @@ watch(
                       {{ expanded === row.orderNo ? '▾' : '▸' }}
                     </button>
                     <span v-else class="inline-block h-5 w-5 shrink-0"></span>
-                    <!-- 工单号可选中；双击直接复制 -->
-                    <span
-                      class="select-text"
-                      title="双击复制工单号"
-                      @dblclick="copyText(row.orderNo, '工单号')"
-                    >{{ row.orderNo }}</span>
+                    <!-- 工单号：单击即复制（使用方 2026-10-31 明确要单击）。
+                         用 <button> 而不是 <span>：可点元素带键盘通路是仓库的硬规矩
+                         （变更-033 守卫会拦 span 缺 role/tabindex/keydown）。 -->
+                    <button
+                      type="button"
+                      class="cursor-copy select-text rounded px-0.5 text-left transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                      title="点击复制工单号"
+                      @click="copyText(row.orderNo, '工单号')"
+                    >{{ row.orderNo }}</button>
                   </span>
                 </td>
                 <td class="px-2 py-2 whitespace-nowrap text-slate-600">{{ row.planStartDate || '—' }}</td>
                 <td
-                  class="select-text px-2 py-2 text-right text-slate-900"
-                  title="双击复制"
-                  @dblclick="copyText(row.orderQty, '订单数量')"
+                  class="cursor-copy select-text px-2 py-2 text-right text-slate-900"
+                  title="点击复制"
+                  @click="copyText(row.orderQty, '订单数量')"
                 >{{ fmt(row.orderQty) }}</td>
                 <td
-                  class="select-text px-2 py-2 text-right text-slate-900"
-                  title="双击复制"
-                  @dblclick="copyText(row.confirmedQty, '确认的产量')"
+                  class="cursor-copy select-text px-2 py-2 text-right text-slate-900"
+                  title="点击复制"
+                  @click="copyText(row.confirmedQty, '确认的产量')"
                 >{{ fmt(row.confirmedQty) }}</td>
                 <td
-                  class="select-text px-2 py-2 text-right text-slate-600"
-                  title="双击复制"
-                  @dblclick="copyText(row.deliveredQty, '已交货数量')"
+                  class="cursor-copy select-text px-2 py-2 text-right text-slate-600"
+                  title="点击复制"
+                  @click="copyText(row.deliveredQty, '已交货数量')"
                 >{{ fmt(row.deliveredQty) }}</td>
                 <td class="px-2 py-2 text-right text-slate-900">{{ materialText(row.material) }}</td>
                 <td class="px-2 py-2 text-right text-slate-600">
