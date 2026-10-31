@@ -236,6 +236,16 @@ export function buildMaterialCostingRows({
     rows.get(key).pickQty += Number(record.pickQty) || 0
   }
 
+  /*
+   * 投料（变更-172 续）：按物料编码先把投料汇总好，后面基础行与派生行都要用。
+   */
+  const issueByCode = new Map()
+  for (const record of issueRecords || []) {
+    const code = String(record.materialCode ?? '').trim()
+    if (!code) continue
+    issueByCode.set(code, (issueByCode.get(code) || 0) + (Number(record.qty) || 0))
+  }
+
   // 领料数换算系数 + 已报工数：按物料编码处理
   for (const row of rows.values()) {
     const code = String(row.materialCode ?? '').trim()
@@ -245,6 +255,12 @@ export function buildMaterialCostingRows({
     row.pickQty *= pickFactor
     // 已报工数按物料编码汇总货物移动数量，先求和再取绝对值
     row.reportedQty = Math.abs(goodsMoveQtyMap?.get(code) || 0)
+    /*
+     * 投料数（变更-172 续）：与领料数用**同一个换算系数**。
+     * 实测踩过：氯铂酸 111001792 的 261 投料合计 0.7（原始单位），
+     * 业务口径要 ×1000 才是 700 kg —— 与派生行 reportedMultiplier 的口径一致。
+     */
+    row.issueQty = (issueByCode.get(code) || 0) * pickFactor
 
     /*
      * 钻取配方（变更-140）：基础行的明细就是"按编码查、不换算"。
@@ -255,44 +271,6 @@ export function buildMaterialCostingRows({
       pick: { materialCode: code, materialName: row.materialName, multiplier: pickFactor },
       move: { materialCode: code, multiplier: 1 },
     }
-  }
-
-  /*
-   * 投料（变更-172 续）：按物料编码把投料并进同一张表。
-   * ① 已有行（这个月领过料）：补上 issueQty；
-   * ② 新行（这个月只投料、没领料）：插一行，pickQty=0 —— 这就是"账外料"，
-   *    以前它们根本不出现，使用者以为丢了。
-   */
-  const issueByCode = new Map()
-  for (const record of issueRecords || []) {
-    const code = String(record.materialCode ?? '').trim()
-    if (!code) continue
-    issueByCode.set(code, (issueByCode.get(code) || 0) + (Number(record.qty) || 0))
-  }
-
-  for (const row of rows.values()) {
-    const code = String(row.materialCode ?? '').trim()
-    row.issueQty = issueByCode.get(code) || 0
-  }
-
-  for (const [code, qty] of issueByCode.entries()) {
-    const exists = [...rows.values()].some((row) => String(row.materialCode ?? '').trim() === code)
-    if (exists) continue
-    const record = (issueRecords || []).find(
-      (it) => String(it.materialCode ?? '').trim() === code,
-    )
-    rows.set(`issue:${code}`, {
-      materialName: String(record?.materialDesc ?? code).trim(),
-      materialCode: code,
-      pickQty: 0,
-      reportedQty: Math.abs(goodsMoveQtyMap?.get(code) || 0),
-      issueQty: qty,
-      // 只有投料、没有领料 ⇒ 领料明细为空，钻取时给空编码（弹窗会显示"没有匹配"）
-      drill: {
-        pick: { materialCode: '', materialName: '', multiplier: 1 },
-        move: { materialCode: code, multiplier: 1 },
-      },
-    })
   }
 
   // 派生行：领料数由源物料折算；报工数按物料编码 + 来源库位筛选货物移动后求和取绝对值
@@ -327,6 +305,14 @@ export function buildMaterialCostingRows({
       materialCode: derived.materialCode,
       pickQty,
       reportedQty: Math.abs(moveSum) * (derived.reportedMultiplier ?? 1),
+      /*
+       * 派生行**不给投料数**（显示「—」）。
+       *
+       * 原因：派生行是按库位把一个源物料拆成两行（氯铂酸_150 看 5003、_171 看 5002），
+       * 而投料接口只按物料给总数（实测 0.7 × 1000 = 700）。两行各显示 700 会被重复计数，
+       * 拆一半又是编数字。派生行本来就是"换算出来的行"，不叠加原始投料更诚实。
+       */
+      issueQty: null,
       // 派生行的明细来自**另一个**物料：领料看源物料 ×系数；报工看派生编码 + 指定库位 ×系数
       drill: {
         pick: {
@@ -343,20 +329,59 @@ export function buildMaterialCostingRows({
     })
   }
 
+  /*
+   * 并集插入（变更-172 续）：**只投料、没有领料**的物料，在这里补成一行。
+   *
+   * 位置很关键：必须在派生行之后。判定用"该物料编码是否已经被任何行占用"——
+   * 否则像氯铂酸 111001792 这种被派生行（氯铂酸_150 / _171）占用的编码，
+   * 会再多出一行同编码、单位还不一致的"氯铂酸"，使用方一眼就看出重复。
+   */
+  const usedCodes = new Set(
+    [...rows.values()].map((row) => String(row.materialCode ?? '').trim()).filter(Boolean),
+  )
+  for (const [code, qty] of issueByCode.entries()) {
+    if (usedCodes.has(code)) continue
+    const record = (issueRecords || []).find((it) => String(it.materialCode ?? '').trim() === code)
+    const factor = MATERIAL_COSTING_QTY_FACTORS[code] ?? 1
+    rows.set(`issue:${code}`, {
+      materialName: String(record?.materialDesc ?? code).trim(),
+      materialCode: code,
+      pickQty: 0,
+      reportedQty: Math.abs(goodsMoveQtyMap?.get(code) || 0),
+      issueQty: qty * factor,
+      // 只有投料没有领料 ⇒ 领料明细为空；报工明细照常按编码查
+      drill: {
+        pick: { materialCode: '', materialName: '', multiplier: 1 },
+        move: { materialCode: code, multiplier: 1 },
+      },
+    })
+  }
+
   return (
     [...rows.values()]
       .map((row) => ({
         ...row,
         pickQty: formatQty(row.pickQty),
-        issueQty: formatQty(row.issueQty ?? 0),
+        issueQty:
+          row.issueQty === null || row.issueQty === undefined ? '—' : formatQty(row.issueQty),
         reportedQty: formatQty(row.reportedQty),
         unreportedQty: formatQty(row.pickQty - row.reportedQty),
-        // 差额 = 投料 − 领料：负数是"投了没领"（账外料），正数是"领了没投"
-        issueDiffQty: formatQty((row.issueQty ?? 0) - row.pickQty),
+        /*
+         * 差额 = 投料 − 领料。
+         * **正数 = 投了没领**（账外料，要补领料单）；负 = 领了没投（料还压着）。
+         * 之前注释写反过（2026-10-31 自查发现）—— 数字对，只是说明反了。
+         */
+        issueDiffQty:
+          row.issueQty === null || row.issueQty === undefined
+            ? '—'
+            : formatQty(row.issueQty - row.pickQty),
       }))
       // 领料 / 投料 / 报工三者都为 0 的行不展示（如派生行缺少对应数据）
       .filter(
-        (row) => row.pickQty !== 0 || row.reportedQty !== 0 || (row.issueQty ?? 0) !== 0,
+        (row) =>
+          row.pickQty !== 0 ||
+          row.reportedQty !== 0 ||
+          (typeof row.issueQty === 'number' && row.issueQty !== 0),
       )
       .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
   )
