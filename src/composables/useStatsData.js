@@ -1,4 +1,5 @@
-import { computed } from 'vue'
+import request from '../api/request'
+import { computed, ref } from 'vue'
 import { REPORT_ORDER_TYPES } from '../constants/orderTypes'
 import { formatQty, normalizeMaterialName } from '../utils/format'
 import { useWorkOrderData } from './useWorkOrderData'
@@ -179,7 +180,42 @@ export const MATERIAL_COSTING_DERIVED = [
  * 字段名刻意沿用明细那套（materialName / materialCode / pickQty / moveQty / fromLocation），
  * 所以**下面这套换算与派生一行没动**：换算系数、派生行、差额与排序都是报表口径，不属于数据源。
  */
-export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMoveRecords } = {}) {
+/**
+ * 投料汇总（按物料）—— 原辅料核算的「投料数」来源（2026-10-31，变更-172 续）。
+ *
+ * 使用方报的现象：「乙炔工单的报工项里有次氯酸钠和无水氯化钙，但核算里没有」。
+ * 查库确认：这两个料 10 月**有 261 投料**、但**没有领料单**（领料只到 9 月），
+ * 而这张表原来**由领料汇总驱动** ⇒ 它们根本不出现。
+ *
+ * 现在改成「领料 ∪ 投料」的并集，并单独给一列投料数 ——
+ * 让"投了没领"（账外料）在表上直接可见，这正是对账要抓的。
+ */
+const issueSummaryRows = ref([])
+
+/** 拉投料汇总（日期区间与其它三张表同一套） */
+export async function fetchIssueSummary({ startDate, endDate } = {}) {
+  try {
+    const res = await request.get('/api/movement/issue-summary', {
+      params: {
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
+      },
+    })
+    const body = res.data || {}
+    const list = Array.isArray(body.data) ? body.data : []
+    issueSummaryRows.value = list
+  } catch {
+    // 投料拿不到就退化成"只按领料"（原行为），不把整张表打空
+    issueSummaryRows.value = []
+  }
+}
+
+export function buildMaterialCostingRows({
+  pickRecords,
+  goodsMoveQtyMap,
+  goodsMoveRecords,
+  issueRecords,
+} = {}) {
   const rows = new Map()
 
   // 领料数：来自领料汇总数据，按物料名称去重
@@ -219,6 +255,44 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
       pick: { materialCode: code, materialName: row.materialName, multiplier: pickFactor },
       move: { materialCode: code, multiplier: 1 },
     }
+  }
+
+  /*
+   * 投料（变更-172 续）：按物料编码把投料并进同一张表。
+   * ① 已有行（这个月领过料）：补上 issueQty；
+   * ② 新行（这个月只投料、没领料）：插一行，pickQty=0 —— 这就是"账外料"，
+   *    以前它们根本不出现，使用者以为丢了。
+   */
+  const issueByCode = new Map()
+  for (const record of issueRecords || []) {
+    const code = String(record.materialCode ?? '').trim()
+    if (!code) continue
+    issueByCode.set(code, (issueByCode.get(code) || 0) + (Number(record.qty) || 0))
+  }
+
+  for (const row of rows.values()) {
+    const code = String(row.materialCode ?? '').trim()
+    row.issueQty = issueByCode.get(code) || 0
+  }
+
+  for (const [code, qty] of issueByCode.entries()) {
+    const exists = [...rows.values()].some((row) => String(row.materialCode ?? '').trim() === code)
+    if (exists) continue
+    const record = (issueRecords || []).find(
+      (it) => String(it.materialCode ?? '').trim() === code,
+    )
+    rows.set(`issue:${code}`, {
+      materialName: String(record?.materialDesc ?? code).trim(),
+      materialCode: code,
+      pickQty: 0,
+      reportedQty: Math.abs(goodsMoveQtyMap?.get(code) || 0),
+      issueQty: qty,
+      // 只有投料、没有领料 ⇒ 领料明细为空，钻取时给空编码（弹窗会显示"没有匹配"）
+      drill: {
+        pick: { materialCode: '', materialName: '', multiplier: 1 },
+        move: { materialCode: code, multiplier: 1 },
+      },
+    })
   }
 
   // 派生行：领料数由源物料折算；报工数按物料编码 + 来源库位筛选货物移动后求和取绝对值
@@ -274,11 +348,16 @@ export function buildMaterialCostingRows({ pickRecords, goodsMoveQtyMap, goodsMo
       .map((row) => ({
         ...row,
         pickQty: formatQty(row.pickQty),
+        issueQty: formatQty(row.issueQty ?? 0),
         reportedQty: formatQty(row.reportedQty),
         unreportedQty: formatQty(row.pickQty - row.reportedQty),
+        // 差额 = 投料 − 领料：负数是"投了没领"（账外料），正数是"领了没投"
+        issueDiffQty: formatQty((row.issueQty ?? 0) - row.pickQty),
       }))
-      // 领料数与报工数都为 0 的行不展示（如派生行缺少对应数据）
-      .filter((row) => row.pickQty !== 0 || row.reportedQty !== 0)
+      // 领料 / 投料 / 报工三者都为 0 的行不展示（如派生行缺少对应数据）
+      .filter(
+        (row) => row.pickQty !== 0 || row.reportedQty !== 0 || (row.issueQty ?? 0) !== 0,
+      )
       .sort((left, right) => left.materialName.localeCompare(right.materialName, 'zh-CN'))
   )
 }
@@ -312,6 +391,7 @@ export function useStatsData() {
       pickRecords: pickSummaryRows.value,
       goodsMoveQtyMap: goodsMoveQtyMap.value,
       goodsMoveRecords: goodsMoveSummaryRows.value,
+      issueRecords: issueSummaryRows.value,
     }),
   )
 

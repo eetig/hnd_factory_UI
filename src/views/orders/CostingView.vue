@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import StatsTable from '../../components/StatsTable.vue'
 import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
 import CostingDrilldownDialog from '../../components/CostingDrilldownDialog.vue'
-import { useStatsData } from '../../composables/useStatsData'
+import { fetchIssueSummary, useStatsData } from '../../composables/useStatsData'
 import { useOrderFilter } from '../../composables/useOrderFilter'
 import { useWorkOrderData } from '../../composables/useWorkOrderData'
 import { useInboundData } from '../../composables/useInboundData'
@@ -116,11 +116,21 @@ const costingColumns = [
 // 暂照搬工单核算的列与计算逻辑，后续按原辅料规则单独调整（不影响工单核算）
 const materialCostingColumns = [
   { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'materialName', label: '已领物料名称', width: 'w-[240px]', wrap: true },
-  { key: 'materialCode', label: '物料编码', width: 'w-36' },
-  { key: 'pickQty', label: '领料数', width: 'w-32', align: 'right' },
-  { key: 'reportedQty', label: '已报工数', width: 'w-32', align: 'right' },
-  { key: 'unreportedQty', label: '未报工数', width: 'w-32', align: 'right', emphasis: true },
+  { key: 'materialName', label: '物料名称', width: 'w-[220px]', wrap: true },
+  { key: 'materialCode', label: '物料编码', width: 'w-32' },
+  { key: 'pickQty', label: '领料数', width: 'w-28', align: 'right' },
+  /*
+   * 投料数与差额（2026-10-31，变更-172 续）。
+   *
+   * 使用方报的现象：「乙炔工单的报工项里有次氯酸钠和无水氯化钙，但核算里没有」——
+   * 因为这张表原来由**领料**驱动，那两个料 10 月没领料（只有 261 投料），所以不出现。
+   * 现在行是「领料 ∪ 投料」并集，并单列投料数与差额：
+   *   差额 = 投料 − 领料；负 = 投了没领（账外料），正 = 领了没投。
+   */
+  { key: 'issueQty', label: '投料数', width: 'w-28', align: 'right' },
+  { key: 'issueDiffQty', label: '差额', width: 'w-24', align: 'right', emphasis: true },
+  { key: 'reportedQty', label: '已报工数', width: 'w-28', align: 'right' },
+  { key: 'unreportedQty', label: '未报工数', width: 'w-28', align: 'right' },
 ]
 
 /**
@@ -147,6 +157,12 @@ onMounted(() => {
   fetchInboundSummary()
   fetchPickSummary()
   fetchGoodsMoveSummary()
+  /*
+   * 投料汇总（2026-10-31，变更-172 续）：原辅料核算是「领料 ∪ 投料」并集，
+   * 少了这一份，只投料没领料的物料（如 10 月的次氯酸钠/无水氯化钙）就不会出现。
+   * 日期区间与另外三张表保持同一套。
+   */
+  fetchIssueSummary({ startDate: statsStartDate.value, endDate: statsEndDate.value })
 })
 </script>
 
