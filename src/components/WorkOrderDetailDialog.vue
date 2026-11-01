@@ -217,14 +217,12 @@ const totalQty = computed(() =>
  * 合计（2026-11-02，使用方：「合计也要」）。
  *
  * 为什么要单独算：物料列是动态的，表脚必须逐列给合计，不能只有一个订单数量。
- * 单耗**不做简单相加**（比率相加没有意义），改成 Σ投料 ÷ Σ确认产量（加权单耗）。
+ * 单耗那一格**留空**（使用方 2026-11-02：合计里的单耗无意义）—— 比率不可相加，
+ * 加权算出来也不等于任何业务含义，不如不放。
  */
 const totals = computed(() => {
   const sum = (key) => rows.value.reduce((acc, row) => acc + (Number(row[key]) || 0), 0)
   const materialTotals = {}
-  let issueSum = 0
-  let issueUnit = ''
-  let issueMixed = false
   for (const key of materialColumns.value) {
     let columnSum = 0
     for (const row of rows.value) {
@@ -232,27 +230,11 @@ const totals = computed(() => {
     }
     materialTotals[key.materialName] = columnSum
   }
-  // 加权单耗用"所有物料净投料之和 ÷ 确认产量之和"；单位混合时不给（会算出没意义的小数）
-  for (const row of rows.value) {
-    const m = row.material
-    if (!m || m.mixedUnit || !m.unit) continue
-    if (issueUnit && issueUnit !== m.unit) {
-      issueMixed = true
-      break
-    }
-    issueUnit = m.unit
-    issueSum += Number(m.net) || 0
-  }
-  const confirmed = sum('confirmedQty')
-  const perUnitTotal =
-    !issueMixed && issueUnit && confirmed > 0 ? (issueSum / confirmed).toFixed(2) : '—'
   return {
     orderQty: sum('orderQty'),
-    confirmedQty: confirmed,
+    confirmedQty: sum('confirmedQty'),
     deliveredQty: sum('deliveredQty'),
     materialTotals,
-    perUnit: perUnitTotal,
-    perUnitUnit: issueMixed ? '' : issueUnit,
   }
 })
 
@@ -537,12 +519,11 @@ watch(
             >
               {{ totals.materialTotals[col.materialName] ? fmt(totals.materialTotals[col.materialName]) : '—' }}
             </td>
-            <td class="px-2 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
-              {{ totals.perUnit }}
-              <span v-if="totals.perUnit !== '—' && totals.perUnitUnit" class="ml-0.5 text-xs font-normal text-slate-500">
-                {{ totals.perUnitUnit }}/{{ totals.perUnitUnit }}
-              </span>
-            </td>
+            <!--
+              单耗这一格刻意留空（使用方 2026-11-02：「合计里面的单耗无意义，去掉」）。
+              单耗是比率，合起来没有业务含义；要对比就看每行自己的单耗。
+            -->
+            <td class="px-2 py-2"></td>
           </tr>
         </tfoot>
       </table>
