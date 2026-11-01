@@ -213,6 +213,49 @@ const totalQty = computed(() =>
   rows.value.reduce((sum, row) => sum + (Number(row.orderQty) || 0), 0),
 )
 
+/**
+ * 合计（2026-11-02，使用方：「合计也要」）。
+ *
+ * 为什么要单独算：物料列是动态的，表脚必须逐列给合计，不能只有一个订单数量。
+ * 单耗**不做简单相加**（比率相加没有意义），改成 Σ投料 ÷ Σ确认产量（加权单耗）。
+ */
+const totals = computed(() => {
+  const sum = (key) => rows.value.reduce((acc, row) => acc + (Number(row[key]) || 0), 0)
+  const materialTotals = {}
+  let issueSum = 0
+  let issueUnit = ''
+  let issueMixed = false
+  for (const key of materialColumns.value) {
+    let columnSum = 0
+    for (const row of rows.value) {
+      columnSum += materialQtyOf(row, key.materialName) || 0
+    }
+    materialTotals[key.materialName] = columnSum
+  }
+  // 加权单耗用"所有物料净投料之和 ÷ 确认产量之和"；单位混合时不给（会算出没意义的小数）
+  for (const row of rows.value) {
+    const m = row.material
+    if (!m || m.mixedUnit || !m.unit) continue
+    if (issueUnit && issueUnit !== m.unit) {
+      issueMixed = true
+      break
+    }
+    issueUnit = m.unit
+    issueSum += Number(m.net) || 0
+  }
+  const confirmed = sum('confirmedQty')
+  const perUnitTotal =
+    !issueMixed && issueUnit && confirmed > 0 ? (issueSum / confirmed).toFixed(2) : '—'
+  return {
+    orderQty: sum('orderQty'),
+    confirmedQty: confirmed,
+    deliveredQty: sum('deliveredQty'),
+    materialTotals,
+    perUnit: perUnitTotal,
+    perUnitUnit: issueMixed ? '' : issueUnit,
+  }
+})
+
 /** 与行上的汇总比：一致 / 不一致 / 无从比较（截断或没给汇总） */
 const check = computed(() => {
   if (truncated.value || props.summaryQty === null || props.summaryQty === undefined) {
@@ -466,19 +509,39 @@ watch(
             </template>
           </template>
         </tbody>
+        <!--
+          合计行（2026-11-02，使用方：「合计也要」）。
+          逐列给合计：订单数量 / 确认的产量 / 已交货数量 / 每种物料的净投料 / 单耗（加权）。
+          "✓ 与汇总一致" 挪到表格下方那一行，表脚只放数字 —— 否则它会占掉物料列的位置。
+        -->
         <tfoot v-if="rows.length">
           <tr class="border-t border-line bg-region">
             <td colspan="2" class="px-2 py-2 text-sm font-semibold text-slate-900">
               合计
               <span class="ml-2 text-xs font-normal text-slate-500">共 {{ rows.length }} 张工单</span>
             </td>
-            <td class="px-2 py-2 text-right text-sm font-semibold text-slate-900">{{ fmt(totalQty) }}</td>
-            <td colspan="2" class="px-2 py-2 text-right text-xs">
-              <span v-if="check === true" :class="STATUS_TEXT.success">✓ 与汇总一致</span>
-              <span v-else-if="check === false" class="text-amber-600">
-                ⚠️ 与行上的 {{ fmt(summaryQty) }} 不一致
+            <td class="select-text px-2 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
+              {{ fmt(totals.orderQty) }}
+            </td>
+            <td class="select-text px-2 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
+              {{ fmt(totals.confirmedQty) }}
+            </td>
+            <td class="select-text px-2 py-2 text-right text-sm font-semibold tabular-nums text-slate-600">
+              {{ fmt(totals.deliveredQty) }}
+            </td>
+            <td
+              v-for="col in materialColumns"
+              :key="`total-${col.key}`"
+              class="select-text px-2 py-2 text-right text-sm font-semibold tabular-nums"
+              :class="totals.materialTotals[col.materialName] ? 'text-slate-900' : 'text-slate-500'"
+            >
+              {{ totals.materialTotals[col.materialName] ? fmt(totals.materialTotals[col.materialName]) : '—' }}
+            </td>
+            <td class="px-2 py-2 text-right text-sm font-semibold tabular-nums text-slate-900">
+              {{ totals.perUnit }}
+              <span v-if="totals.perUnit !== '—' && totals.perUnitUnit" class="ml-0.5 text-xs font-normal text-slate-500">
+                {{ totals.perUnitUnit }}/{{ totals.perUnitUnit }}
               </span>
-              <span v-else-if="truncated" class="text-amber-600">⚠️ 工单太多，只合计了前 {{ rows.length }} 张</span>
             </td>
           </tr>
         </tfoot>
@@ -488,6 +551,14 @@ watch(
     <div class="mt-3 flex items-center justify-between gap-3">
       <span class="text-xs text-slate-500">
         口径：同工单类型 + 同产成品 · 统计范围 {{ rangeText }}（与汇总同一区间）
+        <!-- 自检从表脚挪到这里：表脚被动态物料列占满了 -->
+        <span v-if="check === true" class="ml-2" :class="STATUS_TEXT.success">✓ 与汇总一致</span>
+        <span v-else-if="check === false" class="ml-2 text-amber-600">
+          ⚠️ 与行上的 {{ fmt(summaryQty) }} 不一致
+        </span>
+        <span v-else-if="truncated" class="ml-2 text-amber-600">
+          ⚠️ 工单太多，只合计了前 {{ rows.length }} 张
+        </span>
       </span>
       <el-pagination
         v-model:current-page="pageNum"
