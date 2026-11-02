@@ -30,6 +30,8 @@ import { dueLabel, quantityText, requestAgeLabel, requesterSummary } from './boa
  */
 const props = defineProps({
   card: { type: Object, required: true },
+  /** 这一列的状态色（看板按列传入，2026-11-02） */
+  color: { type: String, default: '#5B6470' },
 })
 
 const emit = defineEmits(['open', 'open-row'])
@@ -85,7 +87,7 @@ function openRow(row, event) {
   <div
     role="button"
     tabindex="0"
-    class="w-full cursor-pointer rounded-card border border-line bg-raised p-3 text-left transition hover:border-slate-400 hover:shadow-card focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+    class="purchase-card w-full cursor-pointer rounded-card border border-line bg-raised p-3 text-left transition focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
     :aria-label="cardLabel"
     @click="emit('open')"
     @keydown.enter.self="emit('open')"
@@ -173,3 +175,28 @@ function openRow(row, event) {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 状态色左边条 + hover 全在盒内（与设备看板同一套手感） */
+.purchase-card {
+  border-left-width: 3px;
+  border-left-color: v-bind('color');
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.purchase-card:hover {
+  background-color: #fffdf8;
+  border-color: #d8d2c6;
+  box-shadow: inset 0 0 0 1px rgba(120, 108, 88, 0.16);
+}
+
+.purchase-card:active {
+  background-color: #faf7f0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .purchase-card {
+    transition: none;
+  }
+}
+</style>

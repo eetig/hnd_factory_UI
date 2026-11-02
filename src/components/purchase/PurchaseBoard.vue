@@ -190,18 +190,28 @@ onMounted(loadBoard)
       <section
         v-for="col in visibleColumns"
         :key="col.key"
-        class="flex min-h-0 flex-col rounded-card border border-line bg-region/40"
+        class="flex min-h-0 flex-col rounded-card border border-line bg-region/60"
         :aria-label="`${col.label}（${col.cardCount} 张卡，${col.rowCount} 条物料）`"
       >
-        <header class="flex shrink-0 items-center justify-between gap-2 px-3 py-2">
+        <!--
+          列头（2026-11-02）：左侧 3px 状态色条 + 同色数量徽章。
+          颜色只说明"这列卡在哪一步"，与设备看板同一套规则。
+        -->
+        <header
+          class="flex shrink-0 items-center justify-between gap-2 px-3 py-2"
+          :style="{ borderLeft: `3px solid ${col.color}` }"
+        >
           <div class="min-w-0">
-            <h3 class="text-sm font-semibold text-slate-900">
-              {{ col.label }}
-              <span class="ml-1 font-normal tabular-nums text-slate-500">
-                {{ col.cardCount }}<span class="mx-0.5">张</span>·<span class="ml-0.5">{{ col.rowCount }}</span>条
+            <div class="flex items-center gap-2">
+              <h3 class="text-sm font-semibold text-slate-900">{{ col.label }}</h3>
+              <span
+                class="rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+                :style="{ color: col.color, backgroundColor: col.color + '14' }"
+              >
+                {{ col.cardCount }} 张 · {{ col.rowCount }} 条
               </span>
-            </h3>
-            <p class="truncate text-[11px] text-slate-500">{{ col.hint }}</p>
+            </div>
+            <p class="mt-0.5 truncate text-[11px] text-slate-500">{{ col.hint }}</p>
           </div>
         </header>
 
@@ -217,6 +227,7 @@ onMounted(loadBoard)
             v-for="card in col.cards"
             :key="card.key"
             :card="card"
+            :color="col.color"
             @open="openCard(card.lead)"
             @open-row="openCard($event)"
           />

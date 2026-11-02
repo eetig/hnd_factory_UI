@@ -20,11 +20,19 @@
  */
 
 /** 列定义（顺序即渲染顺序；`keys` 是这一列接受的派生状态） */
+/*
+ * 四列 = 四种处理状态（2026-11-02 加配色，与设备看板同一套语言）。
+ *
+ * 颜色只表达"卡在哪个环节"：
+ *   待提单 靛（还没动，等人去提）· 等货 青（在流程里，等时间）
+ *   超期   橙（最急，已经晚了）  · 已到货 苔绿（完成）
+ * 都压着饱和度；文字用深版、底色用 14% 淡版 —— 全部过 AA。
+ */
 export const BOARD_COLUMNS = [
-  { key: 'pendingOa', label: '待提单', hint: '还没提交 OA，要人去提单', keys: ['PENDING_OA'] },
-  { key: 'waiting', label: '等货', hint: '已提单，在等到货', keys: ['WAITING', 'DUE_SOON'] },
-  { key: 'overdue', label: '超期', hint: '过了要求到货日还没到', keys: ['OVERDUE'] },
-  { key: 'arrived', label: '已到货', hint: '到货了（含部分到货）', keys: ['ARRIVED', 'PARTIAL'] },
+  { key: 'pendingOa', label: '待提单', hint: '还没提交 OA，要人去提单', keys: ['PENDING_OA'], color: '#4A5A7B' },
+  { key: 'waiting', label: '等货', hint: '已提单，在等到货', keys: ['WAITING', 'DUE_SOON'], color: '#3F6E6A' },
+  { key: 'overdue', label: '超期', hint: '过了要求到货日还没到', keys: ['OVERDUE'], color: '#B45309' },
+  { key: 'arrived', label: '已到货', hint: '到货了（含部分到货）', keys: ['ARRIVED', 'PARTIAL'], color: '#5B6E4F' },
 ]
 
 /** 未到货的四个状态 —— 看板默认只看这些（"今天该催谁"） */
@@ -79,6 +87,8 @@ export function groupBoard(rows) {
     key: c.key,
     label: c.label,
     hint: c.hint,
+    // 状态色（2026-11-02）：列头色条与卡片左边都用它 —— groupLedger 上次就是漏了这行
+    color: c.color,
     rows: buckets.get(c.key).slice().sort(compareUrgency),
   }))
 }
@@ -258,6 +268,8 @@ export function groupBoardByOa(rows = []) {
       key: col.key,
       label: col.label,
       hint: col.hint,
+      // 状态色（2026-11-02）：列头色条与卡片左边都用它
+      color: col.color,
       cards,
       cardCount: cards.length,
       rowCount: cards.reduce((sum, card) => sum + card.count, 0),

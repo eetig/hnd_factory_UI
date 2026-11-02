@@ -48,11 +48,18 @@ describe('采购看板卡片：OA 单号与跳转', () => {
     expect(src).toContain('@keydown.space.self.prevent')
   })
 
-  it('卡片不再用 hover:-translate-y，且悬停仍靠 border + shadow', () => {
+  it('悬停效果全部在盒内（不用位移、不靠盒子外的阴影）', () => {
+    /*
+     * 2026-11-02：这一条从"必须有 hover:shadow-card"改成"不许有盒子外的阴影"。
+     * 原因：卡片外层是 overflow-y-auto 的滚动区，盒子外的 shadow / ring 会被裁掉 ——
+     * 使用方看到的就是"鼠标移到卡片上，上边缘那条轮廓线被盖住了"。
+     * 现在改用 .purchase-card:hover 的 inset 阴影 + 背景 + 边框加深，全部在盒内。
+     */
     const src = read(CARD)
     expect(src).not.toContain('hover:-translate-y')
-    expect(src).toContain('hover:shadow-card')
-    expect(src).toContain('hover:border-slate-400')
+    expect(src).not.toContain('hover:shadow-card')
+    expect(src).toContain('.purchase-card:hover')
+    expect(src).toContain('box-shadow: inset')
   })
 
   it('一张卡可以装多条物料：超过 4 条折叠', () => {
