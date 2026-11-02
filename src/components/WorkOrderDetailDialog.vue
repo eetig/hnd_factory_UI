@@ -587,20 +587,27 @@ watch(
  * ⚠️ sticky 生效的前提：祖先 chain 里**不能有 overflow: hidden**
  * （这里只有 overflow-auto 的滚动容器，没有 hidden）—— 改样式时注意别加。
  */
+/*
+ * ⚠️ 背景色必须用**本项目的 token**（`raised` = #FFFFFF）。
+ *    第一版我写的是 `var(--ui-surface)` —— 那是**手机 App 端**的变量名，
+ *    这个仓库（PC）根本没有 ⇒ 等价于透明 ⇒ 吸底的合计行透出下面的明细行，
+ *    看起来像"合计压在数据行上"（使用方 2026-11-02 截图）。
+ *    tailwind.config 里这套 token：canvas=纸 / raised=纸上的面 / region=垫下去的一层。
+ */
 .sticky-th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background-color: var(--ui-sheet-fill, #fff);
+  background-color: theme('colors.raised');
 }
 
 .sticky-foot td {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  /* 合计行原本靠 bg-region 半透明，粘住后会透出下面的行 ⇒ 这里再垫一层实色 */
-  background-color: var(--ui-surface);
-  box-shadow: 0 -1px 0 var(--ui-border);
+  /* 合计行原本用 bg-region（灰），这里显式给实色：吸收滚动内容 + 一条 1px 上边线 */
+  background-color: theme('colors.region');
+  box-shadow: 0 -1px 0 theme('colors.line');
 }
 
 .expand-in {
