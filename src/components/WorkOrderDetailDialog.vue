@@ -37,7 +37,13 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const COLUMNS = [
-  { key: 'orderNo', label: '工单号', width: 'w-[130px]' },
+  /*
+   * 工单号列（2026-11-02 加宽 130 → 210px）。
+   * 列里现在有一个「明细」胶囊按钮（实测 53px）+ 8 位工单号，
+   * 130px 装不下 ⇒ 单号溢出、压在「基本开始日期」上（使用方截图里就是
+   * "10002313120 26-09-29" 这种糊在一起）。
+   */
+  { key: 'orderNo', label: '工单号', width: 'w-[210px]' },
   { key: 'planStartDate', label: '基本开始日期', width: 'w-[116px]' },
   { key: 'orderQty', label: '订单数量', width: 'w-[96px]', align: 'right' },
   { key: 'confirmedQty', label: '确认的产量', width: 'w-[96px]', align: 'right' },
@@ -349,7 +355,7 @@ watch(
               v-for="col in COLUMNS"
               :key="col.key"
               scope="col"
-              class="whitespace-nowrap px-2 py-2"
+              class="sticky-th whitespace-nowrap px-2 py-2"
               :class="[col.width, col.align === 'right' ? 'text-right' : '']"
             >
               {{ col.label }}
@@ -358,7 +364,7 @@ watch(
               v-for="col in materialColumns"
               :key="col.key"
               scope="col"
-              class="whitespace-nowrap px-2 py-2 text-right"
+              class="sticky-th whitespace-nowrap px-2 py-2 text-right"
               :class="col.width"
             >
               {{ col.label }}
@@ -504,7 +510,7 @@ watch(
           "✓ 与汇总一致" 挪到表格下方那一行，表脚只放数字 —— 否则它会占掉物料列的位置。
         -->
         <tfoot v-if="rows.length">
-          <tr class="border-t border-line bg-region">
+          <tr class="sticky-foot border-t border-line bg-region">
             <td colspan="2" class="px-2 py-2 text-sm font-semibold text-slate-900">
               合计
               <span class="ml-2 text-xs font-normal text-slate-500">共 {{ rows.length }} 张工单</span>
@@ -568,6 +574,35 @@ watch(
  * 用 animation 而不是 height transition：行高由内容决定，height 动画要先量高度，
  * 表格行里量高度既麻烦又会抖。
  */
+/*
+ * 表头吸顶 + 合计吸底（2026-11-02 使用方：
+ * 「1.合计固定在下面一直可见 2.表头固定在最上面一直可见」）。
+ *
+ * 表格在一个 `max-h-[60vh] overflow-auto` 的容器里滚，所以用 position: sticky：
+ *   · thead 的 th 吸顶（top: 0），滚动时始终能看到列名；
+ *   · tfoot 的 td 吸底（bottom: 0），合计始终在视口底部。
+ * 两者都必须给不透明背景，否则透出下面的行会糊在一起；
+ * z-index 让表头压住 tfoot 之外的单元格，且表头与合计都不会被行内容盖住。
+ *
+ * ⚠️ sticky 生效的前提：祖先 chain 里**不能有 overflow: hidden**
+ * （这里只有 overflow-auto 的滚动容器，没有 hidden）—— 改样式时注意别加。
+ */
+.sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--ui-sheet-fill, #fff);
+}
+
+.sticky-foot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  /* 合计行原本靠 bg-region 半透明，粘住后会透出下面的行 ⇒ 这里再垫一层实色 */
+  background-color: var(--ui-surface);
+  box-shadow: 0 -1px 0 var(--ui-border);
+}
+
 .expand-in {
   animation: expandIn 0.15s ease-out;
 }
