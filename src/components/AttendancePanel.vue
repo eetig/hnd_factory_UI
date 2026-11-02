@@ -213,6 +213,14 @@ function cellTone(day) {
  * 口径和他一致：工作日 = 下班−上班−午休（08:00→17:30 记 **8h**）；
  * 加班日 = 两段之和（4+4 = 8h）。整数不带小数，非整写 8.5h。
  */
+/**
+ * 休息格上的文字（2026-11-02）：有节日名就显示节日名（国庆 / 春节 …），否则「休息」。
+ * 后端 `AttendanceCalendar.holidayName()` 在生成整月时已填在每一天上。
+ */
+function restLabel(day) {
+  return day && day.holidayName ? day.holidayName : '休息'
+}
+
 function durationText(day) {
   const need = day.dayType === 'work' || day.dayType === 'overtime'
   if (!need) return ''
@@ -627,11 +635,15 @@ const popupStyle =
               <text v-if="cell.dayType === 'overtime'" class="at__tag">加班</text>
               <text v-else-if="cell.dayType === 'comp'" class="at__tag">调休</text>
               <!--
-                休息日也标出来（2026-11-02 使用方：「休息的地方标出来，这样更直观」）。
+                休息日标出来（2026-11-02 使用方：「休息的地方标出来，这样更直观」）。
                 原来休息日只靠格底变淡 + 没有 8h 来表达，扫一眼分不清
                 "休息"还是"这天忘了填"。
+                再进一步（同日）：「10.3、10.4 都是国庆假期，节日也要体现出来」
+                ⇒ 后端给了 holidayName（元旦/春节/清明/劳动/端午/中秋/国庆），
+                   有就用节日名，没有才是「休息」。周末与法定节假日在对账里意义不同
+                   （节假日加班按 3 倍），不该长得一样。
               -->
-              <text v-else-if="cell.dayType === 'rest'" class="at__tag at__tag--rest">休息</text>
+              <text v-else-if="cell.dayType === 'rest'" class="at__tag at__tag--rest">{{ restLabel(cell) }}</text>
               <text v-if="missCountOf(cell)" class="at__miss">忘{{ missCountOf(cell) }}</text>
             </view>
           </template>
