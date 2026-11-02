@@ -4,9 +4,13 @@ import request from '../../api/request'
 import { saveAuth } from '../../api/auth'
 import ThemeToggle from '../../components/ThemeToggle.vue'
 import { useTheme } from '../../composables/useTheme'
+import { useRememberedLogin } from '../../composables/useRememberedLogin'
 
-const username = ref('')
-const password = ref('')
+/*
+ * 记住账号密码（2026-11-02 使用方要求）：逻辑在 useRememberedLogin，
+ * 这里只负责"进页面恢复一次、登录成功后存一次"。
+ */
+const { username, password, remember, restore, save } = useRememberedLogin()
 const loading = ref(false)
 const errorMessage = ref('')
 
@@ -17,6 +21,9 @@ const focusField = ref('')
 // 主题：颜色本体是 App.vue 里的两组 CSS 变量，这里只取「当前是哪套」。
 // 深色是默认值（写在 page 上），浅色靠给 .login-page 加 .theme-light。
 const { themeClass, wotTheme, themeVars } = useTheme()
+
+// 进页面先把上次记住的账号密码填好
+restore()
 
 /** 去注册：用 navigateTo（压栈），注册页左上角有返回，能退回登录页 */
 function goRegister() {
@@ -53,6 +60,9 @@ async function handleLogin() {
 
     // 保存 token 及角色、权限（用于按钮显隐与刷新后恢复）
     saveAuth({ ...payload, token })
+
+    // 记住账号密码（组件里判断了是否勾选）
+    save()
 
     // 改造前用的是 vue-router 的 route.query.redirect；
     // uni-app 没有全局 query 转发，改用「有上一页就返回，否则回首页」，
@@ -128,6 +138,10 @@ async function handleLogin() {
             @focus="focusField = 'password'"
             @blur="focusField = ''"
           />
+        </view>
+
+        <view class="login-hint" @click="remember = !remember">
+          <text>{{ remember ? '☑' : '☐' }} 记住账号密码（换手机或多人共用时请取消）</text>
         </view>
 
         <text v-if="errorMessage" class="login-error">{{ errorMessage }}</text>
