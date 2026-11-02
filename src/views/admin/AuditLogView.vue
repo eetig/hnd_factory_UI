@@ -15,7 +15,8 @@ import request from '../../api/request'
  * ③ 谁做了什么写操作（做了什么、成功还是被拒）
  *
  * ## 两个设计决定
- * · **只读**：没有任何删除按钮。日志能删就等于没有；过期由后端每天自动清 180 天前的。
+ * · **只读**：没有任何删除按钮。日志能删就等于没有；过期由后端每天自动清 365 天前的
+ *   （《网络安全法》第 21 条要求网络日志留存不少于六个月，180 天不够，2026-11-02 上调）。
  * · **账号视图 / 日志视图** 分两片：先看"人"（最近登录、次数），再下钻到"这个人干了什么"。
  *
  * 视觉上沿用本仓的暖纸 + 发丝线卡片配方，不用彩色区分事件类型 —— 事件用文字徽章，
@@ -162,7 +163,7 @@ onMounted(async () => {
       <!-- 头部：标题 + 两片切换 -->
       <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
         <h1 class="text-base font-semibold text-slate-900">管控日志</h1>
-        <p class="text-xs text-slate-500">只读 · 自动保留 180 天 · 只有管理员可见</p>
+        <p class="text-xs text-slate-500">只读 · 自动保留 365 天 · 只有管理员可见</p>
 
         <div class="ml-auto flex items-center gap-1 rounded-lg border border-line p-0.5">
           <button
