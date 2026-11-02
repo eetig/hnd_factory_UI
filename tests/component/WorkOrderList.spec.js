@@ -221,15 +221,18 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     try {
       await switchToTab(wrapper, '核算')
 
+      /*
+       * 2026-11-02：核算页去掉「工单报工」页签（使用方 Q3 ②）——
+       * 工单汇总已改成同形态的聚合表并带下钻，这里再放一张就是重复的。
+       * 所以现在是 2 张表：工单核算、原辅料核算。
+       */
       const tables = wrapper.findAllComponents(StatsTable)
-      expect(tables).toHaveLength(3)
+      expect(tables).toHaveLength(2)
 
-      const [report, costing, materialCosting] = tables
+      const [costing, materialCosting] = tables
 
-      expect(report.props('emptyText')).toBe('暂无报工数据')
-      expect(report.props('columns')[1].key).toBe('orderType')
-      // 长物料名列需要换行限宽
-      expect(report.props('columns')[2]).toMatchObject({ key: 'materialDesc', wrap: true })
+      expect(costing.props('emptyText')).toBe('暂无核算数据')
+      expect(materialCosting.props('emptyText')).toBe('暂无核算数据')
 
       expect(costing.props('emptyText')).toBe('暂无核算数据')
       expect(costing.props('columns').map((column) => column.key)).toEqual([
@@ -245,11 +248,12 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
 
       expect(materialCosting.props('columns')[3].key).toBe('pickQty')
 
-      // 三个视图是页内切换（v-show）：只有当前那个可见，另外两个必须藏起来 ——
-      // 少一条 v-show，三张表就会上下叠在一起
+      /*
+       * 视图切换仍是页内 v-show（2026-11-02 起只剩两个：工单核算 / 原辅料核算）。
+       * 只有当前那个可见，另一个必须藏起来 —— 少一条 v-show 就会上下叠在一起。
+       */
       expect(tables[0].element.parentElement.style.display).toBe('')
       expect(tables[1].element.parentElement.style.display).toBe('none')
-      expect(tables[2].element.parentElement.style.display).toBe('none')
     } finally {
       // authState 是模块级单例：断言失败也必须复位，否则 admin 身份会泄漏给后续用例
       authState.roleKey = ''
@@ -262,7 +266,8 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     await nextTick()
     try {
       await switchToTab(wrapper, '核算')
-      expect(wrapper.findComponent(StatsTable).text()).toContain('暂无报工数据')
+      // 2026-11-02 起核算页第一张表是「工单核算」，空表文案随之变化
+      expect(wrapper.findComponent(StatsTable).text()).toContain('暂无核算数据')
     } finally {
       authState.roleKey = ''
       await nextTick()
@@ -596,11 +601,17 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     authState.roleKey = 'admin'
     await nextTick()
     try {
-      expect(wrapper.findAllComponents(StatsTable)).toHaveLength(0)
+      /*
+       * 2026-11-02：工单汇总自己改成了聚合表（StatsTable），而路由默认落在它上面，
+       * 所以"还没进核算"时是 **1** 张表（工单汇总那张），不是 0。
+       * 这条断言的本意（一次只挂一页）不变：进核算后变 2、切去物料查询后归 0。
+       */
+      expect(wrapper.findAllComponents(StatsTable)).toHaveLength(1)
 
       await switchToTab(wrapper, '核算')
       const active = wrapper.findAllComponents(StatsTable)
-      expect(active, '进入后三张汇总表应当都在').toHaveLength(3)
+      // 2026-11-02：核算页只剩两张表（工单报工页签已去掉）
+      expect(active, '进入后两张汇总表应当都在').toHaveLength(2)
 
       await switchToTab(wrapper, '物料查询')
       // 物料查询页本身不是 StatsTable：核算页已经卸载，所以是 0

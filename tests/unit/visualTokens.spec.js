@@ -2381,27 +2381,33 @@ const PURCHASE_UI = [
         '所以这里从 5 变成 4（那张卡片现在在 PurchaseTrackingPanel.vue 里，另行钉住）。',
     ).toBe(4)
 
+    /*
+     * 2026-11-02：这条链的原意是"卡片撑满、表格区自己滚、分页行钉底"，
+     * 针对的是**带分页的汇总表**（领料 / 入库 / 周统计 / 储罐）。
+     * 工单汇总已经改成聚合表（几十行、无分页），不再有分页行要钉，
+     * 所以从 TABS 里剔除它，剩下的页签照旧一级不少。
+     */
     expect(
       countStatic('relative flex min-h-0 flex-1 flex-col'),
-      '不是四个卡片主体（div.relative）都转成了纵向 flex：高度传不到表格区',
-    ).toBe(TABS.length)
+      '不是带分页的卡片主体（div.relative）都转成了纵向 flex：高度传不到表格区',
+    ).toBe(TABS.length - 1)
 
     expect(
       countStatic('flex min-h-0 flex-1 flex-col'),
-      '不是四个分页行的兄弟层（v-else）都转成了纵向 flex：表格区与分页行分不到高度',
-    ).toBe(TABS.length)
+      '不是带分页的兄弟层（v-else）都转成了纵向 flex：表格区与分页行分不到高度',
+    ).toBe(TABS.length - 1)
 
     expect(
       countStatic('min-h-0 flex-1 overflow-x-auto overflow-y-auto'),
-      '不是四个表格区都成了「自己滚」的那一层：表格区一旦不滚，滚的就是主区栏，' +
+      '不是带分页的表格区都成了「自己滚」的那一层：表格区一旦不滚，滚的就是主区栏，' +
         '卡片退回跟着内容长，分页行又跑起来了。',
-    ).toBe(TABS.length)
+    ).toBe(TABS.length - 1)
 
     expect(
       countStatic('flex shrink-0 justify-end border-t border-line px-6 py-3'),
-      '不是四个分页行都带 shrink-0（分隔线是发丝线 border-line）：' +
-        '空间不够时 flex 会先压它',
-    ).toBe(TABS.length)
+      '不是带分页的页签都有一行带 shrink-0 的分页行（分隔线是发丝线 border-line）：' +
+        '空间不够时 flex 会先压它。工单汇总 2026-11-02 改成聚合表、无分页，已剔除。',
+    ).toBe(TABS.length - 1)
   })
 
   it('储罐液位同一张方子（变更-044）：链在面板文件里，定高由包装层传下来', () => {

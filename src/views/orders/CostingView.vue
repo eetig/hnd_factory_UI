@@ -1,7 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import StatsTable from '../../components/StatsTable.vue'
-import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
 import CostingDrilldownDialog from '../../components/CostingDrilldownDialog.vue'
 import { fetchIssueSummary, useStatsData } from '../../composables/useStatsData'
 import { useOrderFilter } from '../../composables/useOrderFilter'
@@ -24,7 +23,7 @@ import { useGoodsMoveData } from '../../composables/useGoodsMoveData'
  * 挂载成本可以忽略，而切换时保留滚动位置与已渲染的行更顺手。
  * 「非当前视图必须藏起来」这条没变 —— 三个块都带 v-show，不会叠在一起。
  */
-const { reportRows, costingRows, materialCostingRows } = useStatsData()
+const { costingRows, materialCostingRows } = useStatsData()
 
 /*
  * 这三张表的数字**都带日期区间**（走 useOrderFilter 的共享状态，默认本月 1 号 ~ 今天），
@@ -69,14 +68,6 @@ const statsRowKey = (item, index) => `${item.orderType ?? item.materialName}-${i
  * 工单明细弹窗（变更-126e）：点「工单报工」的一行，看这一行由哪些工单组成。
  * 口径：同工单类型 + 同产成品、不限日期（与 summary-by-type-material 同口径，明细才能和汇总对上）。
  */
-const detailDialogOpen = ref(false)
-const detailRow = ref(null)
-
-function openWorkOrderDetail(row) {
-  detailRow.value = row
-  detailDialogOpen.value = true
-}
-
 /*
  * 核算钻取（变更-140，2026-10-21 使用方要求）。
  *
@@ -94,13 +85,6 @@ function openDrilldown(row, mode) {
   drillMode.value = mode
   drillDialogOpen.value = true
 }
-const reportColumns = [
-  { key: 'index', label: '序号', width: 'w-16' },
-  { key: 'orderType', label: '工单类型', width: 'w-40' },
-  { key: 'materialDesc', label: '产成品', width: 'w-[200px]', wrap: true },
-  { key: 'orderQty', label: '订单数量', width: 'w-28', align: 'right' },
-  { key: 'confirmedQty', label: '确认的产量', width: 'w-32', align: 'right' },
-]
 
 // ===== 工单核算 =====
 const costingColumns = [
@@ -137,12 +121,16 @@ const materialCostingColumns = [
  * 页内三个视图。标签沿用原来的页签名 —— 使用方与文档里都是这么叫的，
  * 换成「核算 1/2/3」反而要重新学一遍。
  */
+/*
+ * 2026-11-02 使用方（Q3 ②）：把「工单报工」页签去掉。
+ * 工单汇总（/orders）已改成同形态的聚合表并带下钻，这里再放一张就是重复的；
+ * 核算页只保留「工单核算 / 原辅料核算」两件事。
+ */
 const VIEWS = [
-  { key: 'report', label: '工单报工' },
   { key: 'costing', label: '工单核算' },
   { key: 'materialCosting', label: '原辅料核算' },
 ]
-const activeView = ref('report')
+const activeView = ref('costing')
 
 /*
  * 进这一页就把三张表的源数据各取一次。
@@ -192,17 +180,6 @@ onMounted(() => {
 
 <!-- 统计范围显式写出来：这一页没有日期选择器，数字覆盖哪段时间不能靠猜 -->
 <p class="mb-3 text-xs text-slate-500">统计范围：{{ rangeLabel }}</p>
-
-    <div v-show="activeView === 'report'">
-      <StatsTable
-        :columns="reportColumns"
-        :rows="reportRows"
-        empty-text="暂无报工数据"
-        :row-key="statsRowKey"
-          row-clickable
-          @row-click="openWorkOrderDetail"
-      />
-    </div>
 
     <div v-show="activeView === 'costing'">
       <StatsTable
@@ -271,11 +248,5 @@ onMounted(() => {
     :end-date="statsEndDate"
   />
 
-  <WorkOrderDetailDialog
-    v-model="detailDialogOpen"
-    :type-key="detailRow?.typeKey || ''"
-    :type-label="detailRow?.orderType || ''"
-    :material-desc="detailRow?.materialDesc || ''"
-    :summary-qty="detailRow?.orderQtyRaw ?? null"
-  />
+
 </template>
