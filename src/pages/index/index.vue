@@ -151,8 +151,6 @@ const tabs = [
   { key: 'material', label: '领料汇总', icon: 'cart', hint: '按日期与物料查看领料记录', adminOnly: true, group: 'order' },
   { key: 'inbound', label: '入库汇总', icon: 'download', hint: '按日期与物料查看入库记录', adminOnly: true, group: 'order' },
   { key: 'report', label: '工单报工', icon: 'check-rectangle', hint: '产成品完工数量与确认产量', adminOnly: true, group: 'order' },
-  { key: 'costing', label: '工单核算', icon: 'chart-pie', hint: '工单成本构成与核算结果', adminOnly: true, group: 'order' },
-  { key: 'materialCosting', label: '原辅料核算', icon: 'layers', hint: '原辅料消耗与成本核算', adminOnly: true, group: 'order' },
   { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存', group: 'tools' },
   // 图片解析：单据图片识别辅助录入（变更-003）。权限位与文件导入相同（work_order:import）
   { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import', group: 'maintain' },
@@ -249,6 +247,75 @@ const entryItems = computed(() => {
     return rank(left.key) - rank(right.key)
   })
 })
+
+/*
+ * 抽屉菜单的使用频次（2026-11-02）。
+ *
+ * 只用于决定「常用」置顶区放哪几个，存本机（uni storage），不上报。
+ * 与首页入口板的 entryUsage 分开记：那是"录入入口"，这是"整个抽屉菜单"，
+ * 两者的热门项不一样（抽屉里领料/入库/周统计都会被点）。
+ */
+const MENU_USAGE_KEY = 'hnd.menu.usage.v1'
+
+const menuUsage = ref((() => {
+  try {
+    const raw = uni.getStorageSync(MENU_USAGE_KEY)
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch {
+    return {}
+  }
+})())
+
+function recordMenuUsage(key) {
+  const next = { ...menuUsage.value, [key]: (menuUsage.value[key] || 0) + 1 }
+  menuUsage.value = next
+  try {
+    uni.setStorageSync(MENU_USAGE_KEY, next)
+  } catch {
+    // 只用于排序，忽略失败
+  }
+}
+
+/*
+ * 「常用」置顶区：用得最多的 4 个（只算点过的）。
+ * 少于 2 个就不显示这一区 —— 一个孤零零的"常用"没有意义，反而占位置。
+ */
+const FREQUENT_LIMIT = 4
+
+const frequentTabs = computed(() => {
+  const used = visibleTabs.value
+    .filter((tab) => (menuUsage.value[tab.key] || 0) > 0)
+    .sort((left, right) => (menuUsage.value[right.key] || 0) - (menuUsage.value[left.key] || 0))
+    .slice(0, FREQUENT_LIMIT)
+  return used.length >= 2 ? used : []
+})
+
+/*
+ * 分组配色（2026-11-02，使用方「我们有好看的颜色」）—— 概念见文件头：档案袋索引。
+ * 六个低饱和暖深色，白字对比度都 ≥ 4.5:1；菜单项本身仍是中性，只有：
+ *   · 组标题左侧 3px 色条（+ 标题文字用该色）
+ *   · 菜单项图标底色的淡版（组色 10% 透明）
+ */
+const GROUP_ACCENTS = {
+  order: '#8A5A2B', // 赭
+  materials: '#5B6E4F', // 苔
+  purchase: '#4A5A7B', // 靛
+  stats: '#7A4B5E', // 陶
+  tools: '#3F6E6A', // 青
+  maintain: '#5B6470', // 石墨
+}
+
+/** 常用区的中性色（不抢任何一组的身份色） */
+const FREQUENT_ACCENT = '#3F3F46'
+
+function groupAccent(key) {
+  return GROUP_ACCENTS[key] || FREQUENT_ACCENT
+}
+
+/** 组色的淡版（给图标底用）：8 位色值加 alpha */
+function accentSoft(color) {
+  return color + '1A'
+}
 
 /** 点入口：先记账（失败也照常跳），再走与抽屉同一个切换函数 */
 function pickEntry(key) {
@@ -402,6 +469,8 @@ function promptLocked(tab) {
 }
 
 function selectTabFromMenu(key) {
+  // 记账（2026-11-02）：抽屉与首页入口都走这里，这样"常用"区能反映真实使用
+  recordMenuUsage(key)
   const tab = tabs.find((item) => item.key === key)
   // 锁定项：原地弹提示，**不切换面板** —— 切过去也只会是一片空表格
   if (tab && tabState(tab) === 'locked') {
@@ -4557,8 +4626,35 @@ onPullDownRefresh(async () => {
                只渲染**有可见页**的组 —— 小程序端没有「文件导入」，数据维护那组只剩两项，
                但也不该留一个空标题。 -->
           <scroll-view class="drawer__list" scroll-y @touchstart="onListTouchStart" @touchend="onListTouchEnd" @touchcancel="onListTouchEnd">
+            <!-- 常用（2026-11-02）：用得最多的 4 个置顶；下面各组仍按人工顺序，位置稳定 -->
+            <template v-if="frequentTabs.length">
+              <text
+                class="drawer__group drawer__group--frequent"
+                :style="{ borderLeftColor: FREQUENT_ACCENT }"
+              >常用</text>
+              <view
+                v-for="tab in frequentTabs"
+                :key="'freq-' + tab.key"
+                class="menu-item"
+                :class="{ 'is-active': activeTab === tab.key, 'is-locked': tabState(tab) === 'locked' }"
+                @click="selectTabFromMenu(tab.key)"
+              >
+                <view class="menu-item__icon" :style="{ backgroundColor: accentSoft(FREQUENT_ACCENT) }">
+                  <wd-icon :name="tab.icon" size="18px" :color="FREQUENT_ACCENT" />
+                </view>
+                <view class="menu-item__text">
+                  <text class="menu-item__label">{{ tab.label }}</text>
+                  <text class="menu-item__hint">{{ tab.hint }}</text>
+                </view>
+                <text class="menu-item__freq">{{ menuUsage[tab.key] }} 次</text>
+              </view>
+            </template>
+
             <template v-for="group in visibleGroups" :key="group.key">
-              <text class="drawer__group">{{ group.label }}</text>
+              <text
+                class="drawer__group"
+                :style="{ borderLeftColor: groupAccent(group.key), color: groupAccent(group.key) }"
+              >{{ group.label }}</text>
               <view
                 v-for="tab in group.tabs"
                 :key="tab.key"
@@ -4566,8 +4662,8 @@ onPullDownRefresh(async () => {
                 :class="{ 'is-active': activeTab === tab.key, 'is-locked': tabState(tab) === 'locked' }"
                 @click="selectTabFromMenu(tab.key)"
               >
-                <view class="menu-item__icon">
-                  <wd-icon :name="tab.icon" size="18px" />
+                <view class="menu-item__icon" :style="{ backgroundColor: accentSoft(groupAccent(group.key)) }">
+                  <wd-icon :name="tab.icon" size="18px" :color="groupAccent(group.key)" />
                 </view>
                 <view class="menu-item__text">
                   <text class="menu-item__label">{{ tab.label }}</text>
@@ -4902,6 +4998,12 @@ onPullDownRefresh(async () => {
 }
 
 .drawer__group {
+  /* 组标题：左侧 3px 色条 + 组色文字（2026-11-02 档案袋索引） */
+  padding-left: 10px;
+  border-left-width: 3px;
+  border-left-style: solid;
+  border-left-color: transparent;
+
   padding: 28rpx 12rpx 12rpx;
   color: $ui-text-3;
   font-size: 22rpx;
@@ -5891,5 +5993,13 @@ onPullDownRefresh(async () => {
 .home__more-arrow {
   font-size: 26rpx;
   color: var(--ui-text-3);
+}
+
+.menu-item__freq {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ui-text-3);
+  font-variant-numeric: tabular-nums;
 }
 </style>
