@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import request from '../api/request'
-import { getToday, getFirstDayOfCurrentMonth, pickField } from '../utils/format'
+import { getToday, pickField } from '../utils/format'
 
 // ===== 领料汇总数据（模块级单例）=====
 //
@@ -20,7 +20,16 @@ const pickPageSize = ref(10)
 const pickTotal = ref(0) // **筛选后**的总条数，来自接口的 total
 const pickLoading = ref(false)
 const pickError = ref('')
-const pickStartDate = ref(getFirstDayOfCurrentMonth())
+/** 取 N 天前的 YYYY-MM-DD（与 useOrderFilter 的"最近 90 天"同一口径） */
+function daysAgo(days) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+const pickStartDate = ref(daysAgo(89))
 const pickEndDate = ref(getToday())
 
 // 物料名称筛选

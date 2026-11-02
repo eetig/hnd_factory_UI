@@ -7,6 +7,7 @@ import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { canOpenImage, handleImgError } from '../../utils/image'
 import { ElDatePicker, ElDialog, ElPagination } from 'element-plus'
+import ZoomableImage from '../../components/ZoomableImage.vue'
 
 /*
  * 入库汇总（原 WorkOrderList.vue 的 `inbound` 页签）。
@@ -261,14 +262,11 @@ onMounted(() => {
     </section>
 
     <el-dialog v-model="inboundImageDialogVisible" width="70vw" align-center append-to-body>
-      <div class="flex min-h-[400px] items-center justify-center rounded-card bg-region p-6">
-        <img
-          v-if="currentInboundImage"
-          :src="currentInboundImage"
-          alt="入库单据大图"
-          class="max-h-[70vh] max-w-full rounded-card object-contain"
-        />
-      </div>
+      <!--
+        看图器（2026-11-02）：可旋转 90°、可缩放 0.5×~8×、放大后拖动平移、双击复位。
+        细节与快捷键（R 旋转 / 加减号缩放 / 0 复位）在 components/ZoomableImage.vue。
+      -->
+      <ZoomableImage v-if="currentInboundImage" :src="currentInboundImage" alt="入库单据大图" />
     </el-dialog>
 
     <ProductSelectDialog
