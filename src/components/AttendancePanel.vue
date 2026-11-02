@@ -406,7 +406,12 @@ function pickType(type) {
    * （使用方：「休息日加班时间是 8:00-12:00、13:30-17:30，和平常一样，
    *   只不过加班日人事要查午休卡」）⇒ 上午 上班→午休、下午 上班→下班 各一段。
    */
-  if (type === 'overtime' && !form.amIn && !form.amOut) {
+  /*
+   * 「工作日」也预填（2026-11-02）：使用方的操作是"周六上班了 ⇒ 把那天改成工作日"，
+   * 原来只有加班会预填，改成工作日会得到一条"类型=工作日、四段全空"的行 ——
+   * 格子上没有 8h，还报缺段，看起来像没存上。
+   */
+  if ((type === 'work' || type === 'overtime') && !form.amIn && !form.amOut) {
     form.amIn = settings.workStart
     form.amOut = settings.lunchStart
     form.pmIn = settings.lunchEnd
