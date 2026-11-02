@@ -209,6 +209,59 @@ const visibleTabs = computed(() => tabs)
 /** 当前账号马上能用的 Tab（首屏落地、退出后兜底都读它） */
 const availableTabs = computed(() => tabs.filter((tab) => tabState(tab) === 'available'))
 
+/**
+ * 首页"常用"入口（2026-11-02）。
+ *
+ * 依据使用方 Q1 的回答 —— 他每天会用 ①图片解析 ②考勤 ③采购需求 ④罐区液位
+ * ⑤查工单 ⑥查物料 **六项全都要**，所以这六项放首页卡片；
+ * 其余查看类（领料/入库/核算/周统计/日报/液位记录/物料主数据…）收到底部
+ * 「查看数据 ›」后面的抽屉里（完整目录，按组，一个都不少）。
+ *
+ * 每个 key 都要在 tabs 里存在才会渲染 —— 平台差异（小程序没有「文件导入」之类）
+ * 与权限过滤都走同一条路，不会出现点了没反应的卡片。
+ */
+const ENTRY_KEYS = ['imageParse', 'attendance', 'purchaseDemand', 'tankLevel', 'workOrder', 'stock']
+
+/*
+ * 说用频次只存本机（localStorage / uni storage），不上报、不参与后端逻辑。
+ * 排序规则：点得多的在前；次数相同按 ENTRY_KEYS 的人工顺序，保证顺序稳定不抖。
+ */
+const ENTRY_USAGE_KEY = 'hnd.entry.usage.v1'
+
+const entryUsage = ref((() => {
+  try {
+    const raw = uni.getStorageSync(ENTRY_USAGE_KEY)
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch {
+    return {}
+  }
+})())
+
+const entryItems = computed(() => {
+  const items = ENTRY_KEYS.map((key) => visibleTabs.value.find((tab) => tab.key === key)).filter(Boolean)
+  const rank = (key) => {
+    const index = ENTRY_KEYS.indexOf(key)
+    return index === -1 ? ENTRY_KEYS.length : index
+  }
+  return [...items].sort((left, right) => {
+    const diff = (entryUsage.value[right.key] || 0) - (entryUsage.value[left.key] || 0)
+    if (diff !== 0) return diff
+    return rank(left.key) - rank(right.key)
+  })
+})
+
+/** 点入口：先记账（失败也照常跳），再走与抽屉同一个切换函数 */
+function pickEntry(key) {
+  const next = { ...entryUsage.value, [key]: (entryUsage.value[key] || 0) + 1 }
+  entryUsage.value = next
+  try {
+    uni.setStorageSync(ENTRY_USAGE_KEY, next)
+  } catch {
+    // 只用于排序，忽略失败
+  }
+  selectTabFromMenu(key)
+}
+
 // 抽屉里按大类分组渲染。**只保留有可见页的组** —— 小程序端没有「文件导入」，
 // 数据维护那组只剩两项；将来再少一项时也不该留一个空标题在那里。
 const visibleGroups = computed(() =>
@@ -403,7 +456,14 @@ const reportColumns = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-20', align: 'right' },
 ]
 
-const activeTab = ref('workOrder')
+/*
+ * 2026-11-02 重构：默认落在 **home**（常用入口板），不再直接进「工单汇总」。
+ *
+ * 使用方原话：「手机的主要用途是录入数据…把查看功能放在不起眼的位置，
+ * 一般非必要才用手机查看。而录入数据的功能经常使用，所以要放在显眼的地方」。
+ * 一进来就压在查看页上，与这个用途正好相反。
+ */
+const activeTab = ref('home')
 
 // 切换登录态后，原先所在 Tab 可能已不可见 —— 兜底切到第一个可见 Tab，
 // 否则会停在一个空白的 activeTab 上。
@@ -2916,6 +2976,34 @@ onPullDownRefresh(async () => {
           <wd-icon name="user" size="20px" />
         </button>
       </header>
+
+      <!--
+        首页 = 常用入口板（2026-11-02 重构）。
+        点卡片 → selectTabFromMenu(key)（与抽屉同一入口函数）；
+        点「查看数据 ›」→ openMenu()（左侧抽屉 = 完整目录）。
+      -->
+      <div v-show="activeTab === 'home'" class="home">
+        <text class="home__title">常用</text>
+        <view class="home__grid">
+          <view
+            v-for="item in entryItems"
+            :key="item.key"
+            class="home__card"
+            hover-class="home__card--tap"
+            @click="pickEntry(item.key)"
+          >
+            <view class="home__icon"><wd-icon :name="item.icon" size="26px" /></view>
+            <text class="home__label">{{ item.label }}</text>
+            <text v-if="item.hint" class="home__hint">{{ item.hint }}</text>
+          </view>
+        </view>
+
+        <!-- 其余查看入口：一行小字，点开是完整的左侧抽屉目录（按组，一个不少） -->
+        <view class="home__more" hover-class="home__more--tap" @click="openMenu">
+          <text class="home__more-text">查看数据</text>
+          <text class="home__more-arrow">›</text>
+        </view>
+      </div>
 
       <div v-show="activeTab === 'workOrder'">
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -5720,5 +5808,88 @@ onPullDownRefresh(async () => {
   display: inline-block;
   transform: scaleY(1.35);
   margin: 0 2px;
+}
+
+/* ===== 手机端首页「常用」入口板（2026-11-02 重构） ===== */
+.home {
+  padding: 8rpx 0 40rpx;
+}
+
+.home__title {
+  display: block;
+  margin: 8rpx 4rpx 16rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--ui-text-3);
+  letter-spacing: 0.04em;
+}
+
+.home__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20rpx;
+}
+
+.home__card {
+  width: calc(50% - 10rpx);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 28rpx 24rpx;
+  border-radius: 22rpx;
+  background-color: var(--ui-surface);
+  border: 2rpx solid var(--ui-border);
+}
+
+.home__card--tap {
+  background-color: var(--ui-surface-2);
+}
+
+.home__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 16rpx;
+  background-color: var(--ui-surface-2);
+  color: var(--ui-text);
+}
+
+.home__label {
+  margin-top: 4rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.home__hint {
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: var(--ui-text-3);
+}
+
+.home__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  margin-top: 36rpx;
+  padding: 20rpx 0;
+}
+
+.home__more--tap {
+  opacity: 0.6;
+}
+
+.home__more-text {
+  font-size: 24rpx;
+  color: var(--ui-text-3);
+}
+
+.home__more-arrow {
+  font-size: 26rpx;
+  color: var(--ui-text-3);
 }
 </style>
