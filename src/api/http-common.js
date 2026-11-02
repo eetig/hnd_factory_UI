@@ -36,6 +36,19 @@ export function buildHeaders(extra) {
   const headers = { ...(extra || {}) }
   const token = getToken()
   if (token) headers.satoken = token
+  /*
+   * 设备画像（2026-11-02，风控）：型号|系统|App版本。
+   * 只进本系统的管控日志（仅管理员可看），不上报第三方；详见「隐私政策」页。
+   */
+  try {
+    const info = uni.getSystemInfoSync ? uni.getSystemInfoSync() : {}
+    const device = [info.brand || info.model, info.platform || info.system, info.appVersion]
+      .filter(Boolean)
+      .join('|')
+    if (device) headers['X-Device'] = String(device).slice(0, 120)
+  } catch {
+    // 拿不到就不带：后端会退回 User-Agent 解析
+  }
   return headers
 }
 

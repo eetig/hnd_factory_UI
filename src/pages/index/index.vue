@@ -360,6 +360,12 @@ const roleName = computed(() => getRoleName() || '已登录')
 //    所以抽屉的入口是：顶栏菜单按钮 + 返回手势。理由见 NavDrawer 顶部那段。
 const navDrawer = ref(null)
 
+/** 打开隐私政策页（2026-11-02） */
+function openPrivacy() {
+  closeMenu()
+  uni.navigateTo({ url: '/pages/privacy/privacy' })
+}
+
 function openMenu() {
   if (navDrawer.value) navDrawer.value.open()
 }
@@ -4691,6 +4697,7 @@ onPullDownRefresh(async () => {
               登录
             </button>
             <text class="drawer__tip">未登录也可以浏览物料、周统计等查询页</text>
+            <text class="drawer__privacy" @click="openPrivacy">隐私政策</text>
             <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>
@@ -5093,6 +5100,14 @@ onPullDownRefresh(async () => {
   height: 84rpx;
   align-items: center;
   justify-content: center;
+}
+
+.drawer__privacy {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+  text-decoration: underline;
 }
 
 .drawer__tip {

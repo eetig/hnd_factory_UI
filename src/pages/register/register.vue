@@ -24,6 +24,16 @@ const password = ref('')
 const confirm = ref('')
 const nickname = ref('')
 const loading = ref(false)
+
+/*
+ * 隐私政策同意（2026-11-02）：采集 IP / 设备 / 操作留痕必须在注册时告知并取得同意。
+ * 不勾选就不让注册 —— 这是"告知同意"的最低要求，不是可选的礼貌。
+ */
+const privacyAgreed = ref(false)
+
+function openPrivacy() {
+  uni.navigateTo({ url: '/pages/privacy/privacy' })
+}
 const errorMessage = ref('')
 // 滑动验证通过后由子组件回填的一次性 ticket（服务端消费，用过即失效）
 const captchaTicket = ref('')
@@ -34,6 +44,11 @@ const focusField = ref('')
 const NICKNAME_RE = /^[\u4e00-\u9fa5A-Za-z_]*$/
 
 async function handleRegister() {
+  if (!privacyAgreed.value) {
+    errorMessage.value = '请先阅读并同意《隐私政策》'
+    return
+  }
+
   const account = username.value.trim()
   const pass = password.value.trim()
 
@@ -192,7 +207,15 @@ function goLogin() {
 
         <text v-if="errorMessage" class="reg-error">{{ errorMessage }}</text>
 
-        <button class="reg-submit" :disabled="loading" @click="handleRegister">
+                <view class="register-agree">
+          <view class="register-agree__box" :class="{ 'is-on': privacyAgreed }" @click="privacyAgreed = !privacyAgreed">
+            <text v-if="privacyAgreed" class="register-agree__tick">✓</text>
+          </view>
+          <text class="register-agree__text" @click="privacyAgreed = !privacyAgreed">我已阅读并同意</text>
+          <text class="register-agree__link" @click.stop="openPrivacy">《隐私政策》</text>
+        </view>
+
+<button class="reg-submit" :disabled="loading" @click="handleRegister">
           {{ loading ? '注册中...' : '注册并登录' }}
         </button>
 
@@ -369,5 +392,47 @@ function goLogin() {
     font-weight: 600;
     text-decoration: underline;
   }
+}
+
+.register-agree {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  padding: 8rpx 4rpx 16rpx;
+}
+
+.register-agree__box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 8rpx;
+  border: 2rpx solid var(--ui-border);
+  background-color: var(--ui-surface);
+  flex-shrink: 0;
+
+  &.is-on {
+    border-color: var(--ui-text);
+    background-color: var(--ui-text);
+  }
+}
+
+.register-agree__tick {
+  font-size: 20rpx;
+  line-height: 1;
+  color: var(--ui-surface);
+}
+
+.register-agree__text,
+.register-agree__link {
+  font-size: 24rpx;
+  color: var(--ui-text-3);
+}
+
+.register-agree__link {
+  color: var(--ui-accent-text, #b4551f);
+  text-decoration: underline;
 }
 </style>
