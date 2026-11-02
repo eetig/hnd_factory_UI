@@ -204,25 +204,25 @@ onMounted(async () => {
         />
 
         <div v-else class="min-h-0 flex-1 overflow-auto">
-          <table class="w-full min-w-[720px] table-fixed divide-y divide-line text-left">
+          <table class="ledger-table w-full min-w-[640px] table-fixed text-left">
             <colgroup>
-              <col class="w-[100px]" />
-              <col />
               <col class="w-[88px]" />
+              <col />
+              <col class="w-[80px]" />
               <col class="w-[56px]" />
-              <col class="w-[120px]" />
-              <col class="w-[96px]" />
-              <col class="w-[76px]" />
+              <col class="w-[104px]" />
+              <col class="w-[88px]" />
+              <col class="w-[72px]" />
             </colgroup>
             <thead class="sticky top-0 z-10 bg-region">
               <tr>
-                <th class="whitespace-nowrap px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">编码</th>
-                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">物料名称</th>
-                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">类型</th>
-                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">单位</th>
-                <th class="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">价格</th>
-                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">上次更改</th>
-                <th class="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">状态</th>
+                <th class="whitespace-nowrap px-3 py-2.5 text-xs font-medium text-slate-500">编码</th>
+                <th class="px-3 py-2.5 text-xs font-medium text-slate-500">物料名称</th>
+                <th class="px-3 py-2.5 text-xs font-medium text-slate-500">类型</th>
+                <th class="px-3 py-2.5 text-xs font-medium text-slate-500">单位</th>
+                <th class="px-3 py-2.5 text-right text-xs font-medium text-slate-500">价格</th>
+                <th class="px-3 py-2.5 text-xs font-medium text-slate-500">上次更改</th>
+                <th class="px-3 py-2.5 text-xs font-medium text-slate-500">状态</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-line">

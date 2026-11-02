@@ -31,7 +31,7 @@ import { computed, ref } from 'vue'
 export const DEFAULT_COLUMNS = [
   { key: 'index', label: '序号', width: 'w-[56px]' },
   { key: 'status', label: '进度', width: 'w-[92px]' },
-  { key: 'materialName', label: '物料名称', width: 'w-[240px]' },
+  { key: 'materialName', label: '物料名称', width: 'w-[228px]' },
   { key: 'spec', label: '规格型号', width: 'w-[150px]' },
   { key: 'category', label: '类别', width: 'w-[76px]' },
   { key: 'quantity', label: '数量', width: 'w-[92px]', align: 'right' },
