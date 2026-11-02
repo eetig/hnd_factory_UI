@@ -29,6 +29,19 @@ const guest = isGuest()
 
 const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
+/**
+ * 日历色块图例（2026-11-02）。色值与 .at__cell 的状态底色同源，
+ * 改一处记得改另一处 —— 这里集中写一次，省得散落在模板里。
+ */
+const LEGEND = [
+  { label: '加班', color: '#b45309' },
+  { label: '值班', color: '#3f5d87' },
+  { label: '节日', color: '#8a6a1f' },
+  { label: '调休', color: '#7a4b5e' },
+  { label: '休息', color: '#6b7280' },
+  { label: '今天', color: '#b4551f' },
+]
+
 const TYPE_LABELS = {
   work: '工作日',
   overtime: '休息日加班',
@@ -201,6 +214,8 @@ function missCountOf(day) {
 
 function cellTone(day) {
   if (day.dayType === 'overtime') return 'is-overtime'
+  // 法定节假日单独一层（2026-11-02）：要和"普通周末休息"在颜色上分开
+  if (day.dayType === 'rest' && day.holidayName) return 'is-holiday'
   if (day.dayType === 'rest') return 'is-rest'
   if (day.dayType === 'comp') return 'is-comp'
   return timesOf(day).length ? 'is-work' : 'is-work-empty'
@@ -662,6 +677,17 @@ const popupStyle =
     </view>
 
     <!-- 月历 -->
+    <!--
+      色块图例（2026-11-02）：颜色必须能被读懂，不然橙色、靛蓝各是什么要猜。
+      色值与格子底色同源（见下方 .at__cell 的 is-overtime / is-holiday 等）。
+    -->
+    <view class="at__legend">
+      <view v-for="item in LEGEND" :key="item.label" class="at__legend-item">
+        <view class="at__legend-swatch" :style="{ backgroundColor: item.color }"></view>
+        <text class="at__legend-text">{{ item.label }}</text>
+      </view>
+    </view>
+
     <view class="at__week">
       <text v-for="w in WEEK_LABELS" :key="w" class="at__week-cell">{{ w }}</text>
     </view>
@@ -692,6 +718,8 @@ const popupStyle =
         >
           <template v-if="cell">
             <text class="at__day">{{ Number(cell.workDate.slice(-2)) }}</text>
+            <!-- 值班徽章（2026-11-02）：原来是 10rpx 的小绿点，太小；改成右上角实色「值」 -->
+            <text v-if="cell.hasDuty" class="at__duty-badge">值</text>
             <text v-if="durationText(cell)" class="at__dur">{{ durationText(cell) }}</text>
             <!--
               标签压成一行（2026-10-24）：原来「加班」「值班」各占一行，加上日期和时长共 4 行，
@@ -1060,6 +1088,31 @@ const popupStyle =
   background-color: rgba(245, 108, 108, 0.12);
 }
 
+.at__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10rpx 18rpx;
+  padding: 0 8rpx 12rpx;
+}
+
+.at__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.at__legend-swatch {
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 5rpx;
+}
+
+.at__legend-text {
+  font-size: 20rpx;
+  color: var(--ui-text-3);
+}
+
 .at__week {
   display: flex;
   margin-top: 18rpx;
@@ -1110,17 +1163,37 @@ const popupStyle =
   }
 
   /*
-   * 休息日（2026-11-02）：
-   * 原来靠 `opacity: 0.55` 整体淡化来表达"这天不上班" —— 但字也跟着淡了，
-   * 加上没有时长，看起来像"这天忘了填"。现在改成明确的浅灰底 + 「休息」小字，
-   * 与「加班」「调休」同一套表达方式。
+   * ===== 状态配色（2026-11-02 重做）=====
+   * 概念：贴在墙上的排班表 —— 普通工作日安静（白底），不寻常的日子才跳跃。
+   * 六个状态互不撞色（改前加班与值班都是绿，一眼分不开 ✗）：
+   *   加班 暖橙 · 值班 靛蓝 · 调休 紫褐 · 节日 金棕 · 休息 冷灰 · 工作日 白
    */
   &.is-rest {
-    background-color: var(--ui-surface-2);
+    background-color: rgba(107, 114, 128, 0.08);
+    border: 2rpx solid rgba(107, 114, 128, 0.16);
+  }
+
+  /* 法定节假日：金棕 + 左侧 4rpx 色条，与"普通周末"的冷灰分开 */
+  &.is-holiday {
+    background-color: rgba(138, 106, 31, 0.14);
+    border: 2rpx solid rgba(138, 106, 31, 0.28);
+    border-left-width: 6rpx;
+    border-left-color: #8a6a1f;
+
+    .at__tag {
+      color: #7a5c18;
+      font-weight: 700;
+    }
   }
 
   &.is-comp {
-    background-color: rgba(230, 162, 60, 0.14);
+    background-color: rgba(122, 75, 94, 0.12);
+    border: 2rpx solid rgba(122, 75, 94, 0.26);
+
+    .at__tag {
+      color: #7a4b5e;
+      font-weight: 700;
+    }
   }
 
   &.is-work {
@@ -1133,34 +1206,33 @@ const popupStyle =
     border: 2rpx dashed var(--ui-line-strong, rgba(0, 0, 0, 0.18));
   }
 
+  /*
+   * 加班：暖橙（最跳的一档）。使用方最想"一眼看到哪些天加班了"，
+   * 所以把最暖最亮的色留给它，并用左侧 6rpx 色条再强调一次。
+   */
   &.is-overtime {
-    background-color: rgba(63, 157, 107, 0.14);
-    border: 2rpx solid rgba(63, 157, 107, 0.3);
+    background-color: rgba(180, 83, 9, 0.13);
+    border: 2rpx solid rgba(180, 83, 9, 0.3);
+    border-left-width: 6rpx;
+    border-left-color: #b45309;
+
+    .at__tag {
+      color: #9a4a1e;
+      font-weight: 700;
+    }
   }
 
   /*
-   * 值班日：整格淡绿底 + 顶部绿条 + 右上角绿点
-   * （使用方 2026-10-24：「日历中的值班用显眼的颜色，这样能直观看到哪天我值班了」）
-   * 原来只有一个 18rpx 的「值班」小字，扫一眼看不出来。
+   * 值班：靛蓝（夜班的语义色）+ 右上角实色徽章「值」。
+   * 2026-10-24 使用方就要求"值班要显眼"；2026-11-02 进一步把颜色从绿改蓝，
+   * 因为绿色原来和"加班"撞在一起，两个都绿根本分不开。
    */
   &.is-duty {
-    background-color: rgba(63, 157, 107, 0.18) !important;
-    border: 2rpx solid rgba(63, 157, 107, 0.5) !important;
+    border: 3rpx solid rgba(63, 93, 135, 0.55) !important;
     position: relative;
 
-    &::after {
-      content: '';
-      position: absolute;
-      top: 6rpx;
-      right: 6rpx;
-      width: 10rpx;
-      height: 10rpx;
-      border-radius: 50%;
-      background-color: #2f8f5b;
-    }
-
     .at__tag--duty {
-      color: #2f8f5b;
+      color: #3f5d87;
       font-weight: 700;
     }
   }
@@ -1170,7 +1242,23 @@ const popupStyle =
     border: 3rpx solid var(--ui-brand, #b4551f) !important;
     background-color: rgba(180, 85, 31, 0.1) !important;
 
-    .at__day {
+    .at__duty-badge {
+  position: absolute;
+  top: -2rpx;
+  right: -2rpx;
+  min-width: 26rpx;
+  height: 26rpx;
+  padding: 0 4rpx;
+  border-radius: 0 0 0 10rpx;
+  background-color: #3f5d87;
+  color: #fff;
+  font-size: 16rpx;
+  font-weight: 700;
+  line-height: 26rpx;
+  text-align: center;
+}
+
+.at__day {
       color: var(--ui-brand, #b4551f);
       font-weight: 800;
     }
