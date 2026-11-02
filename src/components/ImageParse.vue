@@ -667,6 +667,23 @@ function alignClass(col) {
   return ''
 }
 
+/**
+ * 卡片头标题（2026-11-02）：优先**单据号**，没有就退回文件名。
+ * 现场说"哪张单"用的是单据号，文件名对他们没有意义。
+ */
+function headerTitle(image) {
+  const no = String(image?.table?.doc?.documentNo || '').trim()
+  return no || image?.name || '未命名单据'
+}
+
+/** 卡片头副标题：识别成功给"日期 · 文件名"，否则只给文件名 */
+function headerSubtitle(image) {
+  const name = String(image?.name || '').trim()
+  const date = String(image?.table?.bulkDate || '').trim()
+  if (image?.status === 'success' && date) return date + ' · ' + name
+  return name
+}
+
 function statusText(image) {
   if (image.status === 'loading') return '识别中…'
   if (image.status === 'success') return '识别成功'
@@ -1113,7 +1130,12 @@ onUnmounted(() => {
       {{ materialLookupError }}（物料编码将全部留空，可手工填写）
     </p>
 
-    <section v-if="submitted.length" class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <!--
+      外层容器改成浅灰底（2026-11-02 使用方：「这些项目都连在一起，分不清哪个项目对应哪个单」）。
+      原来外层也是白底，白卡贴白底 ⇒ 边界只剩一条浅灰细线 ⇒ 几张单据视觉上连成一片 ✗
+      现在：灰底 + 白卡 + 阴影 + 更大的卡间距 ⇒ 靠"浮起来"分层，不靠描边。
+    -->
+    <section v-if="submitted.length" class="rounded-xl border border-slate-200 bg-region shadow-sm">
       <div class="result__head">
         <p class="text-sm text-slate-600">
           解析结果 · 成功
@@ -1126,11 +1148,14 @@ onUnmounted(() => {
 
       <div class="result__body">
         <article
-          v-for="image in submitted"
+          v-for="(image, index) in submitted"
           :key="image.id"
-          class="overflow-hidden rounded-lg border border-slate-200"
+          class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
         >
           <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
+            <!-- 序号徽章（2026-11-02）：多张一起解析时，用它一眼分清"这是第几张单"
+                 以及"下一单从哪开始"。 -->
+            <span class="result__order shrink-0">第 {{ index + 1 }} 单</span>
             <!-- 缩略图本身就是「看原图」的入口：整张单据只有这一张图，
                  点开进平台原生的图片查看器（可缩放可保存）。
 
@@ -1146,9 +1171,15 @@ onUnmounted(() => {
               mode="aspectFill"
               @click="previewImage(image.url)"
             />
-            <p class="min-w-0 flex-1 truncate text-sm font-medium text-slate-700" :title="image.name">
-              {{ image.name }}
-            </p>
+            <!--
+              卡片头显示**单据号 + 日期**（2026-11-02）：文件名是 1000109677.jpg 这种，
+              对现场认单没有帮助；他们嘴里说的"哪张单"就是单据号。
+              识别失败（没有单据号）时退回文件名。
+            -->
+            <view class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-slate-800">{{ headerTitle(image) }}</p>
+              <p class="truncate text-xs text-slate-500">{{ headerSubtitle(image) }}</p>
+            </view>
             <span
               class="shrink-0 rounded-full px-2.5 py-1 text-xs font-medium"
               :class="statusClass(image)"
@@ -1659,8 +1690,21 @@ $parse-breakpoint: 768px;
 .result__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  /* 卡间距 20px（2026-11-02）：原来是 16px 且外层白底，几张单据粘成一片 */
+  gap: 20px;
   padding: 16px;
+}
+
+/* 序号徽章：深底白字的小胶囊，比正文更醒目，扫一眼就能定位到"第几单" */
+.result__order {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: $ui-text;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 卡片表头那张缩略图（也是「看原图」的入口）。
