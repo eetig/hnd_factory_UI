@@ -390,6 +390,24 @@ function openDay(day) {
   form.hasDuty = Boolean(day.hasDuty)
   form.note = day.note || ''
   form.persisted = Boolean(day.persisted)
+
+  /*
+   * 打开时若这天还没录过时间（默认铺出来的日子就是这样），直接按默认作息填好
+   * （2026-11-02）。原来留空、让灰色占位文字去"暗示"，使用方看到 17:00 以为默认是 17:00。
+   * 填成实值后：打开就是 08:00 / 17:30，保存即 8 小时。
+   */
+  if (!form.amIn && !form.amOut) {
+    if (form.dayType === 'work') {
+      form.amIn = settings.workStart
+      form.amOut = settings.workEnd
+    } else if (form.dayType === 'overtime') {
+      form.amIn = settings.workStart
+      form.amOut = settings.lunchStart
+      form.pmIn = settings.lunchEnd
+      form.pmOut = settings.workEnd
+    }
+  }
+
   formError.value = ''
   editorOpen.value = true
 }
@@ -816,9 +834,9 @@ const popupStyle =
                   <text>{{ form.missAmIn ? '忘打卡' : '记忘打' }}</text>
                 </view>
               </view>
-              <picker mode="time" :value="form.amIn || '08:00'" @change="onTimePicked('amIn', $event)">
+              <picker mode="time" :value="form.amIn || settings.workStart" @change="onTimePicked('amIn', $event)">
                 <view class="ed__time-input" :class="{ 'is-empty': !form.amIn }">
-                  {{ form.amIn || '08:00' }}
+                  {{ form.amIn || settings.workStart }}
                 </view>
               </picker>
             </view>
@@ -830,9 +848,9 @@ const popupStyle =
                   <text>{{ form.missAmOut ? '忘打卡' : '记忘打' }}</text>
                 </view>
               </view>
-              <picker mode="time" :value="form.amOut || '17:00'" @change="onTimePicked('amOut', $event)">
+              <picker mode="time" :value="form.amOut || settings.workEnd" @change="onTimePicked('amOut', $event)">
                 <view class="ed__time-input" :class="{ 'is-empty': !form.amOut }">
-                  {{ form.amOut || '17:00' }}
+                  {{ form.amOut || settings.workEnd }}
                 </view>
               </picker>
             </view>
@@ -845,9 +863,9 @@ const popupStyle =
                     <text>{{ form.missPmIn ? '忘打卡' : '记忘打' }}</text>
                   </view>
                 </view>
-                <picker mode="time" :value="form.pmIn || '13:00'" @change="onTimePicked('pmIn', $event)">
+                <picker mode="time" :value="form.pmIn || settings.lunchEnd" @change="onTimePicked('pmIn', $event)">
                 <view class="ed__time-input" :class="{ 'is-empty': !form.pmIn }">
-                  {{ form.pmIn || '13:00' }}
+                  {{ form.pmIn || settings.lunchEnd }}
                 </view>
               </picker>
               </view>
@@ -858,9 +876,9 @@ const popupStyle =
                     <text>{{ form.missPmOut ? '忘打卡' : '记忘打' }}</text>
                   </view>
                 </view>
-                <picker mode="time" :value="form.pmOut || '17:30'" @change="onTimePicked('pmOut', $event)">
+                <picker mode="time" :value="form.pmOut || settings.workEnd" @change="onTimePicked('pmOut', $event)">
                 <view class="ed__time-input" :class="{ 'is-empty': !form.pmOut }">
-                  {{ form.pmOut || '17:30' }}
+                  {{ form.pmOut || settings.workEnd }}
                 </view>
               </picker>
               </view>
