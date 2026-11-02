@@ -29,7 +29,7 @@ export const ADMIN_PERM = 'system:admin'
  * 改长之前先量一遍字宽，否则四条提示会两条折行、两条不折，行高参差。
  */
 export const NAV_GROUPS = [
-  { key: 'order', label: '工单', hint: '工单、领料、入库与核算' },
+  { key: 'order', label: '工单', hint: '工单、领料与入库' },
   { key: 'materials', label: '物料', hint: '物料编码、名称与库存' },
   { key: 'purchase', label: '采购', hint: '需求登记到到货的台账' },
   { key: 'equipment', label: '设备', hint: '台账、体积与电费' },
@@ -69,7 +69,6 @@ export const NAV_ITEMS = [
   },
   // 核算：工单报工 / 工单核算 / 原辅料核算三张只读表合成一页（页内切换），
   // 所以这里只有一条导航项 —— 它们共用一份筛选区间，本来就不该是三个入口。
-  { key: 'costing', label: '核算', path: '/orders/costing', perm: ADMIN_PERM, group: 'order' },
   { key: 'master', label: '物料主数据', path: '/materials/master', group: 'materials' },
   { key: 'import', label: '物料导入', path: '/materials/import', perm: ADMIN_PERM, group: 'materials' },
   { key: 'stock', label: '物料查询', path: '/materials', group: 'materials' },

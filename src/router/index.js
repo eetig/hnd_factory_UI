@@ -7,7 +7,6 @@ import Register from '../views/RegisterView.vue'
 import WorkOrderList from '../views/orders/WorkOrderList.vue'
 import PickingList from '../views/orders/PickingList.vue'
 import InboundList from '../views/orders/InboundList.vue'
-import CostingView from '../views/orders/CostingView.vue'
 import StockView from '../views/materials/StockView.vue'
 import MaterialMasterView from '../views/materials/MasterView.vue'
 import MaterialImportView from '../views/materials/ImportView.vue'
@@ -63,12 +62,7 @@ export const workbenchRoutes = [
     component: InboundList,
     meta: { group: 'order', key: 'inbound', title: '入库汇总', perm: ADMIN_PERM },
   },
-  {
-    path: '/orders/costing',
-    name: 'CostingView',
-    component: CostingView,
-    meta: { group: 'order', key: 'costing', title: '核算', perm: ADMIN_PERM },
-  },
+
   {
     path: '/materials/master',
     name: 'MaterialMasterView',

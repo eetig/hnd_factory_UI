@@ -1,3 +1,4 @@
+import { NAV_ITEMS } from '../../src/nav/index.js'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -34,7 +35,6 @@ const ADMIN_ONLY_LABELS = [
   '工单汇总',
   '领料汇总',
   '入库汇总',
-  '核算',
   // 变更-096/097：采购（原「采购进度跟踪」）原先免登录、所有人可见；使用方确认「这页只有管理员能看」，
   // 后端已把 /api/purchase/** 收进 ADMIN_READ_PATTERNS，前端页签同步改成 adminOnly。
   // 变更-148：拆成「看板 + 录入」两页，两条都要在 admin 名单里。
@@ -211,51 +211,22 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     await nextTick()
   })
 
-  it('三张汇总表都交给 StatsTable 渲染，且列配置与空表文案正确', async () => {
-    // 改造前这三张表是三个页签、各自懒挂载；现在是**一页三个只读视图**
-    // （`/orders/costing`），所以进这一页就该有三张表 —— 顺序仍是模板顺序
-    // （工单报工 → 工单核算 → 原辅料核算），断言与改动前一一对应。
-    // 顺带，toHaveLength(3) 还证了一条：三个视图各渲染一次，没有重复建表。
+  it('核算页已下线（2026-11-02 使用方：核算功能不要了）', async () => {
+    /*
+     * 核算页（工单核算 / 原辅料核算）整体下线：
+     *   · nav 里不再有「核算」入口
+     *   · /orders/costing 路由被移除（`views/orders/CostingView.vue` 文件保留，
+     *     想恢复只要把 nav + router 两行加回来）
+     * 这条用例改成验证"入口真的没了"，避免以后有人只删了一半。
+     */
     authState.roleKey = 'admin'
     await nextTick()
     try {
-      await switchToTab(wrapper, '核算')
-
-      /*
-       * 2026-11-02：核算页去掉「工单报工」页签（使用方 Q3 ②）——
-       * 工单汇总已改成同形态的聚合表并带下钻，这里再放一张就是重复的。
-       * 所以现在是 2 张表：工单核算、原辅料核算。
-       */
-      const tables = wrapper.findAllComponents(StatsTable)
-      expect(tables).toHaveLength(2)
-
-      const [costing, materialCosting] = tables
-
-      expect(costing.props('emptyText')).toBe('暂无核算数据')
-      expect(materialCosting.props('emptyText')).toBe('暂无核算数据')
-
-      expect(costing.props('emptyText')).toBe('暂无核算数据')
-      expect(costing.props('columns').map((column) => column.key)).toEqual([
-        'index',
-        'materialName',
-        'materialCode',
-        'inboundQty',
-        'reportedQty',
-        'unreportedQty',
-      ])
-      // 未报工数需要高亮
-      expect(costing.props('columns')[5].emphasis).toBe(true)
-
-      expect(materialCosting.props('columns')[3].key).toBe('pickQty')
-
-      /*
-       * 视图切换仍是页内 v-show（2026-11-02 起只剩两个：工单核算 / 原辅料核算）。
-       * 只有当前那个可见，另一个必须藏起来 —— 少一条 v-show 就会上下叠在一起。
-       */
-      expect(tables[0].element.parentElement.style.display).toBe('')
-      expect(tables[1].element.parentElement.style.display).toBe('none')
+      // 直接读 nav 数据：入口与路由都没了才算真的下线
+      expect(NAV_ITEMS.map((item) => item.key)).not.toContain('costing')
+      expect(NAV_ITEMS.map((item) => item.label)).not.toContain('核算')
+      expect(NAV_ITEMS.map((item) => item.path)).not.toContain('/orders/costing')
     } finally {
-      // authState 是模块级单例：断言失败也必须复位，否则 admin 身份会泄漏给后续用例
       authState.roleKey = ''
       await nextTick()
     }
@@ -265,9 +236,11 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     authState.roleKey = 'admin'
     await nextTick()
     try {
-      await switchToTab(wrapper, '核算')
-      // 2026-11-02 起核算页第一张表是「工单核算」，空表文案随之变化
-      expect(wrapper.findComponent(StatsTable).text()).toContain('暂无核算数据')
+      /*
+       * 核算页 2026-11-02 下线 ⇒ 用默认页「工单汇总」验证空表文案。
+       * （不去猜领料/入库页用不用 StatsTable —— 它们各有自己的表格实现。）
+       */
+      expect(wrapper.findComponent(StatsTable).text()).toContain('这段时间里没有匹配的工单')
     } finally {
       authState.roleKey = ''
       await nextTick()
@@ -608,13 +581,11 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
        */
       expect(wrapper.findAllComponents(StatsTable)).toHaveLength(1)
 
-      await switchToTab(wrapper, '核算')
-      const active = wrapper.findAllComponents(StatsTable)
-      // 2026-11-02：核算页只剩两张表（工单报工页签已去掉）
-      expect(active, '进入后两张汇总表应当都在').toHaveLength(2)
+      // 默认页「工单汇总」现在自己就是一张聚合表
+      expect(wrapper.findAllComponents(StatsTable), '默认页应当有一张表').toHaveLength(1)
 
       await switchToTab(wrapper, '物料查询')
-      // 物料查询页本身不是 StatsTable：核算页已经卸载，所以是 0
+      // 物料查询页本身不是 StatsTable：领料汇总页已经卸载，所以是 0
       // （改造前这里是 3 → 1 并断言 display:none；现在是 3 → 0，说明页面连节点都不再保留）
       expect(
         wrapper.findAllComponents(StatsTable),
@@ -754,8 +725,7 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
     { path: '/orders', title: '工单汇总', group: '工单', key: 'workOrder', role: 'admin' },
     { path: '/orders/picking', title: '领料汇总', group: '工单', key: 'material', role: 'admin' },
     { path: '/orders/inbound', title: '入库汇总', group: '工单', key: 'inbound', role: 'admin' },
-    { path: '/orders/costing', title: '核算', group: '工单', key: 'costing', role: 'admin' },
-    { path: '/materials', title: '物料查询', group: '物料', key: 'stock' },
+      { path: '/materials', title: '物料查询', group: '物料', key: 'stock' },
     { path: '/purchase/board', title: '采购看板', group: '采购', key: 'purchaseBoard', role: 'admin' },
     { path: '/purchase/entry', title: '采购录入', group: '采购', key: 'purchase', role: 'admin' },
     {
