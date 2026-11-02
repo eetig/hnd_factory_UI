@@ -43,14 +43,9 @@ const COLUMNS = [
   { key: 'confirmedQty', label: '确认的产量', width: 'w-[96px]', align: 'right' },
   { key: 'deliveredQty', label: '已交货数量', width: 'w-[96px]', align: 'right' },
   /*
-   * 单耗（2026-10-31，变更-172）。
-   *
-   * 使用方：「工单详情页面，要显示投料情况」；两轮打磨后定为：
-   * **每种物料一列**（电石 / 次氯酸钠 / 无水氯化钙 … 见下方的动态表头），
-   * 再加这一列"总投料 ÷ 确认产量"。
-   * 单耗单位混合时没有意义（mixedUnit），那时显示「—」。
+   * ⚠️ 2026-11-02 使用方：「单耗这列不要」—— 整列已删除。
+   * 曾经的注解（留个记录）：单耗 = 总净投料 ÷ 确认产量，单位混合时无意义。
    */
-  { key: 'perUnit', label: '单耗', width: 'w-[84px]', align: 'right' },
 ]
 
 /**
@@ -167,15 +162,6 @@ function toggleExpand(row) {
 
 
 
-/** 单耗：净投料 ÷ 确认产量；缺任意一边或单位混合就不给（宁可不显示，也不给错数） */
-function perUnitText(row) {
-  const m = row?.material
-  const out = Number(row?.confirmedQty)
-  if (!m || m.mixedUnit || !Number.isFinite(out) || out <= 0) return '—'
-  const n = Number(m.net)
-  if (!Number.isFinite(n)) return '—'
-  return (n / out).toFixed(2)
-}
 
 /*
  * 日期区间取**工单组共享的那一份**（模块级 ref，见 useOrderFilter 的注释）。
@@ -358,17 +344,16 @@ watch(
       <table class="w-full table-fixed text-sm">
         <thead>
           <tr class="border-b border-line text-left text-xs font-medium text-slate-500">
-            <!-- 前 5 列固定；中间是动态物料列（每种物料一列）；最后是单耗 -->
-            <template v-for="col in COLUMNS" :key="col.key">
-              <th
-                v-if="col.key !== 'perUnit'"
-                scope="col"
-                class="whitespace-nowrap px-2 py-2"
-                :class="[col.width, col.align === 'right' ? 'text-right' : '']"
-              >
-                {{ col.label }}
-              </th>
-            </template>
+            <!-- 固定列（工单号 / 日期 / 三个数量）—— 单耗列 2026-11-02 已按使用方要求删除 -->
+            <th
+              v-for="col in COLUMNS"
+              :key="col.key"
+              scope="col"
+              class="whitespace-nowrap px-2 py-2"
+              :class="[col.width, col.align === 'right' ? 'text-right' : '']"
+            >
+              {{ col.label }}
+            </th>
             <th
               v-for="col in materialColumns"
               :key="col.key"
@@ -378,7 +363,7 @@ watch(
             >
               {{ col.label }}
             </th>
-            <th scope="col" class="w-[84px] whitespace-nowrap px-2 py-2 text-right">单耗</th>
+
           </tr>
         </thead>
         <tbody>
@@ -402,17 +387,28 @@ watch(
               <tr class="border-b border-line transition hover:bg-region/60">
                 <td class="px-2 py-2 text-slate-900">
                   <span class="flex items-center gap-1">
+                    <!--
+                      展开按钮（2026-11-02 使用方：「展开的点击按钮太小，用户不容易察觉」）。
+                      原来是个 20×20 的裸三角，太不起眼；现在做成有底色的胶囊：
+                      最小 44px 高（手指可点）+ 描边 + hover 变色 + 文案「明细 / 收起」。
+                    -->
                     <button
                       v-if="row.material?.items?.length"
                       type="button"
-                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs text-slate-500 transition hover:bg-region hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                      class="inline-flex h-7 shrink-0 items-center gap-0.5 rounded-full border border-line px-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                      :class="
+                        expanded === row.orderNo
+                          ? 'border-brand bg-brand text-on-brand'
+                          : 'text-slate-600 hover:border-slate-400 hover:bg-region hover:text-slate-900'
+                      "
                       :aria-expanded="expanded === row.orderNo ? 'true' : 'false'"
-                      :aria-label="`展开工单 ${row.orderNo} 的投料明细`"
+                      :aria-label="`${expanded === row.orderNo ? '收起' : '展开'}工单 ${row.orderNo} 的投料明细`"
                       @click="toggleExpand(row)"
                     >
-                      {{ expanded === row.orderNo ? '▾' : '▸' }}
+                      <span class="text-[11px] leading-none">{{ expanded === row.orderNo ? '▾' : '▸' }}</span>
+                      <span>{{ expanded === row.orderNo ? '收起' : '明细' }}</span>
                     </button>
-                    <span v-else class="inline-block h-5 w-5 shrink-0"></span>
+                    <span v-else class="inline-block h-7 w-[62px] shrink-0"></span>
                     <!-- 工单号：单击即复制（使用方 2026-10-31 明确要单击）。
                          用 <button> 而不是 <span>：可点元素带键盘通路是仓库的硬规矩
                          （变更-033 守卫会拦 span 缺 role/tabindex/keydown）。 -->
@@ -455,35 +451,46 @@ watch(
                 >
                   {{ materialQtyOf(row, col.materialName) === null ? '—' : fmt(materialQtyOf(row, col.materialName)) }}
                 </td>
-                <td class="px-2 py-2 text-right text-slate-600">
-                  {{ perUnitText(row) }}
-                  <span v-if="perUnitText(row) !== '—'" class="ml-0.5 text-xs text-slate-500">
-                    {{ row.material?.unit }}/{{ row.material?.unit }}
-                  </span>
-                </td>
+
               </tr>
               <!-- 展开：按物料的投料明细（261/262 相抵后的净重） -->
               <tr v-if="expanded === row.orderNo" class="border-b border-line bg-region">
-                <td :colspan="totalColumnCount" class="px-3 py-3">
-                  <p class="mb-2 text-xs text-slate-500">
-                    投料明细 · 净重（261 投料与 262 冲销相抵，按物料汇总）
-                  </p>
-                  <div class="grid gap-1">
-                    <div
-                      v-for="item in row.material.items"
-                      :key="item.materialCode"
-                      class="flex items-center justify-between rounded-md border border-line bg-raised px-3 py-1.5 text-xs"
-                    >
-                      <span class="min-w-0 truncate text-slate-700">
-                        {{ item.materialDesc || '—' }}
-                        <span class="ml-1 text-slate-500">{{ item.materialCode }}</span>
-                      </span>
-                      <span class="ml-3 shrink-0 tabular-nums text-slate-900">
-                        {{ fmt(item.qty) }} {{ item.unit || '' }}
-                        <span class="ml-1 text-slate-500">
-                          {{ item.issueRows }} 笔{{ item.reversed ? ' · 有冲销' : '' }}
+                <td :colspan="totalColumnCount" class="px-3 py-0">
+                  <!--
+                    明细排版（2026-11-02 使用方：「展开的明细排版不好看」）。
+                    原来每个物料一张圆角卡片，灰底上一堆白框，又松又乱；
+                    改成**一张小表**：物料 / 编码 / 笔数 / 净重 四列右对齐，
+                    只用一道发丝线分隔，密度高、扫读快。展开用 150ms 淡入 + 上移。
+                  -->
+                  <div class="expand-in py-3">
+                    <p class="mb-2 text-xs text-slate-500">
+                      投料明细 · 净重（261 投料与 262 冲销相抵，按物料汇总）
+                    </p>
+                    <div class="overflow-hidden rounded-md border border-line bg-raised">
+                      <div
+                        class="grid grid-cols-[minmax(0,1fr)_100px_64px_110px] items-center gap-2 border-b border-line bg-region/60 px-3 py-1.5 text-[11px] font-medium text-slate-500"
+                      >
+                        <span>物料</span>
+                        <span>编码</span>
+                        <span class="text-right">凭证</span>
+                        <span class="text-right">净重</span>
+                      </div>
+                      <div
+                        v-for="(item, index) in row.material.items"
+                        :key="item.materialCode"
+                        class="grid grid-cols-[minmax(0,1fr)_100px_64px_110px] items-center gap-2 px-3 py-1.5 text-xs"
+                        :class="index > 0 ? 'border-t border-line/70' : ''"
+                      >
+                        <span class="min-w-0 truncate text-slate-900">{{ item.materialDesc || '—' }}</span>
+                        <span class="tabular-nums text-slate-500">{{ item.materialCode }}</span>
+                        <span class="text-right tabular-nums text-slate-600">
+                          {{ item.issueRows }} 笔
+                          <span v-if="item.reversed" class="ml-0.5 text-amber-600" title="含冲销">*</span>
                         </span>
-                      </span>
+                        <span class="text-right font-medium tabular-nums text-slate-900">
+                          {{ fmt(item.qty) }}<span class="ml-0.5 font-normal text-slate-500">{{ item.unit || '' }}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -553,3 +560,32 @@ watch(
     </div>
   </el-dialog>
 </template>
+
+<style scoped>
+/*
+ * 展开动画（2026-11-02：使用方说原来"生硬"）。
+ * 只做 150ms 的淡入 + 4px 上移 —— 再长会显得拖沓，再短就看不出来。
+ * 用 animation 而不是 height transition：行高由内容决定，height 动画要先量高度，
+ * 表格行里量高度既麻烦又会抖。
+ */
+.expand-in {
+  animation: expandIn 0.15s ease-out;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .expand-in {
+    animation: none;
+  }
+}
+</style>

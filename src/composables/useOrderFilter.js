@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { getFirstDayOfCurrentMonth, getToday } from '../utils/format'
+import { getToday } from '../utils/format'
 
 /**
  * 工单组的**共享筛选状态**（起止日期 + 工单类型）。
@@ -31,8 +31,28 @@ import { getFirstDayOfCurrentMonth, getToday } from '../utils/format'
  *   早晚会出现「改了界面上的日期，请求还带旧值」。
  *   搬运时是把 `useWorkOrderData` 里那三个模块级 ref 挪到这里，不是复制。
  */
-export const orderStartDate = ref(getFirstDayOfCurrentMonth())
+/*
+ * 默认统计区间（2026-11-02 改用"最近 90 天"）。
+ *
+ * 原来是「本月 1 号 ~ 今天」。问题在月初：11 月 2 号打开，区间只有 11-01~11-02，
+ * 而工单/领料/入库都还是 10 月的 ⇒ 三张汇总表全空，人第一反应是"数据没了"。
+ * 使用方 2026-11-02 也正好撞上这个（连着两次看不到数据）。
+ *
+ * 90 天覆盖一个季度的对账窗口，且语义仍是"最近"，不会让人以为在看历史。
+ * 要精确到某个月，日期控件照样能改（这里的默认值只决定"打开时"）。
+ */
+export const orderStartDate = ref(getDaysAgo(89)) // 含今天共 90 天
 export const orderEndDate = ref(getToday())
+
+/** 取 N 天前的日期字符串（YYYY-MM-DD），与 getToday 同格式 */
+function getDaysAgo(days) {
+  const date = new Date()
+  date.setDate(date.getDate() - days)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 /**
  * 工单类型筛选（界面上存中文标签，发请求时由 `getReportOrderTypeKey` 换成 typeKey）。
