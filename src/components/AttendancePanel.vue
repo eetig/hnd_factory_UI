@@ -36,7 +36,6 @@ const WEEK_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 const LEGEND = [
   { label: '加班', color: '#b45309' },
   { label: '值班', color: '#3f5d87' },
-  { label: '节日', color: '#8a6a1f' },
   { label: '调休', color: '#7a4b5e' },
   { label: '休息', color: '#6b7280' },
   { label: '今天', color: '#b4551f' },
@@ -214,8 +213,11 @@ function missCountOf(day) {
 
 function cellTone(day) {
   if (day.dayType === 'overtime') return 'is-overtime'
-  // 法定节假日单独一层（2026-11-02）：要和"普通周末休息"在颜色上分开
-  if (day.dayType === 'rest' && day.holidayName) return 'is-holiday'
+  /*
+   * 法定节假日与普通休息**同款**表现（2026-11-02 使用方：
+   * 「法定节假日和休息做成一样的效果，因为本质都是休息」）。
+   * 区别只体现在格子里那行字：节日显示节日名（国庆），普通周末显示「休息」。
+   */
   if (day.dayType === 'rest') return 'is-rest'
   if (day.dayType === 'comp') return 'is-comp'
   return timesOf(day).length ? 'is-work' : 'is-work-empty'
@@ -1173,19 +1175,6 @@ const popupStyle =
     border: 2rpx solid rgba(107, 114, 128, 0.16);
   }
 
-  /* 法定节假日：金棕 + 左侧 4rpx 色条，与"普通周末"的冷灰分开 */
-  &.is-holiday {
-    background-color: rgba(138, 106, 31, 0.14);
-    border: 2rpx solid rgba(138, 106, 31, 0.28);
-    border-left-width: 6rpx;
-    border-left-color: #8a6a1f;
-
-    .at__tag {
-      color: #7a5c18;
-      font-weight: 700;
-    }
-  }
-
   &.is-comp {
     background-color: rgba(122, 75, 94, 0.12);
     border: 2rpx solid rgba(122, 75, 94, 0.26);
@@ -1244,18 +1233,19 @@ const popupStyle =
 
     .at__duty-badge {
   position: absolute;
-  top: -2rpx;
-  right: -2rpx;
-  min-width: 26rpx;
-  height: 26rpx;
-  padding: 0 4rpx;
-  border-radius: 0 0 0 10rpx;
+  top: 0;
+  right: 0;
+  min-width: 22rpx;
+  height: 22rpx;
+  padding: 0 3rpx;
+  border-radius: 0 10rpx 0 8rpx;
   background-color: #3f5d87;
   color: #fff;
-  font-size: 16rpx;
+  font-size: 14rpx;
   font-weight: 700;
-  line-height: 26rpx;
+  line-height: 22rpx;
   text-align: center;
+  z-index: 1;
 }
 
 .at__day {
