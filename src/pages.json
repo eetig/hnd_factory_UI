@@ -27,6 +27,12 @@
       }
     },
     {
+      "path": "pages/auditLog/auditLog",
+      "style": {
+        "navigationBarTitleText": "管控日志"
+      }
+    },
+    {
       "path": "pages/privacy/privacy",
       "style": {
         "navigationBarTitleText": "隐私政策"

@@ -360,6 +360,18 @@ const roleName = computed(() => getRoleName() || '已登录')
 //    所以抽屉的入口是：顶栏菜单按钮 + 返回手势。理由见 NavDrawer 顶部那段。
 const navDrawer = ref(null)
 
+/**
+ * 是否管理员（2026-11-02）。抽屉里的「管控日志」只给管理员看；
+ * 页面自己也会再判一次 —— 前端隐藏入口不算安全，接口层还有一道。
+ */
+const isAdminUser = computed(() => isAdmin())
+
+/** 打开管控日志（2026-11-02，仅管理员） */
+function openAuditLog() {
+  closeMenu()
+  uni.navigateTo({ url: '/pages/auditLog/auditLog' })
+}
+
 /** 打开隐私政策页（2026-11-02） */
 function openPrivacy() {
   closeMenu()
@@ -4697,6 +4709,8 @@ onPullDownRefresh(async () => {
               登录
             </button>
             <text class="drawer__tip">未登录也可以浏览物料、周统计等查询页</text>
+            <!-- 管控日志（2026-11-02）：只给管理员，入口是小字，不显眼、只主动点 -->
+            <text v-if="isAdminUser" class="drawer__privacy" @click="openAuditLog">管控日志</text>
             <text class="drawer__privacy" @click="openPrivacy">隐私政策</text>
             <text class="drawer__env">{{ envTip }}</text>
           </view>
