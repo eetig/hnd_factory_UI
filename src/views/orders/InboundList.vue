@@ -8,6 +8,7 @@ import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { canOpenImage, handleImgError } from '../../utils/image'
 import { ElDatePicker, ElDialog, ElPagination } from 'element-plus'
 import ZoomableImage from '../../components/ZoomableImage.vue'
+import MonthQuickButton from '../../components/MonthQuickButton.vue'
 
 /*
  * 入库汇总（原 WorkOrderList.vue 的 `inbound` 页签）。
@@ -76,6 +77,15 @@ function openInboundImageDialog(record) {
   inboundImageDialogVisible.value = true
 }
 
+/** 「本月」快捷：父组件自己写日期状态，然后重新取数（组件不改 props） */
+function applyMonthRange(range, startRefName, endRefName, reload) {
+  const table = { inboundStartDate: startRefName === 'inboundStartDate', inboundEndDate: endRefName === 'inboundEndDate' }
+  void table
+  inboundStartDate.value = range.startDate
+  inboundEndDate.value = range.endDate
+  reload()
+}
+
 onMounted(() => {
   fetchInboundRecords()
 })
@@ -111,6 +121,9 @@ onMounted(() => {
           :first-day-of-week="1"
           @change="reloadInboundRecords"
         />
+
+        <!-- 快捷：本月 1 号 ~ 今天（2026-11-02 使用方要求） -->
+        <MonthQuickButton @apply="(range) => applyMonthRange(range, 'inboundStartDate', 'inboundEndDate', loadInboundPage)" />
         <span class="ml-auto text-sm text-slate-500">
           共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
         </span>

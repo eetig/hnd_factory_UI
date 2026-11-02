@@ -201,3 +201,19 @@ main[data-section='equipment'] { --sec-ink: #6e2a66; --sec-soft: rgba(114, 33, 1
 main[data-section='stats'] { --sec-ink: #4c6b2a; --sec-soft: rgba(94, 128, 52, 0.1); --sec-line: rgba(94, 128, 52, 0.24); --sec-glow: rgba(94, 128, 52, 0.1); }
 main[data-section='maintain'] { --sec-ink: #2e7f8a; --sec-soft: rgba(65, 181, 194, 0.12); --sec-line: rgba(65, 181, 194, 0.26); --sec-glow: rgba(65, 181, 194, 0.11); }
 main[data-section='archive'] { --sec-ink: #6b6355; --sec-soft: rgba(107, 99, 85, 0.09); --sec-line: rgba(107, 99, 85, 0.2); --sec-glow: rgba(107, 99, 85, 0.07); }
+
+/* ===== 日期输入框收窄（2026-11-02） ===== */
+/*
+ * 使用方：「所有的日期输入框，没必要这么长，刚好装下日期就够了」。
+ *
+ * 只收窄**单日期**（`.el-date-editor--date`）：它显示的是 YYYY-MM-DD（10 字符），
+ * 150px 连日历图标都装得下。`--daterange` / `--monthrange` 显示的是两段日期，
+ * 本来就该更宽，动它们只会让内容被切掉。
+ *
+ * 用 !important：element-plus 的 `.el-date-editor.el-input` 有
+ * `width: 220px`（非 scoped，优先级高于这里的类选择器组合），
+ * 不用 !important 就只能靠更长的选择器链去拼，反而更难维护。
+ */
+.el-date-editor.el-input.el-date-editor--date {
+  width: 150px !important;
+}

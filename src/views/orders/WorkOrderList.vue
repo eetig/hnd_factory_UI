@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElDatePicker, ElInput } from 'element-plus'
+import MonthQuickButton from '../../components/MonthQuickButton.vue'
 import StatsTable from '../../components/StatsTable.vue'
 import WorkOrderDetailDialog from '../../components/WorkOrderDetailDialog.vue'
 import { useOrderFilter } from '../../composables/useOrderFilter'
@@ -66,6 +67,15 @@ function openDetail(row) {
   detailOpen.value = true
 }
 
+/** 「本月」快捷：父组件自己写日期状态，然后重新取数（组件不改 props） */
+function applyMonthRange(range, startRefName, endRefName, reload) {
+  const table = { startDate: startRefName === 'startDate', endDate: endRefName === 'endDate' }
+  void table
+  startDate.value = range.startDate
+  endDate.value = range.endDate
+  reload()
+}
+
 onMounted(() => {
   fetchWorkOrderSummary()
 })
@@ -97,6 +107,9 @@ onMounted(() => {
           :first-day-of-week="1"
           @change="fetchWorkOrderSummary"
         />
+
+        <!-- 快捷：本月 1 号 ~ 今天（2026-11-02 使用方要求） -->
+        <MonthQuickButton @apply="(range) => applyMonthRange(range, 'startDate', 'endDate', fetchWorkOrderSummary)" />
 
         <span class="ml-2 shrink-0 text-xs text-slate-500">产成品</span>
         <el-input
