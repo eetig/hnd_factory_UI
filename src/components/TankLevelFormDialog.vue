@@ -389,7 +389,12 @@ async function recognizeTankName(filePath, fileName) {
       url: '/api/ocr-proxy/recognize',
       filePath,
       name: 'file',
-      formData: { fileName: fileName || 'tank.jpg' },
+      /*
+       * tiles=3（2026-11-02）：让服务端切 3×3、每块放大 3 倍再识别。
+       * 使用方站远处拍整台罐时，标牌只占画面 1.5%，直接识别会被读成「三用瓶组」；
+       * 分块后含标牌的那块能稳定读出「三甲粗品罐」。代价是多几次 OCR、慢 1~2 秒。
+       */
+      formData: { fileName: fileName || 'tank.jpg', tiles: '3' },
     })
 
     const body = res.data || {}
@@ -950,7 +955,7 @@ async function handleDelete() {
                   </view>
                 </view>
 
-                <text v-if="ocrBusy" class="tlf__ocr-busy">识别中…（约 1 秒）</text>
+                <text v-if="ocrBusy" class="tlf__ocr-busy">识别中…（分块识别，约 2~4 秒）</text>
 
                 <block v-if="ocrCandidates.length">
                   <text class="tlf__ocr-hint">认出这些，点一个填入（原文：{{ ocrRawText }}）</text>
