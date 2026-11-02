@@ -29,12 +29,18 @@ import { computed, ref } from 'vue'
 export const DEFAULT_COLUMNS = [
   { key: 'index', label: '序号', width: 'w-[56px]', align: 'right' },
   { key: 'equipmentCode', label: '位号', width: 'w-[104px]' },
-  { key: 'equipmentName', label: '名称' },
-  { key: 'workshop', label: '车间装置', width: 'w-[104px]' },
+  /*
+   * 名称列**必须给宽度**（2026-11-02）：
+   * 它原来没有 width，`table-fixed` 就把它压到几十像素，
+   * 「150产品罐」被逐字换行成一竖列 —— 使用方看到的"难看"主要就是这一处。
+   * 220px 够放两行中文；再长的用省略号 + title 兜底。
+   */
+  { key: 'equipmentName', label: '名称', width: 'w-[220px]' },
+  { key: 'workshop', label: '车间装置', width: 'w-[120px]' },
   { key: 'containerType', label: '容器类型', width: 'w-[92px]' },
-  { key: 'spec', label: '规格', width: 'w-[132px]' },
+  { key: 'spec', label: '规格', width: 'w-[150px]' },
   { key: 'medium', label: '介质', width: 'w-[88px]' },
-  { key: 'status', label: '状态', width: 'w-[132px]' },
+  { key: 'status', label: '状态', width: 'w-[150px]' },
 ]
 
 /** 可选列（默认关）。顺序 = 勾开后它们出现的顺序 */
@@ -53,7 +59,7 @@ export const ALL_COLUMNS = [...DEFAULT_COLUMNS, ...OPTIONAL_COLUMNS]
 export const COLUMNS_STORAGE_KEY = 'hnd-equipment-columns'
 
 /** 表格宽度上限（与模板里的 `max-w-[1100px]` 是同一个数，测试会交叉核对） */
-export const TABLE_MAX_WIDTH = 1100
+export const TABLE_MAX_WIDTH = 1280
 
 export const DEFAULT_VISIBLE_KEYS = DEFAULT_COLUMNS.map((c) => c.key)
 

@@ -62,17 +62,20 @@ describe('列定义', () => {
     expect(new Set(keys).size, '列 key 有重复 —— 渲染时 v-for 的 :key 会撞').toBe(keys.length)
   })
 
-  it('刚好一列不自定宽（自适应列只能有一个）', () => {
+  it('每一列都有定宽（2026-11-02 起不要自适应列）', () => {
+    /*
+     * 旧规则要求"恰好一列自适应"（名称列），由它吸收剩余宽度。
+     * 结果在 1100px 上限下，名称列只剩几十像素 ⇒ 「150产品罐」竖排成一列字。
+     * 现在名称也有了 220px 定宽，表格给 min-w，装不下就横向滚动。
+     */
     const auto = DEFAULT_COLUMNS.filter((c) => !c.width)
-    expect(auto, '自适应列不是刚好一个：多于一列会互相抢宽度，一个都没有就把剩余宽度摊给所有列').toHaveLength(1)
-    expect(auto[0].key).toBe('equipmentName')
+    expect(auto, '还有列没定宽 —— 它会在 table-fixed 下被压成一条').toHaveLength(0)
   })
 
-  it('默认 8 列的固定宽度合计 + 名称自适应 ≤ 表格上限（1280 视口不横滚）', () => {
-    const fixed = DEFAULT_COLUMNS.reduce((sum, c) => sum + (pxOf(c.width) ?? 0), 0)
-    expect(fixed, '默认列的固定宽度已经超过上限了').toBeLessThan(TABLE_MAX_WIDTH)
-    const autoWidth = TABLE_MAX_WIDTH - fixed
-    expect(autoWidth, '留给「名称」的宽度不足 200px，中文名会挤成两行').toBeGreaterThanOrEqual(200)
+  it('名称列有 220px（中文名不再被压成竖排单字）', () => {
+    const name = DEFAULT_COLUMNS.find((c) => c.key === 'equipmentName')
+    expect(name, '找不到名称列').toBeTruthy()
+    expect(pxOf(name.width), '名称列宽度不足 200px 时中文会逐字断行').toBeGreaterThanOrEqual(200)
   })
 
   it('模板里的表格上限与常量是同一个数（改了常量忘改模板就红）', () => {
@@ -81,7 +84,7 @@ describe('列定义', () => {
       join(ROOT, 'src', 'components', 'EquipmentMaintenancePanel.vue'),
       'utf8',
     )
-    expect(panel, `模板里没有 max-w-[${TABLE_MAX_WIDTH}px]`).toContain(`max-w-[${TABLE_MAX_WIDTH}px]`)
+    expect(panel, `模板里没有 min-w-[${TABLE_MAX_WIDTH}px]`).toContain(`min-w-[${TABLE_MAX_WIDTH}px]`)
     expect(panel, '表格丢了 table-fixed（列宽就不再按 colgroup 走）').toContain('table-fixed')
   })
 })

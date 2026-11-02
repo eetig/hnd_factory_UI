@@ -147,11 +147,18 @@ describe('默认视图', () => {
     expect(h, '又出现了「操作」列 —— 启停应该落在状态格里').not.toContain('操作')
   })
 
-  it('表格上限 1100px + table-fixed（1280 视口下不横滚的前提）', async () => {
+  it('表格最小宽度 1280px + table-fixed（装不下就横向滚动，不折行）', async () => {
+    /*
+     * 2026-11-02：从"上限 1100px"改成"下限 1280px"。
+     * 旧规则的目标是"1280 视口下不横滚"，代价是 14 列挤在 1100px 里只能靠换行硬塞 ——
+     * 名称列被压成竖排单字（使用方：「这个表格太难看了」）。
+     * 新规则：宁可横向滚，也不让中文逐字断行。table-fixed 仍然要有（列宽按 colgroup 走）。
+     */
     await mountPanel()
     const cls = wrapper.find('table').classes().join(' ')
-    expect(cls).toContain('max-w-[1100px]')
+    expect(cls).toContain('min-w-[1280px]')
     expect(cls).toContain('table-fixed')
+    expect(cls, '表格不该再被 1100px 夹住').not.toContain('max-w-[1100px]')
   })
 
   it('两行数据都渲染出来了；停用的行带「已停用」和原因入口', async () => {
@@ -159,7 +166,8 @@ describe('默认视图', () => {
     expect(wrapper.text()).toContain('HND-V150 合成釜')
     expect(wrapper.text()).toContain('精馏塔')
     expect(wrapper.text()).toContain('已停用')
-    expect(wrapper.text()).toContain('为何不能启用')
+    // 状态列 2026-11-02 重排：原因入口从一句文字改成「?」按钮（aria-label 仍写明用途）
+    expect(wrapper.html()).toContain('为什么不能启用')
   })
 
   it('筛选条与列按钮都在（一行不换行的那几个控件）', async () => {

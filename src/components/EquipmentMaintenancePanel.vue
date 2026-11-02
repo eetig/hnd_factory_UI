@@ -284,7 +284,11 @@ onMounted(() => {
     <!-- 表格区：`min-h-0 flex-1` 拿的是"卡片分给它之后剩下的空间"（定高，不随内容变），
          所以分页行永远在同一个位置；表头 `sticky top-0` 也终于有了参照物（变更-088）。 -->
     <div class="ledger-scroll min-h-0 flex-1 overflow-auto">
-      <table class="ledger-table w-full max-w-[1100px] table-fixed text-sm">
+      <!--
+        2026-11-02：原来这里是 `max-w-[1100px]`，14 列挤在 1100px 里只能靠换行硬塞，
+        名称列被压成竖排单字。现在给最小宽度 1280px，装不下就横向滚动（比折行好读得多）。
+      -->
+      <table class="ledger-table w-full min-w-[1280px] table-fixed text-sm">
         <colgroup>
           <col v-for="column in orderedColumns" :key="column.key" :class="column.width" />
         </colgroup>
@@ -317,48 +321,70 @@ onMounted(() => {
             <td
               v-for="column in orderedColumns"
               :key="column.key"
-              class="px-4 py-2.5"
+              class="px-4 py-2.5 align-middle"
               :class="[
-                column.align === 'right' ? 'num text-right' : 'text-left',
+                column.align === 'right' ? 'num text-right whitespace-nowrap' : 'text-left',
                 column.key === 'equipmentName' ? 'font-medium' : '',
                 column.key === 'index' ? 'text-xs text-slate-500' : '',
+                column.key === 'status' || column.key === 'imageFile' ? 'whitespace-nowrap' : '',
+                column.key !== 'equipmentName' && column.key !== 'status' && column.key !== 'imageFile'
+                  ? 'truncate'
+                  : '',
               ]"
             >
               <!-- 状态列：库里的 enabled 只表示"在台账里启用"，体积计算页还要求
                    底图 + 坐标 + 几何齐全。两者不一致时显示「启用 · 仅台账」并给原因入口，
                    否则使用方会以为"我明明启用了，为什么计算页下拉里没有它"（变更-087） -->
+              <!--
+                状态列（2026-11-02 重排）：原来四行文字混在一格里（启用 ·仅台账 /
+                为何不能算 / 停用 / 为何不能启用），扫一眼读不出来。
+                现在：**一个状态徽章** + 一个「?」原因按钮 + 一个启停按钮，各归各位。
+                徽章配色与设备看板同一套：启用 苔绿 · 仅台账 琥珀 · 已停用 石墨。
+              -->
               <template v-if="column.key === 'status'">
-                <div class="flex flex-wrap items-center gap-1 text-xs">
-                  <template v-if="row.enabled !== 1">已停用</template>
-                  <template v-else-if="usageProblemOf(row)">
-                    <span>启用</span>
-                    <span class="text-amber-700">· 仅台账</span>
-                    <button
-                      type="button"
-                      class="text-amber-700 underline decoration-dotted focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-                      @click.stop="showUsageProblem(row)"
-                    >
-                      为何不能算
-                    </button>
-                  </template>
-                  <template v-else>启用</template>
-
-                  <el-button
-                    size="small"
-                    text
-                    :disabled="row.enabled !== 1 && !!blockReasonOf(row)"
-                    :title="blockReasonOf(row)"
-                    @click.stop="handleToggle(row)"
+                <div class="flex items-center gap-1.5 text-xs">
+                  <span
+                    class="rounded-full px-1.5 py-0.5 font-medium"
+                    :class="
+                      row.enabled !== 1
+                        ? 'bg-region text-slate-600'
+                        : usageProblemOf(row)
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-brand-50 text-brand-ink'
+                    "
                   >
-                    {{ row.enabled === 1 ? '停用' : '启用' }}
-                  </el-button>
+                    {{ row.enabled !== 1 ? '已停用' : usageProblemOf(row) ? '仅台账' : '启用' }}
+                  </span>
+
+                  <button
+                    v-if="row.enabled === 1 && usageProblemOf(row)"
+                    type="button"
+                    class="text-slate-500 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                    title="为什么不能用于体积计算"
+                    aria-label="为什么不能用于体积计算"
+                    @click.stop="showUsageProblem(row)"
+                  >
+                    ?
+                  </button>
                   <button
                     v-if="blockReasonOf(row)"
                     type="button"
-                    class="text-amber-700 underline decoration-dotted focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    class="text-slate-500 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                    :title="blockReasonOf(row)"
+                    aria-label="为什么不能启用"
                     @click.stop="showAlert(blockReasonOf(row), `${row.equipmentName || '该设备'}：不能启用`)"
                   >
-                    为何不能启用
+                    ?
+                  </button>
+
+                  <button
+                    type="button"
+                    class="ml-auto rounded border border-line px-1.5 py-0.5 text-[11px] text-slate-600 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink disabled:opacity-40"
+                    :disabled="row.enabled !== 1 && !!blockReasonOf(row)"
+                    :title="blockReasonOf(row) || (row.enabled === 1 ? '停用这台设备' : '启用这台设备')"
+                    @click.stop="handleToggle(row)"
+                  >
+                    {{ row.enabled === 1 ? '停用' : '启用' }}
                   </button>
                 </div>
               </template>
@@ -382,7 +408,17 @@ onMounted(() => {
                 </div>
               </template>
 
-              <template v-else>{{ cellText(row, column.key, index) }}</template>
+              <!-- 名称可以两行（超过就省略），其余单行省略；都带 title 兜底 -->
+              <template v-else-if="column.key === 'equipmentName'">
+                <span class="line-clamp-2 leading-snug" :title="cellText(row, column.key, index)">
+                  {{ cellText(row, column.key, index) || '—' }}
+                </span>
+              </template>
+              <template v-else>
+                <span class="block truncate" :title="cellText(row, column.key, index)">
+                  {{ cellText(row, column.key, index) }}
+                </span>
+              </template>
             </td>
           </tr>
           <tr v-if="!displayRows.length">
