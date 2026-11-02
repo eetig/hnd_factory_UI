@@ -581,6 +581,30 @@ watch(
 </template>
 
 <style scoped>
+/*
+ * 表头吸顶 + 合计吸底（2026-11-02）。
+ *
+ * ⚠️ 这两条被我在改"展开动画"时**误删过一次**（用索引切片删旧 CSS，切多了），
+ *    表现是"表头和合计又不固定了"。元素上的 class（sticky-th / sticky-foot）还在，
+ *    只是样式没了 —— 以后动这段 CSS 请用精确字符串替换，别用索引切片。
+ *
+ * 背景必须用本项目的 token（tailwind.config）：raised=#FFFFFF / region=#F6F3EC / line。
+ * 别用 `--ui-*`：那是手机 App 端的变量名，PC 里不存在 ⇒ 等价于透明 ⇒ 合计会透出下面的行。
+ */
+.sticky-th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: theme('colors.raised');
+}
+
+.sticky-foot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background-color: theme('colors.region');
+  box-shadow: 0 -1px 0 theme('colors.line');
+}
 
 
 /*
