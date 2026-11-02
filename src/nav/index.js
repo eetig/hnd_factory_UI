@@ -106,6 +106,8 @@ export const NAV_ITEMS = [
   // 体积计算是纯前端计算，电费预提是本地档位说明 + 占位，都不需要登录
   { key: 'vessel', label: '压力容器体积计算', path: '/equipment/vessel', group: 'equipment' },
   { key: 'electricity', label: '电费预提', path: '/equipment/electricity', group: 'equipment' },
+  // 抄表（2026-11-02）：只要登录就能录（现场谁抄谁录），改台账才需要管理员
+  { key: 'meterReading', label: '电费抄表', path: '/equipment/meters', group: 'equipment' },
   // 周统计对所有人可见：它走 /api/stats/weekly 这条只吐汇总数的公开接口（决策-004），
   // 不依赖那 6 条 admin 专属的台账明细
   { key: 'weekly', label: '周统计', path: '/stats/weekly', group: 'stats' },

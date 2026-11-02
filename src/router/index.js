@@ -16,6 +16,7 @@ import EquipmentView from '../views/equipment/EquipmentView.vue'
 import EquipmentBoardView from '../views/equipment/EquipmentBoardView.vue'
 import VesselView from '../views/equipment/VesselView.vue'
 import ElectricityView from '../views/equipment/ElectricityView.vue'
+import MeterReadingView from '../views/equipment/MeterReadingView.vue'
 import WeeklyView from '../views/stats/WeeklyView.vue'
 import DailyView from '../views/stats/DailyView.vue'
 import TankLevelView from '../views/stats/TankLevelView.vue'
@@ -134,6 +135,12 @@ export const workbenchRoutes = [
     name: 'ElectricityView',
     component: ElectricityView,
     meta: { group: 'equipment', key: 'electricity', title: '电费预提' },
+  },
+  {
+    path: '/equipment/meters',
+    name: 'MeterReadingView',
+    component: MeterReadingView,
+    meta: { group: 'equipment', key: 'meterReading', title: '电费抄表' },
   },
   {
     path: '/stats/weekly',
