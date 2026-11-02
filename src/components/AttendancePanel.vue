@@ -626,6 +626,12 @@ const popupStyle =
             <view class="at__tags">
               <text v-if="cell.dayType === 'overtime'" class="at__tag">加班</text>
               <text v-else-if="cell.dayType === 'comp'" class="at__tag">调休</text>
+              <!--
+                休息日也标出来（2026-11-02 使用方：「休息的地方标出来，这样更直观」）。
+                原来休息日只靠格底变淡 + 没有 8h 来表达，扫一眼分不清
+                "休息"还是"这天忘了填"。
+              -->
+              <text v-else-if="cell.dayType === 'rest'" class="at__tag at__tag--rest">休息</text>
               <text v-if="missCountOf(cell)" class="at__miss">忘{{ missCountOf(cell) }}</text>
             </view>
           </template>
@@ -999,9 +1005,14 @@ const popupStyle =
     background: transparent;
   }
 
+  /*
+   * 休息日（2026-11-02）：
+   * 原来靠 `opacity: 0.55` 整体淡化来表达"这天不上班" —— 但字也跟着淡了，
+   * 加上没有时长，看起来像"这天忘了填"。现在改成明确的浅灰底 + 「休息」小字，
+   * 与「加班」「调休」同一套表达方式。
+   */
   &.is-rest {
-    background-color: var(--ui-raise);
-    opacity: 0.55;
+    background-color: var(--ui-surface-2);
   }
 
   &.is-comp {
@@ -1082,6 +1093,10 @@ const popupStyle =
   font-size: 18rpx;
   line-height: 1;
   color: var(--ui-text-2);
+}
+
+.at__tag--rest {
+  color: var(--ui-text-3);
 }
 
 .at__dur {
