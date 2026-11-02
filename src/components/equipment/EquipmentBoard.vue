@@ -119,22 +119,34 @@ onMounted(loadBoard)
       <section
         v-for="col in columns"
         :key="col.key"
-        class="flex min-h-0 flex-col rounded-card border border-line bg-region/40"
+        class="flex min-h-0 flex-col rounded-card border border-line bg-region/60"
         :aria-label="`${col.label}（${col.rows.length} 台）`"
       >
-        <header class="shrink-0 px-3 py-2">
-          <h3 class="text-sm font-semibold text-slate-900">
-            {{ col.label }}
-            <span class="ml-1 font-normal tabular-nums text-slate-500">{{ col.rows.length }}</span>
-          </h3>
-          <p class="truncate text-[11px] text-slate-500">{{ col.hint }}</p>
+        <!--
+          列头（2026-11-02）：左侧 3px 状态色条 + 数量徽章。
+          颜色只在"列头色条"与"卡片左边"出现两处，其余保持中性 —— 颜色说明状态，不做装饰。
+        -->
+        <header
+          class="shrink-0 px-3 py-2"
+          :style="{ borderLeft: `3px solid ${col.color}`, borderLeftColor: col.color }"
+        >
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-slate-900">{{ col.label }}</h3>
+            <span
+              class="rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+              :style="{ color: col.color, backgroundColor: col.color + '14' }"
+            >{{ col.rows.length }}</span>
+          </div>
+          <p class="mt-0.5 truncate text-[11px] text-slate-500">{{ col.hint }}</p>
         </header>
 
-        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2">
+        <!-- pt-1：给第一张卡留出 4px，hover 的 inset 阴影也不会贴着被裁 -->
+        <div class="min-h-0 flex-1 space-y-2 overflow-y-auto px-2 pb-2 pt-1">
           <EquipmentCard
             v-for="row in col.rows"
             :key="row.id"
             :row="row"
+            :color="col.color"
             @click="openCard(row)"
           />
           <p

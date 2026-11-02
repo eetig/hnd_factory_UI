@@ -3,17 +3,19 @@ import { computed } from 'vue'
 import { blockReasonText, sizeText } from './ledgerGroups.js'
 
 /*
- * 设备看板的一张卡（变更-150）。
+ * 设备看板的一张卡（变更-150；2026-11-02 重做视觉）。
  *
- * 五行，和采购卡同一套节奏（同一系统里两张看板不该长得不一样）：
- *   ① 设备名称（昵称跟在后面，小字）
- *   ② 位号 + 容器类型
- *   ③ 规模（规格或 Φ内径×筒长）
- *   ④ **缺什么**（后端给的 enableBlockReason 优先）
- *   ⑤ 车间装置 · 介质
+ * 概念：**挂牌**。一台设备一张牌，左边一条状态色边（缺底图 / 缺标定 / 已停用 / 已就绪），
+ * 其余保持中性。颜色只说明"这台卡在哪一步"，不做装饰。
+ *
+ * ⚠️ hover 效果全部在**盒内**（背景 + 边框 + 左侧色条加宽 + inset 阴影）：
+ * 外层是 `overflow-y: auto` 的滚动区，盒子外的阴影/ring 会被裁掉，
+ * 表现就是"鼠标一悬停，卡片上面那条轮廓线被盖住了"（2026-11-02 使用方报的 bug）。
  */
 const props = defineProps({
   row: { type: Object, required: true },
+  /** 这一列的状态色（由看板按列传入） */
+  color: { type: String, default: '#5B6470' },
 })
 
 const reason = computed(() => blockReasonText(props.row))
@@ -26,7 +28,8 @@ const containerLabel = computed(() => CONTAINER_LABELS[Number(props.row.containe
 <template>
   <button
     type="button"
-    class="w-full rounded-card border border-line bg-raised p-3 text-left transition hover:-translate-y-px hover:border-slate-400 hover:shadow-card focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+    class="eq-card w-full rounded-card border border-line bg-raised p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+    :style="{ borderLeftColor: color }"
     :aria-label="`${row.equipmentName || '设备'}，${row.equipmentCode || ''}，${reason || '已就绪'}`"
   >
     <p class="line-clamp-2 min-w-0 text-sm font-medium leading-snug text-slate-900">
@@ -45,10 +48,7 @@ const containerLabel = computed(() => CONTAINER_LABELS[Number(props.row.containe
       {{ size }}
     </p>
 
-    <p
-      v-if="reason"
-      class="mt-1.5 line-clamp-2 rounded bg-brand-50 px-1.5 py-1 text-[11px] leading-snug text-brand-ink"
-    >
+    <p v-if="reason" class="eq-card__reason mt-1.5 line-clamp-2 rounded px-1.5 py-1 text-[11px] leading-snug">
       {{ reason }}
     </p>
 
@@ -58,3 +58,27 @@ const containerLabel = computed(() => CONTAINER_LABELS[Number(props.row.containe
     </div>
   </button>
 </template>
+
+<style scoped>
+.eq-card {
+  border-left-width: 3px;
+  /* hover 用 inset 阴影 + 边框加深：盒子外的东西会被滚动区裁掉，这里全在盒内 */
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.eq-card:hover {
+  background-color: #fffdf8;
+  border-color: #d8d2c6;
+  box-shadow: inset 0 0 0 1px rgba(120, 108, 88, 0.16);
+}
+
+.eq-card:active {
+  background-color: #faf7f0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq-card {
+    transition: none;
+  }
+}
+</style>

@@ -19,11 +19,21 @@
  * 所以顺序固定为 缺底图 → 缺标定 → 停用 → 就绪，不允许各列重叠。
  */
 
+/*
+ * 四列 = 四种处理状态（2026-11-02 加配色）。
+ *
+ * 颜色只表达"卡在哪个环节"，不表达好看：
+ *   缺底图 琥珀（最急：连图都没有，液位根本没法标）
+ *   缺标定 橙（差一步：有图但算不出质量）
+ *   已停用 石墨（不参与，弱化）
+ *   已就绪 苔绿（可用的，一眼看到有多少台能用）
+ * 都压着饱和度；文字用深版，底色用 12% 淡版 —— 全部过 AA。
+ */
 export const LEDGER_COLUMNS = [
-  { key: 'noImage', label: '缺底图', hint: '没有容器底图，液位没法标定' },
-  { key: 'noCalibration', label: '缺标定', hint: '有底图但缺「每毫米体积」，算不出质量' },
-  { key: 'disabled', label: '已停用', hint: '数据完整但被停用（含被系统拦下的）' },
-  { key: 'ready', label: '已就绪', hint: '启用 + 有底图 + 有标定，可直接测液位' },
+  { key: 'noImage', label: '缺底图', hint: '没有容器底图，液位没法标定', color: '#8A6A1F' },
+  { key: 'noCalibration', label: '缺标定', hint: '有底图但缺「每毫米体积」，算不出质量', color: '#B45309' },
+  { key: 'disabled', label: '已停用', hint: '数据完整但被停用（含被系统拦下的）', color: '#5B6470' },
+  { key: 'ready', label: '已就绪', hint: '启用 + 有底图 + 有标定，可直接测液位', color: '#5B6E4F' },
 ]
 
 /** 是否"有底图"：只看文件名，不看坐标 JSON（坐标可以后补） */
@@ -84,6 +94,8 @@ export function groupLedger(rows) {
     key: c.key,
     label: c.label,
     hint: c.hint,
+    // 状态色（2026-11-02）：看板的列头色条与卡片左边都用它，别在这里丢掉
+    color: c.color,
     rows: buckets.get(c.key).slice().sort(compareByCode),
   }))
 }
