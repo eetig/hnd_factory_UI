@@ -77,13 +77,17 @@ function openInboundImageDialog(record) {
   inboundImageDialogVisible.value = true
 }
 
-/** 「本月」快捷：父组件自己写日期状态，然后重新取数（组件不改 props） */
-function applyMonthRange(range, startRefName, endRefName, reload) {
-  const table = { inboundStartDate: startRefName === 'inboundStartDate', inboundEndDate: endRefName === 'inboundEndDate' }
-  void table
+/**
+ * 「本月」快捷：自己写日期状态，然后**回到第 1 页重新查**。
+ *
+ * ⚠️ 不能接 loadInboundPage —— 那是翻页函数（签名是 page）；
+ *    apply 事件带的 {startDate,endDate} 会把 pageNum 顶成对象，
+ *    后端就报「缺少分页参数 pageNum」（2026-11-02 线上事故，已修）。
+ */
+function applyMonthRange(range) {
   inboundStartDate.value = range.startDate
   inboundEndDate.value = range.endDate
-  reload()
+  reloadInboundRecords()
 }
 
 onMounted(() => {
@@ -123,7 +127,7 @@ onMounted(() => {
         />
 
         <!-- 快捷：本月 1 号 ~ 今天（2026-11-02 使用方要求） -->
-        <MonthQuickButton @apply="(range) => applyMonthRange(range, 'inboundStartDate', 'inboundEndDate', loadInboundPage)" />
+        <MonthQuickButton @apply="applyMonthRange" />
         <span class="ml-auto text-sm text-slate-500">
           共 <span class="font-semibold text-slate-900">{{ inboundTotal }}</span> 条记录
         </span>
