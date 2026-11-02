@@ -221,6 +221,31 @@ function restLabel(day) {
   return day && day.holidayName ? day.holidayName : '休息'
 }
 
+/**
+ * 上下班区间与午休的**重叠分钟数**（2026-11-02）。
+ *
+ * 使用方：「假设 12:00 下班，那工时也不应该是 2.5h，而是 4 个小时啊」——
+ * 原实现是无条件扣掉整段午休（1.5h），半天班被扣成了 2.5h。
+ * 现在只扣真正重叠的部分：
+ *   08:00~12:00 → 重叠 0            → 4h   ✓
+ *   08:00~17:30 → 重叠 1.5h         → 8h   ✓
+ *   08:00~13:00 → 重叠 1h(12~13)    → 4h   ✓
+ * 任何一端缺失 ⇒ 不算重叠（少扣总比多扣好，缺的时长会由"缺段"提示出来）。
+ */
+function lunchOverlap(start, end) {
+  if (!start || !end) return 0
+  const toMin = (t) => {
+    const [h, m] = String(t).split(':').map(Number)
+    return h * 60 + m
+  }
+  const s = toMin(start)
+  const e = toMin(end)
+  const ls = toMin(settings.lunchStart)
+  const le = toMin(settings.lunchEnd)
+  const overlap = Math.min(e, le) - Math.max(s, ls)
+  return overlap > 0 ? overlap : 0
+}
+
 function durationText(day) {
   const need = day.dayType === 'work' || day.dayType === 'overtime'
   if (!need) return ''
@@ -236,8 +261,7 @@ function durationText(day) {
     minutes = span(day.amIn, day.amOut) + span(day.pmIn, day.pmOut)
   } else {
     const gross = span(day.amIn, day.amOut)
-    const lunch = span(settings.lunchStart, settings.lunchEnd)
-    minutes = gross > 0 ? Math.max(gross - lunch, 0) : 0
+    minutes = gross > 0 ? Math.max(gross - lunchOverlap(day.amIn, day.amOut), 0) : 0
   }
   if (!minutes) return ''
   const hours = minutes / 60
@@ -411,7 +435,18 @@ function pickType(type) {
    * 原来只有加班会预填，改成工作日会得到一条"类型=工作日、四段全空"的行 ——
    * 格子上没有 8h，还报缺段，看起来像没存上。
    */
-  if ((type === 'work' || type === 'overtime') && !form.amIn && !form.amOut) {
+  if (type === 'work' && !form.amIn && !form.amOut) {
+    /*
+     * 工作日只有两段：上班 / 下班（2026-11-02 修）
+     * 原来错用加班的四段填法，把「下班」填成午休 12:00 ⇒ 工时算成 2.5h ✗
+     * 使用方看到的就是"12:00 下班、2.5 小时"，而他要的是 08:00~17:30 = 8h。
+     */
+    form.amIn = settings.workStart
+    form.amOut = settings.workEnd
+    form.pmIn = ''
+    form.pmOut = ''
+  } else if (type === 'overtime' && !form.amIn && !form.amOut) {
+    // 休息日加班才是四段（上午上班→午休、下午上班→下班）
     form.amIn = settings.workStart
     form.amOut = settings.lunchStart
     form.pmIn = settings.lunchEnd
@@ -420,6 +455,15 @@ function pickType(type) {
 }
 
 /** "8:5" → "08:05"；非法返回 '' */
+/**
+ * 时间选择器回调（2026-11-02：上下班时间从文本框换成原生时间选择器）。
+ * uni 的 picker 回传的是 { detail: { value: 'HH:mm' } }。
+ */
+function onTimePicked(field, event) {
+  const value = event && event.detail ? event.detail.value : ''
+  if (value) form[field] = value
+}
+
 function normalizeTime(v) {
   const s = String(v ?? '').trim()
   if (!s) return ''
@@ -739,12 +783,21 @@ const popupStyle =
 
           <!-- 值班：独立开关（使用方 2026-10-24 说"没找到录入值班"，做成明显的开关 + 金额） -->
           <view class="ed__block">
+            <!--
+              值班开关（2026-11-02 使用方：「值班的选择框不明显，完全意识不到这是一个选择框」）。
+              原来是一个 28rpx 的空心小方框，和旁边的说明文字混在一起看不出来能点；
+              现在：整行进一个带底色的行 + 右侧一个 96×52rpx 的滑动开关 + 「开 / 关」文字，
+              选中时整块变绿。点整行都能切。
+            -->
             <view class="ed__switch" :class="{ 'is-on': form.hasDuty }" @click="form.hasDuty = !form.hasDuty">
-              <view class="ed__switch-box"><text v-if="form.hasDuty" class="ed__switch-tick">✓</text></view>
               <view class="ed__switch-text">
                 <text class="ed__switch-title">值班（夜班 20:00-次日 08:00）</text>
                 <text class="ed__switch-sub">按次计费 ￥{{ dutyRateText }} / 次 · 与白班、加班可同时存在</text>
               </view>
+              <view class="ed__toggle" :class="{ 'is-on': form.hasDuty }">
+                <view class="ed__toggle-knob"></view>
+              </view>
+              <text class="ed__toggle-label">{{ form.hasDuty ? '开' : '关' }}</text>
             </view>
           </view>
 
@@ -763,7 +816,11 @@ const popupStyle =
                   <text>{{ form.missAmIn ? '忘打卡' : '记忘打' }}</text>
                 </view>
               </view>
-              <input v-model="form.amIn" class="ed__time-input" placeholder="08:00" placeholder-style="color: var(--ui-text-3)" />
+              <picker mode="time" :value="form.amIn || '08:00'" @change="onTimePicked('amIn', $event)">
+                <view class="ed__time-input" :class="{ 'is-empty': !form.amIn }">
+                  {{ form.amIn || '08:00' }}
+                </view>
+              </picker>
             </view>
 
             <view class="ed__time">
@@ -773,7 +830,11 @@ const popupStyle =
                   <text>{{ form.missAmOut ? '忘打卡' : '记忘打' }}</text>
                 </view>
               </view>
-              <input v-model="form.amOut" class="ed__time-input" placeholder="17:00" placeholder-style="color: var(--ui-text-3)" />
+              <picker mode="time" :value="form.amOut || '17:00'" @change="onTimePicked('amOut', $event)">
+                <view class="ed__time-input" :class="{ 'is-empty': !form.amOut }">
+                  {{ form.amOut || '17:00' }}
+                </view>
+              </picker>
             </view>
 
             <template v-if="isOvertime">
@@ -784,7 +845,11 @@ const popupStyle =
                     <text>{{ form.missPmIn ? '忘打卡' : '记忘打' }}</text>
                   </view>
                 </view>
-                <input v-model="form.pmIn" class="ed__time-input" placeholder="13:00" placeholder-style="color: var(--ui-text-3)" />
+                <picker mode="time" :value="form.pmIn || '13:00'" @change="onTimePicked('pmIn', $event)">
+                <view class="ed__time-input" :class="{ 'is-empty': !form.pmIn }">
+                  {{ form.pmIn || '13:00' }}
+                </view>
+              </picker>
               </view>
               <view class="ed__time">
                 <view class="ed__time-head">
@@ -793,7 +858,11 @@ const popupStyle =
                     <text>{{ form.missPmOut ? '忘打卡' : '记忘打' }}</text>
                   </view>
                 </view>
-                <input v-model="form.pmOut" class="ed__time-input" placeholder="17:30" placeholder-style="color: var(--ui-text-3)" />
+                <picker mode="time" :value="form.pmOut || '17:30'" @change="onTimePicked('pmOut', $event)">
+                <view class="ed__time-input" :class="{ 'is-empty': !form.pmOut }">
+                  {{ form.pmOut || '17:30' }}
+                </view>
+              </picker>
               </view>
             </template>
           </view>
@@ -1342,6 +1411,44 @@ const popupStyle =
   }
 }
 
+.ed__toggle {
+  position: relative;
+  width: 96rpx;
+  height: 52rpx;
+  border-radius: 26rpx;
+  background-color: var(--ui-surface-2);
+  border: 2rpx solid var(--ui-border);
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &.is-on {
+    background-color: #3f8f5f;
+    border-color: #3f8f5f;
+  }
+}
+
+.ed__toggle-knob {
+  position: absolute;
+  top: 4rpx;
+  left: 4rpx;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background-color: #fff;
+  box-shadow: 0 1rpx 4rpx rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease;
+
+  .ed__toggle.is-on & {
+    transform: translateX(44rpx);
+  }
+}
+
+.ed__toggle-label {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: var(--ui-text-3);
+}
+
 .ed__switch-box {
   flex-shrink: 0;
   width: 44rpx;
@@ -1406,6 +1513,14 @@ const popupStyle =
 }
 
 .ed__time-input {
+  display: flex;
+  align-items: center;
+  min-height: 80rpx;
+
+  &.is-empty {
+    color: var(--ui-text-3);
+  }
+
   display: block;
   width: calc(100vw - 48rpx);
   max-width: calc(100vw - 48rpx);
