@@ -411,7 +411,11 @@ watch(
                       :aria-label="`${expanded === row.orderNo ? '收起' : '展开'}工单 ${row.orderNo} 的投料明细`"
                       @click="toggleExpand(row)"
                     >
-                      <span class="text-[11px] leading-none">{{ expanded === row.orderNo ? '▾' : '▸' }}</span>
+                      <!-- 箭头旋转（纯 transform，200ms）—— 与行的生长同时发生，指向性更清楚 -->
+                      <span
+                        class="inline-block text-[11px] leading-none transition-transform duration-200"
+                        :class="expanded === row.orderNo ? 'rotate-90' : ''"
+                      >▸</span>
                       <span>{{ expanded === row.orderNo ? '收起' : '明细' }}</span>
                     </button>
                     <span v-else class="inline-block h-7 w-[62px] shrink-0"></span>
@@ -468,7 +472,15 @@ watch(
                     改成**一张小表**：物料 / 编码 / 笔数 / 净重 四列右对齐，
                     只用一道发丝线分隔，密度高、扫读快。展开用 150ms 淡入 + 上移。
                   -->
-                  <div class="expand-in py-3">
+                  <!--
+                    展开动画（2026-11-02 第二次改）。
+                    第一版用 <Transition> + JS 量高度，但它的显隐开关在 <tr v-if> 上，
+                    对它来说子节点始终存在 ⇒ 钩子不触发、动画根本没跑 ✗
+                    现在用 grid-template-rows: 0fr → 1fr：父 grid + 子 overflow:hidden 时，
+                    高度会真的从 0 长到内容高度；纯 CSS、不用量高度、不用 JS。
+                  -->
+                  <div class="expand-grid">
+                    <div class="expand-inner py-3">
                     <p class="mb-2 text-xs text-slate-500">
                       投料明细 · 净重（261 投料与 262 冲销相抵，按物料汇总）
                     </p>
@@ -497,6 +509,7 @@ watch(
                           {{ fmt(item.qty) }}<span class="ml-0.5 font-normal text-slate-500">{{ item.unit || '' }}</span>
                         </span>
                       </div>
+                    </div>
                     </div>
                   </div>
                 </td>
@@ -568,57 +581,40 @@ watch(
 </template>
 
 <style scoped>
+
+
 /*
- * 展开动画（2026-11-02：使用方说原来"生硬"）。
- * 只做 150ms 的淡入 + 4px 上移 —— 再长会显得拖沓，再短就看不出来。
- * 用 animation 而不是 height transition：行高由内容决定，height 动画要先量高度，
- * 表格行里量高度既麻烦又会抖。
- */
-/*
- * 表头吸顶 + 合计吸底（2026-11-02 使用方：
- * 「1.合计固定在下面一直可见 2.表头固定在最上面一直可见」）。
+ * 展开动画（2026-11-02 使用方：「展开前后的变化很生硬」）。
  *
- * 表格在一个 `max-h-[60vh] overflow-auto` 的容器里滚，所以用 position: sticky：
- *   · thead 的 th 吸顶（top: 0），滚动时始终能看到列名；
- *   · tfoot 的 td 吸底（bottom: 0），合计始终在视口底部。
- * 两者都必须给不透明背景，否则透出下面的行会糊在一起；
- * z-index 让表头压住 tfoot 之外的单元格，且表头与合计都不会被行内容盖住。
+ * 机制：父 display:grid + grid-template-rows 从 0fr 长到 1fr，
+ * 子元素 overflow:hidden ⇒ 高度真的从 0 长出来（不是"瞬间撑开再淡入"）。
+ * 这是要让"内容长出来"这件事看起来自然，唯一不量高度的纯 CSS 做法。
  *
- * ⚠️ sticky 生效的前提：祖先 chain 里**不能有 overflow: hidden**
- * （这里只有 overflow-auto 的滚动容器，没有 hidden）—— 改样式时注意别加。
+ * 节奏（ui-taste 的 Motion 档：密集数据表要克制，状态变化 200–300ms）：
+ *   260ms · cubic-bezier(0.22, 1, 0.36, 1)（急起缓收，收尾柔和）
+ *   同时 opacity 0 → 1、translateY(-6px) → 0，让起手不突兀
+ * prefers-reduced-motion：不播动画，直接是终态。
  */
-/*
- * ⚠️ 背景色必须用**本项目的 token**（`raised` = #FFFFFF）。
- *    第一版我写的是 `var(--ui-surface)` —— 那是**手机 App 端**的变量名，
- *    这个仓库（PC）根本没有 ⇒ 等价于透明 ⇒ 吸底的合计行透出下面的明细行，
- *    看起来像"合计压在数据行上"（使用方 2026-11-02 截图）。
- *    tailwind.config 里这套 token：canvas=纸 / raised=纸上的面 / region=垫下去的一层。
- */
-.sticky-th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background-color: theme('colors.raised');
+.expand-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  animation: expandGrow 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.sticky-foot td {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  /* 合计行原本用 bg-region（灰），这里显式给实色：吸收滚动内容 + 一条 1px 上边线 */
-  background-color: theme('colors.region');
-  box-shadow: 0 -1px 0 theme('colors.line');
+.expand-inner {
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  animation: expandFade 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-.expand-in {
-  animation: expandIn 0.15s ease-out;
-}
-
-@keyframes expandIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
+@keyframes expandGrow {
+  to {
+    grid-template-rows: 1fr;
   }
+}
+
+@keyframes expandFade {
   to {
     opacity: 1;
     transform: translateY(0);
@@ -626,8 +622,16 @@ watch(
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .expand-in {
+  .expand-grid,
+  .expand-inner {
     animation: none;
+  }
+  .expand-grid {
+    grid-template-rows: 1fr;
+  }
+  .expand-inner {
+    opacity: 1;
+    transform: none;
   }
 }
 </style>
