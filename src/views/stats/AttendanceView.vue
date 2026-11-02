@@ -281,6 +281,10 @@ const completenessHint = computed(() => {
             <span class="flex flex-wrap items-center gap-1 text-xs leading-4">
               <span v-if="cell.dayType === 'overtime'" class="rounded-sm border border-line px-1 text-slate-600">加班</span>
               <span v-else-if="cell.dayType === 'comp'" class="rounded-sm border border-line px-1 text-slate-600">调休</span>
+              <!-- 法定节假日显示节日名（2026-11-02）：周末与节假日在核算里意义不同 -->
+              <span v-else-if="cell.dayType === 'rest' && cell.holidayName" class="rounded-sm border border-line px-1 text-slate-600">
+                {{ cell.holidayName }}
+              </span>
               <span v-if="cell.hasDuty" class="rounded-sm border border-line px-1 text-slate-600">值班</span>
               <span v-if="missOf(cell)" class="text-amber-700">忘{{ missOf(cell) }}</span>
             </span>
