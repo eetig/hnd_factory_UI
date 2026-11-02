@@ -131,6 +131,7 @@ export const NAV_ITEMS = [
   },
   // 资料归档（变更-126，2026-10-20）：**刻意不写 perm —— 全员可看**（Q5 的决策）。
   // 增/改/删由页面按 archive:edit 显隐按钮，后端另有一道「非 admin 的写方法一律 403」。
+  { key: 'auditLog', label: '管控日志', path: '/admin/audit', perm: ADMIN_PERM, group: 'maintain' },
   { key: 'archive', label: '资料归档', path: '/archive', group: 'maintain' },
 ]
 

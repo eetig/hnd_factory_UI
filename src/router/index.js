@@ -180,6 +180,12 @@ export const workbenchRoutes = [
     // 无 perm：与导航同口径（全员可见）
     meta: { group: 'maintain', key: 'archive', title: '资料归档' },
   },
+  {
+    path: '/admin/audit',
+    name: 'AuditLogView',
+    component: () => import('../views/admin/AuditLogView.vue'),
+    meta: { group: 'maintain', key: 'auditLog', title: '管控日志', perm: ADMIN_PERM },
+  },
 ]
 
 export const routes = [
