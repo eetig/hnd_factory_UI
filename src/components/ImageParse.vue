@@ -667,6 +667,27 @@ function alignClass(col) {
   return ''
 }
 
+/*
+ * 每张单的专属色（2026-11-02）—— Design read：内部录入工具的手机结果列表 / 车间现场 /
+ * 暖纸 + 克制色块。概念：**档案袋的彩色索引标签** ——
+ * 一张单 = 一个文件袋，袋口贴一张彩色标签。
+ *
+ * 所以彩色只出现在两处：序号徽章底色、卡片头左侧 3px 色条；
+ * 卡片主体仍是中性白，页面底是浅灰 ⇒ 彩色是"身份"，不是装饰。
+ *
+ * ui-taste 的"一个强调色"是防随便加色；这里是**分类编码**，属于规则允许的例外，
+ * 因此仍压着饱和度、只出现在两处、白字对比度全部 ≥ 4.5:1：
+ *   赭 #8A5A2B ≈6.4:1 · 苔 #5B6E4F ≈5.5:1 · 靛 #4A5A7B ≈7.5:1
+ *   陶 #7A4B5E ≈6.9:1 · 青 #3F6E6A ≈5.6:1
+ * 超过五张循环使用（现场一次很少超过五张，循环比随机色更好预期）。
+ */
+const CARD_ACCENTS = ['#8A5A2B', '#5B6E4F', '#4A5A7B', '#7A4B5E', '#3F6E6A']
+
+/** 第 index 张单的标识色（超过 5 张循环） */
+function cardAccent(index) {
+  return CARD_ACCENTS[index % CARD_ACCENTS.length]
+}
+
 /**
  * 卡片头标题（2026-11-02）：优先**单据号**，没有就退回文件名。
  * 现场说"哪张单"用的是单据号，文件名对他们没有意义。
@@ -1150,12 +1171,13 @@ onUnmounted(() => {
         <article
           v-for="(image, index) in submitted"
           :key="image.id"
-          class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          class="result__card overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          :style="{ borderLeftColor: cardAccent(index) }"
         >
           <header class="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
             <!-- 序号徽章（2026-11-02）：多张一起解析时，用它一眼分清"这是第几张单"
                  以及"下一单从哪开始"。 -->
-            <span class="result__order shrink-0">第 {{ index + 1 }} 单</span>
+            <span class="result__order shrink-0" :style="{ backgroundColor: cardAccent(index) }">第 {{ index + 1 }} 单</span>
             <!-- 缩略图本身就是「看原图」的入口：整张单据只有这一张图，
                  点开进平台原生的图片查看器（可缩放可保存）。
 
@@ -1695,15 +1717,26 @@ $parse-breakpoint: 768px;
   padding: 16px;
 }
 
-/* 序号徽章：深底白字的小胶囊，比正文更醒目，扫一眼就能定位到"第几单" */
+/*
+ * 每张单的索引标签（2026-11-02）。颜色只出现在两处：
+ *   ① 卡片头左侧 3px 色条（像文件袋的索引标签）
+ *   ② 序号徽章底色
+ * 其余保持中性（白卡 + 灰底），彩色只承担"这是第几张"的身份，不做装饰。
+ */
+.result__card {
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+
 .result__order {
   padding: 2px 8px;
   border-radius: 999px;
-  background-color: $ui-text;
+  background-color: #3f3f46;
   color: #fff;
   font-size: 12px;
   font-weight: 600;
   line-height: 18px;
+  font-numeric: tabular-nums;
   font-variant-numeric: tabular-nums;
 }
 
