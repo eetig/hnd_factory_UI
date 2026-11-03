@@ -81,16 +81,29 @@ export function makeError({ status, body, transportError }) {
  * 401（未登录 / token 失效）→ 清空凭据并跳登录页。
  * 403（已登录但无权限）保留登录态，由调用方提示错误即可。
  */
+/**
+ * 这句响应是不是"登录失效"（2026-11-03）。
+ *
+ * 单独提出来，是因为它有两个调用点：
+ *   ① HTTP 非 2xx（原路径）
+ *   ② **HTTP 200 + success:false**（这个仓的后端把业务失败也走 200，
+ *      「请先登录」就是这种 —— 只判状态码会漏掉，页面就显示"请先登录"却不跳登录页）
+ */
+export function isLoginExpired(status, body) {
+  const code = String(body?.code ?? '')
+  const message = typeof body === 'string' ? body : body?.message || body?.msg || ''
+  return (
+    status === 401 ||
+    code === '401' ||
+    /未登录|登录过期|登录已过期|请先登录|token\s*(失效|无效)|unauthorized|expired/i.test(message)
+  )
+}
+
 export function handleUnauthorized(status, body) {
   const code = String(body?.code ?? '')
   const message = typeof body === 'string' ? body : body?.message || body?.msg || ''
 
-  const isUnauthorized =
-    status === 401 ||
-    code === '401' ||
-    /未登录|登录过期|token\s*(失效|无效)|unauthorized|expired/i.test(message)
-
-  if (!isUnauthorized) return
+  if (!isLoginExpired(status, body)) return
 
   /*
    * 使用方 2026-10-21：「默认不需要登录」。

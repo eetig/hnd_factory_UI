@@ -3,6 +3,7 @@ import {
   DEFAULT_TIMEOUT,
   buildHeaders,
   handleUnauthorized,
+  isLoginExpired,
   makeError,
 } from './http-common'
 
@@ -64,6 +65,24 @@ function send(method, url, data, config = {}) {
       timeout: config.timeout ?? DEFAULT_TIMEOUT,
       success: (res) => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
+          /*
+           * 2026-11-03：**2xx 里也可能是"未登录"**。
+           *
+           * 后端把业务失败也走 HTTP 200（Result{code,msg,data,success}），
+           * 「请先登录」就是 200 + success:false。原来这里直接 resolve，
+           * 页面只拿到一条普通错误 ⇒ 各页各弹「请先登录」而不跳登录页，
+           * 使用方看到的是"我明明登录了，页面说请先登录"。
+           * 交给现成的 handleUnauthorized（它会区分"游客"与"过期"两种情况）。
+           */
+          const body = res.data
+          if (
+            body &&
+            typeof body === 'object' &&
+            body.success === false &&
+            isLoginExpired(res.statusCode, body)
+          ) {
+            handleUnauthorized(401, body)
+          }
           resolve({ data: res.data, status: res.statusCode, headers: res.header || {} })
           return
         }
