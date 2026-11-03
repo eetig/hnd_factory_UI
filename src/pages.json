@@ -27,6 +27,12 @@
       }
     },
     {
+      "path": "pages/meterRead/meterRead",
+      "style": {
+        "navigationBarTitleText": "抄表"
+      }
+    },
+    {
       "path": "pages/auditLog/auditLog",
       "style": {
         "navigationBarTitleText": "管控日志"
