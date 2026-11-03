@@ -184,6 +184,11 @@ function pick(day) {
   selected.value = selected.value?.workDate === day.workDate ? null : day
 }
 
+/** 这天是不是还没到（未来日）—— 未来日不会有打卡记录，提示语要说清楚 */
+function isFuture(day) {
+  return day && day.workDate > todayStr()
+}
+
 /** 某天用哪一档状态色（与 App 的 cellTone 一致：法定节日并入"休息"） */
 function toneOf(day) {
   if (day.dayType === 'overtime') return TONE.overtime
@@ -344,16 +349,26 @@ const completenessHint = computed(() => {
         </div>
       </section>
 
-      <!-- ③ 明细：右侧浮层，点开也不挤压日历 -->
-      <div v-if="selected" class="fixed inset-0 z-30 flex justify-end bg-black/10" @click.self="selected = null">
-        <aside class="flex h-full w-[340px] flex-col border-l border-line bg-raised shadow-[0_0_24px_rgba(60,50,35,0.08)]">
-          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+      <!--
+        ③ 明细（2026-11-03 重做）：从"右侧整条白板"改成**居中弹窗**。
+        原来点未来日（例如今天看 11-04）时没有任何时间块，只剩「时长 —」「忘打卡 无」，
+        右侧 340×720 一整条几乎空白，看着像坏了。现在：
+        · 宽 380、高度自适应、最高 80vh —— 内容少时它自己就小
+        · 未来日/没录时间时明确说明，并把**默认作息**写出来（别让人以为没数据）
+        · 补上「状态」行（工作日/休息/加班/调休 + 节日名）
+      -->
+      <div
+        v-if="selected"
+        class="fixed inset-0 z-30 flex items-center justify-center bg-black/15 p-6"
+        @click.self="selected = null"
+      >
+        <div class="flex max-h-[80vh] w-[380px] flex-col rounded-card border border-line bg-raised shadow-card">
+          <div class="flex items-start justify-between border-b border-line px-5 py-3">
             <div>
               <p class="text-sm font-semibold tabular-nums text-slate-900">{{ selected.workDate }}</p>
               <p class="mt-0.5 text-[11px] text-slate-500">
                 {{ TYPE_TEXT[selected.dayType] }}
                 <span v-if="selected.holidayName"> · {{ selected.holidayName }}</span>
-                <span v-if="selected.hasDuty" class="ml-1 font-medium" style="color: #3f5d87">值班</span>
               </p>
             </div>
             <button
@@ -365,7 +380,25 @@ const completenessHint = computed(() => {
             </button>
           </div>
 
-          <div class="flex-1 overflow-auto px-4 py-3">
+          <div class="min-h-0 flex-1 overflow-auto px-5 py-3">
+            <!-- 状态 -->
+            <div class="mb-2 flex items-center justify-between rounded-md border border-line px-3 py-2">
+              <span class="text-xs text-slate-500">状态</span>
+              <span class="flex items-center gap-2 text-sm text-slate-900">
+                <span
+                  class="h-2.5 w-2.5 rounded-[3px]"
+                  :style="{ backgroundColor: toneOf(selected).bar === 'transparent' ? '#e7e2d8' : toneOf(selected).bar }"
+                ></span>
+                {{ TYPE_TEXT[selected.dayType] }}
+                <span
+                  v-if="selected.hasDuty"
+                  class="rounded-[3px] px-1 text-[11px] font-bold leading-4 text-white"
+                  style="background-color: #3f5d87"
+                >值班</span>
+              </span>
+            </div>
+
+            <!-- 时间：有记录就列出来；没有就说明为什么没有 -->
             <div
               v-for="row in timesOf(selected)"
               :key="row[0]"
@@ -373,6 +406,21 @@ const completenessHint = computed(() => {
             >
               <span class="text-xs text-slate-500">{{ row[0] }}</span>
               <span class="text-sm tabular-nums text-slate-900">{{ row[1] }} — {{ row[2] }}</span>
+            </div>
+
+            <div
+              v-if="!timesOf(selected).length"
+              class="mb-2 rounded-md border border-dashed border-line px-3 py-2.5"
+            >
+              <p class="text-[11px] leading-relaxed text-slate-500">
+                {{ isFuture(selected) ? '这天还没到，还没有打卡记录。' : '这天没有录打卡时间。' }}
+              </p>
+              <p class="mt-1 text-[11px] leading-relaxed text-slate-500">
+                默认作息：{{ settings.workStart }} 上班 · {{ settings.lunchStart }}–{{
+                  settings.lunchEnd
+                }}
+                午休 · {{ settings.workEnd }} 下班（合计 {{ hoursText(dayMinutes(selected)) || '8h' }} 的前提）
+              </p>
             </div>
 
             <div class="mb-2 flex items-center justify-between rounded-md border border-line px-3 py-2">
@@ -387,12 +435,12 @@ const completenessHint = computed(() => {
               <p class="text-xs text-slate-500">备注</p>
               <p class="mt-1 text-sm text-slate-900">{{ selected.note }}</p>
             </div>
-
-            <p class="mt-4 text-[11px] leading-relaxed text-slate-500">
-              这一页是只读看板；录改在手机 App 的「考勤」页。
-            </p>
           </div>
-        </aside>
+
+          <p class="border-t border-line px-5 py-2 text-[11px] text-slate-500">
+            这一页是只读看板；录改在手机 App 的「考勤」页。
+          </p>
+        </div>
       </div>
     </template>
   </div>
