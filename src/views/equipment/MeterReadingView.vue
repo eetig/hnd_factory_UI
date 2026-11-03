@@ -67,8 +67,31 @@ const monthDays = computed(() => {
   return out
 })
 
-/** 列 = 电表（按内部顺序），组信息按 section 连起来 */
-const matrixMeters = computed(() => meters.value.map((m) => ({ ...m })))
+/*
+ * 列的车间顺序（2026-11-03 使用方草图）：
+ *   公用工程 → 一车间 → 二车间 → 乙炔车间
+ * 同车间内按内部顺序（meter_no）排。
+ *
+ * 注意：这与"按编号排"是两回事 —— 编号会因此在表里跳（例如公用工程里出现 1,2,3,4,5,20,21…）。
+ * 使用方要的是"按车间看"，编号只作为列头的标识，所以顺序按车间。
+ */
+const SECTION_ORDER = ['公用工程', '一车间', '二车间', '乙炔车间']
+
+function sectionRank(name) {
+  const index = SECTION_ORDER.indexOf(name || '')
+  return index === -1 ? SECTION_ORDER.length : index
+}
+
+/** 列 = 电表：先按车间聚，再按内部顺序 */
+const matrixMeters = computed(() =>
+  meters.value
+    .map((m) => ({ ...m }))
+    .sort((a, b) => {
+      const diff = sectionRank(a.section) - sectionRank(b.section)
+      if (diff !== 0) return diff
+      return (a.meterNo || 0) - (b.meterNo || 0)
+    }),
+)
 
 /** 分组：连续相同 section 归一组，用于表头第一行跨列 */
 const matrixGroups = computed(() => {
@@ -88,16 +111,20 @@ const matrixGroups = computed(() => {
      * 组名只在**第一次**出现时写，后面重复的段只留一条色线 ——
      * 否则表头会出现一排重复的"公用工程 公用工程 公用工程"。
      */
-    const first = !seen.has(name)
-    seen.add(name)
+    /*
+     * 列已按车间聚在一起，每段必然只有一个车间 ⇒ 组名直接写。
+     * （之前按编号排时同一车间会分段出现，所以才需要"首次才写"；现在不需要了，
+     *   但仍保留 label 字段，模板不用改。）
+     */
     groups.push({
       name,
-      label: first ? name : '',
-      first,
+      label: name,
+      first: !seen.has(name),
       span: 1,
       color: sectionColor(name),
       meters: [meter],
     })
+    seen.add(name)
   }
   return groups
 })
