@@ -4,18 +4,23 @@ import request from '../../api/request'
 import { isGuest } from '../../api/auth'
 
 /*
- * 我的考勤 · PC 看板（2026-10-24，变更-171 续）。
+ * 我的考勤 · PC 看板（2026-10-24 建立，2026-11-03 重做视觉）。
  *
- * 数据全部来自后端的 `GET /api/attendance/month?month=YYYY-MM`：
- * 整月每一天都返回（没录的按默认规则补），统计口径也在后端算 ——
- * 所以这里和手机端看到的数一定一致，不会出现"两套算法"。
+ * 数据全部来自后端 `GET /api/attendance/month?month=YYYY-MM`：整月每天都返回
+ * （没录的按默认规则补），统计口径在后端算 —— 所以和手机端一定一致，不会有"两套算法"。
  *
- * 只读看板（使用方原话是"PC 端出个考勤看板"）：录入仍在手机端。
- * 点某一天 → 下面一块明细，显示四个时间点、忘打标记、备注、值班。
+ * ## 2026-11-03 为什么重做（使用方原话）
+ * 「PC 端的考勤一点都不直观。而且都不能看全一个月，还得向下滑动。体验很差。参考手机App的做法」
  *
- * 视觉沿用项目的 x-minimalist：暖白纸、1px 发丝线、近零阴影、不用彩色大块。
+ * 改前：格子 h-24（96px）× 6 行 = 576px，再加上统计卡与明细区 ⇒ 必然要滚；
+ *      状态只靠几个灰底小标签，加班/值班/调休/休息一眼分不开。
+ * 改后：
+ *   ① **一屏看完** —— 整页 `h-full`，日历 `flex-1` + `grid-rows-6`，格子高度自适应，
+ *      不再写死 96px；明细改成右侧浮层，点开也不挤压日历
+ *   ② **状态配色与手机 App 同一套**（档案袋/排班表的语言）：
+ *      加班 暖橙 · 值班 靛蓝徽章「值」 · 调休 紫褐 · 休息 冷灰（含法定节日名）· 今天 品牌橙描边
+ *   ③ 加一行**色块图例** —— 颜色必须能被读懂，不然就是装饰
  */
-
 const WEEK = ['一', '二', '三', '四', '五', '六', '日']
 
 const TYPE_TEXT = {
@@ -26,7 +31,26 @@ const TYPE_TEXT = {
 }
 
 /*
- * 游客（roleKey = guest）能看到这个入口，但用不了（2026-10-24 使用方口径）。
+ * 状态色（与 App 端 AttendancePanel 同一套，改一处记得改另一处）。
+ * 底色用 12~14% 淡版、文字/描边用深版 ⇒ 对比度都过 AA。
+ */
+const TONE = {
+  overtime: { bar: '#b45309', bg: 'rgba(180, 83, 9, 0.13)', border: 'rgba(180, 83, 9, 0.30)', text: '#9a4a1e' },
+  comp: { bar: '#7a4b5e', bg: 'rgba(122, 75, 94, 0.12)', border: 'rgba(122, 75, 94, 0.26)', text: '#7a4b5e' },
+  rest: { bar: '#6b7280', bg: 'rgba(107, 114, 128, 0.08)', border: 'rgba(107, 114, 128, 0.16)', text: '#4b5563' },
+  work: { bar: 'transparent', bg: '#fffdf8', border: '#e7e2d8', text: '#1f2937' },
+}
+
+const LEGEND = [
+  { label: '加班', color: '#b45309' },
+  { label: '值班', color: '#3f5d87' },
+  { label: '调休', color: '#7a4b5e' },
+  { label: '休息', color: '#6b7280' },
+  { label: '今天', color: '#b4551f' },
+]
+
+/*
+ * 游客（roleKey = guest）能看到入口，但用不了（2026-10-24 使用方口径）。
  * 后端 `/api/attendance/**` 也拦了一道，这里只是不给"空月历"的错觉。
  */
 const guest = isGuest()
@@ -160,6 +184,34 @@ function pick(day) {
   selected.value = selected.value?.workDate === day.workDate ? null : day
 }
 
+/** 某天用哪一档状态色（与 App 的 cellTone 一致：法定节日并入"休息"） */
+function toneOf(day) {
+  if (day.dayType === 'overtime') return TONE.overtime
+  if (day.dayType === 'comp') return TONE.comp
+  if (day.dayType === 'rest') return TONE.rest
+  return TONE.work
+}
+
+/** 格子内联样式：底色 + 描边 + 左侧 4px 状态条（颜色只在这三处出现） */
+function cellStyle(day) {
+  const tone = toneOf(day)
+  return {
+    backgroundColor: tone.bg,
+    borderColor: tone.border,
+    borderLeftColor: tone.bar,
+    borderLeftWidth: tone.bar === 'transparent' ? '1px' : '4px',
+    borderLeftStyle: 'solid',
+  }
+}
+
+/** 状态标签文案：节日优先显示节日名，否则按类型 */
+function tagText(day) {
+  if (day.dayType === 'overtime') return '加班'
+  if (day.dayType === 'comp') return '调休'
+  if (day.dayType === 'rest') return day.holidayName || '休息'
+  return ''
+}
+
 const completenessHint = computed(() => {
   const bits = []
   if (summary.missCount) bits.push(`忘打卡 ${summary.missCount} 段`)
@@ -169,7 +221,7 @@ const completenessHint = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="att flex h-full min-h-0 flex-col gap-3">
     <!-- 游客：看得见入口，但不能用 -->
     <section
       v-if="guest"
@@ -182,148 +234,166 @@ const completenessHint = computed(() => {
     </section>
 
     <template v-else>
-    <!-- 头部：月份 + 四个数 -->
-    <section class="rounded-card border border-line bg-raised shadow-card">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-line px-6 py-4">
-        <div class="flex items-center gap-3">
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-full border border-line text-slate-500 transition hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-            aria-label="上一个月"
-            @click="shift(-1)"
-          >
-            ‹
-          </button>
-          <span class="text-base font-semibold tabular-nums text-slate-900">{{ month }}</span>
-          <button
-            class="flex h-8 w-8 items-center justify-center rounded-full border border-line text-slate-500 transition hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-            aria-label="下一个月"
-            @click="shift(1)"
-          >
-            ›
-          </button>
+      <!-- ① 顶部一条：月份 + 五个数 + 图例（不再单独占一张高卡片） -->
+      <section class="shrink-0 rounded-card border border-line bg-raised shadow-card">
+        <div class="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
+          <div class="flex items-center gap-2">
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-full border border-line text-slate-500 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              aria-label="上一个月"
+              @click="shift(-1)"
+            >
+              ‹
+            </button>
+            <span class="text-sm font-semibold tabular-nums text-slate-900">{{ month }}</span>
+            <button
+              class="flex h-7 w-7 items-center justify-center rounded-full border border-line text-slate-500 transition hover:border-slate-400 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              aria-label="下一个月"
+              @click="shift(1)"
+            >
+              ›
+            </button>
+          </div>
+
+          <div class="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs text-slate-500">
+            <span>
+              出勤 <b class="text-sm tabular-nums text-slate-900">{{ summary.workDays }}</b> 天
+            </span>
+            <span>
+              加班 <b class="text-sm tabular-nums text-slate-900">{{ summary.overtimeDays }}</b> 天
+            </span>
+            <span>
+              调休 <b class="text-sm tabular-nums text-slate-900">{{ summary.compDays }}</b> 天
+            </span>
+            <span>
+              值班 <b class="text-sm tabular-nums text-slate-900">{{ summary.dutyCount }}</b> 次
+              <span class="text-slate-500">· ￥{{ summary.dutyAmount }}</span>
+            </span>
+            <span>
+              合计 <b class="text-sm tabular-nums text-slate-900">{{ totalText(summary.totalMinutes) }}</b>
+            </span>
+          </div>
+
+          <!-- 色块图例（2026-11-03）：颜色必须能被读懂，否则就是装饰 -->
+          <div class="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span v-for="item in LEGEND" :key="item.label" class="flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-[3px]" :style="{ backgroundColor: item.color }"></span>
+              <span class="text-[11px] text-slate-500">{{ item.label }}</span>
+            </span>
+          </div>
         </div>
-        <p class="text-xs text-slate-500">
-          默认口径：周一到周五 + 每月最后一个周六上班，法定节假日休息
+
+        <p v-if="completenessHint" class="border-t border-line px-5 py-1.5 text-[11px] text-amber-700">
+          {{ completenessHint }}
         </p>
-      </div>
+        <p v-if="error" class="border-t border-line px-5 py-1.5 text-[11px] text-rose-600">
+          {{ error }}（点月份箭头重试）
+        </p>
+      </section>
 
-      <div class="grid grid-cols-2 gap-3 px-6 py-4 sm:grid-cols-5">
-        <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
-          <p class="text-xs text-slate-500">出勤</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums text-slate-900">{{ summary.workDays }}<span class="ml-1 text-xs font-normal text-slate-500">天</span></p>
+      <!-- ② 月历：flex-1 + grid-rows-6 ⇒ 永远一屏，格子高度自适应 -->
+      <section class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card border border-line bg-raised shadow-card">
+        <div class="grid shrink-0 grid-cols-7 border-b border-line bg-region/50">
+          <div v-for="w in WEEK" :key="w" class="px-2 py-1.5 text-center text-[11px] text-slate-500">
+            {{ w }}
+          </div>
         </div>
-        <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
-          <p class="text-xs text-slate-500">加班</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums text-slate-900">{{ summary.overtimeDays }}<span class="ml-1 text-xs font-normal text-slate-500">天</span></p>
-        </div>
-        <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
-          <p class="text-xs text-slate-500">调休</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums text-slate-900">{{ summary.compDays }}<span class="ml-1 text-xs font-normal text-slate-500">天</span></p>
-        </div>
-        <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
-          <p class="text-xs text-slate-500">值班</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums text-slate-900">
-            {{ summary.dutyCount }}<span class="ml-1 text-xs font-normal text-slate-500">次 · ￥{{ summary.dutyAmount }}</span>
-          </p>
-        </div>
-        <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
-          <p class="text-xs text-slate-500">合计工时</p>
-          <p class="mt-1 text-xl font-semibold tabular-nums text-slate-900">{{ totalText(summary.totalMinutes) }}</p>
-        </div>
-      </div>
 
-      <p v-if="completenessHint" class="border-t border-line px-6 py-2.5 text-xs text-amber-700">
-        {{ completenessHint }}
-      </p>
-      <p v-if="error" class="border-t border-line px-6 py-2.5 text-xs text-rose-600">
-        {{ error }}（点月份箭头重试）
-      </p>
-    </section>
-
-    <!-- 月历 -->
-    <section class="rounded-card border border-line bg-raised shadow-card">
-      <div class="grid grid-cols-7 border-b border-line">
-        <div v-for="w in WEEK" :key="w" class="px-2 py-2 text-center text-xs text-slate-500">{{ w }}</div>
-      </div>
-
-      <div class="grid grid-cols-7">
-        <template v-for="(cell, i) in grid" :key="cell ? cell.workDate : `pad-${i}`">
-          <div v-if="!cell" class="h-24 rounded-none border-b border-r border-line/60"></div>
-          <button
-            v-else
-            class="flex h-24 flex-col items-start gap-1 border-b border-r border-line/60 px-2.5 py-2 text-left transition hover:bg-canvas focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-            :class="[
-              cell.workDate === todayStr() ? 'ring-1 ring-inset ring-brand-ink' : '',
-              selected?.workDate === cell.workDate ? 'rounded-card bg-canvas' : '',
-              cell.dayType === 'rest' ? 'text-slate-500' : '',
-            ]"
-            @click="pick(cell)"
-          >
-            <span class="flex w-full items-center justify-between">
-              <span
-                class="text-sm font-semibold tabular-nums"
-                :class="cell.workDate === todayStr() ? 'text-brand-ink' : 'text-slate-900'"
-              >
-                {{ Number(cell.workDate.slice(-2)) }}
+        <div class="grid min-h-0 flex-1 auto-rows-fr grid-cols-7">
+          <template v-for="(cell, i) in grid" :key="cell ? cell.workDate : `pad-${i}`">
+            <div v-if="!cell" class="border-b border-r border-line/60 bg-desk/40"></div>
+            <button
+              v-else
+              type="button"
+              class="group flex min-h-[58px] flex-col items-start gap-0.5 overflow-hidden border-b border-r border-line/60 px-2 py-1.5 text-left transition hover:brightness-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-ink"
+              :style="cellStyle(cell)"
+              :class="cell.workDate === todayStr() ? 'ring-2 ring-inset ring-brand-ink' : ''"
+              :aria-label="`${cell.workDate} ${TYPE_TEXT[cell.dayType]}${cell.hasDuty ? ' 值班' : ''}`"
+              @click="pick(cell)"
+            >
+              <span class="flex w-full items-center justify-between gap-1">
+                <span
+                  class="text-sm font-semibold tabular-nums"
+                  :class="cell.workDate === todayStr() ? 'text-brand-ink' : 'text-slate-900'"
+                >
+                  {{ Number(cell.workDate.slice(-2)) }}
+                </span>
+                <!-- 值班：靛蓝实色小徽章，比小圆点明确得多 -->
+                <span
+                  v-if="cell.hasDuty"
+                  class="rounded-[3px] px-1 text-[11px] font-bold leading-4 text-white"
+                  style="background-color: #3f5d87"
+                  title="值班"
+                >
+                  值
+                </span>
               </span>
-              <!-- 值班标记：绿只保留"成功"语义，这里用小圆点 + slate 墨色（视觉上一样醒目） -->
-              <span
-                v-if="cell.hasDuty"
-                class="h-1.5 w-1.5 rounded-full bg-slate-900"
-                title="值班"
-              ></span>
-            </span>
 
-            <span v-if="hoursText(dayMinutes(cell))" class="text-xs tabular-nums text-slate-600">
-              {{ hoursText(dayMinutes(cell)) }}
-            </span>
-
-            <span class="flex flex-wrap items-center gap-1 text-xs leading-4">
-              <span v-if="cell.dayType === 'overtime'" class="rounded-sm border border-line px-1 text-slate-600">加班</span>
-              <span v-else-if="cell.dayType === 'comp'" class="rounded-sm border border-line px-1 text-slate-600">调休</span>
-              <!-- 法定节假日显示节日名（2026-11-02）：周末与节假日在核算里意义不同 -->
-              <span v-else-if="cell.dayType === 'rest' && cell.holidayName" class="rounded-sm border border-line px-1 text-slate-600">
-                {{ cell.holidayName }}
+              <span v-if="hoursText(dayMinutes(cell))" class="text-xs tabular-nums text-slate-600">
+                {{ hoursText(dayMinutes(cell)) }}
               </span>
-              <span v-if="cell.hasDuty" class="rounded-sm border border-line px-1 text-slate-600">值班</span>
-              <span v-if="missOf(cell)" class="text-amber-700">忘{{ missOf(cell) }}</span>
-            </span>
-          </button>
-        </template>
-      </div>
-    </section>
 
-    <!-- 明细 -->
-    <section v-if="selected" class="rounded-card border border-line bg-raised shadow-card">
-      <div class="flex items-center justify-between border-b border-line px-6 py-3">
-        <h3 class="text-sm font-semibold text-slate-800">
-          {{ selected.workDate }} · {{ TYPE_TEXT[selected.dayType] }}
-          <span v-if="selected.hasDuty" class="ml-2 text-slate-600">值班</span>
-        </h3>
-        <button class="text-xs text-slate-500 transition hover:text-slate-900" @click="selected = null">收起</button>
+              <span class="flex flex-wrap items-center gap-1 text-[11px] leading-4">
+                <span v-if="tagText(cell)" :style="{ color: toneOf(cell).text }" class="font-medium">
+                  {{ tagText(cell) }}
+                </span>
+                <span v-if="missOf(cell)" class="text-amber-700">忘{{ missOf(cell) }}</span>
+              </span>
+            </button>
+          </template>
+        </div>
+      </section>
+
+      <!-- ③ 明细：右侧浮层，点开也不挤压日历 -->
+      <div v-if="selected" class="fixed inset-0 z-30 flex justify-end bg-black/10" @click.self="selected = null">
+        <aside class="flex h-full w-[340px] flex-col border-l border-line bg-raised shadow-[0_0_24px_rgba(60,50,35,0.08)]">
+          <div class="flex items-center justify-between border-b border-line px-4 py-3">
+            <div>
+              <p class="text-sm font-semibold tabular-nums text-slate-900">{{ selected.workDate }}</p>
+              <p class="mt-0.5 text-[11px] text-slate-500">
+                {{ TYPE_TEXT[selected.dayType] }}
+                <span v-if="selected.holidayName"> · {{ selected.holidayName }}</span>
+                <span v-if="selected.hasDuty" class="ml-1 font-medium" style="color: #3f5d87">值班</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-md px-2 py-1 text-xs text-slate-500 transition hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              @click="selected = null"
+            >
+              关闭
+            </button>
+          </div>
+
+          <div class="flex-1 overflow-auto px-4 py-3">
+            <div
+              v-for="row in timesOf(selected)"
+              :key="row[0]"
+              class="mb-2 flex items-center justify-between rounded-md border border-line px-3 py-2"
+            >
+              <span class="text-xs text-slate-500">{{ row[0] }}</span>
+              <span class="text-sm tabular-nums text-slate-900">{{ row[1] }} — {{ row[2] }}</span>
+            </div>
+
+            <div class="mb-2 flex items-center justify-between rounded-md border border-line px-3 py-2">
+              <span class="text-xs text-slate-500">时长</span>
+              <span class="text-sm tabular-nums text-slate-900">{{ hoursText(dayMinutes(selected)) || '—' }}</span>
+            </div>
+            <div class="mb-2 flex items-center justify-between rounded-md border border-line px-3 py-2">
+              <span class="text-xs text-slate-500">忘打卡</span>
+              <span class="text-sm text-slate-900">{{ missOf(selected) ? `${missOf(selected)} 段` : '无' }}</span>
+            </div>
+            <div v-if="selected.note" class="mb-2 rounded-md border border-line px-3 py-2">
+              <p class="text-xs text-slate-500">备注</p>
+              <p class="mt-1 text-sm text-slate-900">{{ selected.note }}</p>
+            </div>
+
+            <p class="mt-4 text-[11px] leading-relaxed text-slate-500">
+              这一页是只读看板；录改在手机 App 的「考勤」页。
+            </p>
+          </div>
+        </aside>
       </div>
-      <div class="grid gap-3 px-6 py-4 sm:grid-cols-2">
-        <div v-for="row in timesOf(selected)" :key="row[0]" class="flex items-center justify-between rounded-card border border-line bg-raised px-4 py-2 shadow-card">
-          <span class="text-xs text-slate-500">{{ row[0] }}</span>
-          <span class="text-sm tabular-nums text-slate-900">{{ row[1] }} — {{ row[2] }}</span>
-        </div>
-        <div class="flex items-center justify-between rounded-card border border-line bg-raised px-4 py-2 shadow-card">
-          <span class="text-xs text-slate-500">时长</span>
-          <span class="text-sm tabular-nums text-slate-900">{{ hoursText(dayMinutes(selected)) || '—' }}</span>
-        </div>
-        <div class="flex items-center justify-between rounded-card border border-line bg-raised px-4 py-2 shadow-card">
-          <span class="text-xs text-slate-500">忘打卡</span>
-          <span class="text-sm text-slate-900">{{ missOf(selected) ? `${missOf(selected)} 段` : '无' }}</span>
-        </div>
-        <div v-if="selected.note" class="flex items-center justify-between rounded-card border border-line bg-raised px-4 py-2 shadow-card sm:col-span-2">
-          <span class="text-xs text-slate-500">备注</span>
-          <span class="text-sm text-slate-900">{{ selected.note }}</span>
-        </div>
-      </div>
-      <p class="border-t border-line px-6 py-2.5 text-xs text-slate-500">
-        这一页是只读看板；录改在手机 App 的「考勤」页。
-      </p>
-    </section>
     </template>
   </div>
 </template>
