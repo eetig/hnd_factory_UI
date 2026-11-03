@@ -34,6 +34,147 @@ const entryDate = ref(new Date().toISOString().slice(0, 10))
 const sheet = ref([])
 const drafts = ref({})
 
+/* ===== 矩阵视图（2026-11-03）===== */
+const matrixMonth = ref(new Date().toISOString().slice(0, 7))
+const matrixRows = ref([]) // 抄表记录（date, excelNo, meterName, section, usageQty…）
+const matrixLoading = ref(false)
+/** 单元格显示什么：用量（默认）| 读数 */
+const matrixMode = ref('usage')
+
+/*
+ * 归属色：与全站那套同一组（赭/苔/靛/陶/青/石墨）。
+ * 只用在表头组名的色条与组间分隔线，单元格保持中性 —— 数字要读，不能被彩色干扰。
+ */
+const SECTION_COLORS = ['#8A5A2B', '#5B6E4F', '#4A5A7B', '#7A4B5E', '#3F6E6A', '#5B6470']
+
+function sectionColor(name) {
+  if (!name) return '#5B6470'
+  let hash = 0
+  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 997
+  return SECTION_COLORS[hash % SECTION_COLORS.length]
+}
+
+/** 当月天数 + 每天是周几（用来画"周末淡底"） */
+const monthDays = computed(() => {
+  const [y, m] = matrixMonth.value.split('-').map(Number)
+  const total = new Date(y, m, 0).getDate()
+  const out = []
+  for (let d = 1; d <= total; d += 1) {
+    const date = `${matrixMonth.value}-${String(d).padStart(2, '0')}`
+    const dow = new Date(y, m - 1, d).getDay()
+    out.push({ date, day: d, weekend: dow === 0 || dow === 6 })
+  }
+  return out
+})
+
+/** 列 = 电表（按内部顺序），组信息按 section 连起来 */
+const matrixMeters = computed(() => meters.value.map((m) => ({ ...m })))
+
+/** 分组：连续相同 section 归一组，用于表头第一行跨列 */
+const matrixGroups = computed(() => {
+  const groups = []
+  const seen = new Set()
+  for (const meter of matrixMeters.value) {
+    const name = meter.section || '未分组'
+    const last = groups[groups.length - 1]
+    if (last && last.name === name) {
+      last.span += 1
+      last.meters.push(meter)
+      continue
+    }
+    /*
+     * 同一个归属在表里会**分段出现**：Excel 是按编号排的，不是按车间排的
+     * （「公用工程」在 3、24、29、33、35 号各出现一次）。
+     * 组名只在**第一次**出现时写，后面重复的段只留一条色线 ——
+     * 否则表头会出现一排重复的"公用工程 公用工程 公用工程"。
+     */
+    const first = !seen.has(name)
+    seen.add(name)
+    groups.push({
+      name,
+      label: first ? name : '',
+      first,
+      span: 1,
+      color: sectionColor(name),
+      meters: [meter],
+    })
+  }
+  return groups
+})
+
+/** 单元格索引：date → meterId → 记录 */
+const matrixIndex = computed(() => {
+  const index = new Map()
+  for (const row of matrixRows.value) {
+    const date = String(row.readDate || '').slice(0, 10)
+    if (!date) continue
+    if (!index.has(date)) index.set(date, new Map())
+    index.get(date).set(row.meterNo, row)
+  }
+  return index
+})
+
+function cellOf(date, meter) {
+  return matrixIndex.value.get(date)?.get(meter.meterNo) || null
+}
+
+function cellNumber(date, meter) {
+  const cell = cellOf(date, meter)
+  if (!cell) return null
+  const value = matrixMode.value === 'usage' ? cell.usageQty : cell.reading
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+function cellText(date, meter) {
+  const n = cellNumber(date, meter)
+  if (n === null) return ''
+  const rounded = Math.round(n)
+  return String(rounded)
+}
+
+/** 异常：负数（换表/抄错）或明显偏大 —— 只在"用量"模式下判断 */
+function cellTone(date, meter) {
+  if (matrixMode.value !== 'usage') return ''
+  const n = cellNumber(date, meter)
+  if (n === null) return ''
+  if (n < 0) return 'is-regress'
+  if (n > 20000) return 'is-big'
+  return ''
+}
+
+/** 当天合计（用量模式才有意义） */
+function dayTotal(date) {
+  if (matrixMode.value !== 'usage') return null
+  let sum = 0
+  let filled = 0
+  for (const meter of matrixMeters.value) {
+    const n = cellNumber(date, meter)
+    if (n !== null) {
+      sum += n
+      filled += 1
+    }
+  }
+  return filled ? sum : null
+}
+
+async function loadMatrix() {
+  matrixLoading.value = true
+  try {
+    const [y, m] = matrixMonth.value.split('-').map(Number)
+    const total = new Date(y, m, 0).getDate()
+    const from = `${matrixMonth.value}-01`
+    const to = `${matrixMonth.value}-${String(total).padStart(2, '0')}`
+    const res = await request.get('/api/electricity/readings', { params: { from, to } })
+    matrixRows.value = res.data?.data || []
+  } catch (e) {
+    matrixRows.value = []
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    matrixLoading.value = false
+  }
+}
+
 const historyFilters = ref({ from: '', to: '', section: '' })
 const historyRows = ref([])
 const historyLoading = ref(false)
@@ -178,6 +319,11 @@ function cancelLedger(row) {
   ledgerDrafts.value = next
 }
 
+function switchView(next) {
+  view.value = next
+  if (next === 'matrix' && !matrixRows.value.length) loadMatrix()
+}
+
 onMounted(async () => {
   try {
     await loadMeters()
@@ -200,13 +346,14 @@ onMounted(async () => {
             v-for="tab in [
               { key: 'entry', label: '抄表录入' },
               { key: 'ledger', label: '电表台账' },
+              { key: 'matrix', label: '矩阵视图' },
               { key: 'history', label: '抄表历史' },
             ]"
             :key="tab.key"
             type="button"
             class="rounded-md px-3 py-1 text-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             :class="view === tab.key ? 'bg-brand text-on-brand' : 'text-slate-600 hover:bg-region'"
-            @click="view = tab.key"
+            @click="switchView(tab.key)"
           >
             {{ tab.label }}
           </button>
@@ -420,6 +567,102 @@ onMounted(async () => {
         </div>
       </template>
 
+      <!-- ============ 矩阵视图（只读：表 = 列 · 日期 = 行）============ -->
+      <template v-else-if="view === 'matrix'">
+        <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
+          <el-date-picker
+            v-model="matrixMonth"
+            type="month"
+            value-format="YYYY-MM"
+            aria-label="矩阵月份"
+            class="!w-[130px]"
+            @change="loadMatrix"
+          />
+          <div class="flex items-center gap-1 rounded-lg border border-line p-0.5">
+            <button
+              v-for="opt in [
+                { key: 'usage', label: '当天用量' },
+                { key: 'reading', label: '原始读数' },
+              ]"
+              :key="opt.key"
+              type="button"
+              class="rounded-md px-2.5 py-1 text-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              :class="matrixMode === opt.key ? 'bg-brand text-on-brand' : 'text-slate-600 hover:bg-region'"
+              @click="matrixMode = opt.key"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+          <span class="text-xs text-slate-500">
+            只读 · 黄色 = 用量为负（换表）或异常大（疑似抄错）
+          </span>
+          <button
+            type="button"
+            class="ml-auto rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="loadMatrix"
+          >
+            {{ matrixLoading ? '加载中…' : '刷新' }}
+          </button>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-auto">
+          <table class="matrix-table">
+            <thead>
+              <!-- 第一行：归属分组（跨列） -->
+              <tr>
+                <th class="matrix-sticky-col matrix-corner" rowspan="2">日期</th>
+                <th
+                  v-for="group in matrixGroups"
+                  :key="'g-' + group.name"
+                  :colspan="group.span"
+                  class="matrix-group"
+                  :style="{ borderTopColor: group.color }"
+                >
+                  <span class="matrix-group__dot" :style="{ backgroundColor: group.color }"></span>
+                  {{ group.label }}
+                </th>
+                <th class="matrix-total" rowspan="2">当日合计</th>
+              </tr>
+              <!-- 第二行：表名 + 编号 + 倍率 -->
+              <tr>
+                <th
+                  v-for="meter in matrixMeters"
+                  :key="'m-' + meter.id"
+                  class="matrix-meter"
+                  :title="`${meter.excelNo || '—'} ${meter.meterName} ${meter.meterCode || ''}${
+                    meter.multiplier > 1 ? ' ×' + meter.multiplier : ''
+                  }`"
+                >
+                  <span class="matrix-meter__no">{{ meter.excelNo || '—' }}</span>
+                  <span class="matrix-meter__name">{{ meter.meterName }}</span>
+                  <span v-if="meter.multiplier > 1" class="matrix-meter__mult">×{{ meter.multiplier }}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="d in monthDays"
+                :key="d.date"
+                :class="d.weekend ? 'is-weekend' : ''"
+              >
+                <th class="matrix-sticky-col matrix-date" :class="d.weekend ? 'is-weekend' : ''">
+                  {{ d.day }}
+                </th>
+                <td
+                  v-for="meter in matrixMeters"
+                  :key="d.date + '-' + meter.id"
+                  class="matrix-cell num"
+                  :class="cellTone(d.date, meter)"
+                >
+                  {{ cellText(d.date, meter) }}
+                </td>
+                <td class="matrix-total num">{{ dayTotal(d.date) === null ? '' : fmtNum(dayTotal(d.date)) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
       <!-- ============ 历史 ============ -->
       <template v-else>
         <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-6 py-3">
@@ -499,6 +742,144 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* ===== 矩阵视图：车间墙上那张大表 ===== */
+.matrix-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.matrix-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background-color: #f6f3ec;
+  border-bottom: 1px solid #e7e2d8;
+  padding: 3px 4px;
+  font-weight: 500;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+/* 组名那一行再粘高一点（两行表头） */
+.matrix-table thead tr:first-child th {
+  top: 0;
+  z-index: 4;
+  border-top: 3px solid transparent;
+}
+
+.matrix-table thead tr:nth-child(2) th {
+  top: 26px;
+}
+
+.matrix-group {
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+}
+
+.matrix-group__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.matrix-meter {
+  min-width: 62px;
+  max-width: 62px;
+  padding: 2px 3px !important;
+  border-left: 1px solid #f0ece3;
+  vertical-align: bottom;
+}
+
+.matrix-meter__no {
+  display: block;
+  font-size: 10px;
+  color: #9ca3af;
+  line-height: 1.2;
+}
+
+.matrix-meter__name {
+  display: block;
+  font-size: 10px;
+  color: #374151;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.matrix-meter__mult {
+  display: block;
+  font-size: 10px;
+  color: #9a4a1e;
+  line-height: 1.2;
+}
+
+/* 左列固定 */
+.matrix-sticky-col {
+  position: sticky !important;
+  left: 0;
+  z-index: 5 !important;
+  background-color: #f6f3ec !important;
+  width: 44px;
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: #4b5563;
+}
+
+.matrix-corner {
+  z-index: 6 !important;
+}
+
+.matrix-date {
+  font-weight: 500;
+  border-bottom: 1px solid #f0ece3;
+}
+
+.matrix-cell {
+  text-align: right;
+  padding: 2px 4px;
+  border-bottom: 1px solid #f5f1e8;
+  border-left: 1px solid #f5f1e8;
+  color: #1f2937;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+tr.is-weekend .matrix-cell,
+tr.is-weekend .matrix-date {
+  background-color: #faf8f3;
+}
+
+/* 异常：负数（换表）与异常大（疑似抄错） */
+.matrix-cell.is-regress {
+  background-color: rgba(180, 83, 9, 0.14) !important;
+  color: #9a4a1e;
+  font-weight: 600;
+}
+
+.matrix-cell.is-big {
+  background-color: rgba(138, 106, 31, 0.12) !important;
+  color: #7a5c18;
+}
+
+.matrix-total {
+  position: sticky !important;
+  right: 0;
+  z-index: 3 !important;
+  background-color: #f6f3ec !important;
+  text-align: right;
+  padding: 2px 6px;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
 .num {
   font-variant-numeric: tabular-nums;
 }
