@@ -271,7 +271,7 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-for="row in sheet" :key="row.meterId" class="border-t border-line">
-                <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.meterNo }}</td>
+                <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.excelNo || '—' }}</td>
                 <td class="px-3 py-1.5">
                   <span class="block truncate" :title="row.meterName">{{ row.meterName }}</span>
                   <span v-if="row.meterCode" class="text-[11px] text-slate-500">{{ row.meterCode }}</span>
@@ -348,7 +348,7 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-for="row in meters" :key="row.id" class="border-t border-line">
-                <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.meterNo }}</td>
+                <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.excelNo || '—' }}</td>
                 <td class="px-3 py-1.5">
                   <el-input
                     v-if="ledgerDrafts[row.id]"
