@@ -41,6 +41,44 @@ const matrixLoading = ref(false)
 /** 单元格显示什么：用量（默认）| 读数 */
 const matrixMode = ref('usage')
 
+/** 行怎么排：day = 按天（默认）| period = 按抄表期（使用方周报的形状） */
+const matrixRowMode = ref('day')
+const periodData = ref({ periods: [], cells: {}, periodTotal: {} })
+const periodLoading = ref(false)
+
+async function loadPeriods() {
+  periodLoading.value = true
+  try {
+    const [y, m] = matrixMonth.value.split('-').map(Number)
+    const total = new Date(y, m, 0).getDate()
+    const res = await request.get('/api/electricity/periods', {
+      params: { from: `${matrixMonth.value}-01`, to: `${matrixMonth.value}-${String(total).padStart(2, '0')}` },
+    })
+    periodData.value = res.data?.data || { periods: [], cells: {}, periodTotal: {} }
+  } catch (e) {
+    periodData.value = { periods: [], cells: {}, periodTotal: {} }
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    periodLoading.value = false
+  }
+}
+
+/** 按期的行（每个期间的最后一天 + 该期用量） */
+const periodRows = computed(() =>
+  (periodData.value.periods || []).map((date) => ({
+    date,
+    label: date.slice(5),
+    values: periodData.value.cells?.[date] || {},
+    total: periodData.value.periodTotal?.[date] ?? null,
+  })),
+)
+
+function periodCell(row, meter) {
+  const value = row.values?.[meter.meterNo]
+  return value === undefined || value === null ? '' : fmtNum(value)
+}
+
+
 /*
  * 归属色：与全站那套同一组（赭/苔/靛/陶/青/石墨）。
  * 只用在表头组名的色条与组间分隔线，单元格保持中性 —— 数字要读，不能被彩色干扰。
@@ -202,6 +240,60 @@ async function loadMatrix() {
   }
 }
 
+/* ===== 粘贴导入 + 分类汇总（2026-11-03）===== */
+const importOpen = ref(false)
+const importText = ref('')
+const importing = ref(false)
+const importHint = ref('')
+
+const summaryRange = ref({ from: '', to: '' })
+const summaryRows = ref([])
+const summaryLoading = ref(false)
+
+async function doImport() {
+  if (!importText.value.trim()) {
+    importHint.value = '先把 Excel 里那几行复制粘贴进来'
+    return
+  }
+  importing.value = true
+  importHint.value = ''
+  try {
+    const res = await request.post('/api/electricity/readings/import', { text: importText.value })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '导入失败')
+    const data = body.data || {}
+    const warnings = data.warnings || []
+    importHint.value = `已保存 ${data.saved ?? 0} 条读数` + (warnings.length ? `；${warnings.length} 行有问题：${warnings[0]}` : '')
+    if (!warnings.length) {
+      importOpen.value = false
+      importText.value = ''
+      await loadSheet()
+      await loadSummary()
+      ElMessage.success('导入完成')
+    }
+  } catch (e) {
+    importHint.value = e?.response?.data?.msg || e?.message || '导入失败'
+  } finally {
+    importing.value = false
+  }
+}
+
+async function loadSummary() {
+  summaryLoading.value = true
+  try {
+    const params = {}
+    if (summaryRange.value.from) params.from = summaryRange.value.from
+    if (summaryRange.value.to) params.to = summaryRange.value.to
+    const res = await request.get('/api/electricity/summary', { params })
+    summaryRows.value = res.data?.data || []
+  } catch (e) {
+    summaryRows.value = []
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    summaryLoading.value = false
+  }
+}
+
 const historyFilters = ref({ from: '', to: '', section: '' })
 const historyRows = ref([])
 const historyLoading = ref(false)
@@ -349,6 +441,7 @@ function cancelLedger(row) {
 function switchView(next) {
   view.value = next
   if (next === 'matrix' && !matrixRows.value.length) loadMatrix()
+  if (next === 'summary' && !summaryRows.value.length) loadSummary()
 }
 
 onMounted(async () => {
@@ -374,6 +467,7 @@ onMounted(async () => {
               { key: 'entry', label: '抄表录入' },
               { key: 'ledger', label: '电表台账' },
               { key: 'matrix', label: '矩阵视图' },
+              { key: 'summary', label: '分类汇总' },
               { key: 'history', label: '抄表历史' },
             ]"
             :key="tab.key"
@@ -620,6 +714,23 @@ onMounted(async () => {
               {{ opt.label }}
             </button>
           </div>
+
+          <!-- 行怎么排（2026-11-03）：使用方的周报是"每期一行" -->
+          <div class="flex items-center gap-1 rounded-lg border border-line p-0.5">
+            <button
+              v-for="opt in [
+                { key: 'day', label: '按天' },
+                { key: 'period', label: '按抄表期' },
+              ]"
+              :key="opt.key"
+              type="button"
+              class="rounded-md px-2.5 py-1 text-xs transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              :class="matrixRowMode === opt.key ? 'bg-brand text-on-brand' : 'text-slate-600 hover:bg-region'"
+              @click="matrixRowMode = opt.key; if (opt.key === 'period' && !periodData.periods.length) loadPeriods()"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
           <span class="text-xs text-slate-500">
             只读 · 黄色 = 用量为负（换表）或异常大（疑似抄错）
           </span>
@@ -666,7 +777,30 @@ onMounted(async () => {
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody v-if="matrixRowMode === 'period'">
+              <tr v-for="p in periodRows" :key="'p-' + p.date">
+                <th class="matrix-sticky-col matrix-date">{{ p.label }}</th>
+                <td
+                  v-for="meter in matrixMeters"
+                  :key="'p-' + p.date + '-' + meter.id"
+                  class="matrix-cell num"
+                >
+                  {{ periodCell(p, meter) }}
+                </td>
+                <td class="matrix-total num">{{ p.total === null ? '' : fmtNum(p.total) }}</td>
+              </tr>
+              <tr v-if="periodLoading">
+                <td :colspan="matrixMeters.length + 2" class="px-4 py-8 text-center text-xs text-slate-500">
+                  正在按期汇总…
+                </td>
+              </tr>
+              <tr v-else-if="!periodRows.length">
+                <td :colspan="matrixMeters.length + 2" class="px-4 py-8 text-center text-xs text-slate-500">
+                  这个月还没有抄表记录（先录两期以上才看得出"期"）
+                </td>
+              </tr>
+            </tbody>
+            <tbody v-else>
               <tr
                 v-for="d in monthDays"
                 :key="d.date"
@@ -684,6 +818,76 @@ onMounted(async () => {
                   {{ cellText(d.date, meter) }}
                 </td>
                 <td class="matrix-total num">{{ dayTotal(d.date) === null ? '' : fmtNum(dayTotal(d.date)) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <!-- ============ 分类汇总（各车间求和）============ -->
+      <template v-else-if="view === 'summary'">
+        <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
+          <el-date-picker
+            v-model="summaryRange.from"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="从"
+            aria-label="汇总起始日期"
+            :first-day-of-week="1"
+            class="!w-[140px]"
+          />
+          <el-date-picker
+            v-model="summaryRange.to"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="到"
+            aria-label="汇总结束日期"
+            :first-day-of-week="1"
+            class="!w-[140px]"
+          />
+          <button
+            type="button"
+            class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="loadSummary"
+          >
+            汇总
+          </button>
+          <button
+            type="button"
+            class="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="importOpen = true"
+          >
+            粘贴导入
+          </button>
+          <span class="text-xs text-slate-500">只算用电量，不含电费</span>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-auto">
+          <table class="ledger-table w-full min-w-[620px] table-fixed text-sm">
+            <colgroup>
+              <col class="w-[200px]" />
+              <col class="w-[200px]" />
+              <col class="w-[120px]" />
+            </colgroup>
+            <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]">
+              <tr>
+                <th class="px-4 py-2.5 text-left font-medium">车间 / 系统</th>
+                <th class="px-4 py-2.5 text-right font-medium">用电量（kWh）</th>
+                <th class="px-4 py-2.5 text-right font-medium">占比</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in summaryRows" :key="row.section" class="border-t border-line">
+                <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
+                <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.usageQty) }}</td>
+                <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
+                  {{ (Number(row.share || 0) * 100).toFixed(2) }}%
+                </td>
+              </tr>
+              <tr v-if="!summaryLoading && !summaryRows.length">
+                <td colspan="3" class="px-4 py-10 text-center text-sm text-slate-500">
+                  {{ summaryLoading ? '正在汇总…' : '选好日期区间再点「汇总」' }}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -765,6 +969,56 @@ onMounted(async () => {
         </div>
       </template>
     </section>
+
+    <!-- 粘贴导入（2026-11-03）-->
+    <div
+      v-if="importOpen"
+      class="fixed inset-0 z-30 flex items-center justify-center bg-black/15 p-6"
+      @click.self="importOpen = false"
+    >
+      <div class="flex max-h-[80vh] w-[680px] flex-col rounded-card border border-line bg-raised shadow-card">
+        <div class="flex items-center justify-between border-b border-line px-5 py-3">
+          <div>
+            <p class="text-sm font-semibold text-slate-900">粘贴导入</p>
+            <p class="mt-0.5 text-[11px] text-slate-500">
+              在 Excel 里选中那几行（含日期）→ 复制 → 粘到下面。每行一期，第一列日期，后面按编号 1~37 依次是读数（150车间那列也要占一位）
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1 text-xs text-slate-500 transition hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="importOpen = false"
+          >
+            关闭
+          </button>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-auto px-5 py-3">
+          <textarea
+            v-model="importText"
+            rows="10"
+            aria-label="粘贴要导入的表格"
+            placeholder="2026-08-07	10782264	2477.5	1047.5	…&#10;2026-08-14	…"
+            class="w-full rounded-md border border-line bg-desk p-3 font-mono text-xs text-slate-800 outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+          ></textarea>
+          <p v-if="importHint" class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            {{ importHint }}
+          </p>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-line px-5 py-2.5">
+          <p class="text-[11px] text-slate-500">列数必须和台账一致（38 块表）；不一致的那一行会被跳过并告诉你原因</p>
+          <button
+            type="button"
+            class="rounded-md bg-brand px-3.5 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink disabled:opacity-50"
+            :disabled="importing"
+            @click="doImport"
+          >
+            {{ importing ? '导入中…' : '开始导入' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
