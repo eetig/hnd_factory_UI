@@ -2,6 +2,23 @@ import axios from 'axios'
 import router from '../router'
 import { clearAuth, getToken } from './auth'
 
+/*
+ * 「登录失效」的统一判定（2026-11-03）。
+ *
+ * 这个仓的后端把业务失败也走 HTTP 200（Result{code,msg,data,success}），
+ * 所以"未登录"既可能出现在 HTTP 401 里，也可能出现在 200 的 msg 里 ——
+ * 两处必须用同一套判据，否则就会出现"这个页面会跳登录页、那个页面只弹红条"。
+ */
+const LOGIN_EXPIRED = /未登录|登录过期|登录已过期|请先登录|token\s*(失效|无效)|unauthorized|expired/i
+
+/** 清凭据并回登录页（带 expired=1，登录页可提示"登录已过期"） */
+function redirectToLogin() {
+  clearAuth()
+  const current = router.currentRoute.value
+  if (current?.path === '/login') return
+  router.replace({ path: '/login', query: { expired: '1', redirect: current?.fullPath || '' } })
+}
+
 const request = axios.create({
   baseURL: '/',
   // 超时放宽到 5 分钟：Excel 导入（解析/预览/保存）耗时较长，
@@ -33,7 +50,21 @@ request.interceptors.response.use(
     // 这里只对「明确的 success:false」生效， blob/字符串等其它响应类型不受影响。
     const data = response?.data
     if (data && typeof data === 'object' && data.success === false) {
-      const error = new Error(data.msg || '操作失败')
+      const message = data.msg || '操作失败'
+
+      /*
+       * 2026-11-03：**登录失效也走这里**。
+       *
+       * 后端把"未登录"包在 HTTP 200 里返回：{code:500, msg:"请先登录", success:false}。
+       * 它不进下面的错误分支，所以原来只 reject、不清凭据 —— 表现就是
+       * "我已经登录了，页面却显示请先登录"，而且每个页面各弹各的红条。
+       * 现在统一在这里清凭据 + 回登录页，全站一个行为。
+       */
+      if (LOGIN_EXPIRED.test(message) || String(data.code) === '401') {
+        redirectToLogin()
+      }
+
+      const error = new Error(message)
       // 保留 response，调用方现有的 `e.response.data.msg` 读法不用改
       error.response = response
       error.businessError = true
@@ -48,17 +79,9 @@ request.interceptors.response.use(
     const status = response?.status
     const code = String(data.code ?? '')
 
-    // 401：未登录或 token 失效 → 清空凭据并跳登录页
-    const isUnauthorized =
-      status === 401 ||
-      code === '401' ||
-      /未登录|登录过期|token\s*(失效|无效)|unauthorized|expired/i.test(message)
-
-    if (isUnauthorized) {
-      clearAuth()
-      if (router.currentRoute.value?.path !== '/login') {
-        router.replace('/login')
-      }
+    // 401 / 未登录 / token 失效 → 清凭据并回登录页（与成功分支同一套判据）
+    if (status === 401 || code === '401' || LOGIN_EXPIRED.test(message)) {
+      redirectToLogin()
     }
     // 403：已登录但无权限 —— 保留登录态，由调用方提示错误即可
 

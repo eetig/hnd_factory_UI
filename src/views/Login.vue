@@ -11,6 +11,13 @@ const password = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 
+/*
+ * 登录过期提示（2026-11-03）。
+ * 请求层发现 token 失效会带着 expired=1 把人送回这里。
+ * 不说明原因的话，人只看到"突然要重新登录"，会以为系统坏了。
+ */
+const expiredHint = ref(route.query.expired === '1')
+
 async function handleLogin() {
   const account = username.value.trim()
   const pass = password.value.trim()
@@ -112,6 +119,16 @@ async function handleLogin() {
               class="w-full rounded-md border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand focus:ring-2 focus:ring-brand-100"
             />
           </div>
+
+          <!-- 登录过期提示（2026-11-03）：请求层带 expired=1 把人送回来时说明原因，
+               否则人只看到"突然要重新登录"，会以为系统坏了 -->
+          <p
+            v-if="expiredHint && !errorMessage"
+            role="status"
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            登录已过期，请重新登录（长时间未操作，或账号在别处登录，都会这样）
+          </p>
 
           <p v-if="errorMessage" role="alert" class="text-sm text-rose-600">{{ errorMessage }}</p>
 
