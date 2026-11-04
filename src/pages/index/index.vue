@@ -4584,15 +4584,31 @@ onPullDownRefresh(async () => {
             </div>
           </div>
           <div class="px-5 py-4">
-            <button
-              class="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
-              hover-class="opacity-80"
-              @click="openElectricity"
-            >
-              打开电费
-            </button>
+            <view class="flex gap-3">
+              <button
+                class="flex-1 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
+                hover-class="opacity-80"
+                @click="openElectricity"
+              >
+                打开电费
+              </button>
+              <!--
+                2026-11-04：使用方（管理员）在抽屉里找不到抄表，说「没有」。
+                抽屉底部其实有一行小字「电费抄表」，但和打开电费分在两个地方，
+                很容易以为没有入口。这里直接把「开始抄表」放在同一个面板上。
+              -->
+              <button
+                v-if="canReadMeter"
+                class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800"
+                hover-class="opacity-80"
+                @click="openMeterRead"
+              >
+                开始抄表
+              </button>
+            </view>
             <text class="mt-2 block text-[11px] leading-relaxed text-slate-400">
-              抄表入口在抽屉里（需要管理员或被授予「抄表员」的人）
+              <template v-if="canReadMeter">抄表：37 块表按编号顺序读，右滑提交、左滑跳过，可拍照存档</template>
+              <template v-else>抄表需要管理员授权（PC「电表台账」页底部可授权）</template>
             </text>
           </div>
         </section>
