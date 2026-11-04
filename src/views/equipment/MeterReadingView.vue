@@ -1095,7 +1095,7 @@ onMounted(async () => {
         </div>
       </template>
 
-      <!-- ============ 分类汇总（2026-11-04：照使用方 Excel 的 12 列）============ -->
+      <!-- ============ 分类汇总（2026-11-04：按期分行，照使用方 Excel）============ -->
       <template v-else-if="view === 'summary'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
@@ -1123,7 +1123,7 @@ onMounted(async () => {
           >
             {{ summaryLoading ? '统计中…' : '统计' }}
           </button>
-          <span class="text-xs text-slate-500">留空 = 按本月；分母是总电量（1 号表）</span>
+          <span class="text-xs text-slate-500">留空 = 按本月 · 每期一行 · 分母是总电量（1 号表）</span>
           <button
             type="button"
             class="ml-auto rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
@@ -1133,11 +1133,11 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-auto px-6 py-4">
+        <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
           <table v-if="monthly" class="w-full table-fixed text-sm">
             <colgroup>
-              <col class="w-[110px]" />
-              <col v-for="row in monthly.rows" :key="'c-' + row.name" class="w-[110px]" />
+              <col class="w-[120px]" />
+              <col v-for="row in monthly.rows" :key="'c-' + row.name" class="w-[100px]" />
             </colgroup>
             <thead>
               <tr class="bg-region text-xs text-slate-600">
@@ -1154,18 +1154,41 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr class="border-t border-line">
-                <td class="num px-2 py-2 text-slate-700">{{ monthly.from }} → {{ monthly.to }}</td>
+              <!-- 每期一行 -->
+              <tr
+                v-for="(period, periodIndex) in monthly.periods"
+                :key="'p-' + period.from + period.to"
+                class="border-t border-line"
+              >
+                <td class="px-2 py-2 text-slate-600">
+                  <span class="block text-[11px] text-slate-500">第 {{ periodIndex + 1 }} 周</span>
+                  <span class="num block text-[11px] text-slate-700">{{ period.from }} → {{ period.to }}</span>
+                </td>
                 <td
                   v-for="row in monthly.rows"
-                  :key="'v-' + row.name"
+                  :key="'pv-' + period.to + '-' + row.name"
                   class="num px-2 py-2 text-right tabular-nums"
-                  :class="row.viewOnly ? 'text-slate-500' : 'font-medium text-slate-900'"
+                  :class="row.viewOnly ? 'text-slate-500' : 'text-slate-800'"
+                >
+                  {{ fmtNum(period.values[row.name]) }}
+                </td>
+              </tr>
+
+              <!-- 合计行 -->
+              <tr class="border-t-2 border-line bg-desk/50">
+                <td class="px-2 py-2 font-semibold text-slate-800">合计</td>
+                <td
+                  v-for="row in monthly.rows"
+                  :key="'tv-' + row.name"
+                  class="num px-2 py-2 text-right font-semibold tabular-nums"
+                  :class="row.viewOnly ? 'text-slate-500' : 'text-slate-900'"
                 >
                   {{ fmtNum(row.kwh) }}
                 </td>
               </tr>
-              <tr class="border-t border-line bg-desk/40">
+
+              <!-- 占比（按合计算） -->
+              <tr class="border-t border-line bg-desk/30">
                 <td class="px-2 py-2 text-right text-slate-500">占比</td>
                 <td
                   v-for="row in monthly.rows"
@@ -1182,7 +1205,7 @@ onMounted(async () => {
             口径：总电量 = 1 号高压计量表；公用工程 = 3+20+28+33；乙炔 = 25+26+27；
             1# = 16+17+18+19+29；2# = 6~11 + 150车间 + 30 + 31；4# = 12+13+14+15+32；
             中控 35 · 污水 36 · 办公 37；
-            <b>其它 = 总电量 − 上面九项之和</b>（倒挤，所以没点名的表都在这）；
+            <b>其它 = 该期总电量 − 该期其余八项</b>（逐期倒挤，合计行的其它 = 各期之和）；
             2#空压机(备电)=33、1#空压机=5 只用于看运转，不参与合计。
           </p>
 
@@ -1192,7 +1215,7 @@ onMounted(async () => {
         </div>
       </template>
 
-      <!-- ============ 预提分摊（2026-11-04）============ -->      <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
+      <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
       <template v-else-if="view === 'bill'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
