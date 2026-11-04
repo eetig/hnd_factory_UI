@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElDatePicker, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
 import request from '../../api/request'
 
@@ -21,7 +22,25 @@ import request from '../../api/request'
  * 日期是**自由**的（不绑周）；用量永远等于"跟这块表**上一次**记录之间的差"。
  * 所以某周漏抄一次、或隔两天补抄，用量照样对，只是那一格的区间变长。
  */
-const view = ref('entry') // entry | ledger | history
+const view = ref('entry') // entry | ledger | matrix | summary | bill | share | history
+
+/*
+ * 支持 ?tab=xxx 直达（2026-11-04）：
+ * 「电费预提」旧入口现在跳到这里并带 tab=bill，否则它会落在抄表录入上，
+ * 使用方会以为预提单没做。
+ */
+const route = useRoute()
+const TAB_KEYS = ['entry', 'ledger', 'matrix', 'summary', 'bill', 'share', 'history']
+if (typeof route.query.tab === 'string' && TAB_KEYS.includes(route.query.tab)) {
+  view.value = route.query.tab
+}
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    if (typeof tab === 'string' && TAB_KEYS.includes(tab)) view.value = tab
+  },
+)
 
 const loading = ref(false)
 const saving = ref(false)

@@ -15,7 +15,6 @@ import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
 import EquipmentBoardView from '../views/equipment/EquipmentBoardView.vue'
 import VesselView from '../views/equipment/VesselView.vue'
-import ElectricityView from '../views/equipment/ElectricityView.vue'
 import MeterReadingView from '../views/equipment/MeterReadingView.vue'
 import WeeklyView from '../views/stats/WeeklyView.vue'
 import DailyView from '../views/stats/DailyView.vue'
@@ -131,9 +130,12 @@ export const workbenchRoutes = [
     meta: { group: 'equipment', key: 'vessel', title: '压力容器体积计算' },
   },
   {
+    /*
+     * 电费预提（2026-11-04 改道）：预提功能已并入「电费抄表 · 预提单」。
+     * 这里保留路径只为旧书签/导航项不 404，直接重定向过去并带上 tab=bill。
+     */
     path: '/equipment/electricity',
-    name: 'ElectricityView',
-    component: ElectricityView,
+    redirect: () => ({ path: '/equipment/meters', query: { tab: 'bill' } }),
     meta: { group: 'equipment', key: 'electricity', title: '电费预提' },
   },
   {

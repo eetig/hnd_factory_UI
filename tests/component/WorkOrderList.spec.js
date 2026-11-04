@@ -743,7 +743,9 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
       permissions: ['equipment:edit'],
     },
     { path: '/equipment/vessel', title: '压力容器体积计算', group: '设备', key: 'vessel' },
-    { path: '/equipment/electricity', title: '电费预提', group: '设备', key: 'electricity' },
+    // 2026-11-04：/equipment/electricity 改成重定向到「电费抄表 · 预提单」，
+    // 不再有独立页面，所以从逐路由渲染清单里移除。
+
     { path: '/stats/weekly', title: '周统计', group: '报表', key: 'weekly' },
     { path: '/stats/daily', title: '日报表记录', group: '报表', key: 'daily' },
     { path: '/stats/tank-level', title: '月底储罐液位记录', group: '报表', key: 'tankLevel' },
