@@ -162,7 +162,7 @@ const tabs = [
   // 设备数据维护（2026-10-06）：台账原先只读、只能改 SQL。用**权限位**而不是 adminOnly ——
   // 写接口本来就是「仅 admin + 该权限位」两道，将来放开给非 admin 的维护员时不必动这里。
   { key: 'equipment', label: '设备数据维护', icon: 'edit', hint: '逐个设备核对台账 / 几何 / 底图', perm: 'equipment:edit', group: 'maintain' },
-  { key: 'electricity', label: '电费预提', icon: 'money-circle', hint: '电价档位与电费预提测算', group: 'tools' },
+  { key: 'electricity', label: '电费', icon: 'money-circle', hint: '总电量 / 分类汇总 / 预提单', group: 'tools' },
   // 物料主数据 / 物料导入（2026-10-23，变更-164：与 PC 端 变更-159/160 对齐）
   // 主数据 3 万行，手机上是"搜 + 分页 + 详情"，不是 PC 那种三段式表格
   { key: 'materialMaster', label: '物料主数据', icon: 'goods', hint: '按名称 / 编码检索 3 万条物料主数据', group: 'materials' },
@@ -4561,43 +4561,40 @@ onPullDownRefresh(async () => {
       </div>
 
       <div v-show="activeTab === 'electricity'">
+        <!--
+          电费（2026-11-04）
+          原来这里是「电价档位备注 + 功能建设中，敬请期待」的占位卡，而且档位写着
+          1.1~1.2 元（早已按 10 月真实账单改成 0.9252）—— 留着就是教错数据。
+          真正的电费页是独立页面 pages/electricity/electricity.vue（汇总 / 分类汇总 / 预提单），
+          这里只放一个入口。
+        -->
         <section class="panel rounded-xl border border-slate-200 bg-white shadow-sm">
-          <!-- 电价档位备注 -->
-          <div class="border-b border-slate-100 bg-amber-50 px-6 py-4">
+          <div class="border-b border-slate-100 px-5 py-4">
             <div class="flex items-start gap-3">
-              <div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-100 text-xs font-semibold text-amber-600">
-                !
-              </div>
-              <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-slate-800">电价档位备注</h3>
-                <div class="mt-3 grid gap-3 sm:grid-cols-3">
-                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">10 万度以内</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      1.1 ~ 1.2<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">20 万度以内</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      0.9 ~ 1<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                  <div class="rounded-lg border border-amber-200 bg-white px-4 py-2.5">
-                    <p class="text-xs text-slate-500">20 万度以上</p>
-                    <p class="mt-1 text-lg font-semibold text-slate-900">
-                      0.72<span class="ml-1 text-xs font-normal text-slate-500">元</span>
-                    </p>
-                  </div>
-                </div>
-              </div>
+              <view class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                <text class="text-base">⚡</text>
+              </view>
+              <view class="min-w-0 flex-1">
+                <text class="block text-sm font-semibold text-slate-800">电费</text>
+                <text class="mt-1 block text-xs leading-relaxed text-slate-500">
+                  看本月总电量与四个组的用量占比、按期明细、以及预提单（预估电量 × 1.05、命中电价、万位向上取整）。
+                  电费金额只对管理员显示；录入电量需要管理员授权。
+                </text>
+              </view>
             </div>
           </div>
-
-          <PanelState
-              title="电费预提"
-              description="功能建设中，敬请期待"
-            />
+          <div class="px-5 py-4">
+            <button
+              class="w-full rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white"
+              hover-class="opacity-80"
+              @click="openElectricity"
+            >
+              打开电费
+            </button>
+            <text class="mt-2 block text-[11px] leading-relaxed text-slate-400">
+              抄表入口在抽屉里（需要管理员或被授予「抄表员」的人）
+            </text>
+          </div>
         </section>
       </div>
 

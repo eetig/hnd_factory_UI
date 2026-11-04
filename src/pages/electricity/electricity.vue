@@ -49,6 +49,41 @@ const showMoney = computed(() => isAdmin())
 /** 能否录入电量（入口显隐；真正的判定在后端） */
 const canWrite = computed(() => isAdmin() || authState.roleKey === 'meter_clerk')
 
+/** 提示：当前显示的月份不是本月时，说明是自动回退过来的 */
+const fallbackHint = ref('')
+
+/** 取某个月的汇总 + 预提单；没有抄表期就抛错，交给上层判断 */
+async function fetchMonth(targetMonth) {
+  const [monthlyRes, billRes] = await Promise.all([
+    request.get('/api/electricity/monthly', { params: { month: targetMonth } }),
+    request.get('/api/electricity/bill', { params: { month: targetMonth } }),
+  ])
+  const monthlyBody = monthlyRes.data || {}
+  const billBody = billRes.data || {}
+  if (monthlyBody.success === false) throw new Error(monthlyBody.msg || '汇总加载失败')
+  if (billBody.success === false) throw new Error(billBody.msg || '预提单加载失败')
+  const monthlyData = monthlyBody.data || null
+  const billData = billBody.data || null
+  /*
+   * 2026-11-04：只有一期、而且那一期跨月时，按 08:00 日窗口折算后落在本月天数是 0
+   * ⇒ 总电量 0，但"月末补"又把整期量补了进来 ⇒ 四组几十万、总电量 0，自相矛盾。
+   * 这种月份直接当成"没有数据"，让上层继续往前找。
+   */
+  const total = Number(monthlyData?.total || 0)
+  const estimate = Number(billData?.estimateKwh || 0)
+  if (total <= 0 || estimate <= 0) {
+    throw new Error('这个月的抄表期不足，算不出当月用量')
+  }
+  return { monthly: monthlyData, bill: billData }
+}
+
+/**
+ * 加载当前选中的月份。
+ *
+ * 2026-11-04：手机上默认落在本月，而本月往往还没抄表（比如 11 月 4 号只有 10 月的数据），
+ * 一进来就报「这段区间里没有抄表期」，观感像坏了。所以本月取不到就**自动往前找**，
+ * 最多找 6 个月，找到有数据的那一个月停；找到了会在顶部说明是自动回退的。
+ */
 async function load() {
   if (!isLoggedIn()) {
     errorText.value = '请先登录'
@@ -56,19 +91,39 @@ async function load() {
   }
   loading.value = true
   errorText.value = ''
+  fallbackHint.value = ''
+  const original = month.value
   try {
-    const [monthlyRes, billRes] = await Promise.all([
-      request.get('/api/electricity/monthly', { params: { month: month.value } }),
-      request.get('/api/electricity/bill', { params: { month: month.value } }),
-    ])
-    const monthlyBody = monthlyRes.data || {}
-    const billBody = billRes.data || {}
-    if (monthlyBody.success === false) throw new Error(monthlyBody.msg || '汇总加载失败')
-    if (billBody.success === false) throw new Error(billBody.msg || '预提单加载失败')
-    monthly.value = monthlyBody.data || null
-    bill.value = billBody.data || null
+    try {
+      const first = await fetchMonth(month.value)
+      monthly.value = first.monthly
+      bill.value = first.bill
+    } catch (inner) {
+      // 本月没数据 → 往前找最多 6 个月
+      let found = null
+      let probe = month.value
+      for (let step = 0; step < 6; step += 1) {
+        const [y, m] = probe.split('-').map(Number)
+        const prev = new Date(y, m - 2, 1)
+        probe = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`
+        try {
+          const got = await fetchMonth(probe)
+          found = { month: probe, ...got }
+          break
+        } catch {
+          // 继续往前
+        }
+      }
+      if (!found) throw inner
+      month.value = found.month
+      monthly.value = found.monthly
+      bill.value = found.bill
+      fallbackHint.value = `${original.replace('-', ' 年 ')} 月还没有抄表数据，已自动显示 ${found.month.replace('-', ' 年 ')} 月`
+    }
   } catch (e) {
     errorText.value = e?.response?.data?.msg || e?.message || '加载失败'
+    monthly.value = null
+    bill.value = null
   } finally {
     loading.value = false
   }
@@ -145,6 +200,11 @@ function goRead() {
       </view>
       <view v-if="canWrite" class="el-read" hover-class="el-tap" @tap="goRead">去抄表</view>
       <view v-else class="el-read el-read--off">抄表需授权</view>
+    </view>
+
+    <!-- 自动回退提示（本月还没抄表时） -->
+    <view v-if=fallbackHint class=el-fallback>
+      <text class=el-fallback-text>{{ fallbackHint }}</text>
     </view>
 
     <!-- 页签 -->
@@ -384,6 +444,20 @@ function goRead() {
 
 .el-tap {
   opacity: 0.72;
+}
+
+.el-fallback {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ui-amber-50);
+  border: 1px solid var(--ui-amber-200);
+}
+
+.el-fallback-text {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ui-amber-800);
 }
 
 .el-tabs {
