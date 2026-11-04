@@ -416,12 +416,19 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .mr {
+  /* 弥散背景（2026-11-04）：与电费页同一套配方，让两个新页面看起来是一家的 */
+  background-color: var(--ui-scene-bg);
+  background-image:
+    radial-gradient(circle at 88% -6%, var(--ui-scene-blob-1) 0%, transparent 58%),
+    radial-gradient(circle at 6% 12%, var(--ui-scene-blob-2) 0%, transparent 52%),
+    radial-gradient(circle at 92% 62%, var(--ui-scene-blob-3) 0%, transparent 56%);
+  background-repeat: no-repeat;
+  background-attachment: scroll;
   display: flex;
   flex-direction: column;
   height: 100vh;
   padding: 16rpx 24rpx 0;
   box-sizing: border-box;
-  background-color: var(--ui-bg);
 }
 
 .mr__deny {
@@ -496,11 +503,17 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 2026-11-04：卡片按内容收紧后下方会空一块，垂直居中让空白看起来是有意的留白 */
+  justify-content: center;
 }
 
 .mr__card {
-  flex: 1;
-  min-height: 0;
+  /*
+   * 2026-11-04：原来 flex:1 会把卡片拉到整屏高，内容只有两三行 ⇒ 一大片白，很单调。
+   * 改成按内容高度、最多占 62% 高：卡片自己收紧，弥散背景露出来。
+   */
+  flex: 0 0 auto;
+  max-height: 62vh;
   padding: 28rpx;
   border-radius: 28rpx;
   border: 2rpx solid var(--ui-border);
@@ -509,6 +522,28 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14rpx;
+}
+
+/* 卡片入场（2026-11-04）：轻微上浮淡入，换表时不会啪地跳 */
+@keyframes mr-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mr__card {
+  animation: mr-rise 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mr__card {
+    animation: none;
+  }
 }
 
 .mr__card.is-anomaly {

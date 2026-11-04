@@ -412,8 +412,71 @@ function goRead() {
  */
 .el-page {
   min-height: 100vh;
-  background: var(--ui-scene-bg);
   padding-bottom: 24px;
+  /*
+   * 弥散背景（2026-11-04，使用方：「背景都改成弥散渐变色，当前的都好单调」）
+   *
+   * 配方与 uni.scss 的 @mixin scene-bg 同源（三团柔光：淡紫 / 暖琥珀 / 灰粉），
+   * 这里多铺一团强调色柔光、并把定位从固定 px 换成百分比 ——
+   * 手机屏幕宽窄差很大，固定 px 在小屏上会只剩一团。
+   */
+  background-color: var(--ui-scene-bg);
+  background-image:
+    radial-gradient(circle at 88% -6%, var(--ui-scene-blob-1) 0%, transparent 58%),
+    radial-gradient(circle at 6% 12%, var(--ui-scene-blob-2) 0%, transparent 52%),
+    radial-gradient(circle at 92% 62%, var(--ui-scene-blob-3) 0%, transparent 56%),
+    radial-gradient(circle at 12% 92%, var(--ui-accent-soft) 0%, transparent 54%);
+  background-repeat: no-repeat;
+  background-attachment: scroll;
+}
+
+/* ===== 入场动画（2026-11-04）=====
+ * 卡片轻微上浮 + 淡入，按出现顺序错开；不改变布局高度（只在 transform/opacity 上做）。
+ * 系统开启「减少动态效果」时下面有兜底，直接出静态结果。
+ */
+@keyframes el-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.el-hero,
+.el-card,
+.el-period,
+.el-total,
+.el-fallback {
+  animation: el-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.el-card:nth-of-type(1) {
+  animation-delay: 40ms;
+}
+
+.el-card:nth-of-type(2) {
+  animation-delay: 80ms;
+}
+
+.el-card:nth-of-type(3) {
+  animation-delay: 120ms;
+}
+
+.el-card:nth-of-type(4) {
+  animation-delay: 160ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-hero,
+  .el-card,
+  .el-period,
+  .el-total,
+  .el-fallback {
+    animation: none;
+  }
 }
 
 .el-head {
@@ -500,6 +563,7 @@ function goRead() {
   font-size: 13px;
   color: var(--ui-text-2);
   background: var(--ui-raise-2);
+  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 
 .el-tab--active {
@@ -515,7 +579,8 @@ function goRead() {
 .el-hero {
   padding: 16px;
   border-radius: 12px;
-  background: var(--ui-raise);
+  /* 2026-11-04：弥散背景下用不透明表面，否则彩光透进来、字发虚 */
+  background: var(--ui-surface);
   border: 1px solid var(--ui-border);
   margin-bottom: 10px;
 }
@@ -554,7 +619,8 @@ function goRead() {
 .el-card {
   padding: 14px;
   border-radius: 12px;
-  background: var(--ui-raise);
+  /* 2026-11-04：弥散背景下用不透明表面，否则彩光透进来、字发虚 */
+  background: var(--ui-surface);
   border: 1px solid var(--ui-border);
   margin-bottom: 10px;
 }
@@ -605,7 +671,15 @@ function goRead() {
 .el-bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: var(--ui-accent);
+  background: linear-gradient(90deg, var(--ui-accent), var(--ui-accent-2, var(--ui-accent)));
+  /* 宽度变化有过渡：数据加载完是"长出来"，不是"啪"地出现（2026-11-04） */
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-bar-fill {
+    transition: none;
+  }
 }
 
 .el-bar-foot {
@@ -624,7 +698,8 @@ function goRead() {
 /* 分类汇总：每期一张卡 */
 .el-period {
   border-radius: 12px;
-  background: var(--ui-raise);
+  /* 2026-11-04：弥散背景下用不透明表面，否则彩光透进来、字发虚 */
+  background: var(--ui-surface);
   border: 1px solid var(--ui-border);
   margin-bottom: 10px;
   overflow: hidden;
