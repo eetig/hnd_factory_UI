@@ -268,6 +268,9 @@ const billError = ref('')
  * 各车间电费预提 = 预估占比 × 预估电费
  */
 const billOrder = ['一车间', '二车间', '乙炔车间', '公用工程']
+/* 起始/结算时间：留空 = 用自然月（会自动补月末）；填了就纯按这个区间算 */
+const billFrom = ref('')
+const billTo = ref('')
 const billRatio = ref({})
 const billEstimate = ref(null)
 
@@ -323,7 +326,12 @@ async function loadBill() {
   billLoading.value = true
   billError.value = ''
   try {
-    const res = await request.get('/api/electricity/bill', { params: { month: billMonth.value } })
+    const params = { month: billMonth.value }
+    if (billFrom.value && billTo.value) {
+      params.from = billFrom.value
+      params.to = billTo.value
+    }
+    const res = await request.get('/api/electricity/bill', { params })
     const body = res.data || {}
     if (body.success === false) throw new Error(body.msg || '生成失败')
     billData.value = body.data || null
@@ -1083,6 +1091,25 @@ onMounted(async () => {
             class="!w-[130px]"
             @change="loadBill"
           />
+          <span class="text-[11px] text-slate-500">或指定区间</span>
+          <el-date-picker
+            v-model="billFrom"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="起始"
+            aria-label="起始时间"
+            :first-day-of-week="1"
+            class="!w-[135px]"
+          />
+          <el-date-picker
+            v-model="billTo"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="结算"
+            aria-label="结算时间"
+            :first-day-of-week="1"
+            class="!w-[135px]"
+          />
           <button
             type="button"
             class="rounded-md bg-brand px-3.5 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink disabled:opacity-50"
@@ -1135,8 +1162,8 @@ onMounted(async () => {
             <tbody>
               <!-- 第 2 行：数值 -->
               <tr class="border-t border-line">
-                <td class="num px-3 py-2 text-slate-800">{{ billData.periods[0]?.from || '—' }}</td>
-                <td class="num px-3 py-2 text-slate-800">{{ billData.lastDate || '—' }}</td>
+                <td class="num px-3 py-2 text-slate-800">{{ billData.from || billData.periods[0]?.from || '—' }}</td>
+                <td class="num px-3 py-2 text-slate-800">{{ billData.to || billData.lastDate || '—' }}</td>
                 <td class="num px-3 py-2 text-right tabular-nums text-slate-800">{{ billDays() }}</td>
                 <td v-for="g in billOrder" :key="'v-' + g" class="num px-3 py-2 text-right tabular-nums text-slate-800">
                   {{ fmtNum(billUsage(g)) }}
@@ -1212,6 +1239,7 @@ onMounted(async () => {
             用量 = 抄表期按 08:00 日窗口折算到本月 + 月末按最后一期日均补
             {{ billData.tailDays }} 天；预估电费默认 = 万位向上取整（{{ fmtNum(billData.advanceTotal) }} 元），
             可改成你要报的数；各车间预提 = 预估占比 × 预估电费。
+            <span v-if="billData.customRange">（当前按你指定的区间算，**不做月末补齐**）</span>
             电价 {{ billData.price }} 元/kWh（总电量 {{ fmtNum(billData.advanceKwh) }} kWh 命中该档）。
           </p>
 
