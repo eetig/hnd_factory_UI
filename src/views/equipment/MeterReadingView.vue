@@ -271,6 +271,34 @@ const shareTotal = ref(160000)
 /** 手工预提（组名 → 金额），留空表示按占比自动算 */
 const shareManual = ref({})
 
+/*
+ * 电价档位（2026-11-04 使用方口径）：
+ *   总电量 ≤ 10 万 kWh  ⇒ 全额 × 1.1
+ *   10 ~ 20 万 kWh      ⇒ 全额 × 0.9
+ *   > 20 万 kWh         ⇒ 全额 × 0.72
+ * 是"按总电量命中一档、全额乘该档单价"，不是把电量拆成三段分别乘。
+ * 三个上限与单价都可改（每年电价调整时改这里，不用改代码）。
+ */
+const priceTiers = ref([
+  { upTo: 100000, price: 1.1 },
+  { upTo: 200000, price: 0.9 },
+  { upTo: null, price: 0.72 },
+])
+
+/** 按总电量命中哪一档 */
+const matchedTier = computed(() => {
+  const total = shareSum.value
+  for (const tier of priceTiers.value) {
+    if (tier.upTo === null || total <= Number(tier.upTo)) return tier
+  }
+  return priceTiers.value[priceTiers.value.length - 1]
+})
+
+const unitPrice = computed(() => Number(matchedTier.value?.price || 0))
+
+/** 理论电费 = 总电量 × 命中档单价 */
+const theoryFee = computed(() => shareSum.value * unitPrice.value)
+
 const SHARE_UPSTREAM = ['总表', '变压器']
 
 const shareBase = computed(() => shareRows.value.filter((r) => !SHARE_UPSTREAM.includes(r.section)))
@@ -294,6 +322,8 @@ const sharePlan = computed(() => {
       manual,
       final: manual === null ? byUsage : manual,
       diff: manual === null ? 0 : manual - byUsage,
+      // 这组的电费 = 用量 × 命中档单价（全厂同一个单价）
+      fee: usage * unitPrice.value,
     }
   })
 })
@@ -1004,23 +1034,47 @@ onMounted(async () => {
           <span class="text-xs text-slate-500">分母 = 分表加总（总表只作校验，不参与分摊）</span>
         </div>
 
+        <!-- 电价档位（2026-11-04）：按总电量命中一档、全额乘该档单价 -->
+        <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-region/40 px-6 py-2">
+          <span class="text-xs text-slate-600">电价档位</span>
+          <span class="text-[11px] text-slate-500">≤</span>
+          <el-input v-model.number="priceTiers[0].upTo" size="small" aria-label="第一档上限" class="!w-[100px]" />
+          <el-input v-model.number="priceTiers[0].price" size="small" aria-label="第一档单价" class="!w-[70px]" />
+          <span class="text-[11px] text-slate-500">｜≤</span>
+          <el-input v-model.number="priceTiers[1].upTo" size="small" aria-label="第二档上限" class="!w-[100px]" />
+          <el-input v-model.number="priceTiers[1].price" size="small" aria-label="第二档单价" class="!w-[70px]" />
+          <span class="text-[11px] text-slate-500">｜超过则</span>
+          <el-input v-model.number="priceTiers[2].price" size="small" aria-label="第三档单价" class="!w-[70px]" />
+          <span
+            v-if="sharePlan.length"
+            class="ml-2 rounded-md border border-line bg-raised px-2 py-1 text-[11px] text-slate-700"
+          >
+            总电量 {{ fmtNum(shareSum) }} kWh ⇒ 命中
+            <b>{{ unitPrice }}</b> 元/kWh
+            <span v-if="matchedTier.upTo">（≤ {{ fmtNum(matchedTier.upTo) }}）</span>
+            <span v-else>（超过 {{ fmtNum(priceTiers[1].upTo) }}）</span>
+          </span>
+        </div>
+
         <div class="min-h-0 flex-1 overflow-auto">
           <table class="ledger-table w-full min-w-[860px] table-fixed text-sm">
             <colgroup>
-              <col class="w-[180px]" />
-              <col class="w-[150px]" />
-              <col class="w-[100px]" />
-              <col class="w-[150px]" />
-              <col class="w-[150px]" />
+              <col class="w-[160px]" />
+              <col class="w-[130px]" />
+              <col class="w-[90px]" />
+              <col class="w-[140px]" />
               <col class="w-[120px]" />
+              <col class="w-[110px]" />
+              <col class="w-[130px]" />
             </colgroup>
             <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]">
               <tr>
                 <th class="px-4 py-2.5 text-left font-medium">组</th>
                 <th class="px-4 py-2.5 text-right font-medium">用量（kWh）</th>
                 <th class="px-4 py-2.5 text-right font-medium">占比</th>
+                <th class="px-4 py-2.5 text-right font-medium">电费（元）</th>
                 <th class="px-4 py-2.5 text-right font-medium">按占比预提</th>
-                <th class="px-4 py-2.5 text-right font-medium">实际预提（可改）</th>
+                <th class="px-4 py-2.5 text-right font-medium">实际预提</th>
                 <th class="px-4 py-2.5 text-right font-medium">差</th>
               </tr>
             </thead>
@@ -1031,6 +1085,7 @@ onMounted(async () => {
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
                   {{ (row.ratio * 100).toFixed(2) }}%
                 </td>
+                <td class="num px-4 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(row.fee) }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(row.byUsage) }}</td>
                 <td class="px-4 py-1.5 text-right">
                   <el-input
@@ -1049,7 +1104,7 @@ onMounted(async () => {
                 </td>
               </tr>
               <tr v-if="!shareLoading && !sharePlan.length">
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
+                <td colspan="7" class="px-4 py-10 text-center text-sm text-slate-500">
                   {{ shareLoading ? '正在取数…' : '选好日期区间再点「取数」' }}
                 </td>
               </tr>
@@ -1059,6 +1114,7 @@ onMounted(async () => {
                 <td class="px-4 py-2 font-semibold text-slate-800">合计</td>
                 <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareSum) }}</td>
                 <td class="num px-4 py-2 text-right text-slate-600">100%</td>
+                <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(theoryFee) }}</td>
                 <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareTotal) }}</td>
                 <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareManualTotal) }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
@@ -1071,6 +1127,9 @@ onMounted(async () => {
           <p v-if="sharePlan.length" class="border-t border-line px-6 py-2.5 text-[11px] text-slate-500">
             分母是分表加总（{{ fmtNum(shareSum) }}）—— 按你的口径「总表不为准，按分表各自算」。
             总表（1 号高压计量）只作校验：本页不拿它缩放任何数。
+            电费 = 用量 × 命中档单价（{{ unitPrice }} 元/kWh）；理论电费 {{ fmtNum(theoryFee) }} 元
+            vs 预提总额 {{ fmtNum(shareTotal) }} 元 ⇒
+            {{ Math.abs(shareTotal - theoryFee) < 1 ? '两者一致' : '差 ' + fmtNum(shareTotal - theoryFee) + ' 元' }}。
             「实际预提」留空 = 按占比自动算；填了就以你填的为准，右边「差」告诉你偏了多少。
           </p>
         </div>
