@@ -262,6 +262,60 @@ const importText = ref('')
 const importing = ref(false)
 const importHint = ref('')
 
+/* ===== 预提分摊（2026-11-04）===== */
+const shareRange = ref({ from: '', to: '' })
+const shareRows = ref([])
+const shareLoading = ref(false)
+/** 预提总额（默认取使用方 Excel 里的 160000） */
+const shareTotal = ref(160000)
+/** 手工预提（组名 → 金额），留空表示按占比自动算 */
+const shareManual = ref({})
+
+const SHARE_UPSTREAM = ['总表', '变压器']
+
+const shareBase = computed(() => shareRows.value.filter((r) => !SHARE_UPSTREAM.includes(r.section)))
+
+const shareSum = computed(() => shareBase.value.reduce((sum, r) => sum + Number(r.usageQty || 0), 0))
+
+const sharePlan = computed(() => {
+  const total = Number(shareTotal.value) || 0
+  const sum = shareSum.value || 1
+  return shareBase.value.map((row) => {
+    const usage = Number(row.usageQty || 0)
+    const ratio = usage / sum
+    const byUsage = ratio * total
+    const manualRaw = shareManual.value[row.section]
+    const manual = manualRaw === '' || manualRaw === undefined || manualRaw === null ? null : Number(manualRaw)
+    return {
+      section: row.section,
+      usage,
+      ratio,
+      byUsage,
+      manual,
+      final: manual === null ? byUsage : manual,
+      diff: manual === null ? 0 : manual - byUsage,
+    }
+  })
+})
+
+const shareManualTotal = computed(() => sharePlan.value.reduce((sum, r) => sum + r.final, 0))
+
+async function loadShare() {
+  shareLoading.value = true
+  try {
+    const params = {}
+    if (shareRange.value.from) params.from = shareRange.value.from
+    if (shareRange.value.to) params.to = shareRange.value.to
+    const res = await request.get('/api/electricity/summary', { params })
+    shareRows.value = res.data?.data || []
+  } catch (e) {
+    shareRows.value = []
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
 const summaryRange = ref({ from: '', to: '' })
 const summaryRows = ref([])
 const summaryLoading = ref(false)
@@ -458,6 +512,7 @@ function switchView(next) {
   view.value = next
   if (next === 'matrix' && !matrixRows.value.length) loadMatrix()
   if (next === 'summary' && !summaryRows.value.length) loadSummary()
+  if (next === 'share' && !shareRows.value.length) loadShare()
 }
 
 onMounted(async () => {
@@ -484,6 +539,7 @@ onMounted(async () => {
               { key: 'ledger', label: '电表台账' },
               { key: 'matrix', label: '矩阵视图' },
               { key: 'summary', label: '分类汇总' },
+              { key: 'share', label: '预提分摊' },
               { key: 'history', label: '抄表历史' },
             ]"
             :key="tab.key"
@@ -907,6 +963,116 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </template>
+
+      <!-- ============ 预提分摊（2026-11-04）============ -->
+      <template v-else-if="view === 'share'">
+        <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
+          <el-date-picker
+            v-model="shareRange.from"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="从"
+            aria-label="分摊起始日期"
+            :first-day-of-week="1"
+            class="!w-[140px]"
+          />
+          <el-date-picker
+            v-model="shareRange.to"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="到"
+            aria-label="分摊结束日期"
+            :first-day-of-week="1"
+            class="!w-[140px]"
+          />
+          <button
+            type="button"
+            class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="loadShare"
+          >
+            取数
+          </button>
+          <span class="text-xs text-slate-600">预提总额</span>
+          <el-input
+            v-model.number="shareTotal"
+            aria-label="预提总额"
+            class="!w-[120px]"
+            size="small"
+          />
+          <span class="text-xs text-slate-500">分母 = 分表加总（总表只作校验，不参与分摊）</span>
+        </div>
+
+        <div class="min-h-0 flex-1 overflow-auto">
+          <table class="ledger-table w-full min-w-[860px] table-fixed text-sm">
+            <colgroup>
+              <col class="w-[180px]" />
+              <col class="w-[150px]" />
+              <col class="w-[100px]" />
+              <col class="w-[150px]" />
+              <col class="w-[150px]" />
+              <col class="w-[120px]" />
+            </colgroup>
+            <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]">
+              <tr>
+                <th class="px-4 py-2.5 text-left font-medium">组</th>
+                <th class="px-4 py-2.5 text-right font-medium">用量（kWh）</th>
+                <th class="px-4 py-2.5 text-right font-medium">占比</th>
+                <th class="px-4 py-2.5 text-right font-medium">按占比预提</th>
+                <th class="px-4 py-2.5 text-right font-medium">实际预提（可改）</th>
+                <th class="px-4 py-2.5 text-right font-medium">差</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in sharePlan" :key="row.section" class="border-t border-line">
+                <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
+                <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.usage) }}</td>
+                <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
+                  {{ (row.ratio * 100).toFixed(2) }}%
+                </td>
+                <td class="num px-4 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(row.byUsage) }}</td>
+                <td class="px-4 py-1.5 text-right">
+                  <el-input
+                    v-model.number="shareManual[row.section]"
+                    size="small"
+                    aria-label="实际预提金额"
+                    placeholder="自动"
+                    class="!w-[110px]"
+                  />
+                </td>
+                <td
+                  class="num px-4 py-2 text-right tabular-nums"
+                  :class="Math.abs(row.diff) < 1 ? 'text-slate-500' : row.diff > 0 ? 'text-amber-700' : 'text-slate-600'"
+                >
+                  {{ row.diff === 0 ? '—' : (row.diff > 0 ? '+' : '') + fmtNum(row.diff) }}
+                </td>
+              </tr>
+              <tr v-if="!shareLoading && !sharePlan.length">
+                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
+                  {{ shareLoading ? '正在取数…' : '选好日期区间再点「取数」' }}
+                </td>
+              </tr>
+            </tbody>
+            <tfoot v-if="sharePlan.length" class="border-t-2 border-line bg-region/60">
+              <tr>
+                <td class="px-4 py-2 font-semibold text-slate-800">合计</td>
+                <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareSum) }}</td>
+                <td class="num px-4 py-2 text-right text-slate-600">100%</td>
+                <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareTotal) }}</td>
+                <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(shareManualTotal) }}</td>
+                <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
+                  {{ Math.abs(shareManualTotal - Number(shareTotal)) < 1 ? '平' : fmtNum(shareManualTotal - Number(shareTotal)) }}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <p v-if="sharePlan.length" class="border-t border-line px-6 py-2.5 text-[11px] text-slate-500">
+            分母是分表加总（{{ fmtNum(shareSum) }}）—— 按你的口径「总表不为准，按分表各自算」。
+            总表（1 号高压计量）只作校验：本页不拿它缩放任何数。
+            「实际预提」留空 = 按占比自动算；填了就以你填的为准，右边「差」告诉你偏了多少。
+          </p>
         </div>
       </template>
 
