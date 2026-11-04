@@ -292,7 +292,9 @@ const billError = ref('')
  *   预估电费 —— 他填 160000（理论是 158472.18，取整成好看的数）
  * 各车间电费预提 = 预估占比 × 预估电费
  */
-const billOrder = ['一车间', '二车间', '乙炔车间', '公用工程']
+/* 2026-11-04 新口径：4 组（顺序即显示顺序） */
+const billGroupNames = ['公用工程', '一车间', '二车间', '乙炔车间']
+const billOrder = billGroupNames
 /* 起始/结算时间：留空 = 用自然月（会自动补月末）；填了就纯按这个区间算 */
 const billFrom = ref('')
 const billTo = ref('')
@@ -308,11 +310,12 @@ function shortName(section) {
 function resetBillInputs() {
   if (!billData.value) return
   const next = {}
-  for (const group of billOrder) {
-    const value = Number(billData.value.estimateByGroup?.[group] || 0)
-    const total = Number(billData.value.estimateKwh || 0) || 1
+  for (const row of billData.value.shares || []) {
     // 默认取两位小数的整百分比（他表里就是 0.11 / 0.14 / 0.10 / 0.65）
-    next[group] = Math.round((value / total) * 100) / 100
+    next[row.section] = Math.round(Number(row.ratio) * 100) / 100
+  }
+  for (const group of billOrder) {
+    if (next[group] === undefined) next[group] = 0
   }
   billRatio.value = next
   billEstimate.value = Number(billData.value.advanceTotal || 0)
@@ -330,44 +333,9 @@ const billShares = computed(() =>
 /** 计算过程是否展开 */
 const billTraceOpen = ref(true)
 
-/** 哪几个组展开了「按表拆解」 */
-const billMeterOpen = ref({})
-
-function toggleMeterGroup(section) {
-  billMeterOpen.value = { ...billMeterOpen.value, [section]: !billMeterOpen.value[section] }
-}
-
-/** 某组的按表拆解（后端算的，与组用量同口径） */
-function meterRowsOf(section) {
-  const row = (billData.value?.meterRows || []).find((r) => r.section === section)
-  return row?.meters || []
-}
-
-/** 已抄部分合计（折算到区间/本月） */
-const billDoneTotal = computed(() =>
-  Object.values(billData.value?.doneInMonth || {}).reduce((sum, v) => sum + Number(v || 0), 0),
-)
-
-/** 月末补量合计 */
-const billTailTotal = computed(() =>
-  Object.values(billData.value?.tailByGroup || {}).reduce((sum, v) => sum + Number(v || 0), 0),
-)
-
-/** 最后一期的日均（总） */
-const billDailyTotal = computed(() => Number(billData.value?.lastDailyKwh || 0))
-
 const billRatioSum = computed(() => billShares.value.reduce((sum, r) => sum + r.ratio, 0))
 const billAmountSum = computed(() => billShares.value.reduce((sum, r) => sum + r.amount, 0))
 
-/** 表里那一行的用量与占比（用量取系统预估，占比取系统算的精确占比） */
-function billUsage(group) {
-  return Number(billData.value?.estimateByGroup?.[group] || 0)
-}
-
-function billShareText(group) {
-  const total = Number(billData.value?.estimateKwh || 0) || 1
-  return ((billUsage(group) / total) * 100).toFixed(2) + '%'
-}
 
 function billDays() {
   const first = billData.value?.periods?.[0]
@@ -1306,7 +1274,7 @@ onMounted(async () => {
         </p>
       </template>
 
-      <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
+      <!-- ============ 预提单（2026-11-04 重写：总电量为基数 + 4 组新定义）============ -->
       <template v-else-if="view === 'bill'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
@@ -1372,15 +1340,9 @@ onMounted(async () => {
               自然月 {{ billData.from }} → {{ billData.to }}（{{ billData.periods.length }} 期 + 月末补 {{ billData.tailDays }} 天）
             </template>
           </span>
-          <span class="text-xs text-slate-500">预估用量 → ×1.05 → 命中电价 → 万位向上取整</span>
         </div>
 
-        <!--
-          电价档位参考带（2026-11-04）
-          使用方：「预提的档位还是得体现出来，我有时候手动计算需要参考查看」
-          ⇒ 除了输入框，还要一段看得懂的档位说明；数值跟着输入框实时变，
-             并高亮"当前命中哪一档"，手算时直接照抄。
-        -->
+        <!-- 电价档位参考带（保留：使用方手算时要对照） -->
         <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-region/40 px-6 py-2">
           <span class="text-[11px] font-medium text-slate-600">电价档位</span>
           <span
@@ -1411,91 +1373,82 @@ onMounted(async () => {
         </p>
 
         <div class="min-h-0 flex-1 overflow-auto px-6 py-4">
-          <table v-if="billData" class="bill-table w-full table-fixed text-sm">
+          <table v-if="billData" class="w-full table-fixed text-sm">
             <colgroup>
               <col class="w-[120px]" />
               <col class="w-[120px]" />
-              <col class="w-[90px]" />
-              <col class="w-[130px]" />
-              <col class="w-[130px]" />
-              <col class="w-[110px]" />
-              <col class="w-[140px]" />
+              <col class="w-[88px]" />
+              <col v-for="group in billGroupNames" :key="'c-' + group" class="w-[130px]" />
               <col class="w-[140px]" />
             </colgroup>
-
-            <!-- 第 1 行：表头 -->
             <thead>
               <tr class="bg-region text-xs text-slate-600">
                 <th class="px-3 py-2 text-left font-medium">起始时间</th>
                 <th class="px-3 py-2 text-left font-medium">结算时间</th>
                 <th class="px-3 py-2 text-right font-medium">间隔天数</th>
-                <th v-for="g in billOrder" :key="'h-' + g" class="px-3 py-2 text-right font-medium">
-                  {{ shortName(g) }}
+                <th v-for="group in billGroupNames" :key="'h-' + group" class="px-3 py-2 text-right font-medium">
+                  {{ shortName(group) }}
                 </th>
-                <th class="px-3 py-2 text-right font-medium">总量</th>
+                <th class="px-3 py-2 text-right font-medium">总电量</th>
               </tr>
             </thead>
-
             <tbody>
-              <!-- 第 2 行：数值 -->
+              <!-- 用量行 -->
               <tr class="border-t border-line">
-                <td class="num px-3 py-2 text-slate-800">{{ billData.from || billData.periods[0]?.from || '—' }}</td>
-                <td class="num px-3 py-2 text-slate-800">{{ billData.to || billData.lastDate || '—' }}</td>
+                <td class="num px-3 py-2 text-slate-800">{{ billData.periods[0]?.from || '—' }}</td>
+                <td class="num px-3 py-2 text-slate-800">{{ billData.lastDate || '—' }}</td>
                 <td class="num px-3 py-2 text-right tabular-nums text-slate-800">{{ billDays() }}</td>
-                <td v-for="g in billOrder" :key="'v-' + g" class="num px-3 py-2 text-right tabular-nums text-slate-800">
-                  {{ fmtNum(billUsage(g)) }}
+                <td
+                  v-for="group in billGroupNames"
+                  :key="'v-' + group"
+                  class="num px-3 py-2 text-right tabular-nums text-slate-800"
+                >
+                  {{ Math.round(Number(billData.groupEstimate[group] || 0)) }}
                 </td>
                 <td class="num px-3 py-2 text-right font-semibold tabular-nums text-slate-900">
-                  {{ fmtNum(billData.estimateKwh) }}
+                  {{ Math.round(Number(billData.estimateKwh || 0)) }}
                 </td>
               </tr>
 
-              <!-- 第 3 行：占比 -->
+              <!-- 占比行（分母 = 总电量） -->
               <tr class="border-t border-line bg-desk/40">
                 <td colspan="3" class="px-3 py-2 text-right text-slate-500">占比</td>
                 <td
-                  v-for="g in billOrder"
-                  :key="'r-' + g"
+                  v-for="group in billGroupNames"
+                  :key="'r-' + group"
                   class="num px-3 py-2 text-right tabular-nums text-slate-700"
                 >
-                  {{ billShareText(g) }}
+                  {{ Math.round((Number(billData.groupEstimate[group] || 0) / (Number(billData.estimateKwh) || 1)) * 100) }}%
                 </td>
-                <td class="num px-3 py-2 text-right tabular-nums text-slate-700">1</td>
+                <td class="num px-3 py-2 text-right tabular-nums text-slate-700">100%</td>
               </tr>
 
-              <!-- 第 4 行：预估占比（可改） -->
+              <!-- 预估占比（可改，分母 = 四组之和） -->
               <tr class="border-t border-line bg-desk/40">
                 <td colspan="3" class="px-3 py-2 text-right text-slate-500">预估占比</td>
-                <td v-for="g in billOrder" :key="'e-' + g" class="px-2 py-1.5">
+                <td v-for="group in billGroupNames" :key="'e-' + group" class="px-2 py-1.5">
                   <el-input
-                    v-model.number="billRatio[g]"
+                    v-model.number="billRatio[group]"
                     size="small"
-                    :aria-label="`${shortName(g)} 预估占比`"
+                    :aria-label="`${shortName(group)} 预估占比`"
                     class="!w-[92px]"
                   />
                 </td>
                 <td class="num px-3 py-2 text-right tabular-nums text-slate-700">{{ billRatioSum.toFixed(2) }}</td>
               </tr>
 
-              <!-- 第 5 行：电费预估 -->
+              <!-- 电费预估 -->
               <tr class="border-t border-line">
                 <td colspan="3" class="px-3 py-2 text-right text-slate-500">电费预估值</td>
                 <td colspan="2" class="px-3 py-2 text-right text-slate-500">预估电费</td>
                 <td class="px-2 py-1.5">
-                  <el-input
-                    v-model.number="billEstimate"
-                    size="small"
-                    aria-label="预估电费"
-                    class="!w-[110px]"
-                  />
+                  <el-input v-model.number="billEstimate" size="small" aria-label="预估电费" class="!w-[110px]" />
                 </td>
                 <td class="px-3 py-2 text-right text-slate-500">理论电费</td>
-                <td class="num px-3 py-2 text-right tabular-nums text-slate-700">
-                  {{ fmtNum(billData.amount) }}
-                </td>
+                <td class="num px-3 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(billData.amount) }}</td>
               </tr>
 
-              <!-- 第 6 行：各车间电费预提 -->
+              <!-- 各车间电费预提 -->
               <tr class="border-t-2 border-line">
                 <td colspan="3" class="px-3 py-2 text-right font-medium text-slate-700">各车间电费预提(元)</td>
                 <td
@@ -1512,7 +1465,7 @@ onMounted(async () => {
             </tbody>
           </table>
 
-          <!-- 计算过程（2026-11-04）：把每一步的数字摊开，可核对 -->
+          <!-- 计算过程 -->
           <div v-if="billData" class="mt-4 rounded-card border border-line bg-raised shadow-card">
             <button
               type="button"
@@ -1528,36 +1481,30 @@ onMounted(async () => {
                 <li>
                   <b>① 取数区间</b>
                   {{ billData.from }} → {{ billData.to }}
-                  <span v-if="billData.customRange" class="text-amber-700">
-                    （自定义区间：不补月末）
-                  </span>
-                  <span v-else class="text-slate-500">
-                    （自然月：月初按日均拆、月末按日均补）
-                  </span>
+                  <span v-if="billData.customRange" class="text-amber-700">（自定义区间：不补月末）</span>
+                  <span v-else class="text-slate-500">（自然月：月初按日均拆、月末按日均补）</span>
                 </li>
 
                 <li>
-                  <b>② 各期折算</b>（每期用量 × 落在区间内的日窗口数 ÷ 期天数）
+                  <b>② 各期折算</b>（每期 × 落在区间内的日窗口 ÷ 期天数）
                   <table class="mt-1.5 w-full table-fixed text-[11px]">
                     <colgroup>
-                      <col class="w-[210px]" />
+                      <col class="w-[200px]" />
+                      <col class="w-[64px]" />
                       <col class="w-[70px]" />
-                      <col class="w-[80px]" />
-                      <col class="w-[130px]" />
-                      <col class="w-[150px]" />
+                      <col class="w-[120px]" />
+                      <col class="w-[170px]" />
                     </colgroup>
                     <tbody>
                       <tr v-for="p in billData.periods" :key="'t' + p.from + p.to" class="border-t border-line/60">
                         <td class="num py-1 text-slate-700">{{ p.from }} → {{ p.to }}</td>
                         <td class="num py-1 text-right text-slate-500">{{ p.periodDays }} 天</td>
-                        <td class="num py-1 text-right text-slate-500">
-                          {{ p.inMonthDays }}/{{ p.periodDays }}
-                        </td>
+                        <td class="num py-1 text-right text-slate-500">{{ p.inRangeDays }}/{{ p.periodDays }}</td>
                         <td class="num py-1 text-right text-slate-700">
-                          全期 {{ fmtNum(Object.values(p.usage).reduce((a, b) => a + Number(b), 0) / (p.inMonthDays || 1) * p.periodDays) }}
+                          总电量 {{ Math.round(Number(p.columns['总电量'] || 0)) }}
                         </td>
-                        <td class="num py-1 text-right font-medium text-slate-900">
-                          折入 {{ fmtNum(Object.values(p.usage).reduce((a, b) => a + Number(b), 0)) }}
+                        <td class="num py-1 text-right text-slate-600">
+                          公用工程 {{ Math.round(Number(p.columns['公用工程'] || 0) + Number(p.columns['中央控制室'] || 0) + Number(p.columns['污水区'] || 0) + Number(p.columns['办公楼'] || 0) + Number(p.columns['其它'] || 0)) }}
                         </td>
                       </tr>
                     </tbody>
@@ -1565,139 +1512,64 @@ onMounted(async () => {
                 </li>
 
                 <li>
-                  <b>③ 已抄（折算到区间）</b>
-                  = {{ fmtNum(billDoneTotal) }} 度
-                  <span class="text-slate-500">（= 下面四组之和）</span>
-
-                  <!-- 四组分别由哪些表加出来的（2026-11-04 使用方要看这一层） -->
-                  <div class="mt-2 space-y-1.5">
-                    <div
-                      v-for="group in billOrder"
-                      :key="'gm-' + group"
-                      class="rounded-md border border-line/70"
-                    >
-                      <button
-                        type="button"
-                        class="flex w-full items-center justify-between px-2.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-                        @click="toggleMeterGroup(group)"
-                      >
-                        <span class="text-slate-700">
-                          <b>{{ shortName(group) }}</b>
-                          = {{ fmtNum(meterRowsOf(group).reduce((sum, m) => sum + Number(m.kwh || 0), 0)) }} 度
-                          <span class="text-slate-500">
-                            （{{ meterRowsOf(group).length }} 块表
-                            <template v-if="meterRowsOf(group).some((m) => Number(m.multiplier) > 1)">
-                              · 含倍率表
-                            </template>
-                            ）
-                          </span>
-                        </span>
-                        <span class="text-slate-500">
-                          {{ billMeterOpen[group] ? '收起' : '展开' }}
-                        </span>
-                      </button>
-
-                      <table v-if="billMeterOpen[group]" class="w-full table-fixed text-[11px]">
-                        <colgroup>
-                          <col class="w-[60px]" />
-                          <col class="w-[240px]" />
-                          <col class="w-[90px]" />
-                          <col class="w-[110px]" />
-                        </colgroup>
-                        <tbody>
-                          <tr
-                            v-for="m in meterRowsOf(group)"
-                            :key="'gm-' + group + '-' + m.meterNo"
-                            class="border-t border-line/50"
-                          >
-                            <td class="num py-1 pl-2.5 text-slate-500">{{ m.excelNo || '—' }}</td>
-                            <td class="py-1 text-slate-700">
-                              {{ m.meterName }}
-                              <span v-if="m.meterCode" class="text-slate-500">（{{ m.meterCode }}）</span>
-                            </td>
-                            <td class="num py-1 text-right text-slate-500">
-                              {{ Number(m.multiplier) > 1 ? '×' + m.multiplier : '' }}
-                            </td>
-                            <td class="num py-1 pr-2.5 text-right font-medium text-slate-900">
-                              {{ fmtNum(m.kwh) }}
-                            </td>
-                          </tr>
-                          <tr class="border-t border-line bg-desk/50">
-                            <td colspan="3" class="py-1 pr-2 text-right text-slate-600">小计</td>
-                            <td class="num py-1 pr-2.5 text-right font-semibold text-slate-900">
-                              {{ fmtNum(meterRowsOf(group).reduce((sum, m) => sum + Number(m.kwh || 0), 0)) }}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
+                  <b>③ 已抄总电量</b> = {{ fmtNum(billData.doneTotal) }} 度（1 号高压计量表，按日窗口折算进区间）
                 </li>
-
                 <li v-if="billData.tailDays > 0">
-                  <b>④ 月末补</b>
-                  = 最后一期日均 {{ fmtNum(billDailyTotal) }} 度/天 × {{ billData.tailDays }} 天
-                  = {{ fmtNum(billTailTotal) }} 度
+                  <b>④ 月末补</b> = 最后一期日均 {{ fmtNum(billData.lastDailyKwh) }} 度/天 ×
+                  {{ billData.tailDays }} 天 = {{ fmtNum(billData.tailTotal) }} 度
                 </li>
-                <li v-else>
-                  <b>④ 月末补</b> = 0（自定义区间不补，或最后一期已到月末）
+                <li v-else><b>④ 月末补</b> = 0（自定义区间不补，或最后一期已到月末）</li>
+
+                <li>
+                  <b>⑤ 预估总电量</b> = {{ fmtNum(billData.doneTotal) }} + {{ fmtNum(billData.tailTotal) }} =
+                  <b>{{ fmtNum(billData.estimateKwh) }}</b> 度
+                </li>
+                <li>
+                  <b>⑥ 预提电量</b> = {{ fmtNum(billData.estimateKwh) }} × 1.05 =
+                  <b>{{ fmtNum(billData.advanceKwh) }}</b> 度
+                </li>
+                <li>
+                  <b>⑦ 命中电价</b> = <b>{{ billData.price }} 元/度</b>
+                  <span class="text-slate-500">（≤7 万 0.9252 ｜ ≤20 万 0.9 ｜ 超过 0.72）</span>
+                </li>
+                <li>
+                  <b>⑧ 理论电费</b> = {{ fmtNum(billData.advanceKwh) }} × {{ billData.price }} =
+                  <b>{{ fmtNum(billData.amount) }} 元</b>
+                </li>
+                <li>
+                  <b>⑨ 万位向上取整</b> ⇒ <b class="text-slate-900">{{ fmtNum(billData.advanceTotal) }} 元</b>
+                  <span class="text-slate-500">（比理论多 {{ fmtNum(billData.advanceTotal - billData.amount) }} 元，缓冲）</span>
                 </li>
 
                 <li>
-                  <b>⑤ 预估总电量</b>
-                  = {{ fmtNum(billDoneTotal) }} + {{ fmtNum(billTailTotal) }}
-                  = <b>{{ fmtNum(billData.estimateKwh) }}</b> 度
-                </li>
-
-                <li>
-                  <b>⑥ 预提电量</b>
-                  = {{ fmtNum(billData.estimateKwh) }} × 1.05
-                  = <b>{{ fmtNum(billData.advanceKwh) }}</b> 度
-                </li>
-
-                <li>
-                  <b>⑦ 命中电价</b>
-                  {{ fmtNum(billData.advanceKwh) }} 度
-                  <span class="text-slate-500">
-                    （≤7 万 → 0.9252 ｜ ≤20 万 → 0.9 ｜ 超过 → 0.72）
-                  </span>
-                  ⇒ <b>{{ billData.price }} 元/度</b>
-                </li>
-
-                <li>
-                  <b>⑧ 理论电费</b>
-                  = {{ fmtNum(billData.advanceKwh) }} × {{ billData.price }}
-                  = <b>{{ fmtNum(billData.amount) }} 元</b>
-                </li>
-
-                <li>
-                  <b>⑨ 万位向上取整</b>
-                  {{ fmtNum(billData.amount) }} 元
-                  ⇒ <b class="text-slate-900">{{ fmtNum(billData.advanceTotal) }} 元</b>
-                  <span class="text-slate-500">
-                    （比理论多 {{ fmtNum(billData.advanceTotal - billData.amount) }} 元，这是"只能多不能少"的缓冲）
-                  </span>
-                </li>
-
-                <li>
-                  <b>⑩ 4 项分摊</b>
-                  = 各项预估用量 ÷ 预估总电量 × {{ fmtNum(billData.advanceTotal) }}
-                  <span class="text-slate-500">（最后一项补差，保证合计正好等于预提总额）</span>
+                  <b>⑩ 四组怎么拼出来的</b>（每组预估度数与金额）
+                  <ul class="mt-1 space-y-0.5">
+                    <li v-for="row in billData.shares" :key="'g-' + row.section" class="text-slate-700">
+                      <b>{{ row.section }}</b>
+                      = {{ Math.round(Number(row.estimateKwh)) }} 度
+                      <span class="text-slate-500">
+                        （占四组之和 {{ Math.round(Number(row.ratio) * 100) }}%）
+                      </span>
+                      ⇒ {{ fmtNum(row.amount) }} 元
+                    </li>
+                  </ul>
+                  <p class="mt-1 text-slate-500">
+                    公用工程 = 公用工程 + 中控 + 污水 + 办公 + 其它；一车间 = 2# + 4#；
+                    二车间 = 1#；乙炔 = 乙炔。四组之和 {{ fmtNum(billData.groupSum) }} 度（&lt; 总电量，差额是变压器等未分组表）。
+                  </p>
                 </li>
               </ol>
             </div>
           </div>
 
           <p v-if="billData" class="mt-3 text-[11px] leading-relaxed text-slate-500">
-            用量 = 抄表期按 08:00 日窗口折算到本月 + 月末按最后一期日均补
-            {{ billData.tailDays }} 天；预估电费默认 = 万位向上取整（{{ fmtNum(billData.advanceTotal) }} 元），
-            可改成你要报的数；各车间预提 = 预估占比 × 预估电费。
-            <span v-if="billData.customRange">（当前按你指定的区间算，**不做月末补齐**）</span>
-            电价 {{ billData.price }} 元/kWh（总电量 {{ fmtNum(billData.advanceKwh) }} kWh 命中该档）。
+            预估总电量取 1 号高压计量表（图中的"总电量"）⇒ ×1.05 ⇒ 按总量命中电价 ⇒ 万位向上取整；
+            各组金额 = 预估电费 × 该组预估 ÷ 四组预估之和（最后一项补差，保证合计正好）。
+            预估电费与预估占比可手工改。
           </p>
 
           <p v-else-if="!billLoading" class="py-10 text-center text-sm text-slate-500">
-            选好月份点「生成预提单」
+            选好月份（或区间）点「生成预提单」
           </p>
         </div>
       </template>
