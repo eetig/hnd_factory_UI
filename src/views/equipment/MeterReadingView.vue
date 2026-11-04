@@ -255,6 +255,37 @@ const importText = ref('')
 const importing = ref(false)
 const importHint = ref('')
 
+/* ===== 预提单（2026-11-04）===== */
+const billMonth = ref(new Date().toISOString().slice(0, 7))
+const billData = ref(null)
+const billLoading = ref(false)
+const billError = ref('')
+
+async function loadBill() {
+  billLoading.value = true
+  billError.value = ''
+  try {
+    const res = await request.get('/api/electricity/bill', { params: { month: billMonth.value } })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '生成失败')
+    billData.value = body.data || null
+  } catch (e) {
+    billData.value = null
+    billError.value = e?.response?.data?.msg || e?.message || '生成失败'
+  } finally {
+    billLoading.value = false
+  }
+}
+
+/** 把预提总额填到「预提分摊」页，接着对比实际用量 */
+function applyBillTotal() {
+  if (!billData.value) return
+  shareTotal.value = Number(billData.value.advanceTotal)
+  view.value = 'share'
+  if (!shareRows.value.length) loadShare()
+  ElMessage.success('已填入预提总额，切到「预提分摊」可继续细算')
+}
+
 /* ===== 预提分摊（2026-11-04）===== */
 const shareRange = ref({ from: '', to: '' })
 const shareRows = ref([])
@@ -536,6 +567,7 @@ function switchView(next) {
   if (next === 'matrix' && !matrixRows.value.length) loadMatrix()
   if (next === 'summary' && !summaryRows.value.length) loadSummary()
   if (next === 'share' && !shareRows.value.length) loadShare()
+  if (next === 'bill' && !billData.value) loadBill()
 }
 
 onMounted(async () => {
@@ -562,6 +594,7 @@ onMounted(async () => {
               { key: 'ledger', label: '电表台账' },
               { key: 'matrix', label: '矩阵视图' },
               { key: 'summary', label: '分类汇总' },
+              { key: 'bill', label: '预提单' },
               { key: 'share', label: '预提分摊' },
               { key: 'history', label: '抄表历史' },
             ]"
@@ -986,6 +1019,159 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </template>
+
+      <!-- ============ 预提单（2026-11-04）============ -->
+      <template v-else-if="view === 'bill'">
+        <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
+          <el-date-picker
+            v-model="billMonth"
+            type="month"
+            value-format="YYYY-MM"
+            aria-label="预提月份"
+            class="!w-[130px]"
+            @change="loadBill"
+          />
+          <button
+            type="button"
+            class="rounded-md bg-brand px-3.5 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink disabled:opacity-50"
+            :disabled="billLoading"
+            @click="loadBill"
+          >
+            {{ billLoading ? '计算中…' : '生成预提单' }}
+          </button>
+          <button
+            v-if="billData"
+            type="button"
+            class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="applyBillTotal"
+          >
+            把 {{ fmtNum(billData.advanceTotal) }} 元填入「预提分摊」
+          </button>
+          <span class="text-xs text-slate-500">预估 ×1.05 → 命中电价 → 万位向上取整（只能多，不能少）</span>
+        </div>
+
+        <p v-if="billError" class="mx-6 mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          {{ billError }}
+        </p>
+
+        <div class="min-h-0 flex-1 overflow-auto px-6 py-4">
+          <template v-if="billData">
+            <!-- 算法链 -->
+            <div class="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
+                <p class="text-xs text-slate-500">已抄（折算到本月）</p>
+                <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                  {{ fmtNum(billData.estimateKwh - (billData.tailDays > 0 ? Object.values(billData.tailByGroup).reduce((a, b) => a + Number(b), 0) : 0)) }}
+                  <span class="ml-1 text-xs font-normal text-slate-500">kWh</span>
+                </p>
+              </div>
+              <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
+                <p class="text-xs text-slate-500">
+                  月末补 {{ billData.tailDays }} 天（日均 {{ fmtNum(billData.lastDailyKwh) }}）
+                </p>
+                <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                  {{ fmtNum(Object.values(billData.tailByGroup).reduce((a, b) => a + Number(b), 0)) }}
+                  <span class="ml-1 text-xs font-normal text-slate-500">kWh</span>
+                </p>
+              </div>
+              <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card">
+                <p class="text-xs text-slate-500">预估总电量 × 1.05</p>
+                <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                  {{ fmtNum(billData.advanceKwh) }}
+                  <span class="ml-1 text-xs font-normal text-slate-500">kWh</span>
+                </p>
+              </div>
+              <div class="rounded-card border border-line bg-raised px-4 py-3 shadow-card ring-1 ring-inset ring-brand-ink/30">
+                <p class="text-xs text-slate-500">预提金额（万位向上取整）</p>
+                <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900">
+                  ￥{{ fmtNum(billData.advanceTotal) }}
+                </p>
+                <p class="mt-0.5 text-[11px] text-slate-500">
+                  {{ billData.price }} 元/kWh · 理论 {{ fmtNum(billData.amount) }}
+                </p>
+              </div>
+            </div>
+
+            <!-- 各期折算明细 -->
+            <h3 class="mb-2 text-sm font-semibold text-slate-800">各期折算到本月</h3>
+            <table class="ledger-table mb-4 w-full table-fixed text-sm">
+              <colgroup>
+                <col class="w-[200px]" />
+                <col class="w-[90px]" />
+                <col class="w-[110px]" />
+                <col class="w-[140px]" />
+              </colgroup>
+              <thead class="bg-region text-xs text-slate-500">
+                <tr>
+                  <th class="px-4 py-2 text-left font-medium">期间</th>
+                  <th class="px-4 py-2 text-right font-medium">期天数</th>
+                  <th class="px-4 py-2 text-right font-medium">落在本月</th>
+                  <th class="px-4 py-2 text-right font-medium">本月用量</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in billData.periods" :key="p.from + p.to" class="border-t border-line">
+                  <td class="num px-4 py-1.5 text-slate-700">{{ p.from }} → {{ p.to }}</td>
+                  <td class="num px-4 py-1.5 text-right text-slate-600">{{ p.periodDays }}</td>
+                  <td class="num px-4 py-1.5 text-right text-slate-600">{{ p.inMonthDays }} 天</td>
+                  <td class="num px-4 py-1.5 text-right tabular-nums text-slate-900">
+                    {{ fmtNum(Object.values(p.usage).reduce((a, b) => a + Number(b), 0)) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- 4 项分摊 -->
+            <h3 class="mb-2 text-sm font-semibold text-slate-800">4 项分摊</h3>
+            <table class="ledger-table w-full table-fixed text-sm">
+              <colgroup>
+                <col class="w-[200px]" />
+                <col class="w-[160px]" />
+                <col class="w-[100px]" />
+                <col class="w-[160px]" />
+              </colgroup>
+              <thead class="bg-region text-xs text-slate-500">
+                <tr>
+                  <th class="px-4 py-2 text-left font-medium">组</th>
+                  <th class="px-4 py-2 text-right font-medium">预估用量（kWh）</th>
+                  <th class="px-4 py-2 text-right font-medium">占比</th>
+                  <th class="px-4 py-2 text-right font-medium">预提金额（元）</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in billData.shares" :key="row.section" class="border-t border-line">
+                  <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
+                  <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.estimateKwh) }}</td>
+                  <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
+                    {{ Math.round(Number(row.ratio) * 100) }}%
+                  </td>
+                  <td class="num px-4 py-2 text-right tabular-nums font-medium">{{ fmtNum(row.amount) }}</td>
+                </tr>
+              </tbody>
+              <tfoot class="border-t-2 border-line bg-region/60">
+                <tr>
+                  <td class="px-4 py-2 font-semibold text-slate-800">合计</td>
+                  <td class="num px-4 py-2 text-right font-semibold tabular-nums">{{ fmtNum(billData.estimateKwh) }}</td>
+                  <td class="num px-4 py-2 text-right text-slate-600">100%</td>
+                  <td class="num px-4 py-2 text-right font-semibold tabular-nums">
+                    {{ fmtNum(billData.advanceTotal) }}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+
+            <p class="mt-3 text-[11px] leading-relaxed text-slate-500">
+              算法：抄表期用量按天折算到本月 → 月末用最后一期日均补齐 → ×1.05（只能多不能少）→
+              按总量命中电价档 → 金额万位向上取整 → 4 项按预估用量占比分摊（最后一项补差，保证合计正好）。
+              最后一期是 {{ billData.lastDate }}，之后按日均 {{ fmtNum(billData.lastDailyKwh) }} 补 {{ billData.tailDays }} 天。
+            </p>
+          </template>
+
+          <p v-else-if="!billLoading" class="py-10 text-center text-sm text-slate-500">
+            选好月份点「生成预提单」
+          </p>
         </div>
       </template>
 
