@@ -1202,6 +1202,37 @@ onMounted(async () => {
           <span class="text-xs text-slate-500">预估用量 → ×1.05 → 命中电价 → 万位向上取整</span>
         </div>
 
+        <!--
+          电价档位参考带（2026-11-04）
+          使用方：「预提的档位还是得体现出来，我有时候手动计算需要参考查看」
+          ⇒ 除了输入框，还要一段看得懂的档位说明；数值跟着输入框实时变，
+             并高亮"当前命中哪一档"，手算时直接照抄。
+        -->
+        <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-region/40 px-6 py-2">
+          <span class="text-[11px] font-medium text-slate-600">电价档位</span>
+          <span
+            v-for="(tier, index) in priceTiers"
+            :key="'tier-bill-' + index"
+            class="flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
+            :class="
+              matchedTier === tier
+                ? 'border-brand-ink/40 bg-brand-50 font-semibold text-slate-900'
+                : 'border-line bg-raised text-slate-600'
+            "
+          >
+            <span>
+              <template v-if="index === 0">≤ {{ fmtNum(tier.upTo) }} 度</template>
+              <template v-else-if="index === 1">{{ fmtNum(priceTiers[0].upTo) }} ~ {{ fmtNum(tier.upTo) }} 度</template>
+              <template v-else>&gt; {{ fmtNum(priceTiers[1].upTo) }} 度</template>
+            </span>
+            <span class="text-slate-900">{{ tier.price }} 元/度</span>
+            <span v-if="matchedTier === tier" class="text-[11px] text-brand-ink">当前</span>
+          </span>
+          <span class="ml-1 text-[11px] text-slate-500">
+            依据：10 月真实账单 69,690 度 / 64,479.78 元 ⇒ 综合含税 0.9252 元/度
+          </span>
+        </div>
+
         <p v-if="billError" class="mx-6 mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
           {{ billError }}
         </p>
