@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElDatePicker, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
 import request from '../../api/request'
+import { isAdmin } from '../../api/auth'
 
 /*
  * 电费抄表（2026-11-02，第一阶段：只记录）。
@@ -23,6 +24,9 @@ import request from '../../api/request'
  * 所以某周漏抄一次、或隔两天补抄，用量照样对，只是那一格的区间变长。
  */
 const view = ref('entry') // entry | ledger | matrix | summary | bill | share | history
+
+/** 是否管理员（抄表员授权卡片只给 admin 看；接口层也会再判一次） */
+const isAdminUser = computed(() => isAdmin())
 
 /*
  * 支持 ?tab=xxx 直达（2026-11-04）：
@@ -574,6 +578,42 @@ const historyLoading = ref(false)
 
 const ledgerDrafts = ref({})
 
+/* ===== 抄表员授权（2026-11-04）=====
+ * 使用方：「只有我或者我同意的人才能录入电量」。
+ * 授权 = 把用户角色改成「抄表员（meter_clerk）」；收回 = 改回普通用户（member）。
+ * 只有 admin 能操作，后端 ElectricityClerkController 也校验。
+ */
+const clerks = ref([])
+const clerkCandidates = ref([])
+const clerkLoading = ref(false)
+
+async function loadClerks() {
+  clerkLoading.value = true
+  try {
+    const res = await request.get('/api/electricity/clerk')
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '加载失败')
+    clerks.value = body.data?.clerks || []
+    clerkCandidates.value = body.data?.candidates || []
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    clerkLoading.value = false
+  }
+}
+
+async function setClerk(user, grant) {
+  try {
+    const res = await request.put(`/api/electricity/clerk/${user.id}`, null, { params: { grant } })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '操作失败')
+    ElMessage.success(grant ? `已授予 ${user.username} 抄表权限` : `已收回 ${user.username} 的抄表权限`)
+    await loadClerks()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || '操作失败')
+  }
+}
+
 function fmtNum(value) {
   if (value === null || value === undefined || value === '') return '—'
   const n = Number(value)
@@ -718,6 +758,7 @@ function switchView(next) {
   if (next === 'summary' && !monthly.value) loadMonthly()
   if (next === 'share' && !shareRows.value.length) loadShare()
   if (next === 'bill' && !billData.value) loadBill()
+  if (next === 'ledger' && isAdminUser.value && !clerks.value.length) loadClerks()
 }
 
 onMounted(async () => {
@@ -964,6 +1005,76 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
+
+        <!-- 抄表员授权（2026-11-04）：只有 admin 看到 -->
+        <section v-if="isAdminUser" class="mt-4 rounded-card border border-line bg-raised shadow-card">
+          <header class="flex items-center justify-between border-b border-line px-4 py-2.5">
+            <div>
+              <h3 class="text-sm font-semibold text-slate-800">抄表员（谁能录入电量）</h3>
+              <p class="mt-0.5 text-[11px] text-slate-500">
+                你和管理员本来就能录；这里再授权给你同意的人，收回即改回普通用户。
+              </p>
+            </div>
+            <button
+              type="button"
+              class="rounded-md border border-line px-2.5 py-1 text-[11px] text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              :disabled="clerkLoading"
+              @click="loadClerks"
+            >
+              {{ clerkLoading ? '刷新中…' : '刷新' }}
+            </button>
+          </header>
+
+          <div class="grid gap-4 px-4 py-3 sm:grid-cols-2">
+            <div>
+              <p class="mb-1.5 text-[11px] font-medium text-slate-600">有抄表权限（{{ clerks.length }}）</p>
+              <ul class="space-y-1">
+                <li
+                  v-for="user in clerks"
+                  :key="'clerk-' + user.id"
+                  class="flex items-center justify-between rounded-md border border-line/70 px-2.5 py-1.5"
+                >
+                  <span class="text-xs text-slate-700">
+                    {{ user.username }}
+                    <span v-if="user.realName" class="text-slate-500">（{{ user.realName }}）</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded border border-line px-2 py-0.5 text-[11px] text-slate-600 transition hover:bg-region"
+                    @click="setClerk(user, false)"
+                  >
+                    收回
+                  </button>
+                </li>
+                <li v-if="!clerks.length" class="text-[11px] text-slate-500">还没有授权给任何人</li>
+              </ul>
+            </div>
+
+            <div>
+              <p class="mb-1.5 text-[11px] font-medium text-slate-600">可授权（{{ clerkCandidates.length }}）</p>
+              <ul class="space-y-1">
+                <li
+                  v-for="user in clerkCandidates"
+                  :key="'cand-' + user.id"
+                  class="flex items-center justify-between rounded-md border border-line/70 px-2.5 py-1.5"
+                >
+                  <span class="text-xs text-slate-700">
+                    {{ user.username }}
+                    <span v-if="user.realName" class="text-slate-500">（{{ user.realName }}）</span>
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded border border-brand-ink/40 px-2 py-0.5 text-[11px] font-medium text-brand-ink transition hover:bg-brand-50"
+                    @click="setClerk(user, true)"
+                  >
+                    授权
+                  </button>
+                </li>
+                <li v-if="!clerkCandidates.length" class="text-[11px] text-slate-500">没有其他账号</li>
+              </ul>
+            </div>
+          </div>
+        </section>
       </template>
 
       <!-- ============ 矩阵视图（只读：表 = 列 · 日期 = 行）============ -->
