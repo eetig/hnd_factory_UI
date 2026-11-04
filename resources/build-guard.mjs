@@ -113,6 +113,32 @@ export function runGuard(outDir) {
     return
   }
 
+  /*
+   * 2026-11-04：先确认这份产物里到底有没有"应用代码"。
+   *
+   * app-plus 的产物目录（dist/build/app 或 dist/build/app-plus）在这一步只有 uni-app 运行时
+   * （uni-app-view.umd.js、__uniapp*.js），应用代码 app-service.js 是 HBuilderX 打包阶段才生成的。
+   * 原来的判定会把这种"中间产物"当成"环境配错" ⇒ 必然误报缺线上域名，把构建直接拦死。
+   *
+   * 有应用代码时下面的判定完全不变。
+   */
+  const appCodeMarkers = [
+    'index.html', // h5
+    'app-service.js', // app-plus（HBuilderX 打包前/后都可能叫这个名）
+    'app-service-android.js',
+    'app-service-ios.js',
+    'app.js', // 小程序
+    'common/vendor.js', // 小程序
+  ]
+  const hasAppCode = appCodeMarkers.some((marker) => existsSync(join(outDir, marker)))
+  if (!hasAppCode) {
+    console.log(
+      `[build-guard] 这份产物里只有 uni-app 运行时、没有应用代码（缺 ${appCodeMarkers.join(' / ')}），` +
+        '属于打包中间产物，跳过环境自检',
+    )
+    return
+  }
+
   const ips = [...new Set(text.match(LAN_RE) || [])]
 
   if (!isRemote) {
