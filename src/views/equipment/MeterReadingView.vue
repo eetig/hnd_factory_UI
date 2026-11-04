@@ -305,6 +305,19 @@ const billShares = computed(() =>
 /** 计算过程是否展开 */
 const billTraceOpen = ref(true)
 
+/** 哪几个组展开了「按表拆解」 */
+const billMeterOpen = ref({})
+
+function toggleMeterGroup(section) {
+  billMeterOpen.value = { ...billMeterOpen.value, [section]: !billMeterOpen.value[section] }
+}
+
+/** 某组的按表拆解（后端算的，与组用量同口径） */
+function meterRowsOf(section) {
+  const row = (billData.value?.meterRows || []).find((r) => r.section === section)
+  return row?.meters || []
+}
+
 /** 已抄部分合计（折算到区间/本月） */
 const billDoneTotal = computed(() =>
   Object.values(billData.value?.doneInMonth || {}).reduce((sum, v) => sum + Number(v || 0), 0),
@@ -1326,6 +1339,71 @@ onMounted(async () => {
                 <li>
                   <b>③ 已抄（折算到区间）</b>
                   = {{ fmtNum(billDoneTotal) }} 度
+                  <span class="text-slate-500">（= 下面四组之和）</span>
+
+                  <!-- 四组分别由哪些表加出来的（2026-11-04 使用方要看这一层） -->
+                  <div class="mt-2 space-y-1.5">
+                    <div
+                      v-for="group in billOrder"
+                      :key="'gm-' + group"
+                      class="rounded-md border border-line/70"
+                    >
+                      <button
+                        type="button"
+                        class="flex w-full items-center justify-between px-2.5 py-1.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                        @click="toggleMeterGroup(group)"
+                      >
+                        <span class="text-slate-700">
+                          <b>{{ shortName(group) }}</b>
+                          = {{ fmtNum(meterRowsOf(group).reduce((sum, m) => sum + Number(m.kwh || 0), 0)) }} 度
+                          <span class="text-slate-500">
+                            （{{ meterRowsOf(group).length }} 块表
+                            <template v-if="meterRowsOf(group).some((m) => Number(m.multiplier) > 1)">
+                              · 含倍率表
+                            </template>
+                            ）
+                          </span>
+                        </span>
+                        <span class="text-slate-500">
+                          {{ billMeterOpen[group] ? '收起' : '展开' }}
+                        </span>
+                      </button>
+
+                      <table v-if="billMeterOpen[group]" class="w-full table-fixed text-[11px]">
+                        <colgroup>
+                          <col class="w-[60px]" />
+                          <col class="w-[240px]" />
+                          <col class="w-[90px]" />
+                          <col class="w-[110px]" />
+                        </colgroup>
+                        <tbody>
+                          <tr
+                            v-for="m in meterRowsOf(group)"
+                            :key="'gm-' + group + '-' + m.meterNo"
+                            class="border-t border-line/50"
+                          >
+                            <td class="num py-1 pl-2.5 text-slate-500">{{ m.excelNo || '—' }}</td>
+                            <td class="py-1 text-slate-700">
+                              {{ m.meterName }}
+                              <span v-if="m.meterCode" class="text-slate-500">（{{ m.meterCode }}）</span>
+                            </td>
+                            <td class="num py-1 text-right text-slate-500">
+                              {{ Number(m.multiplier) > 1 ? '×' + m.multiplier : '' }}
+                            </td>
+                            <td class="num py-1 pr-2.5 text-right font-medium text-slate-900">
+                              {{ fmtNum(m.kwh) }}
+                            </td>
+                          </tr>
+                          <tr class="border-t border-line bg-desk/50">
+                            <td colspan="3" class="py-1 pr-2 text-right text-slate-600">小计</td>
+                            <td class="num py-1 pr-2.5 text-right font-semibold text-slate-900">
+                              {{ fmtNum(meterRowsOf(group).reduce((sum, m) => sum + Number(m.kwh || 0), 0)) }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </li>
 
                 <li v-if="billData.tailDays > 0">
