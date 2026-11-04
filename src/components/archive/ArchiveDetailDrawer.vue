@@ -71,6 +71,8 @@ watch(
     fill('owner', suggestion.owner)
     fill('expireDate', suggestion.expireDate)
     fill('originPlace', suggestion.originPlace)
+    // 备注摘要（2026-11-05）：AI 给的 summary 只在备注为空时写入 —— 你手写的不覆盖
+    fill('remark', suggestion.summary)
   },
 )
 

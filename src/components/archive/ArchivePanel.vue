@@ -156,6 +156,138 @@ async function onUpload(file, resolve) {
   }
 }
 
+
+/* ===== 批量上传（2026-11-05）=====
+ * 使用方：「上传资料可以多选，甚至可以选文件夹」。
+ *
+ * 设计要点（都经过确认）：
+ *   · 文件夹递归读、按白名单过滤，**先给清单再传** —— 文件夹里混着 .DS_Store、
+ *     ~$xxx.docx、微信 .dat 是常态，静默丢掉会让人以为"传丢了"。
+ *   · 默认**不调 AI**：批量场景多是同类资料，逐条调模型既慢又没必要；
+ *     要看逐条判断就勾上，进度里会显示第几个。
+ *   · 每条仍走「上传 → 保存」两步，失败不影响其它条，最后给成功/失败清单。
+ */
+const SUPPORTED_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'png', 'jpg', 'jpeg', 'txt', 'csv', 'zip']
+
+const batchOpen = ref(false)
+const batchFiles = ref([]) // [{ file, name, size, ok, reason }]
+const batchCategoryId = ref(null)
+const batchUseAi = ref(false)
+const batchRunning = ref(false)
+const batchDone = ref(0)
+const batchResults = ref([]) // [{ name, ok, message }]
+const batchInput = ref(null) // 多选
+const batchDirInput = ref(null) // 选文件夹
+
+/** 从 FileList 收一批文件（多选 / 文件夹共用） */
+function collectFiles(fileList) {
+  const list = []
+  for (const file of Array.from(fileList || [])) {
+    const name = file.name || ''
+    // 文件夹上传时 webkitRelativePath 带目录，用来判断"这是个临时文件"
+    const relative = file.webkitRelativePath || name
+    const ext = (name.split('.').pop() || '').toLowerCase()
+    const base = name.split('/').pop() || name
+    let ok = true
+    let reason = ''
+    if (base.startsWith('~$') || base.startsWith('.')) {
+      ok = false
+      reason = '临时文件'
+    } else if (!ext || !SUPPORTED_EXT.includes(ext)) {
+      ok = false
+      reason = ext ? `不支持 .${ext}` : '没有扩展名'
+    }
+    list.push({ file, name: relative, size: file.size, ok, reason })
+  }
+  return list
+}
+
+function pickBatchFiles() {
+  batchInput.value?.click()
+}
+
+function pickBatchFolder() {
+  batchDirInput.value?.click()
+}
+
+function onBatchPicked(event) {
+  const picked = collectFiles(event.target.files)
+  event.target.value = '' // 允许再次选同名文件
+  if (!picked.length) return
+  batchFiles.value = picked
+  batchResults.value = []
+  batchDone.value = 0
+  batchCategoryId.value = categoryId.value || categories.value[0]?.value || null
+  batchUseAi.value = false
+  batchOpen.value = true
+}
+
+const batchValidCount = computed(() => batchFiles.value.filter((f) => f.ok).length)
+const batchSkippedCount = computed(() => batchFiles.value.filter((f) => !f.ok).length)
+
+/** 开始批量上传：逐条「上传 → 保存」，失败不中断 */
+async function runBatch() {
+  if (batchRunning.value) return
+  const valid = batchFiles.value.filter((f) => f.ok)
+  if (!valid.length) {
+    ElMessage.info('没有可上传的文件')
+    return
+  }
+  batchRunning.value = true
+  batchDone.value = 0
+  batchResults.value = []
+  let okCount = 0
+  for (const item of valid) {
+    try {
+      const uploaded = await upload(item.file)
+      let suggestion = null
+      if (batchUseAi.value) {
+        try {
+          const res = await aiSuggestArchive(item.file)
+          const body = res?.data || {}
+          suggestion = body.success === false ? null : body.data
+        } catch {
+          suggestion = null
+        }
+      }
+      await save({
+        id: null,
+        name: (suggestion?.name || item.file.name).replace(/\.[^.]+$/, '').slice(0, 128),
+        categoryId: suggestion?.categoryId || batchCategoryId.value,
+        fileName: uploaded.fileName,
+        origName: uploaded.origName || item.file.name,
+        fileSize: uploaded.size,
+        mimeType: uploaded.contentType || '',
+        expireDate: suggestion?.expireDate || '',
+        originPlace: '',
+        docNo: suggestion?.docNo || '',
+        owner: suggestion?.owner || '',
+        remark: suggestion?.summary || '',
+      })
+      okCount += 1
+      batchResults.value.push({ name: item.name, ok: true, message: '已保存' })
+    } catch (e) {
+      batchResults.value.push({
+        name: item.name,
+        ok: false,
+        message: e?.response?.data?.msg || e?.message || '上传失败',
+      })
+    }
+    batchDone.value += 1
+  }
+  batchRunning.value = false
+  await load()
+  await loadCategories()
+  ElMessage.success(`批量上传完成：成功 ${okCount} / ${valid.length}`)
+}
+
+function closeBatch() {
+  if (batchRunning.value) return
+  batchOpen.value = false
+  batchFiles.value = []
+  batchResults.value = []
+}
+
 /** AI 归类建议（2026-11-05）：给抽屉预填用；失败静默，不打扰录入 */
 const aiSuggestion = ref(null)
 
@@ -516,7 +648,36 @@ onMounted(async () => {
           只看 30 天内到期
         </button>
 
-        <el-button v-if="canEdit" type="primary" @click="openCreate">新增资料</el-button>
+        <!--
+          批量上传（2026-11-05）
+          两个隐藏 input：multiple 多选、webkitdirectory 选文件夹（Chrome/Edge 支持）。
+          选完不立刻传，先弹清单让人确认 —— 文件夹里混着临时文件是常态。
+        -->
+        <input
+          ref="batchInput"
+          type="file"
+          multiple
+          class="hidden"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="onBatchPicked"
+        />
+        <input
+          ref="batchDirInput"
+          type="file"
+          webkitdirectory
+          directory
+          multiple
+          class="hidden"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="onBatchPicked"
+        />
+        <template v-if="canEdit">
+          <el-button @click="pickBatchFiles">批量上传</el-button>
+          <el-button @click="pickBatchFolder">选文件夹</el-button>
+          <el-button type="primary" @click="openCreate">新增资料</el-button>
+        </template>
       </header>
 
       <p v-if="loadError" role="alert" class="border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-700">
@@ -629,6 +790,79 @@ onMounted(async () => {
       </footer>
     </section>
   </section>
+
+  <!-- 批量上传面板（2026-11-05）：先看清单，再决定传不传 -->
+  <el-dialog
+    :model-value="batchOpen"
+    title="批量上传资料"
+    width="720px"
+    top="6vh"
+    append-to-body
+    @update:model-value="(v) => { if (!v) closeBatch() }"
+  >
+    <div class="space-y-3">
+      <p class="text-xs text-slate-600">
+        共 <b>{{ batchFiles.length }}</b> 个文件，可上传 <b>{{ batchValidCount }}</b> 个
+        <span v-if="batchSkippedCount" class="text-amber-700">，跳过 {{ batchSkippedCount }} 个</span>
+      </p>
+
+      <div class="max-h-[36vh] overflow-auto rounded-md border border-line">
+        <table class="w-full border-collapse text-xs">
+          <tbody>
+            <tr v-for="(item, i) in batchFiles" :key="i" class="border-b border-line">
+              <td class="px-2 py-1 text-slate-700">
+                <span :class="item.ok ? '' : 'text-slate-500 line-through'">{{ item.name }}</span>
+              </td>
+              <td class="whitespace-nowrap px-2 py-1 text-right text-slate-500">
+                {{ (item.size / 1024).toFixed(0) }} KB
+              </td>
+              <td class="whitespace-nowrap px-2 py-1 text-right">
+                <span v-if="!item.ok" class="text-amber-700">{{ item.reason }}</span>
+                <span v-else class="text-slate-500">待上传</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="text-xs text-slate-600">统一分类</span>
+        <el-select v-model="batchCategoryId" class="!w-[180px]" placeholder="选分类">
+          <el-option
+            v-for="option in categoryOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+            :disabled="option.disabled"
+          />
+        </el-select>
+        <label class="flex items-center gap-1.5 text-xs text-slate-600">
+          <input v-model="batchUseAi" type="checkbox" class="h-3.5 w-3.5" />
+          逐条 AI 归类（较慢，只对管理员开放）
+        </label>
+      </div>
+      <p class="text-[11px] leading-relaxed text-slate-500">
+        默认不调模型：批量多半是同类资料，统一分类一次就够。
+        勾上后会逐个调 DeepSeek，并采用它给的名称/编号/有效期/备注摘要。
+      </p>
+
+      <p v-if="batchRunning" class="text-xs text-brand-ink">
+        正在上传 {{ batchDone }} / {{ batchValidCount }}…
+      </p>
+      <div v-if="batchResults.length" class="max-h-[20vh] overflow-auto text-[11px]">
+        <p v-for="(r, i) in batchResults" :key="i" :class="r.ok ? 'text-slate-600' : 'text-rose-700'">
+          {{ r.ok ? '✓' : '✗' }} {{ r.name }} — {{ r.message }}
+        </p>
+      </div>
+    </div>
+
+    <template #footer>
+      <el-button :disabled="batchRunning" @click="closeBatch">关闭</el-button>
+      <el-button type="primary" :loading="batchRunning" :disabled="!batchValidCount" @click="runBatch">
+        开始上传（{{ batchValidCount }}）
+      </el-button>
+    </template>
+  </el-dialog>
 
   <!--
     在线预览（2026-11-05）
