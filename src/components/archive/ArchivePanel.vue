@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElButton, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import { hasPerm, isAdmin } from '../../api/auth'
 import { downloadArchive, aiSuggestArchive } from '../../api/archive'
 import { useArchive } from '../../composables/useArchive'
@@ -174,6 +174,87 @@ async function askAi(file) {
   } catch {
     // 没配 key / 网络不通 / 模型超时，都不该打断"新增资料"
     aiSuggestion.value = null
+  }
+}
+
+/** 复制文件名（2026-11-05）：点资料名称时用，复制的是原文件名 */
+async function copyFileName(row) {
+  /*
+   * 复制的顺序：原文件名 → 资料名称。
+   * 名字是我们自己起的，原文件名才是去共享盘/邮箱里找文件时能用的那个。
+   */
+  const text = row.origName || row.fileName || row.name || ''
+  if (!text) {
+    ElMessage.info('这条资料没有文件名')
+    return
+  }
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // http 或老浏览器：clipboard API 不可用，用临时 textarea 兜底
+      const area = document.createElement('textarea')
+      area.value = text
+      area.style.position = 'fixed'
+      area.style.opacity = '0'
+      document.body.appendChild(area)
+      area.select()
+      document.execCommand('copy')
+      area.remove()
+    }
+    ElMessage.success(`已复制文件名：${text}`)
+  } catch {
+    ElMessage.error('浏览器不让写剪贴板，请手动选中复制')
+  }
+}
+
+/* ===== 预览（2026-11-05）=====
+ * 状态：preview = { open, kind: 'image' | 'pdf' | 'other', url, name, loading, error }
+ * url 是 objectURL，关闭时必须 revoke，否则一张图看十次就漏十份内存。
+ */
+const preview = ref({ open: false, kind: 'other', url: '', name: '', loading: false, error: '' })
+
+/** 能不能在线预览：图片、PDF 可以；Word/Excel 浏览器渲染不了 */
+function previewKind(row) {
+  const name = String(row.origName || row.fileName || '').toLowerCase()
+  const mime = String(row.mimeType || '').toLowerCase()
+  if (mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/.test(name)) return 'image'
+  if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  return 'other'
+}
+
+function closePreview() {
+  if (preview.value.url) URL.revokeObjectURL(preview.value.url)
+  preview.value = { open: false, kind: 'other', url: '', name: '', loading: false, error: '' }
+}
+
+/**
+ * el-dialog 的 v-model 回写。关掉时顺手 revoke objectURL。
+ * 单独抽一个函数是为了让模板里那一行保持短（模板里写箭头函数容易读不清）。
+ */
+function onPreviewVisible(visible) {
+  if (!visible) closePreview()
+}
+
+async function openPreview(row) {
+  const kind = previewKind(row)
+  if (kind === 'other') {
+    ElMessage.info('Word/Excel 浏览器打不开，用「下载」后用本机 Office 看')
+    return
+  }
+  if (!row.hasFile) {
+    ElMessage.info('这条资料只有纸质，没有电子件')
+    return
+  }
+  preview.value = { open: true, kind, url: '', name: row.origName || row.name || '预览', loading: true, error: '' }
+  try {
+    const res = await downloadArchive(row.id)
+    const blob = new Blob([res.data], { type: row.mimeType || (kind === 'pdf' ? 'application/pdf' : 'image/*') })
+    preview.value.url = URL.createObjectURL(blob)
+  } catch (e) {
+    preview.value.error = e?.message || '打开失败'
+  } finally {
+    preview.value.loading = false
   }
 }
 
@@ -449,7 +530,14 @@ onMounted(async () => {
               >
               <td class="px-2 py-2 text-xs text-slate-500">{{ (pageNum - 1) * pageSize + index + 1 }}</td>
               <td class="min-w-0 px-2 py-2">
-                <span class="block truncate font-medium text-slate-900" :title="row.name">{{ row.name }}</span>
+                <button
+                  type="button"
+                  class="block max-w-full truncate text-left font-medium text-slate-900 underline decoration-dotted decoration-slate-300 underline-offset-2 transition-colors hover:text-brand-ink hover:decoration-brand-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                  :title="`点击复制文件名：${row.origName || row.name || ''}`"
+                  @click.stop="copyFileName(row)"
+                >
+                  {{ row.name }}
+                </button>
                 <span v-if="row.remark" class="block truncate text-xs text-slate-500" :title="row.remark">{{ row.remark }}</span>
               </td>
               <td class="px-2 py-2">
@@ -466,14 +554,23 @@ onMounted(async () => {
                 <span class="block truncate text-slate-600" :title="row.owner">{{ row.owner || '—' }}</span>
               </td>
               <td class="px-2 py-2">
-                <button
-                  v-if="row.hasFile"
+                <span v-if="row.hasFile" class="inline-flex items-center gap-1">
+                  <button
+                    v-if="previewKind(row) !== 'other'"
+                    type="button"
+                    class="rounded-full border border-line px-2 py-0.5 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    @click.stop="openPreview(row)"
+                  >
+                    预览
+                  </button>
+                  <button
                   type="button"
                   class="rounded-full border border-line px-2 py-0.5 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
                   @click.stop="download(row)"
                 >
                   下载
                 </button>
+                </span>
                 <span v-else class="text-xs text-slate-500">仅纸质</span>
               </td>
               <td class="px-2 py-2 text-right">
@@ -508,6 +605,38 @@ onMounted(async () => {
       </footer>
     </section>
   </section>
+
+  <!--
+    在线预览（2026-11-05）
+    图片用 img、PDF 用 iframe（浏览器自带阅读器）；
+    Word/Excel 浏览器渲染不了，不显示"预览"按钮，只给下载。
+    关闭时 revoke objectURL —— 否则看十次就漏十份内存。
+  -->
+  <el-dialog
+    :model-value="preview.open"
+    :title="preview.name"
+    width="80%"
+    top="6vh"
+    append-to-body
+    @update:model-value="onPreviewVisible"
+  >
+    <div class="flex min-h-[60vh] items-center justify-center bg-region">
+      <span v-if="preview.loading" class="text-sm text-slate-500">载入中…</span>
+      <span v-else-if="preview.error" class="text-sm text-rose-700">{{ preview.error }}</span>
+      <img
+        v-else-if="preview.kind === 'image' && preview.url"
+        :src="preview.url"
+        alt="资料预览"
+        class="max-h-[70vh] max-w-full object-contain"
+      />
+      <iframe
+        v-else-if="preview.kind === 'pdf' && preview.url"
+        :src="preview.url"
+        title="资料预览"
+        class="h-[70vh] w-full border-0"
+      ></iframe>
+    </div>
+  </el-dialog>
 
   <ArchiveDetailDrawer
       :ai-suggestion="aiSuggestion"
