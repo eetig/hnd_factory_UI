@@ -264,11 +264,31 @@ const cardStyle = computed(() => {
       : 'transform 320ms cubic-bezier(.34,1.56,.64,1), opacity 220ms ease'
   const dx = gesture.dx
   const progress = Math.min(1, Math.abs(dx) / 380)
+  /*
+   * 方向感（2026-11-05）：阴影跟着位移走 —— 往右滑，阴影就往左拖，
+   * 看起来像卡片被"推离"桌面；退出方向那一侧再加一层同色淡光晕。
+   */
+  const shadowX = -dx * 0.06
+  const shadowBlur = 30 + progress * 26
+  const glowColor = tint(sectionColor.value, 0.16 * progress)
+  const shadow = dx === 0
+    ? '0 8rpx 30rpx rgba(90, 70, 40, 0.06)'
+    : `${shadowX.toFixed(1)}px 14rpx ${shadowBlur.toFixed(0)}rpx rgba(70, 60, 45, 0.12), ` +
+      `${(dx > 0 ? 1 : -1) * 10}px 0 0 ${glowColor}`
   return {
     transition,
     transform: `translate3d(${dx}px, 0, 0) rotate(${(dx * 0.015).toFixed(2)}deg)`,
     opacity: dragging ? String(1 - progress * 0.35) : '1',
+    boxShadow: shadow,
+    // 顶部一层 12% 同色洗染：色条之外再加一点"这块表属于哪个车间"的暗示
+    backgroundImage: `linear-gradient(180deg, ${tint(sectionColor.value, 0.12)} 0, rgba(255,255,255,0) 96rpx)`,
   }
+})
+
+/** 还剩几块没填（提交按钮上要显示） */
+const remaining = computed(() => {
+  const unfilled = cards.value.filter((c) => c.reading === null || c.reading === undefined).length
+  return Math.max(0, unfilled - 0)
 })
 
 /** 立刻把当前这张提交（底部按钮） */
@@ -356,6 +376,18 @@ function finishHint() {
     uni.showToast({ title: `还有 ${skipped.value.length} 块没抄`, icon: 'none' })
   } else {
     uni.showToast({ title: '今天的表都抄完了', icon: 'none' })
+  }
+}
+
+/** 回到第一块"跳过"的（完成态里那个按钮） */
+function backToSkipped() {
+  if (!skipped.value.length) return
+  const first = skipped.value[0]
+  const at = cards.value.findIndex((c) => c.meterId === first)
+  if (at >= 0) {
+    goTo(at)
+  } else {
+    loadSheet()
   }
 }
 
@@ -478,19 +510,54 @@ onMounted(() => {
           </view>
           <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="doSubmit">
             <text class="mr__action-text">提交</text>
+            <text v-if="remaining" class="mr__action-sub">还剩 {{ remaining }}</text>
             <text class="mr__action-icon">→</text>
           </view>
         </view>
       </view>
 
-      <!-- 抄完了 -->
+      <!--
+        抄完了（2026-11-05 重做）
+        原来是三行小字 + 一个"刷新"，收工这一刻太轻。现在给一屏：
+        进度环（已填比例）+ 两个数字 + 两个按钮（回到第一块没填的 / 重新拉数据）
+      -->
       <view v-else class="mr__done-all">
+        <view class="mr__done-ring" :style="{ background: `conic-gradient(${sectionColor} ${(filledCount / Math.max(1, total)) * 360}deg, rgba(20,22,28,0.08) 0deg)` }">
+          <view class="mr__done-ring-inner">
+            <text class="mr__done-pct">{{ Math.round((filledCount / Math.max(1, total)) * 100) }}%</text>
+            <text class="mr__done-ring-label">已填</text>
+          </view>
+        </view>
+
         <text class="mr__done-title">今天的表都看完了</text>
-        <text class="mr__done-text" @click="finishHint">
-          已填 {{ filledCount }} / {{ total }}
-          <text v-if="skipped.length">· 跳过 {{ skipped.length }}</text>
-        </text>
-        <text class="mr__done-btn" @click="loadSheet">刷新</text>
+        <view class="mr__done-stats">
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value">{{ filledCount }}</text>
+            <text class="mr__done-stat-label">已填</text>
+          </view>
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value">{{ total }}</text>
+            <text class="mr__done-stat-label">总数</text>
+          </view>
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value" :class="{ 'is-warn': skipped.length }">{{ skipped.length }}</text>
+            <text class="mr__done-stat-label">跳过</text>
+          </view>
+        </view>
+
+        <view v-if="skipped.length" class="mr__done-actions">
+          <view class="mr__action mr__action--skip" hover-class="mr__action--pressed" @click="backToSkipped">
+            <text class="mr__action-text">补抄 {{ skipped.length }} 块</text>
+          </view>
+          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="loadSheet">
+            <text class="mr__action-text">刷新</text>
+          </view>
+        </view>
+        <view v-else class="mr__done-actions">
+          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="loadSheet">
+            <text class="mr__action-text">刷新</text>
+          </view>
+        </view>
       </view>
 
       <!-- 已填列表（点一张回到那张改） -->
@@ -715,6 +782,92 @@ onMounted(() => {
   color: var(--ui-on-accent);
   background-color: var(--ui-accent);
   box-shadow: 0 10rpx 24rpx rgba(70, 90, 130, 0.18);
+}
+
+.mr__action-sub {
+  margin-left: 8rpx;
+  font-size: 22rpx;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+/* 完成态（2026-11-05） */
+.mr__done-all {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24rpx;
+  padding: 0 40rpx;
+}
+
+.mr__done-ring {
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mr__done-ring-inner {
+  width: 168rpx;
+  height: 168rpx;
+  border-radius: 50%;
+  background-color: var(--ui-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.mr__done-pct {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mr__done-ring-label {
+  font-size: 20rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__done-stats {
+  display: flex;
+  gap: 56rpx;
+  margin-top: 8rpx;
+}
+
+.mr__done-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.mr__done-stat-value {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.mr__done-stat-value.is-warn {
+  color: #b45309;
+}
+
+.mr__done-stat-label {
+  font-size: 20rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__done-actions {
+  display: flex;
+  gap: 24rpx;
+  width: 100%;
+  margin-top: 16rpx;
 }
 
 .mr__action-icon {
