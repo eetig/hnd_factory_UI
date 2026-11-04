@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { ElButton, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
-import { hasPerm } from '../../api/auth'
+import { hasPerm, isAdmin } from '../../api/auth'
 import { downloadArchive, aiSuggestArchive } from '../../api/archive'
 import { useArchive } from '../../composables/useArchive'
 import ArchiveDetailDrawer from './ArchiveDetailDrawer.vue'
@@ -160,7 +160,12 @@ async function onUpload(file, resolve) {
 const aiSuggestion = ref(null)
 
 async function askAi(file) {
+  /*
+   * 只给管理员（2026-11-05，使用方：「这个功能只能管理员用，如果所有人都能用，
+   * 我的 token 成本会很高」）。后端 /api/archive/ai-suggest 也校验一次，这里是省一次请求。
+   */
   aiSuggestion.value = null
+  if (!isAdmin()) return
   try {
     const res = await aiSuggestArchive(file)
     const body = res?.data || {}
