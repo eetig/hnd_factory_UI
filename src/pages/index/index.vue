@@ -4607,7 +4607,7 @@ onPullDownRefresh(async () => {
               </button>
             </view>
             <text class="mt-2 block text-[11px] leading-relaxed text-slate-400">
-              <template v-if="canReadMeter">抄表：37 块表按编号顺序读，右滑提交、左滑跳过，可拍照存档</template>
+              <template v-if="canReadMeter">抄表：38 块表（37 块按编号 + 150车间那块不编号），右滑提交、左滑跳过，可拍照存档</template>
               <template v-else>抄表需要管理员授权（PC「电表台账」页底部可授权）</template>
             </text>
           </div>
