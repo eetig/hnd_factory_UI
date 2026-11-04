@@ -33,6 +33,12 @@
       }
     },
     {
+      "path": "pages/electricity/electricity",
+      "style": {
+        "navigationBarTitleText": "电费"
+      }
+    },
+    {
       "path": "pages/auditLog/auditLog",
       "style": {
         "navigationBarTitleText": "管控日志"

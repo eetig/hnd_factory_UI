@@ -6,7 +6,7 @@ import dayjs from 'dayjs'
 import request from '../../api/request'
 import { uploadFiles } from '../../api/upload'
 import { resolveAssetUrl, resolveVesselImage } from '../../api/config'
-import { clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
+import { authState, clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
 import { APP_ENV, ACTIVE_ENV } from '../../api/env'
 import ProductSelectDialog from '../../components/ProductSelectDialog.vue'
 import DateField from '../../components/DateField.vue'
@@ -367,9 +367,31 @@ function openMeterRead() {
 }
 
 /**
+ * 打开「电费」（2026-11-04）。
+ *
+ * 谁能看：所有登录用户（金额部分由电费页自己按 admin 判断）。
+ * 谁能录：admin 与被授予「抄表员」角色的人 —— 电费页里的「去抄表」入口按这个显隐，
+ *        真正的判定在后端 /api/electricity/readings/batch 那一道。
+ */
+function openElectricity() {
+  closeMenu()
+  if (!isLoggedIn()) {
+    uni.showToast({ title: '请先登录', icon: 'none' })
+    return
+  }
+  uni.navigateTo({ url: '/pages/electricity/electricity' })
+}
+
+/**
  * 是否管理员（2026-11-02）。抽屉里的「管控日志」只给管理员看；
  * 页面自己也会再判一次 —— 前端隐藏入口不算安全，接口层还有一道。
  */
+/**
+ * 能否录入电量（2026-11-04）：管理员，或被管理员授予「抄表员（meter_clerk）」的人。
+ * 后端 /api/electricity/readings/batch 用同一套判据（ElectricityClerkController.canWriteReadings）。
+ */
+const canReadMeter = computed(() => isAdminUser.value || authState.roleKey === 'meter_clerk')
+
 const isAdminUser = computed(() => isAdmin())
 
 /** 打开管控日志（2026-11-02，仅管理员） */
@@ -4716,7 +4738,8 @@ onPullDownRefresh(async () => {
             </button>
             <text class="drawer__tip">未登录也可以浏览物料、周统计等查询页</text>
             <!-- 手机抄表（2026-11-03）：只有管理员用（使用方：「只有我抄表」） -->
-            <text v-if="isAdminUser" class="drawer__privacy" @click="openMeterRead">电费抄表</text>
+            <text class="drawer__privacy" @click="openElectricity">电费</text>
+            <text v-if="canReadMeter" class="drawer__privacy" @click="openMeterRead">电费抄表</text>
             <!-- 管控日志（2026-11-02）：只给管理员，入口是小字，不显眼、只主动点 -->
             <text v-if="isAdminUser" class="drawer__privacy" @click="openAuditLog">管控日志</text>
             <text class="drawer__privacy" @click="openPrivacy">隐私政策</text>

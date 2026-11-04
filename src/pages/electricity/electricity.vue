@@ -1,0 +1,723 @@
+<script setup>
+import { computed, onMounted, ref } from 'vue'
+import { onPullDownRefresh } from '@dcloudio/uni-app'
+import request from '../../api/request'
+import { authState, isAdmin, isLoggedIn } from '../../api/auth'
+import { useTheme } from '../../composables/useTheme'
+import LoadingMask from '../../components/LoadingMask.vue'
+import PanelState from '../../components/PanelState.vue'
+
+/*
+ * 电费（手机端，2026-11-04）
+ *
+ * 使用方的要求与决定：
+ *   · 手机上看三个东西：汇总 / 分类汇总 / 预提单（矩阵视图与预提分摊不放手机 —— 37 块表 × 30 天横滑没人用）
+ *   · 占比用**横向条形**（手机竖屏比饼图清楚，扇区标签也不会叠字）
+ *   · 谁看得到金额：所有登录用户能看电量；**只有 admin 能看到电费金额**
+ *   · 谁能录入电量：admin 与被 admin 授予「抄表员」的人（后端控制，这里只管入口显隐）
+ *
+ * 口径（与 PC 完全一致）：总电量 = 1 号高压计量表；四组按使用方 2026-11-04 的定义；
+ * 抄表都在早上 08:00，所以跨月的期按"日窗口"折算，7/31 那天归 7 月。
+ */
+
+const { themeClass, themeVars } = useTheme()
+
+const view = ref('overview') // overview | monthly | bill
+const TABS = [
+  { key: 'overview', label: '汇总' },
+  { key: 'monthly', label: '分类汇总' },
+  { key: 'bill', label: '预提单' },
+]
+
+/** 本月 YYYY-MM */
+function currentMonth() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${now.getFullYear()}-${month}`
+}
+
+const month = ref(currentMonth())
+const loading = ref(false)
+const errorText = ref('')
+
+const monthly = ref(null)
+const bill = ref(null)
+
+/** 金额只有 admin 能看 */
+const showMoney = computed(() => isAdmin())
+
+/** 能否录入电量（入口显隐；真正的判定在后端） */
+const canWrite = computed(() => isAdmin() || authState.roleKey === 'meter_clerk')
+
+async function load() {
+  if (!isLoggedIn()) {
+    errorText.value = '请先登录'
+    return
+  }
+  loading.value = true
+  errorText.value = ''
+  try {
+    const [monthlyRes, billRes] = await Promise.all([
+      request.get('/api/electricity/monthly', { params: { month: month.value } }),
+      request.get('/api/electricity/bill', { params: { month: month.value } }),
+    ])
+    const monthlyBody = monthlyRes.data || {}
+    const billBody = billRes.data || {}
+    if (monthlyBody.success === false) throw new Error(monthlyBody.msg || '汇总加载失败')
+    if (billBody.success === false) throw new Error(billBody.msg || '预提单加载失败')
+    monthly.value = monthlyBody.data || null
+    bill.value = billBody.data || null
+  } catch (e) {
+    errorText.value = e?.response?.data?.msg || e?.message || '加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
+onPullDownRefresh(async () => {
+  await load()
+  uni.stopPullDownRefresh()
+})
+
+/** 上/下个月 */
+function shiftMonth(delta) {
+  const [y, m] = month.value.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  month.value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  load()
+}
+
+function fmt(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return Math.round(n).toLocaleString('zh-CN')
+}
+
+function fmt2(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** 汇总页的四组（从预提单拿，口径与 PC 一致） */
+const groupRows = computed(() => bill.value?.shares || [])
+
+/** 占比条：以四组之和为分母（金额归一的口径） */
+function groupRatio(row) {
+  const sum = Number(bill.value?.groupSum || 0)
+  return sum > 0 ? (Number(row.estimateKwh || 0) / sum) * 100 : 0
+}
+
+/** 分类汇总：每期卡片，展示总电量 + 前四列，点开看全部 */
+const expandedPeriod = ref('')
+function togglePeriod(key) {
+  expandedPeriod.value = expandedPeriod.value === key ? '' : key
+}
+
+/** 一个期卡片里要展示的列（手机上先给最能看懂的几列） */
+const COMPACT_COLUMNS = ['总电量', '公用工程', '乙炔车间', '1#厂房', '2#厂房', '其它']
+
+function columnOf(period, name) {
+  return Number(period?.values?.[name] || 0)
+}
+
+/** 全部列（详情用） */
+const allColumns = computed(() => (monthly.value?.rows || []).filter((r) => !r.viewOnly))
+
+function goRead() {
+  uni.navigateTo({ url: '/pages/meterRead/meterRead' })
+}
+</script>
+
+<template>
+  <view :class="['el-page', themeClass]" :style="themeVars">
+    <LoadingMask v-if="loading" />
+
+    <!-- 顶部：月份切换 -->
+    <view class="el-head">
+      <view class="el-month">
+        <view class="el-month-btn" hover-class="el-tap" @tap="shiftMonth(-1)">‹</view>
+        <text class="el-month-text">{{ month }}</text>
+        <view class="el-month-btn" :class="{ 'el-month-btn--off': month >= currentMonth() }" hover-class="el-tap" @tap="shiftMonth(1)">
+          ›
+        </view>
+      </view>
+      <view v-if="canWrite" class="el-read" hover-class="el-tap" @tap="goRead">去抄表</view>
+      <view v-else class="el-read el-read--off">抄表需授权</view>
+    </view>
+
+    <!-- 页签 -->
+    <view class="el-tabs">
+      <view
+        v-for="tab in TABS"
+        :key="tab.key"
+        class="el-tab"
+        :class="{ 'el-tab--active': view === tab.key }"
+        @tap="view = tab.key"
+      >
+        {{ tab.label }}
+      </view>
+    </view>
+
+    <PanelState v-if="errorText" type="error" :title="errorText" description="下拉可重试" />
+    <PanelState v-else-if="!loading && !monthly" type="empty" title="这个月还没有抄表数据" description="换个月份，或先在 PC 上录入" />
+
+    <template v-else-if="monthly">
+      <!-- ============ 汇总 ============ -->
+      <view v-if="view === 'overview'" class="el-body">
+        <view class="el-hero">
+          <text class="el-hero-label">本月总电量</text>
+          <view class="el-hero-value">
+            {{ fmt(monthly.total) }}<text class="el-hero-unit">度</text>
+          </view>
+          <view v-if="showMoney" class="el-hero-sub">
+            预估电费 {{ fmt(bill?.advanceTotal) }} 元 · 单价 {{ bill?.price || '—' }} 元/度
+          </view>
+          <view v-else class="el-hero-sub">约 {{ fmt(monthly.total / 1000) }} 千度</view>
+        </view>
+
+        <!-- 四组 + 占比条 -->
+        <view class="el-card">
+          <view class="el-card-title">四组用量</view>
+          <view v-for="row in groupRows" :key="row.section" class="el-bar-row">
+            <view class="el-bar-head">
+              <text class="el-bar-name">{{ row.section }}</text>
+              <text class="el-bar-value">{{ fmt(row.estimateKwh) }} 度</text>
+            </view>
+            <view class="el-bar-track">
+              <view class="el-bar-fill" :style="{ width: Math.max(2, groupRatio(row)) + '%' }"></view>
+            </view>
+            <view class="el-bar-foot">
+              <text class="el-bar-pct">{{ Math.round(groupRatio(row)) }}%</text>
+              <text v-if="showMoney" class="el-bar-money">{{ fmt(row.amount) }} 元</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 分类汇总的一行摘要（点击切到该页签） -->
+        <view class="el-card el-link" hover-class="el-tap" @tap="view = 'monthly'">
+          <view class="el-card-title">分类汇总</view>
+          <view class="el-link-sub">{{ monthly.periods.length }} 期明细，点开看每期各区域用量 ›</view>
+        </view>
+
+        <view v-if="bill" class="el-card el-link" hover-class="el-tap" @tap="view = 'bill'">
+          <view class="el-card-title">预提单</view>
+          <view class="el-link-sub">
+            <template v-if="showMoney">建议预提 {{ fmt(bill.advanceTotal) }} 元 ›</template>
+            <template v-else>预估 {{ fmt(bill.estimateKwh) }} 度 ›</template>
+          </view>
+        </view>
+      </view>
+
+      <!-- ============ 分类汇总 ============ -->
+      <view v-else-if="view === 'monthly'" class="el-body">
+        <view
+          v-for="(period, index) in monthly.periods"
+          :key="period.from + period.to"
+          class="el-period"
+        >
+          <view class="el-period-head" hover-class="el-tap" @tap="togglePeriod(period.from + period.to)">
+            <view>
+              <text class="el-period-name">第 {{ index + 1 }} 周</text>
+              <text class="el-period-date">{{ period.from.slice(5) }} → {{ period.to.slice(5) }}</text>
+            </view>
+            <view class="el-period-total">
+              <text class="el-period-kwh">{{ fmt(columnOf(period, '总电量')) }}</text>
+              <text class="el-period-unit">度</text>
+            </view>
+          </view>
+
+          <view class="el-period-grid">
+            <view v-for="name in COMPACT_COLUMNS" :key="name" class="el-period-cell">
+              <text class="el-period-cell-name">{{ name }}</text>
+              <text class="el-period-cell-value">{{ fmt(columnOf(period, name)) }}</text>
+            </view>
+          </view>
+
+          <!-- 展开：全部 9 列（不含两只"只看运转"的空压机） -->
+          <view v-if="expandedPeriod === period.from + period.to" class="el-period-all">
+            <view v-for="col in allColumns" :key="col.name" class="el-period-all-row">
+              <text class="el-period-all-name">{{ col.name }}</text>
+              <text class="el-period-all-value">{{ fmt(columnOf(period, col.name)) }}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 合计 -->
+        <view class="el-total">
+          <text class="el-total-label">合计</text>
+          <text class="el-total-value">{{ fmt(monthly.total) }} 度</text>
+        </view>
+      </view>
+
+      <!-- ============ 预提单 ============ -->
+      <view v-else-if="view === 'bill' && bill" class="el-body">
+        <view class="el-hero el-hero--bill">
+          <text class="el-hero-label">
+            {{ showMoney ? '建议预提（走 OA 的数）' : '预估总电量' }}
+          </text>
+          <view class="el-hero-value">
+            <template v-if="showMoney">{{ fmt(bill.advanceTotal) }}<text class="el-hero-unit">元</text></template>
+            <template v-else>{{ fmt(bill.estimateKwh) }}<text class="el-hero-unit">度</text></template>
+          </view>
+          <view class="el-hero-sub">
+            区间 {{ bill.from }} → {{ bill.to }}
+            <text v-if="bill.tailDays > 0">（含月末补 {{ bill.tailDays }} 天）</text>
+          </view>
+        </view>
+
+        <view class="el-card">
+          <view class="el-card-title">算法链</view>
+          <view class="el-trace-row">
+            <text class="el-trace-name">已抄总电量</text>
+            <text class="el-trace-value">{{ fmt(bill.doneTotal) }} 度</text>
+          </view>
+          <view class="el-trace-row">
+            <text class="el-trace-name">月末补 {{ bill.tailDays }} 天</text>
+            <text class="el-trace-value">{{ fmt(bill.tailTotal) }} 度</text>
+          </view>
+          <view class="el-trace-row">
+            <text class="el-trace-name">预估总电量</text>
+            <text class="el-trace-value">{{ fmt(bill.estimateKwh) }} 度</text>
+          </view>
+          <view class="el-trace-row">
+            <text class="el-trace-name">× 1.05</text>
+            <text class="el-trace-value">{{ fmt(bill.advanceKwh) }} 度</text>
+          </view>
+          <view class="el-trace-row">
+            <text class="el-trace-name">命中电价</text>
+            <text class="el-trace-value">{{ bill.price }} 元/度</text>
+          </view>
+          <view v-if="showMoney" class="el-trace-row">
+            <text class="el-trace-name">理论电费</text>
+            <text class="el-trace-value">{{ fmt2(bill.amount) }} 元</text>
+          </view>
+          <view v-if="showMoney" class="el-trace-row el-trace-row--strong">
+            <text class="el-trace-name">万位向上取整</text>
+            <text class="el-trace-value">{{ fmt(bill.advanceTotal) }} 元</text>
+          </view>
+        </view>
+
+        <view class="el-card">
+          <view class="el-card-title">四组分摊</view>
+          <view v-for="row in groupRows" :key="row.section" class="el-share-row">
+            <text class="el-share-name">{{ row.section }}</text>
+            <text class="el-share-kwh">{{ fmt(row.estimateKwh) }} 度</text>
+            <text class="el-share-pct">{{ Math.round(Number(row.ratio) * 100) }}%</text>
+            <text v-if="showMoney" class="el-share-money">{{ fmt(row.amount) }} 元</text>
+          </view>
+          <view class="el-share-note">
+            公用工程 = 公用工程 + 中控 + 污水 + 办公 + 其它；一车间 = 2# + 4#；二车间 = 1#；乙炔 = 乙炔
+          </view>
+        </view>
+
+        <view v-if="!showMoney" class="el-hint">
+          电费金额只对管理员显示；你看到的是电量与单价，金额请找厂长或财务
+        </view>
+      </view>
+    </template>
+  </view>
+</template>
+
+<style scoped>
+/*
+ * 手机端样式：沿用全站暖纸基底与 --ui-* 变量，
+ * 所有颜色都走变量（暗色主题自动跟随），字号用 px（rpx 在平板/大屏会缩得离谱）。
+ */
+.el-page {
+  min-height: 100vh;
+  background: var(--ui-scene-bg);
+  padding-bottom: 24px;
+}
+
+.el-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+}
+
+.el-month {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.el-month-btn {
+  width: 28px;
+  height: 28px;
+  line-height: 26px;
+  text-align: center;
+  border-radius: 8px;
+  color: var(--ui-text-2);
+  background: var(--ui-raise);
+  border: 1px solid var(--ui-border);
+  font-size: 16px;
+}
+
+.el-month-btn--off {
+  opacity: 0.35;
+}
+
+.el-month-text {
+  min-width: 84px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-read {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+}
+
+.el-read--off {
+  color: var(--ui-text-2);
+  background: var(--ui-raise-2);
+}
+
+.el-tap {
+  opacity: 0.72;
+}
+
+.el-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 0 16px 10px;
+}
+
+.el-tab {
+  flex: 1;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--ui-text-2);
+  background: var(--ui-raise-2);
+}
+
+.el-tab--active {
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+  font-weight: 600;
+}
+
+.el-body {
+  padding: 0 16px;
+}
+
+.el-hero {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--ui-raise);
+  border: 1px solid var(--ui-border);
+  margin-bottom: 10px;
+}
+
+.el-hero--bill {
+  border-color: var(--ui-accent);
+}
+
+.el-hero-label {
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+.el-hero-value {
+  margin-top: 4px;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.el-hero-unit {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ui-text-2);
+}
+
+.el-hero-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+.el-card {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--ui-raise);
+  border: 1px solid var(--ui-border);
+  margin-bottom: 10px;
+}
+
+.el-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+  margin-bottom: 10px;
+}
+
+.el-link-sub {
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+/* 横向条形 */
+.el-bar-row {
+  margin-bottom: 12px;
+}
+
+.el-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 5px;
+}
+
+.el-bar-name {
+  font-size: 13px;
+  color: var(--ui-text);
+}
+
+.el-bar-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ui-raise-2);
+  overflow: hidden;
+}
+
+.el-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ui-accent);
+}
+
+.el-bar-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.el-bar-pct,
+.el-bar-money {
+  font-size: 11px;
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分类汇总：每期一张卡 */
+.el-period {
+  border-radius: 12px;
+  background: var(--ui-raise);
+  border: 1px solid var(--ui-border);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.el-period-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ui-border);
+}
+
+.el-period-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.el-period-date {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-period-total {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.el-period-kwh {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-period-unit {
+  font-size: 11px;
+  color: var(--ui-text-2);
+}
+
+.el-period-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 8px 8px 4px;
+}
+
+.el-period-cell {
+  width: 33.33%;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+.el-period-cell-name {
+  display: block;
+  font-size: 11px;
+  color: var(--ui-text-2);
+}
+
+.el-period-cell-value {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-period-all {
+  border-top: 1px dashed var(--ui-border);
+  padding: 6px 14px 10px;
+}
+
+.el-period-all-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+}
+
+.el-period-all-name {
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+.el-period-all-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--ui-raise-2);
+  border: 1px solid var(--ui-border);
+}
+
+.el-total-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.el-total-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 预提单：算法链 */
+.el-trace-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--ui-border);
+}
+
+.el-trace-row:last-child {
+  border-bottom: 0;
+}
+
+.el-trace-row--strong .el-trace-name,
+.el-trace-row--strong .el-trace-value {
+  color: var(--ui-text);
+  font-weight: 700;
+}
+
+.el-trace-name {
+  font-size: 12px;
+  color: var(--ui-text-2);
+}
+
+.el-trace-value {
+  font-size: 13px;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.el-share-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--ui-border);
+}
+
+.el-share-row:last-of-type {
+  border-bottom: 0;
+}
+
+.el-share-name {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ui-text);
+}
+
+.el-share-kwh,
+.el-share-pct,
+.el-share-money {
+  font-size: 12px;
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
+  margin-left: 10px;
+}
+
+.el-share-money {
+  min-width: 76px;
+  text-align: right;
+  color: var(--ui-text);
+  font-weight: 600;
+}
+
+.el-share-note {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ui-text-2);
+}
+
+.el-hint {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--ui-raise-2);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ui-text-2);
+}
+</style>

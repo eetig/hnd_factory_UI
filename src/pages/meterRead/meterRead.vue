@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { isAdmin } from '../../api/auth'
+import { authState, isAdmin } from '../../api/auth'
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
 import { useTheme } from '../../composables/useTheme'
@@ -24,6 +24,13 @@ import { useTheme } from '../../composables/useTheme'
  * 视觉沿用 App 那套：暖纸 + 克制色块 + --ui-* token。
  */
 const { themeClass, themeVars } = useTheme()
+
+/**
+ * 能否抄表（2026-11-04）：管理员，或被管理员授予「抄表员（meter_clerk）」的人。
+ * 使用方：「只有我或者我同意的人才能录入电量」。
+ * 前端只做入口显隐，真正的判定在后端 /api/electricity/readings/batch。
+ */
+const canReadMeter = computed(() => isAdmin() || authState.roleKey === 'meter_clerk')
 
 const allowed = computed(() => isAdmin())
 
@@ -274,7 +281,7 @@ function finishHint() {
 
 onMounted(() => {
   if (!allowed.value) {
-    uni.showToast({ title: '只有管理员能抄表', icon: 'none' })
+    uni.showToast({ title: '需要抄表权限', icon: 'none' })
     setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 900)
     return
   }
@@ -285,7 +292,7 @@ onMounted(() => {
 <template>
   <view class="mr" :class="themeClass" :style="themeVars">
     <view v-if="!allowed" class="mr__deny">
-      <text class="mr__deny-title">只有管理员能抄表</text>
+      <text class="mr__deny-title">需要抄表权限（找管理员授权）</text>
     </view>
 
     <template v-else>
