@@ -268,6 +268,31 @@ function goRead() {
             <template v-else>预估 {{ fmt(bill.estimateKwh) }} 度 ›</template>
           </view>
         </view>
+
+        <!--
+          抄表入口（2026-11-04）
+          使用方是管理员却说「没看到抄表」：原来的入口只有「抽屉最底部一行灰色小字」和
+          「右上角一个小按钮」，太隐蔽。这里放一张明显的卡 + 大按钮。
+          只有 admin 或被授予「抄表员」的人看到；别人看到的是"需要管理员授权"。
+        -->
+        <view class="el-card el-read-card">
+          <view class="el-card-title">抄表</view>
+          <view class="el-read-desc">
+            <template v-if="canWrite">
+              37 块表按编号顺序读，右滑提交、左滑跳过，可以拍照存档
+            </template>
+            <template v-else>抄表需要管理员授权（我在 PC「电表台账」页底部授权）</template>
+          </view>
+          <view
+            v-if="canWrite"
+            class="el-read-btn"
+            hover-class="el-tap"
+            @tap="goRead"
+          >
+            开始抄表
+          </view>
+          <view v-else class="el-read-btn el-read-btn--off">无权限</view>
+        </view>
       </view>
 
       <!-- ============ 分类汇总 ============ -->
@@ -784,6 +809,34 @@ function goRead() {
   font-size: 11px;
   line-height: 1.6;
   color: var(--ui-text-2);
+}
+
+/* 抄表卡：这是给现场用的入口，必须显眼 */
+.el-read-card {
+  border-color: var(--ui-accent);
+}
+
+.el-read-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ui-text-2);
+  margin-bottom: 12px;
+}
+
+.el-read-btn {
+  height: 44px;
+  line-height: 44px;
+  text-align: center;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+}
+
+.el-read-btn--off {
+  color: var(--ui-text-2);
+  background: var(--ui-raise-2);
 }
 
 .el-hint {
