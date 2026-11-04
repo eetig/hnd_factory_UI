@@ -25,6 +25,39 @@ import { useTheme } from '../../composables/useTheme'
  */
 const { themeClass, themeVars } = useTheme()
 
+/*
+ * 车间身份色（2026-11-05，使用方：「卡片设计的颜色太单调」）
+ *
+ * 与 PC 端「各区域用电占比」那张饼图同一套，含义一致：同一个车间在任何页面都是同一个颜色。
+ * 只用在"身份标记"上（左缘色条、编号徽标、进度条），卡片主体仍是白面 ——
+ * 读数是要被盯着看的数字，底色一花就读不准了。
+ */
+const SECTION_COLORS = {
+  公用工程: '#4A5A7B',
+  一车间: '#B45309',
+  二车间: '#5B6E4F',
+  乙炔车间: '#8A5A2B',
+  中央控制室: '#7A4B5E',
+  污水区: '#5B6470',
+  办公楼: '#8A6A1F',
+  不参与计算: '#8C8C8C',
+  总表: '#3F6E6A',
+  变压器: '#7A6A4F',
+}
+
+/** 当前卡片的车间色 */
+const sectionColor = computed(() => SECTION_COLORS[card.value?.section] || '#8C8C8C')
+
+/** 把 #RRGGBB 变成 rgba(...)，用于极淡底色（不引第三方库，两行就够） */
+function tint(hex, alpha) {
+  const h = String(hex || '').replace('#', '')
+  if (h.length !== 6) return 'transparent'
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')'
+}
+
 /**
  * 能否抄表（2026-11-04）：管理员，或被管理员授予「抄表员（meter_clerk）」的人。
  * 使用方：「只有我或者我同意的人才能录入电量」。
@@ -198,26 +231,72 @@ async function submit(direction) {
 }
 
 /* ===== 手势 ===== */
-const gesture = reactive({ dragging: false, startX: 0, startY: 0, dx: 0, dy: 0, decided: false, flying: false })
+const gesture = reactive({
+  dragging: false,
+  startX: 0,
+  startY: 0,
+  dx: 0,
+  dy: 0,
+  decided: false,
+  flying: false,
+})
 
 const SWIPE_MIN = 96 // 位移阈值（px）
 const FLING_V = 0.35 // 速度阈值（px/ms）
 
+/*
+ * 卡片的位移样式（2026-11-05，使用方：「手势左右滑，要跟手，动画要丝滑」）
+ *
+ * 三种状态，三套缓动：
+ *   拖动中   transition: none          → 手指到哪卡片到哪（跟手）
+ *   飞出去   cubic-bezier(.22,1,.36,1)  → 先快后缓，像被甩出去
+ *   弹回来   cubic-bezier(.34,1.56,.64,1) → 轻微过冲再停下，手感"有弹性"
+ * 旋转和透明度跟着位移走，幅度很小（最多 6°、最多淡到 65%），不喧宾夺主。
+ */
+const FLY_MS = 280
+
 const cardStyle = computed(() => {
-  if (gesture.flying) return { transition: 'transform 240ms ease, opacity 240ms ease' }
-  if (!gesture.dragging) return { transition: 'transform 180ms ease' }
-  return { transition: 'none' }
+  const dragging = gesture.dragging && gesture.decided && !gesture.flying
+  const transition = dragging
+    ? 'none'
+    : gesture.flying
+      ? `transform ${FLY_MS}ms cubic-bezier(.22,1,.36,1), opacity ${FLY_MS}ms ease`
+      : 'transform 320ms cubic-bezier(.34,1.56,.64,1), opacity 220ms ease'
+  const dx = gesture.dx
+  const progress = Math.min(1, Math.abs(dx) / 380)
+  return {
+    transition,
+    transform: `translate3d(${dx}px, 0, 0) rotate(${(dx * 0.015).toFixed(2)}deg)`,
+    opacity: dragging ? String(1 - progress * 0.35) : '1',
+  }
 })
+
+/** 立刻把当前这张提交（底部按钮） */
+function doSubmit() {
+  submit('right')
+}
+
+/** 立刻跳过（底部按钮） */
+function doSkip() {
+  if (!card.value || saving.value) return
+  skipped.value = [...skipped.value, card.value.meterId]
+  fly('left', () => goTo(index.value + 1))
+}
 
 function fly(direction, after) {
   gesture.flying = true
-  gesture.dx = direction === 'right' ? 420 : -420
+  gesture.dragging = false
+  gesture.decided = true
+  // 位移要够远，卡片才真正飞出屏幕；时长与 CSS 里的 FLY_MS 对齐
+  const target = direction === 'right' ? 520 : -520
+  gesture.dx = target
   setTimeout(() => {
     gesture.flying = false
+    gesture.decided = false
     gesture.dragging = false
     gesture.dx = 0
     if (after) after()
-  }, 240)
+  }, FLY_MS)
 }
 
 function onTouchStart(e) {
@@ -230,6 +309,7 @@ function onTouchStart(e) {
   gesture.decided = false
   gesture.dx = 0
   gesture.dy = 0
+  touchStartedAt = Date.now()
 }
 
 function onTouchMove(e) {
@@ -302,12 +382,26 @@ onMounted(() => {
           <text class="mr__progress-text">
             {{ index + 1 }} / {{ total }}
           </text>
-          <text v-if="card" class="mr__section">{{ card.section || '未分组' }}</text>
+          <text v-if="card" class="mr__section" :style="{ color: sectionColor }">
+            {{ card.section || '未分组' }}
+          </text>
         </view>
         <view class="mr__head-right">
           <text class="mr__filled" @click="showList = true">已填 {{ filledCount }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
         </view>
+      </view>
+
+      <!--
+        进度条单独一行（2026-11-05）
+        第一次我把它塞进 .mr__progress 里，那是个 flex 行 ⇒ 把 "1 / 38" 和车间名挤成竖排 ✗
+        现在它占自己一行，填充长度按 index/total，颜色跟当前车间
+      -->
+      <view class="mr__progress-bar">
+        <view
+          class="mr__progress-fill"
+          :style="{ width: ((index + 1) / Math.max(1, total)) * 100 + '%', backgroundColor: sectionColor }"
+        ></view>
       </view>
 
       <text v-if="errorMessage" class="mr__error">{{ errorMessage }}</text>
@@ -317,14 +411,17 @@ onMounted(() => {
         <view
           class="mr__card"
           :class="{ 'is-anomaly': anomaly }"
-          :style="[cardStyle, { transform: `translate3d(${gesture.dx}px, 0, 0)` }]"
+          :style="[cardStyle, { borderLeftColor: sectionColor }]"
           @touchstart.stop="onTouchStart"
           @touchmove.stop="onTouchMove"
           @touchend.stop="onTouchEnd"
           @touchcancel.stop="onTouchEnd"
         >
           <view class="mr__card-head">
-            <text class="mr__no">{{ card.excelNo || '—' }}</text>
+            <text
+              class="mr__no"
+              :style="{ backgroundColor: tint(sectionColor, 0.14), color: sectionColor }"
+            >{{ card.excelNo || '—' }}</text>
             <text class="mr__name">{{ card.meterName }}</text>
             <text v-if="card.multiplier > 1" class="mr__mult">×{{ card.multiplier }}</text>
             <text v-if="card.reading !== null && card.reading !== undefined" class="mr__done">已填</text>
@@ -369,10 +466,20 @@ onMounted(() => {
           </view>
         </view>
 
-        <!-- 滑动手势提示 -->
-        <view class="mr__hints">
-          <text class="mr__hint mr__hint--left">← 左滑跳过</text>
-          <text class="mr__hint mr__hint--right">右滑提交 →</text>
+        <!--
+          底部动作条（2026-11-05）
+          使用方：「左右滑的按钮太小了，而且间距太远，单手操作不方便」
+          ⇒ 两个大按钮各占一半、贴底、拇指够得到；提示文案挪进按钮里
+        -->
+        <view class="mr__actions">
+          <view class="mr__action mr__action--skip" hover-class="mr__action--pressed" @click="doSkip">
+            <text class="mr__action-icon">←</text>
+            <text class="mr__action-text">跳过</text>
+          </view>
+          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="doSubmit">
+            <text class="mr__action-text">提交</text>
+            <text class="mr__action-icon">→</text>
+          </view>
         </view>
       </view>
 
@@ -516,7 +623,11 @@ onMounted(() => {
   max-height: 62vh;
   padding: 28rpx;
   border-radius: 28rpx;
-  border: 2rpx solid var(--ui-border);
+  /* 左缘 8rpx 车间身份色（2026-11-05）：颜色靠这一条表达，卡片主体保持白面好读数 */
+  border-left: 8rpx solid #8c8c8c;
+  border-top: 2rpx solid var(--ui-border);
+  border-right: 2rpx solid var(--ui-border);
+  border-bottom: 2rpx solid var(--ui-border);
   background-color: var(--ui-surface);
   box-shadow: 0 8rpx 30rpx rgba(90, 70, 40, 0.06);
   display: flex;
@@ -544,6 +655,75 @@ onMounted(() => {
   .mr__card {
     animation: none;
   }
+}
+
+/* ===== 2026-11-05 新增：进度条 / 大按钮 / 身份色 ===== */
+
+.mr__progress-text,
+.mr__section,
+.mr__filled,
+.mr__skipped {
+  white-space: nowrap;
+}
+
+.mr__progress-bar {
+  margin: 12rpx 32rpx 0;
+  width: 100%;
+  height: 6rpx;
+  border-radius: 999rpx;
+  background-color: var(--ui-raise-2);
+  overflow: hidden;
+}
+
+.mr__progress-fill {
+  height: 100%;
+  border-radius: 999rpx;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 240ms ease;
+}
+
+/* 左下角原文案位置改成动作条：两个大按钮各占一半，拇指够得到 */
+.mr__actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 28rpx;
+}
+
+.mr__action {
+  flex: 1;
+  height: 112rpx;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.mr__action--pressed {
+  opacity: 0.72;
+  transform: scale(0.985);
+}
+
+.mr__action--skip {
+  color: var(--ui-text-2);
+  background-color: var(--ui-raise-2);
+  border: 2rpx solid var(--ui-border);
+}
+
+.mr__action--submit {
+  color: var(--ui-on-accent);
+  background-color: var(--ui-accent);
+  box-shadow: 0 10rpx 24rpx rgba(70, 90, 130, 0.18);
+}
+
+.mr__action-icon {
+  font-size: 30rpx;
+  opacity: 0.9;
+}
+
+.mr__action-text {
+  letter-spacing: 2rpx;
 }
 
 .mr__card.is-anomaly {
