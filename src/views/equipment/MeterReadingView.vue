@@ -29,6 +29,36 @@ const view = ref('entry') // entry | ledger | matrix | summary | bill | share | 
 const isAdminUser = computed(() => isAdmin())
 
 /*
+ * 车间身份色（2026-11-05）
+ * 与手机抄表页、与本页「各区域用电占比」饼图同一套，含义一致：同一车间到哪都是同一颜色。
+ * 录入页只拿它做"扫读线索"（圆点 + 行左细条），不改表格结构。
+ */
+const SECTION_COLORS = {
+  公用工程: '#4A5A7B',
+  一车间: '#B45309',
+  二车间: '#5B6E4F',
+  乙炔车间: '#8A5A2B',
+  中央控制室: '#7A4B5E',
+  污水区: '#5B6470',
+  办公楼: '#8A6A1F',
+  不参与计算: '#8C8C8C',
+  总表: '#3F6E6A',
+  变压器: '#7A6A4F',
+}
+
+/** 取某个归属的色（没匹配到用中性灰） */
+function sectionColor(section) {
+  return SECTION_COLORS[section] || '#8C8C8C'
+}
+
+/** 录入进度（0~100），给顶部那条细进度条用 */
+const entryProgress = computed(() => {
+  const total = sheet.value.length || 0
+  if (!total) return 0
+  return Math.round(((filledCount.value || 0) / total) * 100)
+})
+
+/*
  * 支持 ?tab=xxx 直达（2026-11-04）：
  * 「电费预提」旧入口现在跳到这里并带 tab=bill，否则它会落在抄表录入上，
  * 使用方会以为预提单没做。
@@ -86,34 +116,6 @@ async function loadPeriods() {
   }
 }
 
-/** 按期的行（每个期间的最后一天 + 该期用量） */
-const periodRows = computed(() =>
-  (periodData.value.periods || []).map((date) => ({
-    date,
-    label: date.slice(5),
-    values: periodData.value.cells?.[date] || {},
-    total: periodData.value.periodTotal?.[date] ?? null,
-  })),
-)
-
-function periodCell(row, meter) {
-  const value = row.values?.[meter.meterNo]
-  return value === undefined || value === null ? '' : fmtNum(value)
-}
-
-
-/*
- * 归属色：与全站那套同一组（赭/苔/靛/陶/青/石墨）。
- * 只用在表头组名的色条与组间分隔线，单元格保持中性 —— 数字要读，不能被彩色干扰。
- */
-const SECTION_COLORS = ['#8A5A2B', '#5B6E4F', '#4A5A7B', '#7A4B5E', '#3F6E6A', '#5B6470']
-
-function sectionColor(name) {
-  if (!name) return '#5B6470'
-  let hash = 0
-  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) % 997
-  return SECTION_COLORS[hash % SECTION_COLORS.length]
-}
 
 /** 当月天数 + 每天是周几（用来画"周末淡底"） */
 const monthDays = computed(() => {
@@ -813,7 +815,16 @@ onMounted(async () => {
             class="!w-[150px]"
             @change="loadSheet"
           />
+          <!-- 录入进度（2026-11-05）：跟手机抄表页同款，一眼看到抄到哪 -->
+        <div class="flex items-center gap-2">
           <span class="text-xs text-slate-500">已填 {{ filledCount }} / {{ sheet.length }} 块</span>
+          <div class="h-1.5 w-[120px] overflow-hidden rounded-full bg-region">
+            <div
+              class="h-full rounded-full transition-[width] duration-300"
+              :style="{ width: entryProgress + '%', backgroundColor: '#3F6E6A' }"
+            ></div>
+          </div>
+        </div>
           <span v-if="regressRows.length" class="text-xs text-amber-700">
             {{ regressRows.length }} 块表读数比上次小（换表？）
           </span>
@@ -857,10 +868,22 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in sheet" :key="row.meterId" class="border-t border-line">
+              <tr
+              v-for="row in sheet"
+              :key="row.meterId"
+              class="border-t border-line"
+              :style="{ boxShadow: `inset 2px 0 0 0 ${sectionColor(row.section)}` }"
+            >
                 <td class="px-3 py-1.5 text-xs text-slate-500">{{ row.excelNo || '—' }}</td>
                 <td class="px-3 py-1.5">
+                  <span class="flex items-center gap-1.5">
+                  <span
+                    class="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                    :style="{ backgroundColor: sectionColor(row.section) }"
+                    :aria-label="row.section || '未分组'"
+                  ></span>
                   <span class="block truncate" :title="row.meterName">{{ row.meterName }}</span>
+                </span>
                   <span v-if="row.meterCode" class="text-[11px] text-slate-500">{{ row.meterCode }}</span>
                 </td>
                 <td class="px-3 py-1.5 text-slate-600">
