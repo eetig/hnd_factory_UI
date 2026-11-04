@@ -493,6 +493,63 @@ const summaryRows = ref([])
 const summaryLoading = ref(false)
 const monthly = ref(null)
 
+/*
+ * 饼图（2026-11-04）：使用方要一张「各区域用电占比」。
+ * 手写 SVG，不引第三方图表库 —— 这张图只有 9 个扇区，引入 ECharts 不值得（多 300KB）。
+ * 分区色是"区域身份色"，与全站那套低饱和色一致，不是随手取的。
+ */
+const PIE_COLORS = {
+  公用工程: '#4A5A7B', // 靛
+  乙炔车间: '#8A5A2B', // 赭
+  '1#厂房': '#B45309', // 琥珀
+  '2#厂房': '#5B6E4F', // 苔
+  '4#厂房': '#3F6E6A', // 青
+  中央控制室: '#7A4B5E', // 紫褐
+  污水区: '#5B6470', // 石墨
+  办公楼: '#8A6A1F', // 暗金
+  其它: '#C4B79C', // 浅沙（差额，最淡）
+}
+
+const PIE_RADIUS = 118
+const PIE_CENTER = 140
+
+/** 饼图扇区（只取参与占比的列，按占比降序以外、保持表内顺序） */
+const pieSlices = computed(() => {
+  const rows = (monthly.value?.rows || []).filter((r) => !r.viewOnly && Number(r.kwh) > 0)
+  const total = rows.reduce((sum, r) => sum + Number(r.kwh), 0) || 1
+  let angle = -Math.PI / 2
+  return rows.map((r) => {
+    const ratio = Number(r.kwh) / total
+    const start = angle
+    const end = angle + ratio * Math.PI * 2
+    angle = end
+    const x1 = PIE_CENTER + PIE_RADIUS * Math.cos(start)
+    const y1 = PIE_CENTER + PIE_RADIUS * Math.sin(start)
+    const x2 = PIE_CENTER + PIE_RADIUS * Math.cos(end)
+    const y2 = PIE_CENTER + PIE_RADIUS * Math.sin(end)
+    const largeArc = end - start > Math.PI ? 1 : 0
+    // 单扇区占满 360° 时画不出弧线，用整圆代替
+    const d =
+      ratio > 0.9999
+        ? `M ${PIE_CENTER} ${PIE_CENTER - PIE_RADIUS} A ${PIE_RADIUS} ${PIE_RADIUS} 0 1 1 ${
+            PIE_CENTER - 0.01
+          } ${PIE_CENTER - PIE_RADIUS} Z`
+        : `M ${PIE_CENTER} ${PIE_CENTER} L ${x1} ${y1} A ${PIE_RADIUS} ${PIE_RADIUS} 0 ${largeArc} 1 ${x2} ${y2} Z`
+    // 标签位置（扇区中线 62% 半径处；太小的扇区不写，避免叠字）
+    const mid = (start + end) / 2
+    return {
+      name: r.name,
+      kwh: Number(r.kwh),
+      ratio,
+      color: PIE_COLORS[r.name] || '#C4B79C',
+      d,
+      labelX: PIE_CENTER + PIE_RADIUS * 0.62 * Math.cos(mid),
+      labelY: PIE_CENTER + PIE_RADIUS * 0.62 * Math.sin(mid),
+      showLabel: ratio >= 0.06,
+    }
+  })
+})
+
 async function loadMonthly() {
   summaryLoading.value = true
   try {
@@ -1095,7 +1152,7 @@ onMounted(async () => {
         </div>
       </template>
 
-      <!-- ============ 分类汇总（2026-11-04：按期分行，照使用方 Excel）============ -->
+      <!-- ============ 分类汇总（2026-11-04 重做：表 + 饼图）============ -->
       <template v-else-if="view === 'summary'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
@@ -1123,7 +1180,7 @@ onMounted(async () => {
           >
             {{ summaryLoading ? '统计中…' : '统计' }}
           </button>
-          <span class="text-xs text-slate-500">留空 = 按本月 · 每期一行 · 分母是总电量（1 号表）</span>
+          <span class="text-xs text-slate-500">留空 = 按本月 · 每期一行 · 电量取整</span>
           <button
             type="button"
             class="ml-auto rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
@@ -1133,86 +1190,120 @@ onMounted(async () => {
           </button>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-          <table v-if="monthly" class="w-full table-fixed text-sm">
-            <colgroup>
-              <col class="w-[120px]" />
-              <col v-for="row in monthly.rows" :key="'c-' + row.name" class="w-[100px]" />
-            </colgroup>
-            <thead>
-              <tr class="bg-region text-xs text-slate-600">
-                <th class="px-2 py-2 text-left font-medium">日期</th>
-                <th
-                  v-for="row in monthly.rows"
-                  :key="'h-' + row.name"
-                  class="px-2 py-2 text-right font-medium"
-                  :class="row.viewOnly ? 'text-slate-500' : ''"
+        <!-- 左表 + 右图：一屏看全，表可核对、图看结构 -->
+        <div v-if="monthly" class="flex min-h-0 flex-1 gap-4 px-6 py-4">
+          <!-- 表 -->
+          <div class="min-h-0 flex-1 overflow-auto">
+            <table class="w-full table-fixed text-sm">
+              <colgroup>
+                <col class="w-[112px]" />
+                <col v-for="row in monthly.rows" :key="'c-' + row.name" class="w-[92px]" />
+              </colgroup>
+              <thead class="sticky top-0 z-10 bg-region">
+                <tr class="text-xs text-slate-600">
+                  <th class="px-2 py-2 text-left font-medium">日期</th>
+                  <th
+                    v-for="row in monthly.rows"
+                    :key="'h-' + row.name"
+                    class="px-2 py-2 text-right font-medium"
+                    :class="row.viewOnly ? 'text-slate-500' : ''"
+                  >
+                    {{ row.name }}
+                    <span v-if="row.viewOnly" class="block text-[11px] font-normal text-slate-500">只看运转</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(period, periodIndex) in monthly.periods"
+                  :key="'p-' + period.from + period.to"
+                  class="border-t border-line transition hover:bg-region/40"
                 >
-                  {{ row.name }}
-                  <span v-if="row.viewOnly" class="block text-[11px] font-normal text-slate-500">只看运转</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <!-- 每期一行 -->
-              <tr
-                v-for="(period, periodIndex) in monthly.periods"
-                :key="'p-' + period.from + period.to"
-                class="border-t border-line"
-              >
-                <td class="px-2 py-2 text-slate-600">
-                  <span class="block text-[11px] text-slate-500">第 {{ periodIndex + 1 }} 周</span>
-                  <span class="num block text-[11px] text-slate-700">{{ period.from }} → {{ period.to }}</span>
-                </td>
-                <td
-                  v-for="row in monthly.rows"
-                  :key="'pv-' + period.to + '-' + row.name"
-                  class="num px-2 py-2 text-right tabular-nums"
-                  :class="row.viewOnly ? 'text-slate-500' : 'text-slate-800'"
+                  <td class="px-2 py-2">
+                    <span class="block text-[11px] font-medium text-slate-700">第 {{ periodIndex + 1 }} 周</span>
+                    <span class="num block text-[11px] text-slate-500">{{ period.to.slice(5) }}</span>
+                  </td>
+                  <td
+                    v-for="row in monthly.rows"
+                    :key="'pv-' + period.to + '-' + row.name"
+                    class="num px-2 py-2 text-right tabular-nums"
+                    :class="row.viewOnly ? 'text-slate-500' : 'text-slate-800'"
+                  >
+                    {{ Math.round(Number(period.values[row.name] || 0)) }}
+                  </td>
+                </tr>
+
+                <tr class="border-t-2 border-line bg-desk/60">
+                  <td class="px-2 py-2 text-xs font-semibold text-slate-800">合计</td>
+                  <td
+                    v-for="row in monthly.rows"
+                    :key="'tv-' + row.name"
+                    class="num px-2 py-2 text-right font-semibold tabular-nums"
+                    :class="row.viewOnly ? 'text-slate-500' : 'text-slate-900'"
+                  >
+                    {{ Math.round(Number(row.kwh || 0)) }}
+                  </td>
+                </tr>
+
+                <tr class="border-t border-line">
+                  <td class="px-2 py-2 text-right text-[11px] text-slate-500">占比</td>
+                  <td
+                    v-for="row in monthly.rows"
+                    :key="'r-' + row.name"
+                    class="num px-2 py-2 text-right text-[11px] tabular-nums text-slate-600"
+                  >
+                    {{ row.ratio === null ? '—' : Math.round(row.ratio * 100) + '%' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p class="mt-3 text-[11px] leading-relaxed text-slate-500">
+              总电量 = 1 号高压计量表；公用工程 = 3+20+28+33；乙炔 = 25+26+27；1# = 16+17+18+19+29；
+              2# = 6~11 + 150车间 + 30 + 31；4# = 12+13+14+15+32；中控 35 · 污水 36 · 办公 37；
+              <b>其它 = 该期总电量 − 该期其余八项</b>；备电(33)、1#空压机(5) 只看运转，不参与合计。
+            </p>
+          </div>
+
+          <!-- 饼图 -->
+          <aside class="flex w-[360px] shrink-0 flex-col rounded-card border border-line bg-raised px-4 py-3 shadow-card">
+            <div class="flex items-baseline justify-between">
+              <h3 class="text-sm font-semibold text-slate-800">各区域用电占比</h3>
+              <span class="text-[11px] text-slate-500">按合计</span>
+            </div>
+
+            <svg :viewBox="`0 0 ${PIE_CENTER * 2} ${PIE_CENTER * 2}`" class="mx-auto mt-1 w-[280px]">
+              <g v-for="slice in pieSlices" :key="'slice-' + slice.name">
+                <path :d="slice.d" :fill="slice.color" stroke="#fffdf8" stroke-width="2" />
+                <text
+                  v-if="slice.showLabel"
+                  :x="slice.labelX"
+                  :y="slice.labelY"
+                  text-anchor="middle"
+                  dominant-baseline="middle"
+                  class="pie-label"
                 >
-                  {{ fmtNum(period.values[row.name]) }}
-                </td>
-              </tr>
+                  {{ Math.round(slice.ratio * 100) }}%
+                </text>
+              </g>
+            </svg>
 
-              <!-- 合计行 -->
-              <tr class="border-t-2 border-line bg-desk/50">
-                <td class="px-2 py-2 font-semibold text-slate-800">合计</td>
-                <td
-                  v-for="row in monthly.rows"
-                  :key="'tv-' + row.name"
-                  class="num px-2 py-2 text-right font-semibold tabular-nums"
-                  :class="row.viewOnly ? 'text-slate-500' : 'text-slate-900'"
-                >
-                  {{ fmtNum(row.kwh) }}
-                </td>
-              </tr>
-
-              <!-- 占比（按合计算） -->
-              <tr class="border-t border-line bg-desk/30">
-                <td class="px-2 py-2 text-right text-slate-500">占比</td>
-                <td
-                  v-for="row in monthly.rows"
-                  :key="'r-' + row.name"
-                  class="num px-2 py-2 text-right tabular-nums text-slate-700"
-                >
-                  {{ row.ratio === null ? '—' : Math.round(row.ratio * 100) + '%' }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <p v-if="monthly" class="mt-3 text-[11px] leading-relaxed text-slate-500">
-            口径：总电量 = 1 号高压计量表；公用工程 = 3+20+28+33；乙炔 = 25+26+27；
-            1# = 16+17+18+19+29；2# = 6~11 + 150车间 + 30 + 31；4# = 12+13+14+15+32；
-            中控 35 · 污水 36 · 办公 37；
-            <b>其它 = 该期总电量 − 该期其余八项</b>（逐期倒挤，合计行的其它 = 各期之和）；
-            2#空压机(备电)=33、1#空压机=5 只用于看运转，不参与合计。
-          </p>
-
-          <p v-else-if="!summaryLoading" class="py-10 text-center text-sm text-slate-500">
-            选好区间（或留空按本月）再点「统计」
-          </p>
+            <!-- 图例：色块 + 名称 + 占比（两列，避免太长） -->
+            <ul class="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+              <li v-for="slice in pieSlices" :key="'lg-' + slice.name" class="flex items-center gap-1.5">
+                <span class="h-2.5 w-2.5 shrink-0 rounded-[3px]" :style="{ backgroundColor: slice.color }"></span>
+                <span class="min-w-0 flex-1 truncate text-[11px] text-slate-600">{{ slice.name }}</span>
+                <span class="num text-[11px] font-medium tabular-nums text-slate-800">
+                  {{ Math.round(slice.ratio * 100) }}%
+                </span>
+              </li>
+            </ul>
+          </aside>
         </div>
+
+        <p v-else-if="!summaryLoading" class="py-10 text-center text-sm text-slate-500">
+          选好区间（或留空按本月）再点「统计」
+        </p>
       </template>
 
       <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
@@ -1879,6 +1970,16 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+/* 饼图扇区标签：白字 + 细描边，压在任何底色上都读得清 */
+.pie-label {
+  font-size: 13px;
+  font-weight: 600;
+  fill: #fffdf8;
+  paint-order: stroke;
+  stroke: rgba(60, 50, 35, 0.35);
+  stroke-width: 2px;
+}
+
 /* ===== 矩阵视图：车间墙上那张大表 ===== */
 .matrix-table {
   border-collapse: separate;
