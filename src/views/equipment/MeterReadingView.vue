@@ -302,6 +302,22 @@ const billShares = computed(() =>
   }),
 )
 
+/** 计算过程是否展开 */
+const billTraceOpen = ref(true)
+
+/** 已抄部分合计（折算到区间/本月） */
+const billDoneTotal = computed(() =>
+  Object.values(billData.value?.doneInMonth || {}).reduce((sum, v) => sum + Number(v || 0), 0),
+)
+
+/** 月末补量合计 */
+const billTailTotal = computed(() =>
+  Object.values(billData.value?.tailByGroup || {}).reduce((sum, v) => sum + Number(v || 0), 0),
+)
+
+/** 最后一期的日均（总） */
+const billDailyTotal = computed(() => Number(billData.value?.lastDailyKwh || 0))
+
 const billRatioSum = computed(() => billShares.value.reduce((sum, r) => sum + r.ratio, 0))
 const billAmountSum = computed(() => billShares.value.reduce((sum, r) => sum + r.amount, 0))
 
@@ -1119,6 +1135,14 @@ onMounted(async () => {
             {{ billLoading ? '计算中…' : '生成预提单' }}
           </button>
           <button
+            v-if="billFrom || billTo"
+            type="button"
+            class="rounded-md border border-dashed border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="billFrom = ''; billTo = ''; loadBill()"
+          >
+            清空区间（改用自然月）
+          </button>
+          <button
             v-if="billData"
             type="button"
             class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
@@ -1126,6 +1150,18 @@ onMounted(async () => {
           >
             恢复默认（按系统算的占比/金额）
           </button>
+          <span
+            v-if="billData"
+            class="rounded-md px-2 py-1 text-[11px] font-medium"
+            :class="billData.customRange ? 'bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200' : 'bg-region text-slate-700'"
+          >
+            <template v-if="billData.customRange">
+              自定义区间 {{ billData.from }} → {{ billData.to }}（只算 {{ billData.periods.length }} 期，不补月末）
+            </template>
+            <template v-else>
+              自然月 {{ billData.from }} → {{ billData.to }}（{{ billData.periods.length }} 期 + 月末补 {{ billData.tailDays }} 天）
+            </template>
+          </span>
           <span class="text-xs text-slate-500">预估用量 → ×1.05 → 命中电价 → 万位向上取整</span>
         </div>
 
@@ -1234,6 +1270,117 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+
+          <!-- 计算过程（2026-11-04）：把每一步的数字摊开，可核对 -->
+          <div v-if="billData" class="mt-4 rounded-card border border-line bg-raised shadow-card">
+            <button
+              type="button"
+              class="flex w-full items-center justify-between px-4 py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              @click="billTraceOpen = !billTraceOpen"
+            >
+              <span class="text-sm font-semibold text-slate-800">计算过程（每一步都可核对）</span>
+              <span class="text-xs text-slate-500">{{ billTraceOpen ? '收起' : '展开' }}</span>
+            </button>
+
+            <div v-if="billTraceOpen" class="border-t border-line px-4 py-3">
+              <ol class="space-y-2 text-xs leading-relaxed text-slate-700">
+                <li>
+                  <b>① 取数区间</b>
+                  {{ billData.from }} → {{ billData.to }}
+                  <span v-if="billData.customRange" class="text-amber-700">
+                    （自定义区间：不补月末）
+                  </span>
+                  <span v-else class="text-slate-500">
+                    （自然月：月初按日均拆、月末按日均补）
+                  </span>
+                </li>
+
+                <li>
+                  <b>② 各期折算</b>（每期用量 × 落在区间内的日窗口数 ÷ 期天数）
+                  <table class="mt-1.5 w-full table-fixed text-[11px]">
+                    <colgroup>
+                      <col class="w-[210px]" />
+                      <col class="w-[70px]" />
+                      <col class="w-[80px]" />
+                      <col class="w-[130px]" />
+                      <col class="w-[150px]" />
+                    </colgroup>
+                    <tbody>
+                      <tr v-for="p in billData.periods" :key="'t' + p.from + p.to" class="border-t border-line/60">
+                        <td class="num py-1 text-slate-700">{{ p.from }} → {{ p.to }}</td>
+                        <td class="num py-1 text-right text-slate-500">{{ p.periodDays }} 天</td>
+                        <td class="num py-1 text-right text-slate-500">
+                          {{ p.inMonthDays }}/{{ p.periodDays }}
+                        </td>
+                        <td class="num py-1 text-right text-slate-700">
+                          全期 {{ fmtNum(Object.values(p.usage).reduce((a, b) => a + Number(b), 0) / (p.inMonthDays || 1) * p.periodDays) }}
+                        </td>
+                        <td class="num py-1 text-right font-medium text-slate-900">
+                          折入 {{ fmtNum(Object.values(p.usage).reduce((a, b) => a + Number(b), 0)) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </li>
+
+                <li>
+                  <b>③ 已抄（折算到区间）</b>
+                  = {{ fmtNum(billDoneTotal) }} 度
+                </li>
+
+                <li v-if="billData.tailDays > 0">
+                  <b>④ 月末补</b>
+                  = 最后一期日均 {{ fmtNum(billDailyTotal) }} 度/天 × {{ billData.tailDays }} 天
+                  = {{ fmtNum(billTailTotal) }} 度
+                </li>
+                <li v-else>
+                  <b>④ 月末补</b> = 0（自定义区间不补，或最后一期已到月末）
+                </li>
+
+                <li>
+                  <b>⑤ 预估总电量</b>
+                  = {{ fmtNum(billDoneTotal) }} + {{ fmtNum(billTailTotal) }}
+                  = <b>{{ fmtNum(billData.estimateKwh) }}</b> 度
+                </li>
+
+                <li>
+                  <b>⑥ 预提电量</b>
+                  = {{ fmtNum(billData.estimateKwh) }} × 1.05
+                  = <b>{{ fmtNum(billData.advanceKwh) }}</b> 度
+                </li>
+
+                <li>
+                  <b>⑦ 命中电价</b>
+                  {{ fmtNum(billData.advanceKwh) }} 度
+                  <span class="text-slate-500">
+                    （≤10 万 → 1.1 ｜ ≤20 万 → 0.9 ｜ 超过 → 0.72）
+                  </span>
+                  ⇒ <b>{{ billData.price }} 元/度</b>
+                </li>
+
+                <li>
+                  <b>⑧ 理论电费</b>
+                  = {{ fmtNum(billData.advanceKwh) }} × {{ billData.price }}
+                  = <b>{{ fmtNum(billData.amount) }} 元</b>
+                </li>
+
+                <li>
+                  <b>⑨ 万位向上取整</b>
+                  {{ fmtNum(billData.amount) }} 元
+                  ⇒ <b class="text-slate-900">{{ fmtNum(billData.advanceTotal) }} 元</b>
+                  <span class="text-slate-500">
+                    （比理论多 {{ fmtNum(billData.advanceTotal - billData.amount) }} 元，这是"只能多不能少"的缓冲）
+                  </span>
+                </li>
+
+                <li>
+                  <b>⑩ 4 项分摊</b>
+                  = 各项预估用量 ÷ 预估总电量 × {{ fmtNum(billData.advanceTotal) }}
+                  <span class="text-slate-500">（最后一项补差，保证合计正好等于预提总额）</span>
+                </li>
+              </ol>
+            </div>
+          </div>
 
           <p v-if="billData" class="mt-3 text-[11px] leading-relaxed text-slate-500">
             用量 = 抄表期按 08:00 日窗口折算到本月 + 月末按最后一期日均补
