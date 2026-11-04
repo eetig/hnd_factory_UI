@@ -99,6 +99,21 @@ const cards = computed(() =>
   }),
 )
 
+/*
+ * 只看没抄的（2026-11-05）
+ * 开关只影响"翻卡列表"，不影响统计（filledCount / total 永远按全量算），
+ * 否则抄到最后会显示"已填 8/8"这种假象。
+ */
+const onlyUnfilled = ref(false)
+
+/** 翻卡用的列表：打开开关后只留没填的（当前这张永远留在里面，避免"卡片凭空消失"） */
+const list = computed(() => {
+  if (!onlyUnfilled.value) return cards.value
+  return cards.value.filter(
+    (c) => c.reading === null || c.reading === undefined || c.meterId === card.value?.meterId,
+  )
+})
+
 const card = computed(() => cards.value[index.value] || null)
 const filledCount = computed(() => cards.value.filter((c) => c.reading !== null && c.reading !== undefined).length)
 const total = computed(() => cards.value.length)
@@ -151,6 +166,24 @@ function goTo(next) {
   if (card.value) loadCard(card.value)
 }
 
+/** 在"翻卡列表"里前进/后退（筛选打开时跳过已填的） */
+function step(delta) {
+  if (!list.value.length) return
+  const at = list.value.findIndex((c) => c.meterId === card.value?.meterId)
+  const nextItem = list.value[Math.min(list.value.length - 1, Math.max(0, (at === -1 ? 0 : at) + delta))]
+  if (!nextItem) return
+  const realIndex = cards.value.findIndex((c) => c.meterId === nextItem.meterId)
+  if (realIndex >= 0) goTo(realIndex)
+}
+
+/** 切换"只看没抄的"：切完把当前卡挪到列表里最近的没填那张 */
+function toggleOnlyUnfilled() {
+  onlyUnfilled.value = !onlyUnfilled.value
+  if (!onlyUnfilled.value) return
+  const firstUnfilled = cards.value.findIndex((c) => c.reading === null || c.reading === undefined)
+  if (firstUnfilled >= 0) goTo(firstUnfilled)
+}
+
 /* ===== 拍照（可选）===== */
 async function takePhoto() {
   if (!card.value) return
@@ -180,6 +213,18 @@ async function takePhoto() {
   }
 }
 
+/** 看大图（2026-11-05）：现场对账时要看清表盘数字 */
+function previewPhoto() {
+  if (!draft.photo) return
+  const urls = [
+    draft.photo,
+    ...cards.value
+      .map((c) => c.imagePath)
+      .filter((p) => p && p !== draft.photo),
+  ]
+  uni.previewImage({ urls, current: draft.photo })
+}
+
 /* ===== 提交 ===== */
 async function submit(direction) {
   if (!card.value || saving.value) return
@@ -195,7 +240,7 @@ async function submit(direction) {
       return
     }
     skipped.value = [...skipped.value, card.value.meterId]
-    fly(direction, () => goTo(index.value + 1))
+    fly(direction, () => step(1))
     return
   }
 
@@ -215,12 +260,18 @@ async function submit(direction) {
     const body = res?.data || {}
     if (body.success === false) throw new Error(body.msg || '保存失败')
     const warnings = body.data?.warnings || []
+    // 2026-11-05：轻震一下 —— 太阳底下、戴手套时，手感比屏幕可靠
+    try {
+      uni.vibrateShort({ type: 'light' })
+    } catch {
+      // 平板/浏览器不支持就算了，不影响保存
+    }
     fly(direction, () => {
       // 本地先把这张标为已填，顶部计数立刻对
       card.value.reading = reading
       card.value.imagePath = draft.photo
       skipped.value = skipped.value.filter((id) => id !== card.value.meterId)
-      goTo(index.value + 1)
+      step(1)
       if (warnings.length) uni.showToast({ title: warnings[0], icon: 'none', duration: 2500 })
     })
   } catch (e) {
@@ -300,7 +351,7 @@ function doSubmit() {
 function doSkip() {
   if (!card.value || saving.value) return
   skipped.value = [...skipped.value, card.value.meterId]
-  fly('left', () => goTo(index.value + 1))
+  fly('left', () => step(1))
 }
 
 function fly(direction, after) {
@@ -421,6 +472,11 @@ onMounted(() => {
         <view class="mr__head-right">
           <text class="mr__filled" @click="showList = true">已填 {{ filledCount }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
+          <text
+            class="mr__filter"
+            :class="{ 'is-on': onlyUnfilled }"
+            @click="toggleOnlyUnfilled"
+          >{{ onlyUnfilled ? '只看没抄' : '全部' }}</text>
         </view>
       </view>
 
@@ -491,7 +547,12 @@ onMounted(() => {
           <!-- 照片 -->
           <view class="mr__photo-row">
             <view v-if="draft.photo" class="mr__photo">
-              <image :src="draft.photo" mode="aspectFill" class="mr__photo-img" />
+              <image
+                :src="draft.photo"
+                mode="aspectFill"
+                class="mr__photo-img"
+                @click.stop="previewPhoto"
+              />
               <text class="mr__photo-remove" @click.stop="draft.photo = ''">×</text>
             </view>
             <text v-else class="mr__photo-add" @click.stop="takePhoto">📷 拍表存证（可选）</text>
@@ -725,6 +786,24 @@ onMounted(() => {
 }
 
 /* ===== 2026-11-05 新增：进度条 / 大按钮 / 身份色 ===== */
+
+/* 顶部"全部 / 只看没抄"开关（2026-11-05） */
+.mr__filter {
+  margin-left: 16rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+  background-color: var(--ui-raise-2);
+  border: 2rpx solid var(--ui-border);
+  white-space: nowrap;
+}
+
+.mr__filter.is-on {
+  color: var(--ui-on-accent);
+  background-color: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
 
 .mr__progress-text,
 .mr__section,
