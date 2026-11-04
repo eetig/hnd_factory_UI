@@ -11,7 +11,8 @@
     "build:mp-weixin": "uni build -p mp-weixin && node resources/strip-vessel-images.mjs && node resources/check-app-env.mjs",
     "sync:app-icons": "node resources/sync-app-icons.mjs",
     "strip:vessel-images": "node resources/strip-vessel-images.mjs",
-    "check:app-env": "node resources/check-app-env.mjs"
+    "check:app-env": "node resources/check-app-env.mjs",
+    "postinstall": "node resources/patch-esbuild-temp.mjs"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-5020620260917001",
