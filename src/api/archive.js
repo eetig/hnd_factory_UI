@@ -67,3 +67,13 @@ export function aiSuggestArchive(file) {
   form.append('file', file)
   return request.post(`${ARCHIVE_API}/ai-suggest`, form)
 }
+
+/**
+ * Excel 预览（2026-11-05）。
+ *
+ * <p>返回 { sheets: [{ name, rows: [[...]], truncated }] }，前端画表格。
+ * 后端不返回 HTML —— 文件内容是不可信输入，拼 HTML 再 v-html 等于自己开 XSS 口子。
+ */
+export function previewSpreadsheet(id) {
+  return request.get(`${ARCHIVE_API}/preview-spreadsheet/${id}`)
+}

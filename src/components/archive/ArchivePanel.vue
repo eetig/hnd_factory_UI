@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { hasPerm, isAdmin } from '../../api/auth'
-import { downloadArchive, aiSuggestArchive } from '../../api/archive'
+import { downloadArchive, aiSuggestArchive, previewSpreadsheet } from '../../api/archive'
 import { useArchive } from '../../composables/useArchive'
 import ArchiveDetailDrawer from './ArchiveDetailDrawer.vue'
 import { ARCHIVE_COLUMNS, expireBadge } from './useArchiveColumns.js'
@@ -220,6 +220,8 @@ function previewKind(row) {
   const mime = String(row.mimeType || '').toLowerCase()
   if (mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp)$/.test(name)) return 'image'
   if (mime === 'application/pdf' || name.endsWith('.pdf')) return 'pdf'
+  // Excel 由后端读成结构化表格，前端画（2026-11-05）
+  if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.csv')) return 'sheet'
   return 'other'
 }
 
@@ -246,8 +248,24 @@ async function openPreview(row) {
     ElMessage.info('这条资料只有纸质，没有电子件')
     return
   }
-  preview.value = { open: true, kind, url: '', name: row.origName || row.name || '预览', loading: true, error: '' }
+  preview.value = {
+    open: true,
+    kind,
+    url: '',
+    name: row.origName || row.name || '预览',
+    loading: true,
+    error: '',
+    sheets: [],
+  }
   try {
+    if (kind === 'sheet') {
+      // Excel 不走 blob：后端直接给「表名 + 二维数组」，前端画表格（转义交给 Vue）
+      const res = await previewSpreadsheet(row.id)
+      const body = res?.data || {}
+      if (body.success === false) throw new Error(body.msg || '读不出表格')
+      preview.value.sheets = body.data?.sheets || []
+      return
+    }
     const res = await downloadArchive(row.id)
     const blob = new Blob([res.data], { type: row.mimeType || (kind === 'pdf' ? 'application/pdf' : 'image/*') })
     preview.value.url = URL.createObjectURL(blob)
@@ -479,6 +497,12 @@ onMounted(async () => {
           @clear="clearSearch"
         />
         <el-button :disabled="loading" @click="onSearch">搜索</el-button>
+        <!-- 排序（2026-11-05）：默认「最近录入」；另外给有效期与名称 -->
+        <el-select :model-value="sort" aria-label="排序方式" class="!w-[136px]" @change="setSort">
+          <el-option label="最近录入" value="recent" />
+          <el-option label="有效期最近" value="expire" />
+          <el-option label="名称 A→Z" value="name" />
+        </el-select>
 
         <button
           type="button"
@@ -629,6 +653,27 @@ onMounted(async () => {
         alt="资料预览"
         class="max-h-[70vh] max-w-full object-contain"
       />
+      <!-- Excel 预览（2026-11-05）：后端给「表名 + 二维数组」，这里画表格；转义交给 Vue -->
+      <div v-else-if="preview.kind === 'sheet'" class="max-h-[70vh] w-full overflow-auto">
+        <div v-for="sheet in preview.sheets" :key="sheet.name" class="mb-4">
+          <p class="mb-1 text-xs font-medium text-slate-600">
+            {{ sheet.name }}
+            <span v-if="sheet.truncated" class="ml-1 text-amber-700">（只显示前 100 行）</span>
+          </p>
+          <table class="w-full border-collapse text-xs">
+            <tbody>
+              <tr v-for="(line, lineIndex) in sheet.rows" :key="lineIndex" class="border-b border-line">
+                <td
+                  v-for="(cell, cellIndex) in line"
+                  :key="cellIndex"
+                  class="whitespace-nowrap border-r border-line px-2 py-1 text-slate-700"
+                >{{ cell }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="!preview.sheets.length" class="text-sm text-slate-500">这张表里没有内容</p>
+      </div>
       <iframe
         v-else-if="preview.kind === 'pdf' && preview.url"
         :src="preview.url"

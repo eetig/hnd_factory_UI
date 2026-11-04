@@ -33,6 +33,9 @@ export function useArchive() {
   const categoryId = ref(null)
   const expireWithinDays = ref(0)
 
+/** 排序（2026-11-05）：recent 最近录入 / expire 有效期 / name 名称 */
+const sort = ref('recent')
+
   const categories = ref([])
 
   /** 当前分类名（列表区顶部那句"正在看哪一类"） */
@@ -52,6 +55,7 @@ export function useArchive() {
     if (keyword.value.trim()) params.keyword = keyword.value.trim()
     if (categoryId.value !== null) params.categoryId = categoryId.value
     if (expireWithinDays.value > 0) params.expireWithinDays = expireWithinDays.value
+  if (sort.value && sort.value !== 'recent') params.sort = sort.value
     return params
   }
 
@@ -91,6 +95,13 @@ export function useArchive() {
     categoryId.value = id
     pageNum.value = 1
     return load()
+  }
+
+  /** 切排序：改值后重新拉第一页 */
+  function setSort(value) {
+    sort.value = value
+    pageNum.value = 1
+    load()
   }
 
   function setKeyword(value) {
@@ -171,6 +182,8 @@ export function useArchive() {
     load,
     loadCategories,
     setCategory,
+    setSort,
+    sort,
     setKeyword,
     setExpireWithin,
     goPage,
