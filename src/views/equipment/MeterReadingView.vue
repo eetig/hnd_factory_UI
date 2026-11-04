@@ -457,7 +457,6 @@ async function loadShare() {
 
 /* 月度汇总（2026-11-04）：照使用方 Excel 的 12 列 */
 const summaryRange = ref({ from: '', to: '' })
-const summaryRows = ref([])
 const summaryLoading = ref(false)
 const monthly = ref(null)
 
@@ -560,29 +559,12 @@ async function doImport() {
       importOpen.value = false
       importText.value = ''
       await loadSheet()
-      await loadSummary()
       ElMessage.success('导入完成')
     }
   } catch (e) {
     importHint.value = e?.response?.data?.msg || e?.message || '导入失败'
   } finally {
     importing.value = false
-  }
-}
-
-async function loadSummary() {
-  summaryLoading.value = true
-  try {
-    const params = {}
-    if (summaryRange.value.from) params.from = summaryRange.value.from
-    if (summaryRange.value.to) params.to = summaryRange.value.to
-    const res = await request.get('/api/electricity/summary', { params })
-    summaryRows.value = res.data?.data || []
-  } catch (e) {
-    summaryRows.value = []
-    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
-  } finally {
-    summaryLoading.value = false
   }
 }
 

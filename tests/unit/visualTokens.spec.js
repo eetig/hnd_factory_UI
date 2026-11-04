@@ -239,7 +239,7 @@ const WORKBENCH_FILES = [
   'views/purchase/PurchaseView.vue',
   'views/equipment/EquipmentView.vue',
   'views/equipment/VesselView.vue',
-  'views/equipment/ElectricityView.vue',
+  // 2026-11-04：ElectricityView.vue 已删除（路由改 redirect，组件无人引用）
   'views/stats/WeeklyView.vue',
   'views/stats/DailyView.vue',
   'views/stats/TankLevelView.vue',
@@ -1540,7 +1540,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
     expect(
       count,
       'bg-raised + shadow-card 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整',
-    ).toBe(34)
+    ).toBe(33)
   })
 
   it('旧玻璃卡片配方整串禁入：bg-raised/95、border-white/60、backdrop-blur-xl、shadow-panel', () => {

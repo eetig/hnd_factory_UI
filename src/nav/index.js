@@ -105,7 +105,12 @@ export const NAV_ITEMS = [
   },
   // 体积计算是纯前端计算，电费预提是本地档位说明 + 占位，都不需要登录
   { key: 'vessel', label: '压力容器体积计算', path: '/equipment/vessel', group: 'equipment' },
-  { key: 'electricity', label: '电费预提', path: '/equipment/electricity', group: 'equipment' },
+  /*
+   * 2026-11-04：删掉「电费预提」这个导航项。
+   * 它的路由现在只是重定向到「电费抄表 · 预提单」，两个菜单项指向同一处，
+   * 使用方上次就是点了旧的「电费预提」看到占位页，以为改动没生效。
+   * 路由本身保留（旧书签不 404），只是不再出现在菜单里。
+   */
   // 抄表（2026-11-02）：只要登录就能录（现场谁抄谁录），改台账才需要管理员
   { key: 'meterReading', label: '电费抄表', path: '/equipment/meters', group: 'equipment' },
   // 周统计对所有人可见：它走 /api/stats/weekly 这条只吐汇总数的公开接口（决策-004），
