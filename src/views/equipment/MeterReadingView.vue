@@ -976,7 +976,7 @@ onMounted(async () => {
                 <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.usageQty) }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
-                  {{ (Number(row.share || 0) * 100).toFixed(2) }}%
+                  {{ Math.round(Number(row.share || 0) * 100) }}%
                 </td>
               </tr>
               <tr v-if="!summaryLoading && !summaryRows.length">
@@ -1076,7 +1076,7 @@ onMounted(async () => {
                 <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.usage) }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
-                  {{ (row.ratio * 100).toFixed(2) }}%
+                  {{ Math.round(row.ratio * 100) }}%
                 </td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(row.fee) }}</td>
                 <td class="num px-4 py-2 text-right tabular-nums text-slate-700">{{ fmtNum(row.byUsage) }}</td>
