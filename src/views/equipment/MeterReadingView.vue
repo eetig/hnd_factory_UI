@@ -487,9 +487,35 @@ async function loadShare() {
   }
 }
 
+/* 月度汇总（2026-11-04）：照使用方 Excel 的 12 列 */
 const summaryRange = ref({ from: '', to: '' })
 const summaryRows = ref([])
 const summaryLoading = ref(false)
+const monthly = ref(null)
+
+async function loadMonthly() {
+  summaryLoading.value = true
+  try {
+    const params = {}
+    if (summaryRange.value.from) params.from = summaryRange.value.from
+    if (summaryRange.value.to) params.to = summaryRange.value.to
+    if (!params.from || !params.to) {
+      // 没填区间就按当月算
+      const now = new Date()
+      const month = now.toISOString().slice(0, 7)
+      params.month = month
+    }
+    const res = await request.get('/api/electricity/monthly', { params })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '加载失败')
+    monthly.value = body.data || null
+  } catch (e) {
+    monthly.value = null
+    ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
+  } finally {
+    summaryLoading.value = false
+  }
+}
 
 async function doImport() {
   if (!importText.value.trim()) {
@@ -682,7 +708,7 @@ function cancelLedger(row) {
 function switchView(next) {
   view.value = next
   if (next === 'matrix' && !matrixRows.value.length) loadMatrix()
-  if (next === 'summary' && !summaryRows.value.length) loadSummary()
+  if (next === 'summary' && !monthly.value) loadMonthly()
   if (next === 'share' && !shareRows.value.length) loadShare()
   if (next === 'bill' && !billData.value) loadBill()
 }
@@ -1069,7 +1095,7 @@ onMounted(async () => {
         </div>
       </template>
 
-      <!-- ============ 分类汇总（各车间求和）============ -->
+      <!-- ============ 分类汇总（2026-11-04：照使用方 Excel 的 12 列）============ -->
       <template v-else-if="view === 'summary'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
@@ -1093,53 +1119,80 @@ onMounted(async () => {
           <button
             type="button"
             class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-            @click="loadSummary"
+            @click="loadMonthly"
           >
-            汇总
+            {{ summaryLoading ? '统计中…' : '统计' }}
           </button>
+          <span class="text-xs text-slate-500">留空 = 按本月；分母是总电量（1 号表）</span>
           <button
             type="button"
-            class="rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            class="ml-auto rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             @click="importOpen = true"
           >
             粘贴导入
           </button>
-          <span class="text-xs text-slate-500">只算用电量，不含电费</span>
         </div>
 
-        <div class="min-h-0 flex-1 overflow-auto">
-          <table class="ledger-table w-full min-w-[620px] table-fixed text-sm">
+        <div class="min-h-0 flex-1 overflow-auto px-6 py-4">
+          <table v-if="monthly" class="w-full table-fixed text-sm">
             <colgroup>
-              <col class="w-[200px]" />
-              <col class="w-[200px]" />
-              <col class="w-[120px]" />
+              <col class="w-[110px]" />
+              <col v-for="row in monthly.rows" :key="'c-' + row.name" class="w-[110px]" />
             </colgroup>
-            <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]">
-              <tr>
-                <th class="px-4 py-2.5 text-left font-medium">车间 / 系统</th>
-                <th class="px-4 py-2.5 text-right font-medium">用电量（kWh）</th>
-                <th class="px-4 py-2.5 text-right font-medium">占比</th>
+            <thead>
+              <tr class="bg-region text-xs text-slate-600">
+                <th class="px-2 py-2 text-left font-medium">日期</th>
+                <th
+                  v-for="row in monthly.rows"
+                  :key="'h-' + row.name"
+                  class="px-2 py-2 text-right font-medium"
+                  :class="row.viewOnly ? 'text-slate-500' : ''"
+                >
+                  {{ row.name }}
+                  <span v-if="row.viewOnly" class="block text-[11px] font-normal text-slate-500">只看运转</span>
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in summaryRows" :key="row.section" class="border-t border-line">
-                <td class="px-4 py-2 font-medium text-slate-800">{{ row.section }}</td>
-                <td class="num px-4 py-2 text-right tabular-nums">{{ fmtNum(row.usageQty) }}</td>
-                <td class="num px-4 py-2 text-right tabular-nums text-slate-600">
-                  {{ Math.round(Number(row.share || 0) * 100) }}%
+              <tr class="border-t border-line">
+                <td class="num px-2 py-2 text-slate-700">{{ monthly.from }} → {{ monthly.to }}</td>
+                <td
+                  v-for="row in monthly.rows"
+                  :key="'v-' + row.name"
+                  class="num px-2 py-2 text-right tabular-nums"
+                  :class="row.viewOnly ? 'text-slate-500' : 'font-medium text-slate-900'"
+                >
+                  {{ fmtNum(row.kwh) }}
                 </td>
               </tr>
-              <tr v-if="!summaryLoading && !summaryRows.length">
-                <td colspan="3" class="px-4 py-10 text-center text-sm text-slate-500">
-                  {{ summaryLoading ? '正在汇总…' : '选好日期区间再点「汇总」' }}
+              <tr class="border-t border-line bg-desk/40">
+                <td class="px-2 py-2 text-right text-slate-500">占比</td>
+                <td
+                  v-for="row in monthly.rows"
+                  :key="'r-' + row.name"
+                  class="num px-2 py-2 text-right tabular-nums text-slate-700"
+                >
+                  {{ row.ratio === null ? '—' : Math.round(row.ratio * 100) + '%' }}
                 </td>
               </tr>
             </tbody>
           </table>
+
+          <p v-if="monthly" class="mt-3 text-[11px] leading-relaxed text-slate-500">
+            口径：总电量 = 1 号高压计量表；公用工程 = 3+20+28+33；乙炔 = 25+26+27；
+            1# = 16+17+18+19+29；2# = 6~11 + 150车间 + 30 + 31；4# = 12+13+14+15+32；
+            中控 35 · 污水 36 · 办公 37；
+            <b>其它 = 总电量 − 上面九项之和</b>（倒挤，所以没点名的表都在这）；
+            2#空压机(备电)=33、1#空压机=5 只用于看运转，不参与合计。
+          </p>
+
+          <p v-else-if="!summaryLoading" class="py-10 text-center text-sm text-slate-500">
+            选好区间（或留空按本月）再点「统计」
+          </p>
         </div>
       </template>
 
-      <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
+      <!-- ============ 预提分摊（2026-11-04）============ -->      <!-- ============ 预提单（2026-11-04，按使用方 Excel 的结构）============ -->
       <template v-else-if="view === 'bill'">
         <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-6 py-3">
           <el-date-picker
