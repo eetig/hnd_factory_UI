@@ -28,6 +28,11 @@ const props = defineProps({
   errorMessage: { type: String, default: '' },
   /** 扁平化的分类选项：[{ value, label, disabled }] */
   categoryOptions: { type: Array, default: () => [] },
+  /**
+   * AI 归类建议（2026-11-05）。null 表示还没有。
+   * 由 ArchivePanel 在上传成功后异步拿回来，不阻塞保存。
+   */
+  aiSuggestion: { type: Object, default: null },
 })
 
 const emit = defineEmits(['update:modelValue', 'save', 'delete', 'upload'])
@@ -42,6 +47,32 @@ const uploading = ref(false)
 const fileInput = ref(null)
 
 const dirty = computed(() => JSON.stringify(form.value) !== snapshot)
+
+/*
+ * AI 建议落地（2026-11-05）
+ *
+ * 只填**还空着**的字段：人可能已经手动选了分类、敲了编号，覆盖上去就是越帮越忙。
+ * 置信度原样保留，界面上一行小字说明来源（低置信度会写成"请确认"）。
+ */
+watch(
+  () => props.aiSuggestion,
+  (suggestion) => {
+    if (!suggestion) return
+    const fill = (key, value) => {
+      if (!value && value !== 0) return false
+      const current = form.value[key]
+      if (current !== null && current !== undefined && String(current).trim() !== '') return false
+      form.value[key] = value
+      return true
+    }
+    fill('categoryId', suggestion.categoryId)
+    fill('name', suggestion.name)
+    fill('docNo', suggestion.docNo)
+    fill('owner', suggestion.owner)
+    fill('expireDate', suggestion.expireDate)
+    fill('originPlace', suggestion.originPlace)
+  },
+)
 
 function blank() {
   return {
@@ -210,6 +241,24 @@ function onDelete() {
     class="archive-drawer"
     @update:model-value="(v) => emit('update:modelValue', v)"
   >
+    <!-- AI 归类建议（2026-11-05）：一行小字 + 置信度；低置信度明确要求人工确认 -->
+    <div
+      v-if="aiSuggestion"
+      class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-region px-3 py-2"
+    >
+      <span class="rounded bg-brand/10 px-1.5 py-0.5 text-[11px] font-medium text-brand-ink">AI 建议</span>
+      <span class="text-[11px] text-slate-600">
+        {{ aiSuggestion.categoryName || '未能判断分类' }}
+        <template v-if="aiSuggestion.confidence === 'high'">· 置信度高</template>
+        <template v-else-if="aiSuggestion.confidence === 'medium'">· 置信度中</template>
+        <template v-else>· 置信度低，请确认</template>
+      </span>
+      <span v-if="aiSuggestion.reason" class="text-[11px] text-slate-500">（{{ aiSuggestion.reason }}）</span>
+      <span v-if="aiSuggestion.source === 'rule'" class="text-[11px] text-amber-700">
+        · 未配置模型，按文件名匹配
+      </span>
+    </div>
+
     <template #header>
       <div class="flex w-full items-center justify-between gap-3">
         <div class="min-w-0">

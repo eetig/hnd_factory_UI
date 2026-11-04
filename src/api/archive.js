@@ -54,3 +54,16 @@ export function uploadArchiveFile(file) {
 export function downloadArchive(id) {
   return request.get(`${ARCHIVE_API}/download/${id}`, { responseType: 'blob' })
 }
+
+/**
+ * AI 归类建议（2026-11-05）。
+ *
+ * <p>只拿建议、不落库：返回 { categoryId, categoryName, name, docNo, owner,
+ * expireDate, originPlace, confidence, reason, source, llmEnabled }。
+ * 没配 DeepSeek key 时 source='rule'（按文件名/OCR 文本关键词匹配）。
+ */
+export function aiSuggestArchive(file) {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post(`${ARCHIVE_API}/ai-suggest`, form)
+}

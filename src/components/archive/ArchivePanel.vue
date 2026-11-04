@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElButton, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import { hasPerm } from '../../api/auth'
-import { downloadArchive } from '../../api/archive'
+import { downloadArchive, aiSuggestArchive } from '../../api/archive'
 import { useArchive } from '../../composables/useArchive'
 import ArchiveDetailDrawer from './ArchiveDetailDrawer.vue'
 import { ARCHIVE_COLUMNS, expireBadge } from './useArchiveColumns.js'
@@ -145,9 +145,30 @@ async function onUpload(file, resolve) {
   try {
     const res = await upload(file)
     resolve(res)
+    /*
+     * AI 归类（2026-11-05）：上传成功后再问一次，**不阻塞**保存 ——
+     * 模型慢或挂了也不影响人继续手填。
+     */
+    askAi(file)
   } catch (e) {
     ElMessage.error(e?.response?.data?.msg || e?.message || '上传失败')
     resolve(null)
+  }
+}
+
+/** AI 归类建议（2026-11-05）：给抽屉预填用；失败静默，不打扰录入 */
+const aiSuggestion = ref(null)
+
+async function askAi(file) {
+  aiSuggestion.value = null
+  try {
+    const res = await aiSuggestArchive(file)
+    const body = res?.data || {}
+    if (body.success === false) return
+    aiSuggestion.value = body.data || null
+  } catch {
+    // 没配 key / 网络不通 / 模型超时，都不该打断"新增资料"
+    aiSuggestion.value = null
   }
 }
 
@@ -484,6 +505,7 @@ onMounted(async () => {
   </section>
 
   <ArchiveDetailDrawer
+      :ai-suggestion="aiSuggestion"
     v-model="drawerOpen"
     :mode="drawerMode"
     :row="drawerRow"
