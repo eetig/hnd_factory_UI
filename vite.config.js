@@ -1,3 +1,43 @@
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+
+/*
+ * esbuild 的临时副本问题（2026-11-04）。
+ *
+ * esbuild 每次运行会把自身（约 1.19 MB 的 esbuild.exe）复制一份到系统临时目录，跑完再删。
+ * 本机装了火绒（HipsDaemon / HipsTray），它盯着"刚被执行过的 exe"，副本删除会被拦，
+ * 于是 HBuilderX 里编译报：
+ *   [plugin:vite:esbuild-transpile] remove D:\_tmp\esbuild-<hash>: Access is denied
+ * 这不是代码问题，也不是磁盘或权限问题 —— 实测用 PowerShell 连续写 1.2 MB 文件再立刻删，
+ * 30 次全部成功，只有"刚执行过的 exe 副本"删不掉。
+ *
+ * 给 esbuild 指路，让它用 node_modules 里那份、**不复制**，问题就没了。
+ * 写在这里而不是只设系统环境变量：HBuilderX 不一定重启，而 vite.config.js
+ * 在 CLI 与 HBuilderX 两种构建入口都会被读到（与 buildGuard 同理）。
+ */
+const projectDir = dirname(fileURLToPath(import.meta.url))
+/*
+ * 2026-11-04 第二次修：原来是 "没设过才设"，结果环境里已有一条（可能指向 HBuilderX 自己那份，
+ * 或者干脆是坏的），我的赋值被跳过、日志也没打，构建照样复制副本、照样删不掉。
+ * 改成**无条件覆盖**，并且把覆盖前的值打进日志，方便下次一眼看出是谁设的。
+ */
+const esbuildBefore = process.env.ESBUILD_BINARY_PATH || '(未设置)'
+{
+  const candidates = [
+    join(projectDir, 'node_modules', '@esbuild', 'win32-x64', 'esbuild.exe'),
+    join(projectDir, 'node_modules', '@esbuild', 'win32-arm64', 'esbuild.exe'),
+    join(projectDir, 'node_modules', 'esbuild', 'bin', 'esbuild'),
+    join(projectDir, 'node_modules', 'esbuild', 'esbuild.exe'),
+  ]
+  const hit = candidates.find((candidate) => existsSync(candidate))
+  if (hit) {
+    process.env.ESBUILD_BINARY_PATH = hit
+    console.log(`[esbuild] 直接用 ${hit}（避免复制到临时目录后被安全软件拦住删除）`)
+  }
+}
+
 import { defineConfig } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { UnifiedViteWeappTailwindcssPlugin as uvtw } from 'weapp-tailwindcss/vite'

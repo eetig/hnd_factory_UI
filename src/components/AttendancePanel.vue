@@ -1608,15 +1608,15 @@ const popupStyle =
   color: var(--ui-text-2);
 }
 
+/*
+ * 2026-11-04：把 background-color / border 写到嵌套规则**之前**。
+ *
+ * Sass 警告（DEPRECATION WARNING: declarations that appear after nested rules）：
+ * 声明写在嵌套规则后面，Sass 未来版本会改变它的行为（现在会被提前到嵌套规则之前输出）。
+ * 也就是说这段代码在旧 Sass 里碰巧是对的，升级后会静默变样 —— 与其等它变，不如现在就排好。
+ * 顺便删掉重复的 display（原先是 flex、后面又被 block 覆盖）。
+ */
 .ed__time-input {
-  display: flex;
-  align-items: center;
-  min-height: 80rpx;
-
-  &.is-empty {
-    color: var(--ui-text-3);
-  }
-
   display: block;
   width: calc(100vw - 48rpx);
   max-width: calc(100vw - 48rpx);
@@ -1629,6 +1629,10 @@ const popupStyle =
   color: var(--ui-text);
   background-color: var(--ui-raise);
   border: 2rpx solid var(--ui-border);
+
+  &.is-empty {
+    color: var(--ui-text-3);
+  }
 }
 
 .ed__chip {
