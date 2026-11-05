@@ -267,11 +267,22 @@ async function runBatch() {
       okCount += 1
       batchResults.value.push({ name: item.name, ok: true, message: '已保存' })
     } catch (e) {
+      const status = e?.response?.status
       batchResults.value.push({
         name: item.name,
         ok: false,
         message: e?.response?.data?.msg || e?.message || '上传失败',
       })
+      /*
+       * 登录过期就整批停手（2026-11-05）。
+       * 之前是继续跑完剩下几十个，每条都 401 —— 用户看到一屏红字，还要自己猜原因。
+       * 现在停在第一条，明确告诉他去重新登录，并说明已传成功的那些是好的。
+       */
+      if (status === 401) {
+        batchRunning.value = false
+        ElMessage.warning('登录已过期，批量上传已暂停（已上传成功的文件不会丢），请重新登录后再继续')
+        return
+      }
     }
     batchDone.value += 1
   }
