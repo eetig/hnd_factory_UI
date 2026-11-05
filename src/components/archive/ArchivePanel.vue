@@ -51,6 +51,31 @@ const {
   removeCategory,
 } = useArchive()
 
+
+const searchText = ref('')
+
+/** 抽屉 */
+const drawerOpen = ref(false)
+const drawerMode = ref('edit')
+const drawerRow = ref(null)
+const drawerMessage = ref('')
+
+/**
+ * 分类下拉选项：大类可选中（资料直接归到大类也行），子类缩进显示。
+ *
+ * <p>为什么允许选大类：不是每份资料都能立刻归到子类，硬要求两级会让人随手建一堆子类。
+ */
+const categoryOptions = computed(() => {
+  const list = []
+  for (const root of categories.value) {
+    list.push({ value: root.id, label: root.name, disabled: false })
+    for (const child of root.children || []) {
+      list.push({ value: child.id, label: `　${child.name}`, disabled: false })
+    }
+  }
+  return list
+})
+
 /* 批量上传（review S5：逻辑在 composables/useArchiveBatch.js） */
 const {
   batchOpen,
@@ -78,29 +103,6 @@ const {
   categoryId,
 })
 
-const searchText = ref('')
-
-/** 抽屉 */
-const drawerOpen = ref(false)
-const drawerMode = ref('edit')
-const drawerRow = ref(null)
-const drawerMessage = ref('')
-
-/**
- * 分类下拉选项：大类可选中（资料直接归到大类也行），子类缩进显示。
- *
- * <p>为什么允许选大类：不是每份资料都能立刻归到子类，硬要求两级会让人随手建一堆子类。
- */
-const categoryOptions = computed(() => {
-  const list = []
-  for (const root of categories.value) {
-    list.push({ value: root.id, label: root.name, disabled: false })
-    for (const child of root.children || []) {
-      list.push({ value: child.id, label: `　${child.name}`, disabled: false })
-    }
-  }
-  return list
-})
 
 /** 到期徽标（三档 + 无有效期） */
 function badgeOf(row) {
