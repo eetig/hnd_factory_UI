@@ -286,7 +286,7 @@ function previewPhoto() {
 
 /* ===== 提交 ===== */
 async function submit(direction) {
-  if (!card.value || saving.value) return
+  if (!card.value || saving.value || gesture.flying) return
   const reading = draft.reading === '' ? null : Number(draft.reading)
   if (reading !== null && !Number.isFinite(reading)) {
     uni.showToast({ title: '读数不是数字', icon: 'none' })
@@ -303,7 +303,12 @@ async function submit(direction) {
     return
   }
 
+  /*
+   * 乐观飞出（2026-11-06）：先让卡片飞出去，网络在飞的过程中跑。
+   * 原来 fly() 写在 await 之后 ⇒ 松手后卡片停在原地等 300ms~3s，看着像"没反应"。
+   */
   saving.value = true
+  fly(direction, () => step(1))
   try {
     const res = await request.post('/api/electricity/readings/batch', {
       date: readDate.value,
@@ -325,15 +330,19 @@ async function submit(direction) {
     } catch {
       // 平板/浏览器不支持就算了，不影响保存
     }
-    fly(direction, () => {
-      // 本地先把这张标为已填，顶部计数立刻对
+    // 卡片已经在飞了，这里只补本地状态（顶部计数立刻对）
+    if (card.value) {
       card.value.reading = reading
       card.value.imagePath = draft.photo
       skipped.value = skipped.value.filter((id) => id !== card.value.meterId)
-      step(1)
-      if (warnings.length) uni.showToast({ title: warnings[0], icon: 'none', duration: 2500 })
-    })
+    }
+    if (warnings.length) uni.showToast({ title: warnings[0], icon: 'none', duration: 2500 })
   } catch (e) {
+    /*
+     * 失败了要把卡片飞回来（它已经在屏幕外），并且退回到原来的那张 ——
+     * 不假装成功：数据没写进去，界面就不能显示"已填"。
+     */
+    restore()
     uni.showToast({ title: e?.data?.msg || e?.message || '保存失败', icon: 'none' })
   } finally {
     saving.value = false
@@ -364,6 +373,18 @@ const FLING_V = 0.35 // 速度阈值（px/ms）
  * 旋转和透明度跟着位移走，幅度很小（最多 6°、最多淡到 65%），不喧宾夺主。
  */
 const FLY_MS = 280
+
+/**
+ * 拖动时的方向提示（2026-11-06）。
+ * 位移过 24px 就浮出标签，透明度随进度上升 —— 松手前就知道会触发"提交"还是"跳过"。
+ */
+const intent = computed(() => {
+  if (gesture.flying || !gesture.decided) return { kind: '', opacity: 0 }
+  const offset = gesture.dx
+  if (Math.abs(offset) < 24) return { kind: '', opacity: 0 }
+  const progress = Math.min(1, Math.abs(offset) / 160)
+  return { kind: offset > 0 ? '提交' : '跳过', opacity: 0.25 + progress * 0.75 }
+})
 
 const cardStyle = computed(() => {
   const dragging = gesture.dragging && gesture.decided && !gesture.flying
@@ -411,6 +432,29 @@ function doSkip() {
   if (!card.value || saving.value) return
   skipped.value = [...skipped.value, card.value.meterId]
   fly('left', () => step(1))
+}
+
+/**
+ * 把已经飞出去的卡片收回来（失败时用，2026-11-06）。
+ *
+ * 用同一套缓动倒着走：从屏外飞回原位，再把 index 退一格（fly 的 after 已经 step 过去了）。
+ * 顺序很重要：先 step 回到上一张 → 让它从屏外飞回来。
+ */
+function restore() {
+  const back = Math.max(0, index.value - 1)
+  index.value = back
+  if (card.value) loadCard(card.value)
+  gesture.flying = true
+  gesture.dx = gesture.dx > 0 ? 520 : -520
+  // 下一帧再归零，才有"飞回来"的过渡
+  setTimeout(() => {
+    gesture.dx = 0
+    setTimeout(() => {
+      gesture.flying = false
+      gesture.decided = false
+      gesture.dragging = false
+    }, FLY_MS)
+  }, 16)
 }
 
 function fly(direction, after) {
@@ -564,6 +608,18 @@ onMounted(() => {
           @touchend.stop="onTouchEnd"
           @touchcancel.stop="onTouchEnd"
         >
+          <!-- 方向提示（2026-11-06）：拖动时浮出，松手前就知道会触发哪个 -->
+          <view
+            v-if="intent.kind === '提交'"
+            class="mr__intent mr__intent--right"
+            :style="{ opacity: intent.opacity }"
+          >提交</view>
+          <view
+            v-if="intent.kind === '跳过'"
+            class="mr__intent mr__intent--left"
+            :style="{ opacity: intent.opacity }"
+          >跳过</view>
+
           <view class="mr__card-head">
             <text
               class="mr__no"
@@ -1156,6 +1212,35 @@ onMounted(() => {
 
 .mr__action-text {
   letter-spacing: 2rpx;
+}
+
+/* 方向提示标签（2026-11-06）：满幅半透明色带 + 大字，隔着阳光也看得清 */
+.mr__intent {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 46%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: 8rpx;
+  color: #ffffff;
+  pointer-events: none;
+  border-radius: 22rpx;
+}
+
+.mr__intent--right {
+  right: 0;
+  background: linear-gradient(90deg, rgba(47, 106, 176, 0) 0%, rgba(47, 106, 176, 0.92) 72%);
+  border-radius: 0 22rpx 22rpx 0;
+}
+
+.mr__intent--left {
+  left: 0;
+  background: linear-gradient(270deg, rgba(120, 120, 120, 0) 0%, rgba(110, 110, 110, 0.9) 72%);
+  border-radius: 22rpx 0 0 22rpx;
 }
 
 .mr__card.is-anomaly {
