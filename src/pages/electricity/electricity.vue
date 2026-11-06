@@ -23,6 +23,67 @@ import PanelState from '../../components/PanelState.vue'
 const { themeClass, themeVars } = useTheme()
 
 const view = ref('overview') // overview | monthly | bill
+
+/*
+ * 页签手势（2026-11-06）
+ * 三个平级页签要能左右滑切换。只做方向感：跟手位移 + 松手吸附，不做弹跳与视差 ——
+ * 现场看数字的人需要"我翻了一页"，而不是"内容淡出了"。
+ */
+const tabDx = ref(0)
+const tabDragging = ref(false)
+let tabStartX = 0
+let tabStartY = 0
+let tabLocked = false
+
+/** 滑块位置：索引 × 100%（宽度在 CSS 里按三段算） */
+const thumbStyle = computed(() => ({
+  transform: `translate3d(${Math.max(0, TABS.findIndex((t) => t.key === view.value)) * 100}%, 0, 0)`,
+}))
+
+/** 内容区：拖时无过渡（跟手），松手 240ms 吸附 */
+const swipeStyle = computed(() => ({
+  transform: `translate3d(${tabDx.value}px, 0, 0)`,
+  transition: tabDragging.value ? 'none' : 'transform 240ms cubic-bezier(0.22, 1, 0.36, 1)',
+}))
+
+function onTabTouchStart(event) {
+  const touch = event.touches?.[0]
+  if (!touch) return
+  tabStartX = touch.clientX
+  tabStartY = touch.clientY
+  tabDragging.value = true
+  tabLocked = false
+  tabDx.value = 0
+}
+
+function onTabTouchMove(event) {
+  const touch = event.touches?.[0]
+  if (!touch || !tabDragging.value) return
+  const dx = touch.clientX - tabStartX
+  const dy = touch.clientY - tabStartY
+  // 方向锁：纵向为主就交回页面滚动，不跟页面抢
+  if (!tabLocked && Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) {
+    tabDragging.value = false
+    tabDx.value = 0
+    return
+  }
+  if (Math.abs(dx) > 8) tabLocked = true
+  const index = TABS.findIndex((t) => t.key === view.value)
+  const atEdge = (index === 0 && dx > 0) || (index === TABS.length - 1 && dx < 0)
+  tabDx.value = atEdge ? dx * 0.32 : dx
+}
+
+function onTabTouchEnd() {
+  if (!tabDragging.value) return
+  const width = uni.getSystemInfoSync().windowWidth || 375
+  const threshold = width * 0.18
+  const index = TABS.findIndex((t) => t.key === view.value)
+  const dx = tabDx.value
+  tabDragging.value = false
+  tabDx.value = 0
+  if (dx <= -threshold && index < TABS.length - 1) view.value = TABS[index + 1].key
+  else if (dx >= threshold && index > 0) view.value = TABS[index - 1].key
+}
 const TABS = [
   { key: 'overview', label: '汇总' },
   { key: 'monthly', label: '分类汇总' },
@@ -209,6 +270,8 @@ function goRead() {
 
     <!-- 页签 -->
     <view class="el-tabs">
+      <!-- 滑块（2026-11-06）：位置 = 当前页签索引，切换时平移一格 -->
+      <view class="el-tabs-thumb" :style="thumbStyle"></view>
       <view
         v-for="tab in TABS"
         :key="tab.key"
@@ -223,7 +286,15 @@ function goRead() {
     <PanelState v-if="errorText" type="error" :title="errorText" description="下拉可重试" />
     <PanelState v-else-if="!loading && !monthly" type="empty" title="这个月还没有抄表数据" description="换个月份，或先在 PC 上录入" />
 
-    <template v-else-if="monthly">
+        <view
+      v-else-if="monthly"
+      class="el-swipe"
+      :style="swipeStyle"
+      @touchstart.stop="onTabTouchStart"
+      @touchmove.stop.prevent="onTabTouchMove"
+      @touchend.stop="onTabTouchEnd"
+    >
+
       <!-- ============ 汇总 ============ -->
       <view v-if="view === 'overview'" class="el-body">
         <view class="el-hero">
@@ -401,7 +472,7 @@ function goRead() {
           电费金额只对管理员显示；你看到的是电量与单价，金额请找厂长或财务
         </view>
       </view>
-    </template>
+        </view>
   </view>
 </template>
 
@@ -547,6 +618,53 @@ function goRead() {
   line-height: 1.5;
   color: var(--ui-amber-800);
 }
+
+/* 页签滑块（2026-11-06） */
+
+.el-tabs-thumb {
+
+  position: absolute;
+
+  top: 6rpx;
+
+  left: 6rpx;
+
+  bottom: 6rpx;
+
+  width: calc((100% - 12rpx) / 3);
+
+  border-radius: 999rpx;
+
+  background-color: var(--ui-surface);
+
+  box-shadow: 0 2rpx 10rpx rgba(60, 50, 40, 0.1);
+
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  pointer-events: none;
+
+}
+
+
+/* 内容区手势容器：只让 transform 参与动画 */
+
+.el-swipe {
+
+  will-change: transform;
+
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .el-tabs-thumb {
+
+    transition: none;
+
+  }
+
+}
+
 
 .el-tabs {
   display: flex;
