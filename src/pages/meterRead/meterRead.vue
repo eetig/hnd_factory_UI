@@ -1241,24 +1241,35 @@ onMounted(() => {
 /* 卡片 */
 /* 电表名称带（2026-11-06） */
 .mr__names {
+  /* 2026-11-06：给死高度并居中 —— 之前没定高，scroll-view 被 flex 拉满，胶囊变成竖长条 */
   flex: 0 0 auto;
+  height: 96rpx;
   width: 100%;
-  padding: 0 24rpx 8rpx;
+  padding: 0 24rpx;
   white-space: nowrap;
+}
+
+.mr__names::-webkit-scrollbar {
+  display: none;
 }
 
 .mr__names-inner {
   display: inline-flex;
-  gap: 12rpx;
+  align-items: center;
+  height: 96rpx;
+  gap: 14rpx;
   padding-right: 24rpx;
 }
 
 .mr__name {
+  /* 胶囊：定高 56rpx、横向排布、文字绝不换行 */
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8rpx;
-  padding: 12rpx 22rpx;
+  height: 56rpx;
+  padding: 0 22rpx;
   border-radius: 999rpx;
+  white-space: nowrap;
   background-color: var(--ui-raise-2);
   font-size: 24rpx;
   color: var(--ui-text-2);
@@ -1268,16 +1279,19 @@ onMounted(() => {
 .mr__name.is-active {
   background-color: var(--ui-accent);
   color: var(--ui-on-accent);
+  font-weight: 600;
 }
 
 .mr__name-no {
   font-size: 20rpx;
-  opacity: 0.72;
+  opacity: 0.7;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .mr__name-text {
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .mr__stage {
