@@ -110,7 +110,55 @@ function unbindKeyboardWatcher() {
 const rows = ref([]) // 抄表板原始数据（每块表一行）
 const index = ref(0) // 当前卡片
 const skipped = ref([]) // 跳过的 meterId
+/** 当前这块表的草稿（切表时从 entries 里取，输入时写回 entries） */
 const draft = reactive({ reading: '', photo: '', note: '' })
+
+/**
+ * 每块表的填报内容（2026-11-06）。
+ * 原来是"一张卡一个 draft、翻页就覆盖" —— 改成一次性提交后必须按表存，
+ * 否则翻过去再翻回来，填好的数字就没了。
+ * 结构：{ [meterId]: { reading: '1234.5', photo: '/files/x.jpg' } }
+ */
+const entries = reactive({})
+
+/** 草稿的本地存储 key（按日期分，不同月份的草稿不会串） */
+function draftKey() {
+  return `meterDraft:${readDate.value}`
+}
+
+function saveDraft() {
+  try {
+    uni.setStorageSync(draftKey(), JSON.stringify(entries))
+  } catch {
+    /* 存储满/不可用时静默：草稿是增强，不是主流程 */
+  }
+}
+
+function restoreDraft() {
+  try {
+    const raw = uni.getStorageSync(draftKey())
+    if (!raw) return 0
+    const parsed = JSON.parse(raw)
+    let count = 0
+    for (const [meterId, value] of Object.entries(parsed || {})) {
+      if (value && (value.reading || value.photo)) {
+        entries[meterId] = value
+        count += 1
+      }
+    }
+    return count
+  } catch {
+    return 0
+  }
+}
+
+function clearDraft() {
+  try {
+    uni.removeStorageSync(draftKey())
+  } catch {
+    /* 同上 */
+  }
+}
 const showList = ref(false)
 
 /** 排序：表内编号升序；没有编号的（150车间）排最后 */
@@ -165,9 +213,29 @@ const anomaly = computed(() => {
 })
 
 function loadCard(row) {
-  draft.reading = row.reading === null || row.reading === undefined ? '' : String(row.reading)
-  draft.photo = row.imagePath || ''
+  // 已存的读数优先，其次是本地草稿（2026-11-06）
+  const saved = entries[row.meterId]
+  if (saved) {
+    draft.reading = saved.reading ?? ''
+    draft.photo = saved.photo ?? ''
+  } else {
+    draft.reading = row.reading === null || row.reading === undefined ? '' : String(row.reading)
+    draft.photo = row.imagePath || ''
+  }
   draft.note = ''
+}
+
+/** 把当前输入的读数/照片写回 entries 并落本地草稿 */
+function commitDraft() {
+  if (!card.value) return
+  const meterId = card.value.meterId
+  const reading = String(draft.reading ?? '').trim()
+  if (!reading && !draft.photo) {
+    delete entries[meterId]
+  } else {
+    entries[meterId] = { reading, photo: draft.photo }
+  }
+  saveDraft()
 }
 
 /**
@@ -225,6 +293,12 @@ async function loadSheet() {
   try {
     const res = await request.get('/api/electricity/sheet', { params: { date: readDate.value } })
     rows.value = orderRows(res.data?.data || [])
+    // 恢复这个日期下的本地草稿（2026-11-06）
+    const restored = restoreDraft()
+    if (restored > 0) {
+      uni.showToast({ title: `已恢复 ${restored} 块未提交的读数`, icon: 'none' })
+      if (card.value) loadCard(card.value)
+    }
     // 默认停在第一张还没填的卡上
     const firstUnfilled = cards.value.findIndex((c) => c.reading === null || c.reading === undefined)
     index.value = firstUnfilled === -1 ? 0 : firstUnfilled
@@ -361,6 +435,100 @@ function previewPhoto() {
 }
 
 /* ===== 提交 ===== */
+/**
+ * 一次性提交（2026-11-06）。
+ *
+ * 规则（使用方按推荐确认）：
+ *   · 只提交填了读数的；没填 = 跳过，不报错
+ *   · 读数 ≤ 上次读数（负用量）⇒ 阻止，直接跳到那块表
+ *   · 用量超过上次 5 倍 ⇒ 只警告，允许提交
+ *   · 提交成功清本地草稿；失败保留，可以再点一次
+ */
+async function submitAll() {
+  if (saving.value) return
+  commitDraft()
+
+  const filled = cards.value
+    .map((row) => ({ row, entry: entries[row.meterId] }))
+    .filter((item) => item.entry && String(item.entry.reading || '').trim() !== '')
+
+  if (!filled.length) {
+    uni.showToast({ title: '还没有填任何读数', icon: 'none' })
+    return
+  }
+
+  // 校验：负用量必须拦下来（一定是抄错了或上次读数还没补）
+  for (const item of filled) {
+    const current = Number(item.entry.reading)
+    if (!Number.isFinite(current)) {
+      uni.showToast({ title: `${item.row.meterName} 的读数不是数字`, icon: 'none' })
+      goTo(cards.value.findIndex((c) => c.meterId === item.row.meterId))
+      return
+    }
+    const prev = item.row.prevReading
+    if (prev !== null && prev !== undefined && current <= Number(prev)) {
+      uni.showModal({
+        title: '读数比上次小',
+        content: `${item.row.meterName}：本次 ${current}，上次 ${prev}。这会产生负用量，先确认是不是抄错。`,
+        showCancel: false,
+        confirmText: '去改',
+        success: () => goTo(cards.value.findIndex((c) => c.meterId === item.row.meterId)),
+      })
+      return
+    }
+  }
+
+  const anomalies = filled.filter((item) => {
+    const prev = Number(item.row.prevReading)
+    const current = Number(item.entry.reading)
+    return Number.isFinite(prev) && prev > 0 && (current - prev) * (item.row.ratio || 1) > prev * 5
+  })
+
+  const skippedCount = cards.value.length - filled.length
+  const confirmed = await new Promise((resolve) => {
+    uni.showModal({
+      title: '提交全部读数',
+      content:
+        `已填 ${filled.length} 块，未填 ${skippedCount} 块（按跳过处理）` +
+        (anomalies.length ? `，其中 ${anomalies.length} 块用量异常（会照常提交）` : ''),
+      confirmText: '提交',
+      cancelText: '再看看',
+      success: (res) => resolve(Boolean(res.confirm)),
+      fail: () => resolve(false),
+    })
+  })
+  if (!confirmed) return
+
+  saving.value = true
+  try {
+    const items = filled.map((item) => ({
+      meterId: item.row.meterId,
+      reading: Number(item.entry.reading),
+      imagePath: item.entry.photo || '',
+      note: '',
+    }))
+    const res = await request.post('/api/electricity/readings/batch', {
+      date: readDate.value,
+      items,
+    })
+    const body = res?.data || {}
+    if (body.success === false) throw new Error(body.msg || '提交失败')
+    clearDraft()
+    for (const key of Object.keys(entries)) delete entries[key]
+    uni.vibrateShort?.({ type: 'medium' })
+    uni.showToast({ title: `已提交 ${items.length} 块`, icon: 'success' })
+    await loadSheet()
+  } catch (e) {
+    uni.showModal({
+      title: '提交失败',
+      content: (e?.data?.msg || e?.message || '网络问题') + '\n填好的内容还留着，可以再提交一次。',
+      showCancel: false,
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
 async function submit(direction) {
   if (!card.value || saving.value || gesture.flying) return
   const reading = draft.reading === '' ? null : Number(draft.reading)
@@ -493,6 +661,11 @@ const cardStyle = computed(() => {
 })
 
 /** 还剩几块没填（提交按钮上要显示） */
+/** 已填条数（2026-11-06：一次性提交时按钮上显示这个数） */
+const filledEntries = computed(
+  () => Object.values(entries).filter((entry) => String(entry?.reading || '').trim() !== '').length,
+)
+
 const remaining = computed(() => {
   const unfilled = cards.value.filter((c) => c.reading === null || c.reading === undefined).length
   return Math.max(0, unfilled - 0)
@@ -587,14 +760,17 @@ function onTouchEnd() {
   const velocity = Math.abs(dx) / Math.max(1, Date.now() - touchStartedAt || 1)
   gesture.dragging = false
 
-  if (dx > SWIPE_MIN || (dx > 40 && velocity > FLING_V)) {
-    submit('right')
+  /*
+   * 2026-11-06 改语义：滑动不再"提交/跳过"，只翻页。
+   * 使用方要的是"一路填过去、最后一次性提交"，所以左滑 = 下一块、右滑 = 上一块。
+   * 没填读数的自然就是跳过（提交时按无读数处理）。
+   */
+  if (dx < -SWIPE_MIN || (dx < -40 && velocity > FLING_V)) {
+    fly('left', () => step(1))
     return
   }
-  if (dx < -SWIPE_MIN) {
-    // 左滑 = 跳过：只在本机记，不写库
-    skipped.value = [...skipped.value, card.value?.meterId].filter(Boolean)
-    fly('left', () => goTo(index.value + 1))
+  if (dx > SWIPE_MIN || (dx > 40 && velocity > FLING_V)) {
+    fly('right', () => step(-1))
     return
   }
   gesture.dx = 0
@@ -724,6 +900,7 @@ onMounted(() => {
           <view class="mr__input-row">
             <input
               v-model="draft.reading"
+            @blur="commitDraft"
               class="mr__input"
               type="digit"
               placeholder="填本次读数"
@@ -766,15 +943,26 @@ onMounted(() => {
           使用方：「左右滑的按钮太小了，而且间距太远，单手操作不方便」
           ⇒ 两个大按钮各占一半、贴底、拇指够得到；提示文案挪进按钮里
         -->
+        <!--
+          底部（2026-11-06）：一颗「提交全部」
+          改成一路上滑填过去、最后一次性提交，所以不再有跳过/提交两颗按钮。
+          左侧箭头只用来上一块（给不习惯手势的人留的后路）。
+        -->
         <view class="mr__actions">
-          <view class="mr__action mr__action--skip" hover-class="mr__action--pressed" @click="doSkip">
-            <text class="mr__action-icon">←</text>
-            <text class="mr__action-text">跳过</text>
+          <view class="mr__arrow" hover-class="mr__action--pressed" @click="step(-1)">
+            <text class="mr__action-icon">‹</text>
           </view>
-          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="doSubmit">
-            <text class="mr__action-text">提交</text>
-            <text v-if="remaining" class="mr__action-sub">还剩 {{ remaining }}</text>
-            <text class="mr__action-icon">→</text>
+          <view
+            class="mr__action mr__action--submit mr__action--wide"
+            hover-class="mr__action--pressed"
+            :class="{ 'is-disabled': saving }"
+            @click="submitAll"
+          >
+            <text class="mr__action-text">{{ saving ? '提交中…' : `提交全部（${filledEntries}）` }}</text>
+            <text v-if="remaining" class="mr__action-sub">还有 {{ remaining }} 块没填</text>
+          </view>
+          <view class="mr__arrow" hover-class="mr__action--pressed" @click="step(1)">
+            <text class="mr__action-icon">›</text>
           </view>
         </view>
       </view>
