@@ -80,6 +80,33 @@ function today() {
 }
 
 const readDate = ref(today())
+
+/*
+ * 键盘高度（2026-11-06）
+ * 使用方：「弹出键盘后的布局这样比较舒服，我就不用向上划一下才能点击到提交或跳过」。
+ * 做法：监听键盘高度 → 页面底部留出键盘高度 + 间隙，按钮就贴在键盘正上方；
+ *      同时把照片与"5 倍"提示隐藏，卡片才有空间收缩（否则会挤成一条）。
+ */
+const keyboardHeight = ref(0)
+const keyboardOpen = computed(() => keyboardHeight.value > 0)
+
+/** 页面样式：键盘弹起时把内容整体抬到键盘上方（2026-11-06） */
+const pageStyle = computed(() => ({
+  ...(themeVars.value || {}),
+  paddingBottom: keyboardOpen.value ? `${keyboardHeight.value}px` : '0px',
+}))
+
+function bindKeyboardWatcher() {
+  if (typeof uni.onKeyboardHeightChange !== 'function') return
+  uni.onKeyboardHeightChange((res) => {
+    keyboardHeight.value = Math.max(0, Number(res?.height) || 0)
+  })
+}
+
+function unbindKeyboardWatcher() {
+  if (typeof uni.offKeyboardHeightChange === 'function') uni.offKeyboardHeightChange()
+  keyboardHeight.value = 0
+}
 const rows = ref([]) // 抄表板原始数据（每块表一行）
 const index = ref(0) // 当前卡片
 const skipped = ref([]) // 跳过的 meterId
@@ -156,12 +183,48 @@ function onReadDateChange(event) {
   loadSheet()
 }
 
+/** 无编号那块表的编号显示值（2026-11-06：使用方要求显示 150、排在 27 之后） */
+const UNNUMBERED_LABEL = '150'
+
+/**
+ * 重排抄表顺序（2026-11-06）。
+ *
+ * 使用方：「把没有编号的那个（150车间+精品四甲）放在 27 和 28 之间」。
+ * 后端按表号排序，无编号的会掉到最后 —— 但现场抄表的动线是 27 号后面就是 150 车间，
+ * 所以在这里插一次。只动显示顺序，不动数据。
+ */
+function orderRows(list) {
+  if (!Array.isArray(list) || list.length === 0) return list
+  const unnumbered = list.filter((row) => !String(row.excelNo || '').trim())
+  if (unnumbered.length === 0) return list
+  const numbered = list.filter((row) => String(row.excelNo || '').trim())
+  const result = []
+  let inserted = false
+  for (const row of numbered) {
+    const no = Number(row.excelNo)
+    // 遇到 28 号（或更大的编号）之前，先把无编号的插进去
+    if (!inserted && Number.isFinite(no) && no >= 28) {
+      result.push(...unnumbered)
+      inserted = true
+    }
+    result.push(row)
+  }
+  if (!inserted) result.push(...unnumbered)
+  return result
+}
+
+/** 编号列显示：无编号的显示 150（表本身没有号，这是车间号） */
+function displayNo(row) {
+  const no = String(row?.excelNo || '').trim()
+  return no || UNNUMBERED_LABEL
+}
+
 async function loadSheet() {
   loading.value = true
   errorMessage.value = ''
   try {
     const res = await request.get('/api/electricity/sheet', { params: { date: readDate.value } })
-    rows.value = res.data?.data || []
+    rows.value = orderRows(res.data?.data || [])
     // 默认停在第一张还没填的卡上
     const firstUnfilled = cards.value.findIndex((c) => c.reading === null || c.reading === undefined)
     index.value = firstUnfilled === -1 ? 0 : firstUnfilled
@@ -559,6 +622,7 @@ function backToSkipped() {
 }
 
 onMounted(() => {
+  bindKeyboardWatcher()
   if (!allowed.value) {
     uni.showToast({ title: '需要抄表权限', icon: 'none' })
     setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 900)
@@ -569,7 +633,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <view class="mr" :class="themeClass" :style="themeVars">
+  <view class="mr" :class="themeClass" :style="pageStyle">
     <view v-if="!allowed" class="mr__deny">
       <text class="mr__deny-title">需要抄表权限（找管理员授权）</text>
     </view>
@@ -626,7 +690,7 @@ onMounted(() => {
           :class="{ 'is-anomaly': anomaly }"
           :style="[cardStyle, { borderLeftColor: sectionColor }]"
           @touchstart.stop="onTouchStart"
-          @touchmove.stop="onTouchMove"
+          @touchmove.stop.prevent="onTouchMove"
           @touchend.stop="onTouchEnd"
           @touchcancel.stop="onTouchEnd"
         >
@@ -646,7 +710,7 @@ onMounted(() => {
             <text
               class="mr__no"
               :style="{ backgroundColor: tint(sectionColor, 0.14), color: sectionColor }"
-            >{{ card.excelNo || '—' }}</text>
+            >{{ displayNo(card) }}</text>
             <text class="mr__name">{{ card.meterName }}</text>
             <text v-if="card.multiplier > 1" class="mr__mult">×{{ card.multiplier }}</text>
             <text v-if="card.reading !== null && card.reading !== undefined" class="mr__done">已填</text>
@@ -675,14 +739,15 @@ onMounted(() => {
               class="mr__usage"
               :class="previewUsage === null ? '' : previewUsage < 0 ? 'is-bad' : 'is-ok'"
             >
-              {{ previewUsage === null ? '（填了读数才算）' : (previewUsage > 0 ? '+' : '') + previewUsage }}
+              {{ previewUsage === null ? '（填了读数才算）' : (previewUsage > 0 ? '+' : '') + Math.round(previewUsage) }}
             </text>
           </view>
 
-          <text v-if="anomaly" class="mr__anomaly">{{ anomaly }}</text>
+          <text v-if="anomaly && !keyboardOpen" class="mr__anomaly">{{ anomaly }}</text>
 
-          <!-- 照片 -->
-          <view class="mr__photo-row">
+          <!-- 照片（键盘弹出时隐藏，2026-11-06：给卡片腾空间） -->
+        <!-- prettier-ignore -->
+          <view v-if="!keyboardOpen" class="mr__photo-row">
             <view v-if="draft.photo" class="mr__photo">
               <image
                 :src="photoSrc"
@@ -806,7 +871,7 @@ onMounted(() => {
               :class="{ 'is-filled': item.reading !== null && item.reading !== undefined }"
               @click="showList = false; goTo(i)"
             >
-              <text class="mr__sheet-no">{{ item.excelNo || '—' }}</text>
+              <text class="mr__sheet-no">{{ displayNo(item) }}</text>
               <text class="mr__sheet-name">{{ item.meterName }}</text>
               <text class="mr__sheet-val">
                 {{ item.reading ?? '未填' }}
@@ -914,6 +979,9 @@ onMounted(() => {
 
 /* 卡片 */
 .mr__stage {
+  /* 2026-11-06：真机上 transform 动画要提升为合成层才不会掉帧 */
+  will-change: transform;
+  touch-action: pan-y;
   flex: 1;
   min-height: 0;
   display: flex;
