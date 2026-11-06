@@ -622,28 +622,18 @@ function goRead() {
 /* 页签滑块（2026-11-06） */
 
 .el-tabs-thumb {
-
-  position: absolute;
-
-  top: 6rpx;
-
-  left: 6rpx;
-
-  bottom: 6rpx;
-
-  width: calc((100% - 12rpx) / 3);
-
-  border-radius: 999rpx;
-
-  background-color: var(--ui-surface);
-
-  box-shadow: 0 2rpx 10rpx rgba(60, 50, 40, 0.1);
-
-  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
-
-  pointer-events: none;
-
-}
+    /* 2026-11-06：滑块就是那个蓝色胶囊本身（页签自己不再上色，否则两层叠在一起、还错位） */
+    position: absolute;
+    top: 0;
+    left: 16px;
+    width: calc((100% - 32px) / 3);
+    height: 32px;
+    border-radius: 8px;
+    background: var(--ui-accent);
+    box-shadow: 0 2px 8px rgba(47, 106, 176, 0.28);
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
 
 
 /* 内容区手势容器：只让 transform 参与动画 */
@@ -666,34 +656,32 @@ function goRead() {
 }
 
 
-.el-tabs {  display: flex;
-  gap: 6px;
-  padding: 0 16px 10px;
-  position: relative;
-  overflow: hidden;
-}
+.el-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 16px 10px;
+    position: relative;
+    overflow: hidden;
+  }
 
 .el-tab {
-
-  position: relative;
-
-  z-index: 1;
-  flex: 1;
-  height: 32px;
-  line-height: 32px;
-  text-align: center;
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--ui-text-2);
-  background: var(--ui-raise-2);
-  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
-}
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    height: 32px;
+    line-height: 32px;
+    text-align: center;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--ui-text-2);
+    background: transparent;
+    transition: color 180ms ease;
+  }
 
 .el-tab--active {
-  color: var(--ui-on-accent);
-  background: var(--ui-accent);
-  font-weight: 600;
-}
+    color: var(--ui-on-accent);
+    font-weight: 600;
+  }
 
 .el-body {
   padding: 0 16px;
