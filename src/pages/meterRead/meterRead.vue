@@ -143,6 +143,19 @@ function loadCard(row) {
   draft.note = ''
 }
 
+/**
+ * 改抄表日期（2026-11-06）。
+ * 补录历史数据用：选到那一天，之后提交的读数就记到那期上。
+ */
+function onReadDateChange(event) {
+  const value = event?.detail?.value
+  if (!value) return
+  readDate.value = value
+  skipped.value = []
+  if (card.value) loadCard(card.value)
+  loadSheet()
+}
+
 async function loadSheet() {
   loading.value = true
   errorMessage.value = ''
@@ -573,6 +586,15 @@ onMounted(() => {
           </text>
         </view>
         <view class="mr__head-right">
+          <!--
+            抄表日期（2026-11-06）
+            使用方要补录以前的抄表数据。后端 /readings/batch 本来就收 date，
+            readDate 也一直是有的（默认今天），只是界面上没给入口 —— 这里补上。
+            改日期会重新拉那一期的抄表表（loadSheet）。
+          -->
+          <picker mode="date" :value="readDate" @change="onReadDateChange">
+            <text class="mr__date">{{ readDate.slice(5) }}</text>
+          </picker>
           <text class="mr__filled" @click="showList = true">已填 {{ filledCount }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
           <text
@@ -858,6 +880,16 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 16rpx;
+}
+
+.mr__date {
+  /* 表头上的日期入口（2026-11-06）：小胶囊，与已填/跳过同一行 */
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 .mr__filled,
