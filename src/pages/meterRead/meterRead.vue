@@ -757,21 +757,11 @@ function fly(direction, after) {
   const target = direction === 'right' ? 520 : -520
   gesture.dx = target
   setTimeout(() => {
-    /*
-     * 2026-11-06：飞出后要有下一张滑进来，否则感觉只是同一张卡在原地换内容。
-     * 做法：先把新卡放到相反侧的屏外（无过渡），下一帧再归零（有过渡）⇒ 视觉上翻了一张。
-     */
+    gesture.flying = false
+    gesture.decided = false
+    gesture.dragging = false
+    gesture.dx = 0
     if (after) after()
-    gesture.flying = true
-    gesture.dx = direction === 'right' ? -520 : 520
-    setTimeout(() => {
-      gesture.dx = 0
-      setTimeout(() => {
-        gesture.flying = false
-        gesture.decided = false
-        gesture.dragging = false
-      }, FLY_MS)
-    }, 50)
   }, FLY_MS)
 }
 
@@ -953,6 +943,156 @@ onMounted(() => {
           @touchend.stop="onTouchEnd"
           @touchcancel.stop="onTouchEnd"
         >
+          <!-- 方向提示（2026-11-06）：拖动时浮出，松手前就知道会触发哪个 -->
+          <view
+            v-if="intent.kind === '提交'"
+            class="mr__intent mr__intent--right"
+            :style="{ opacity: intent.opacity }"
+          >提交</view>
+          <view
+            v-if="intent.kind === '跳过'"
+            class="mr__intent mr__intent--left"
+            :style="{ opacity: intent.opacity }"
+          >跳过</view>
+
+          <view class="mr__card-head">
+            <text
+              class="mr__no"
+              :style="{ backgroundColor: tint(sectionColor, 0.14), color: sectionColor }"
+            >{{ displayNo(card) }}</text>
+            <text class="mr__name">{{ card.meterName }}</text>
+            <text v-if="card.multiplier > 1" class="mr__mult">×{{ card.multiplier }}</text>
+            <text v-if="card.reading !== null && card.reading !== undefined" class="mr__done">已填</text>
+          </view>
+
+          <text class="mr__meta">
+            {{ card.meterCode || '无柜号' }} · 上次 {{ card.prevReading ?? '—' }}
+            <text v-if="card.prevDate">（{{ String(card.prevDate).slice(5) }}）</text>
+          </text>
+
+          <view class="mr__input-row">
+            <input
+              v-model="draft.reading"
+            @blur="commitDraft"
+              class="mr__input"
+              type="digit"
+              placeholder="填本次读数"
+              placeholder-class="mr__placeholder"
+              :focus="false"
+            />
+            <text class="mr__unit">kWh</text>
+          </view>
+
+          <view class="mr__usage-row">
+            <text class="mr__usage-label">用量</text>
+            <text
+              class="mr__usage"
+              :class="previewUsage === null ? '' : previewUsage < 0 ? 'is-bad' : 'is-ok'"
+            >
+              {{ previewUsage === null ? '（填了读数才算）' : (previewUsage > 0 ? '+' : '') + Math.round(previewUsage) }}
+            </text>
+          </view>
+
+          <text v-if="anomaly && !keyboardOpen" class="mr__anomaly">{{ anomaly }}</text>
+
+          <!-- 照片（键盘弹出时隐藏，2026-11-06：给卡片腾空间） -->
+        <!-- prettier-ignore -->
+          <view v-if="!keyboardOpen" class="mr__photo-row">
+            <view v-if="draft.photo" class="mr__photo">
+              <image
+                :src="photoSrc"
+                mode="aspectFill"
+                class="mr__photo-img"
+                @click.stop="previewPhoto"
+              />
+              <text class="mr__photo-remove" @click.stop="draft.photo = ''">×</text>
+            </view>
+            <text v-else class="mr__photo-add" @click.stop="openPhotoSheet">📷 拍表存证（可选）</text>
+          </view>
+        </view>
+
+        <!--
+          底部动作条（2026-11-05）
+          使用方：「左右滑的按钮太小了，而且间距太远，单手操作不方便」
+          ⇒ 两个大按钮各占一半、贴底、拇指够得到；提示文案挪进按钮里
+        -->
+        <!--
+          底部（2026-11-06）：一颗「提交全部」
+          改成一路上滑填过去、最后一次性提交，所以不再有跳过/提交两颗按钮。
+          左侧箭头只用来上一块（给不习惯手势的人留的后路）。
+        -->
+        <view class="mr__actions">
+          <view class="mr__arrow" hover-class="mr__action--pressed" @click="step(-1)">
+            <text class="mr__action-icon">‹</text>
+          </view>
+          <view
+            class="mr__action mr__action--submit mr__action--wide"
+            hover-class="mr__action--pressed"
+            :class="{ 'is-disabled': saving }"
+            @click="submitAll"
+          >
+            <text class="mr__action-text">{{ saving ? '提交中…' : `提交全部（${filledEntries}）` }}</text>
+            <text v-if="remaining" class="mr__action-sub">还有 {{ remaining }} 块没填</text>
+          </view>
+          <view class="mr__arrow" hover-class="mr__action--pressed" @click="step(1)">
+            <text class="mr__action-icon">›</text>
+          </view>
+        </view>
+      </view>
+
+      <!--
+        抄完了（2026-11-05 重做）
+        原来是三行小字 + 一个"刷新"，收工这一刻太轻。现在给一屏：
+        进度环（已填比例）+ 两个数字 + 两个按钮（回到第一块没填的 / 重新拉数据）
+      -->
+      <view v-else class="mr__done-all">
+        <view class="mr__done-ring" :style="{ background: `conic-gradient(${sectionColor} ${(filledCount / Math.max(1, total)) * 360}deg, rgba(20,22,28,0.08) 0deg)` }">
+          <view class="mr__done-ring-inner">
+            <text class="mr__done-pct">{{ Math.round((filledCount / Math.max(1, total)) * 100) }}%</text>
+            <text class="mr__done-ring-label">已填</text>
+          </view>
+        </view>
+
+        <text class="mr__done-title">今天的表都看完了</text>
+        <view class="mr__done-stats">
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value">{{ filledCount }}</text>
+            <text class="mr__done-stat-label">已填</text>
+          </view>
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value">{{ total }}</text>
+            <text class="mr__done-stat-label">总数</text>
+          </view>
+          <view class="mr__done-stat">
+            <text class="mr__done-stat-value" :class="{ 'is-warn': skipped.length }">{{ skipped.length }}</text>
+            <text class="mr__done-stat-label">跳过</text>
+          </view>
+        </view>
+
+        <view v-if="skipped.length" class="mr__done-actions">
+          <view class="mr__action mr__action--skip" hover-class="mr__action--pressed" @click="backToSkipped">
+            <text class="mr__action-text">补抄 {{ skipped.length }} 块</text>
+          </view>
+          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="loadSheet">
+            <text class="mr__action-text">刷新</text>
+          </view>
+        </view>
+        <view v-else class="mr__done-actions">
+          <view class="mr__action mr__action--submit" hover-class="mr__action--pressed" @click="loadSheet">
+            <text class="mr__action-text">刷新</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 已填列表（点一张回到那张改） -->
+      <!--
+        自绘拍照选项（2026-11-06）
+        使用方嫌 uni.chooseImage 自带的系统 ActionSheet 丑 —— 那个样式改不了，
+        所以自己画一个：底部抽屉 + 圆角 + 拖拽条 + 两个大按钮 + safe-area。
+      -->
+      <view v-if="photoSheetOpen" class="mr__ps" @click="closePhotoSheet">
+        <view class="mr__ps-panel" @click.stop>
+          <view class="mr__ps-grabber"></view>
           <text class="mr__ps-title">拍表存证</text>
           <text class="mr__ps-hint">拍照会自动存一份到手机相册，方便日后对账</text>
 
@@ -1799,5 +1939,12 @@ onMounted(() => {
 .mr__sheet-item.is-filled .mr__sheet-val {
   color: #4c5f42;
   font-weight: 600;
+}
+
+/* 2026-11-06：滑动已改成翻页，方向色带（提交/跳过）不再显示。
+   这里用覆盖隐藏而不是删结构 —— 上一版用正则删它时误删了整张卡片主体（155 行），
+   教训：改配对标签不要用非贪婪正则跨行匹配。 */
+.mr__intent {
+  display: none !important;
 }
 </style>
