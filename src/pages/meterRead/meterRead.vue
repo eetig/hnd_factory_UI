@@ -1085,38 +1085,7 @@ onMounted(() => {
       </view>
 
       <!-- 已填列表（点一张回到那张改） -->
-      <!--
-        自绘拍照选项（2026-11-06）
-        使用方嫌 uni.chooseImage 自带的系统 ActionSheet 丑 —— 那个样式改不了，
-        所以自己画一个：底部抽屉 + 圆角 + 拖拽条 + 两个大按钮 + safe-area。
-      -->
-      <view v-if="photoSheetOpen" class="mr__ps" @click="closePhotoSheet">
-        <view class="mr__ps-panel" @click.stop>
-          <view class="mr__ps-grabber"></view>
-          <text class="mr__ps-title">拍表存证</text>
-          <text class="mr__ps-hint">拍照会自动存一份到手机相册，方便日后对账</text>
-
-          <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('camera')">
-            <text class="mr__ps-icon">📷</text>
-            <view class="mr__ps-body">
-              <text class="mr__ps-label">拍摄</text>
-              <text class="mr__ps-sub">调起相机，拍完自动存相册</text>
-            </view>
-            <text class="mr__ps-arrow">›</text>
-          </view>
-
-          <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('album')">
-            <text class="mr__ps-icon">🖼</text>
-            <view class="mr__ps-body">
-              <text class="mr__ps-label">从相册选择</text>
-              <text class="mr__ps-sub">已经拍过的表，直接从相册挑</text>
-            </view>
-            <text class="mr__ps-arrow">›</text>
-          </view>
-
-          <view class="mr__ps-cancel" hover-class="mr__ps-action--pressed" @click="closePhotoSheet">取消</view>
-        </view>
-      </view>
+      
 
       <view v-if="showList" class="mr__sheet" @click.self="showList = false">
         <view class="mr__sheet-body">
@@ -1142,7 +1111,35 @@ onMounted(() => {
         </view>
       </view>
     </template>
-  </view>
+  
+      <view v-if="photoSheetOpen" class="mr__ps" @click="closePhotoSheet">
+              <view class="mr__ps-panel" @click.stop>
+                <view class="mr__ps-grabber"></view>
+                <text class="mr__ps-title">拍表存证</text>
+                <text class="mr__ps-hint">拍照会自动存一份到手机相册，方便日后对账</text>
+      
+                <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('camera')">
+                  <text class="mr__ps-icon">📷</text>
+                  <view class="mr__ps-body">
+                    <text class="mr__ps-label">拍摄</text>
+                    <text class="mr__ps-sub">调起相机，拍完自动存相册</text>
+                  </view>
+                  <text class="mr__ps-arrow">›</text>
+                </view>
+      
+                <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('album')">
+                  <text class="mr__ps-icon">🖼</text>
+                  <view class="mr__ps-body">
+                    <text class="mr__ps-label">从相册选择</text>
+                    <text class="mr__ps-sub">已经拍过的表，直接从相册挑</text>
+                  </view>
+                  <text class="mr__ps-arrow">›</text>
+                </view>
+      
+                <view class="mr__ps-cancel" hover-class="mr__ps-action--pressed" @click="closePhotoSheet">取消</view>
+              </view>
+            </view>
+</view>
 </template>
 
 <style lang="scss" scoped>
@@ -1515,23 +1512,35 @@ onMounted(() => {
 
 /* ===== 拍照选项抽屉（2026-11-06）===== */
 .mr__ps {
+  /* 2026-11-06：弹层已挪到页面根，这里按模态抽屉重写：满屏遮罩 + 贴底 + 上圆角 */
   position: fixed;
   left: 0;
   right: 0;
   top: 0;
   bottom: 0;
-  z-index: 60;
-  background-color: rgba(20, 18, 16, 0.42);
+  z-index: 900;
   display: flex;
   align-items: flex-end;
+  background-color: rgba(24, 20, 16, 0.5);
+  animation: mr-fade-in 160ms ease both;
+}
+
+@keyframes mr-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .mr__ps-panel {
   width: 100%;
+  max-height: 82vh;
   padding: 16rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
   border-radius: 32rpx 32rpx 0 0;
   background-color: var(--ui-surface);
-  box-shadow: 0 -12rpx 40rpx rgba(60, 50, 40, 0.14);
+  box-shadow: 0 -12rpx 40rpx rgba(60, 50, 40, 0.18);
   animation: mr-sheet-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -1611,14 +1620,15 @@ onMounted(() => {
 }
 
 .mr__ps-cancel {
-  height: 92rpx;
-  line-height: 92rpx;
+  /* 次级操作：不与上面两项同权重（2026-11-06） */
+  height: 84rpx;
+  line-height: 84rpx;
+  margin-top: 4rpx;
   text-align: center;
   border-radius: 22rpx;
-  font-size: 30rpx;
-  font-weight: 600;
+  font-size: 28rpx;
   color: var(--ui-text-2);
-  background-color: var(--ui-raise-2);
+  background-color: transparent;
 }
 
 .mr__action-icon {
