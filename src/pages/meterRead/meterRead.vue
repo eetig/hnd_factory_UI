@@ -1474,9 +1474,14 @@ onMounted(() => {
 }
 
 .mr__sheet-list {
-  flex: 1;
-  min-height: 0;
-  padding: 0 20rpx 40rpx;
+  /*
+   * 2026-11-06：只写 flex:1 + min-height:0 时，真机 App webview 里的 scroll-view 不会滚
+   * （H5 上能滚，真机上不能 —— 使用方反馈"不能上下滑动、看不全"）。
+   * scroll-view 必须有确定高度才建立滚动容器，所以这里给死 54vh。
+   */
+  height: 54vh;
+  max-height: 54vh;
+  padding: 0 20rpx calc(28rpx + env(safe-area-inset-bottom));
 }
 
 .mr__sheet-item {
@@ -1502,9 +1507,17 @@ onMounted(() => {
 }
 
 .mr__sheet-val {
+  /* 2026-11-06：读数被右侧裁掉（"1226.4895" 只看到 1226.4895 一半）⇒ 限宽 + 右对齐 + 省略 */
+  flex: 0 0 auto;
+  max-width: 44%;
+  padding-right: 6rpx;
   font-size: 24rpx;
   color: var(--ui-text-3);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .mr__sheet-item.is-filled .mr__sheet-val {
