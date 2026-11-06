@@ -666,13 +666,18 @@ function goRead() {
 }
 
 
-.el-tabs {
-  display: flex;
+.el-tabs {  display: flex;
   gap: 6px;
   padding: 0 16px 10px;
+  position: relative;
+  overflow: hidden;
 }
 
 .el-tab {
+
+  position: relative;
+
+  z-index: 1;
   flex: 1;
   height: 32px;
   line-height: 32px;
