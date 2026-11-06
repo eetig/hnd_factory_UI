@@ -666,6 +666,49 @@ const filledEntries = computed(
   () => Object.values(entries).filter((entry) => String(entry?.reading || '').trim() !== '').length,
 )
 
+/** 名称带要滚到的那一项（切表时自动可见，2026-11-06） */
+const nameAnchor = computed(() => (card.value ? `mn${card.value.meterId}` : ''))
+
+/** 点名字直接跳 */
+function goToName(row) {
+  const at = cards.value.findIndex((c) => c.meterId === row.meterId)
+  if (at >= 0) goTo(at)
+}
+
+/* 在名称带上左右拖也能切表：与电费页签同一套判定（跟手 → 过阈值切） */
+let namesStartX = 0
+let namesDragging = false
+
+function onNamesTouchStart(event) {
+  const touch = event.touches?.[0]
+  if (!touch) return
+  namesStartX = touch.clientX
+  namesLastX = touch.clientX
+  namesDragging = true
+}
+
+// 记录最后一次横向位置：某些环境下 touchend 的 changedTouches 是空的，
+// 靠它算位移比靠 touchend 更稳（2026-11-06）
+let namesLastX = 0
+
+function onNamesTouchMove(event) {
+  // 不做跟手位移（带子本身要能滚），只记录最后位置，松手判定
+  const touch = event.touches?.[0]
+  if (touch) namesLastX = touch.clientX
+}
+
+function onNamesTouchEnd(event) {
+  if (!namesDragging) return
+  namesDragging = false
+  const touch = event.changedTouches?.[0]
+  const lastX = touch ? touch.clientX : namesLastX
+  if (!lastX) return
+  const dx = lastX - namesStartX
+  const threshold = (uni.getSystemInfoSync().windowWidth || 375) * 0.12
+  if (dx <= -threshold) step(1)
+  else if (dx >= threshold) step(-1)
+}
+
 const remaining = computed(() => {
   const unfilled = cards.value.filter((c) => c.reading === null || c.reading === undefined).length
   return Math.max(0, unfilled - 0)
@@ -860,6 +903,36 @@ onMounted(() => {
       <text v-if="errorMessage" class="mr__error">{{ errorMessage }}</text>
 
       <!-- 卡片 -->
+      <!--
+        电表名称带（2026-11-06）
+        参考电费页的页签：左右滑切表，当前那块是主色胶囊。
+        点名字也能直接跳 —— 38 块表时比滑 37 次快。
+      -->
+      <scroll-view
+        v-if="list.length"
+        class="mr__names"
+        scroll-x
+        scroll-with-animation
+        :scroll-into-view="nameAnchor"
+        @touchstart.stop="onNamesTouchStart"
+        @touchmove.stop.prevent="onNamesTouchMove"
+        @touchend.stop="onNamesTouchEnd"
+      >
+        <view class="mr__names-inner">
+          <view
+            v-for="(row, i) in list"
+            :id="'mn' + row.meterId"
+            :key="row.meterId"
+            class="mr__name"
+            :class="{ 'is-active': card && row.meterId === card.meterId }"
+            @click="goToName(row)"
+          >
+            <text class="mr__name-no">{{ displayNo(row) }}</text>
+            <text class="mr__name-text">{{ row.meterName }}</text>
+          </view>
+        </view>
+      </scroll-view>
+
       <view v-if="card" class="mr__stage">
         <view
           class="mr__card"
@@ -1166,6 +1239,47 @@ onMounted(() => {
 }
 
 /* 卡片 */
+/* 电表名称带（2026-11-06） */
+.mr__names {
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 0 24rpx 8rpx;
+  white-space: nowrap;
+}
+
+.mr__names-inner {
+  display: inline-flex;
+  gap: 12rpx;
+  padding-right: 24rpx;
+}
+
+.mr__name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8rpx;
+  padding: 12rpx 22rpx;
+  border-radius: 999rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+  transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease;
+}
+
+.mr__name.is-active {
+  background-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+}
+
+.mr__name-no {
+  font-size: 20rpx;
+  opacity: 0.72;
+  font-variant-numeric: tabular-nums;
+}
+
+.mr__name-text {
+  font-weight: 600;
+}
+
 .mr__stage {
   /* 2026-11-06：真机上 transform 动画要提升为合成层才不会掉帧 */
   will-change: transform;
