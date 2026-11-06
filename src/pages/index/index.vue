@@ -4599,14 +4599,15 @@ onPullDownRefresh(async () => {
               -->
               <button
                 v-if="canReadMeter"
-                class="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-800"
+                class="flex-1 rounded-lg bg-white px-4 py-2.5 text-sm font-medium text-slate-800"
+                style="border: 2rpx solid var(--ui-border-strong)"
                 hover-class="opacity-80"
                 @click="openMeterRead"
               >
                 开始抄表
               </button>
             </view>
-            <text class="mt-2 block text-[11px] leading-relaxed text-slate-400">
+            <text class="mt-2 block text-[11px] leading-relaxed text-slate-500">
               <template v-if="canReadMeter">抄表：38 块表（37 块按编号 + 150车间那块不编号），右滑提交、左滑跳过，可拍照存档</template>
               <template v-else>抄表需要管理员授权（PC「电表台账」页底部可授权）</template>
             </text>
