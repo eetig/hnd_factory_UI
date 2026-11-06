@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { authState, isAdmin } from '../../api/auth'
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
+import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
 
 /*
@@ -185,20 +186,68 @@ function toggleOnlyUnfilled() {
 }
 
 /* ===== 拍照（可选）===== */
-async function takePhoto() {
+
+/**
+ * 自绘的拍照选项（2026-11-06）。
+ *
+ * 使用方：「这个弹出的拍照选项有点丑」。原来弹的是 uni.chooseImage 自己的系统
+ * ActionSheet —— 样式由系统决定，改不了。所以自己做一个底部抽屉，
+ * 跟 App 里其它弹层用同一套视觉（圆角、拖拽条、safe-area）。
+ */
+const photoSheetOpen = ref(false)
+
+function openPhotoSheet() {
   if (!card.value) return
+  photoSheetOpen.value = true
+}
+
+function closePhotoSheet() {
+  photoSheetOpen.value = false
+}
+
+/** 把刚拍的图存进系统相册（App/小程序；H5 无相册概念，跳过） */
+async function saveToAlbum(filePath) {
+  // #ifdef H5
+  return
+  // #endif
+  try {
+    await new Promise((resolve, reject) => {
+      uni.saveImageToPhotosAlbum({ filePath, success: resolve, fail: reject })
+    })
+    uni.showToast({ title: '已存到相册', icon: 'none' })
+  } catch (e) {
+    const message = String(e?.errMsg || e?.message || '')
+    // 用户拒绝相册权限：告诉他去开，不静默失败
+    if (/auth|deny|denied|permission/i.test(message)) {
+      uni.showModal({
+        title: '需要相册权限',
+        content: '要自动存到相册，请在系统设置里允许本应用访问照片。这次先只保存到资料里。',
+        showCancel: false,
+        confirmText: '知道了',
+      })
+      return
+    }
+    // 其它失败（如 H5/模拟器不支持）不打扰，图已经传到服务端了
+  }
+}
+
+async function takePhoto(from) {
+  if (!card.value) return
+  photoSheetOpen.value = false
   try {
     const chosen = await new Promise((resolve, reject) => {
       uni.chooseImage({
         count: 1,
         sizeType: ['compressed'],
-        sourceType: ['camera', 'album'],
+        sourceType: [from === 'album' ? 'album' : 'camera'],
         success: resolve,
         fail: reject,
       })
     })
     const filePath = chosen?.tempFilePaths?.[0]
     if (!filePath) return
+    // 只把"刚拍的"存相册；从相册选的没必要再存一遍
+    if (from !== 'album') saveToAlbum(filePath)
     uni.showLoading({ title: '上传中…' })
     const res = await uploadFile({ url: '/api/electricity/photo', filePath, name: 'file' })
     const body = res?.data || {}
@@ -213,16 +262,26 @@ async function takePhoto() {
   }
 }
 
+/**
+ * 缩略图地址（2026-11-06）。
+ *
+ * 后端返回的是相对路径（/files/xxx.jpg），直接塞进 <image src> 在真机上没有 origin
+ * ⇒ 一片空白（使用方：「拍好照后缩略图怎么是空白」）。
+ * 复用项目里已有的 resolveAssetUrl（同单据图片那套），H5 与 App 都能拼对。
+ */
+const photoSrc = computed(() => resolveAssetUrl(draft.photo))
+
 /** 看大图（2026-11-05）：现场对账时要看清表盘数字 */
 function previewPhoto() {
   if (!draft.photo) return
+  const current = resolveAssetUrl(draft.photo)
   const urls = [
-    draft.photo,
+    current,
     ...cards.value
-      .map((c) => c.imagePath)
-      .filter((p) => p && p !== draft.photo),
+      .map((c) => resolveAssetUrl(c.imagePath))
+      .filter((p) => p && p !== current),
   ]
-  uni.previewImage({ urls, current: draft.photo })
+  uni.previewImage({ urls, current })
 }
 
 /* ===== 提交 ===== */
@@ -548,14 +607,14 @@ onMounted(() => {
           <view class="mr__photo-row">
             <view v-if="draft.photo" class="mr__photo">
               <image
-                :src="draft.photo"
+                :src="photoSrc"
                 mode="aspectFill"
                 class="mr__photo-img"
                 @click.stop="previewPhoto"
               />
               <text class="mr__photo-remove" @click.stop="draft.photo = ''">×</text>
             </view>
-            <text v-else class="mr__photo-add" @click.stop="takePhoto">📷 拍表存证（可选）</text>
+            <text v-else class="mr__photo-add" @click.stop="openPhotoSheet">📷 拍表存证（可选）</text>
           </view>
         </view>
 
@@ -622,6 +681,39 @@ onMounted(() => {
       </view>
 
       <!-- 已填列表（点一张回到那张改） -->
+      <!--
+        自绘拍照选项（2026-11-06）
+        使用方嫌 uni.chooseImage 自带的系统 ActionSheet 丑 —— 那个样式改不了，
+        所以自己画一个：底部抽屉 + 圆角 + 拖拽条 + 两个大按钮 + safe-area。
+      -->
+      <view v-if="photoSheetOpen" class="mr__ps" @click="closePhotoSheet">
+        <view class="mr__ps-panel" @click.stop>
+          <view class="mr__ps-grabber"></view>
+          <text class="mr__ps-title">拍表存证</text>
+          <text class="mr__ps-hint">拍照会自动存一份到手机相册，方便日后对账</text>
+
+          <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('camera')">
+            <text class="mr__ps-icon">📷</text>
+            <view class="mr__ps-body">
+              <text class="mr__ps-label">拍摄</text>
+              <text class="mr__ps-sub">调起相机，拍完自动存相册</text>
+            </view>
+            <text class="mr__ps-arrow">›</text>
+          </view>
+
+          <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('album')">
+            <text class="mr__ps-icon">🖼</text>
+            <view class="mr__ps-body">
+              <text class="mr__ps-label">从相册选择</text>
+              <text class="mr__ps-sub">已经拍过的表，直接从相册挑</text>
+            </view>
+            <text class="mr__ps-arrow">›</text>
+          </view>
+
+          <view class="mr__ps-cancel" hover-class="mr__ps-action--pressed" @click="closePhotoSheet">取消</view>
+        </view>
+      </view>
+
       <view v-if="showList" class="mr__sheet" @click.self="showList = false">
         <view class="mr__sheet-body">
           <view class="mr__sheet-head">
@@ -947,6 +1039,114 @@ onMounted(() => {
   gap: 24rpx;
   width: 100%;
   margin-top: 16rpx;
+}
+
+/* ===== 拍照选项抽屉（2026-11-06）===== */
+.mr__ps {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 60;
+  background-color: rgba(20, 18, 16, 0.42);
+  display: flex;
+  align-items: flex-end;
+}
+
+.mr__ps-panel {
+  width: 100%;
+  padding: 16rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background-color: var(--ui-surface);
+  box-shadow: 0 -12rpx 40rpx rgba(60, 50, 40, 0.14);
+  animation: mr-sheet-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes mr-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.mr__ps-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 4rpx auto 18rpx;
+  border-radius: 8rpx;
+  background-color: var(--ui-border-strong);
+}
+
+.mr__ps-title {
+  display: block;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.mr__ps-hint {
+  display: block;
+  margin-top: 6rpx;
+  margin-bottom: 20rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__ps-action {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 22rpx;
+  margin-bottom: 16rpx;
+  border-radius: 22rpx;
+  border: 2rpx solid var(--ui-border);
+  background-color: var(--ui-raise-2);
+}
+
+.mr__ps-action--pressed {
+  opacity: 0.75;
+  transform: scale(0.99);
+}
+
+.mr__ps-icon {
+  font-size: 38rpx;
+}
+
+.mr__ps-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.mr__ps-label {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.mr__ps-sub {
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__ps-arrow {
+  font-size: 34rpx;
+  color: var(--ui-text-3);
+}
+
+.mr__ps-cancel {
+  height: 92rpx;
+  line-height: 92rpx;
+  text-align: center;
+  border-radius: 22rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ui-text-2);
+  background-color: var(--ui-raise-2);
 }
 
 .mr__action-icon {
