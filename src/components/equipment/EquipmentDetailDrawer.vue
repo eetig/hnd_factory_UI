@@ -205,6 +205,44 @@ function openCalibrate() {
   calibrateVisible.value = true
 }
 
+/**
+ * 按规格填入几何建议值（2026-11-07）。
+ *
+ * 只填表单，不保存 —— 使用方选的是"自己核对后手填"，这里只是把 5 个数字里
+ * 3~4 个先算好（内径、筒长、封头深、直边），他扫一眼改错的地方就行。
+ *
+ * 口径：DN2400x3600 → 内径 2400 / 筒长 3600；封头按标准椭圆取 内径/4；直边 40mm；
+ *      平底立式（containerType=2）没有下封头 ⇒ 下封头深留空。
+ */
+const geometryHint = ref('')
+
+function fillGeometryFromSpec() {
+  const spec = String(form.value.spec || '')
+  // 取第一个 DN（夹套这种 DN1500/DN1400x1200 取内筒），再取 x 后面第一个数字
+  const dnMatch = spec.match(/DN\s*(\d+)/i)
+  const lenMatch = spec.match(/[x×X*]\s*(\d+)/)
+  if (!dnMatch) {
+    geometryHint.value = '这条规格里没有 DN，无法推算，请手填'
+    return
+  }
+  const inner = Number(dnMatch[1])
+  if (!Number.isFinite(inner) || inner <= 0) {
+    geometryHint.value = 'DN 后面的数字读不出来，请手填'
+    return
+  }
+  const head = Math.round(inner / 4)
+  form.value.innerDiameter = inner
+  if (lenMatch) form.value.shellLength = Number(lenMatch[1])
+  form.value.straightFlange = 40
+  form.value.topHeadDepth = head
+  // 平底立式没有下封头
+  const flatBottom = Number(form.value.containerType) === 2
+  form.value.bottomHeadDepth = flatBottom ? '' : head
+  geometryHint.value = lenMatch
+    ? `已按 ${dnMatch[0]} / x${lenMatch[1]} 填入：内径 ${inner}、筒长 ${lenMatch[1]}，封头深 ${flatBottom ? '（平底，无下封头）' : head}。请核对后保存`
+    : `只读到内径 ${inner}，筒体长请手填。封头深按 ${head} 填了，请核对`
+}
+
 function handleCalibrated(boundsJson) {
   form.value.imageBounds = boundsJson
   calibrateVisible.value = false
@@ -285,8 +323,26 @@ function fieldsOf(group) {
 
       <section v-for="group in DRAWER_GROUPS" :key="group.title" class="space-y-3">
         <div>
-          <h3 class="text-xs font-semibold tracking-wide text-slate-500">{{ group.title }}</h3>
+          <div class="flex items-center gap-2">
+            <h3 class="text-xs font-semibold tracking-wide text-slate-500">{{ group.title }}</h3>
+            <!--
+              按规格填入（2026-11-07）
+              只在「几何」这组出现：把 DN2400x3600 解析成 内径/筒长/封头深/直边，
+              填进表单但不保存 —— 使用方要自己核对。
+            -->
+            <button
+              v-if="group.keys.includes('innerDiameter') && canEdit"
+              type="button"
+              class="rounded-full border border-line px-2 py-0.5 text-[11px] text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900"
+              @click="fillGeometryFromSpec"
+            >
+              按规格填入
+            </button>
+          </div>
           <p v-if="group.hint" class="mt-1 text-xs text-slate-500">{{ group.hint }}</p>
+          <p v-if="group.keys.includes('innerDiameter') && geometryHint" class="mt-1 text-[11px] text-amber-700">
+            {{ geometryHint }}
+          </p>
         </div>
 
         <div
