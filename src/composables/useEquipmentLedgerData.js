@@ -46,6 +46,14 @@ const pageSize = ref(10)
 /** 关键字（位号/名称/昵称/规格/车间）与「只看启用的」—— 都是服务端条件 */
 const keyword = ref('')
 const onlyEnabled = ref(false)
+
+/**
+ * 只看"缺几何"的图纸（2026-11-07）。
+ *
+ * 液位→体积全靠 内径/筒长，而当时 92 张图纸里 71 张立式缺这两项。
+ * 这个开关走服务端筛选，不然要在一页 10 行里翻 71 行，眼力活。
+ */
+const missingGeometry = ref(false)
 const loadError = ref('')
 
 function buildQuery() {
@@ -53,6 +61,7 @@ function buildQuery() {
   const kw = keyword.value.trim()
   if (kw) params.keyword = kw
   if (onlyEnabled.value) params.onlyEnabled = true
+  if (missingGeometry.value) params.missingGeometry = true
   return params
 }
 
@@ -205,6 +214,7 @@ export function useEquipmentLedgerData() {
     pageSize,
     keyword,
     onlyEnabled,
+    missingGeometry,
     loadLedger,
     loadLedgerPage,
     applyLedgerFilters,

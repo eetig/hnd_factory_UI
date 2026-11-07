@@ -51,6 +51,7 @@ const {
   pageSize,
   keyword,
   onlyEnabled,
+  missingGeometry,
   loadLedger,
   loadLedgerPage,
   applyLedgerFilters,
@@ -112,6 +113,16 @@ function onFilterChange() {
   if (onlyEnabled.value === wantEnabled) return
   onlyEnabled.value = wantEnabled
   applyLedgerFilters()
+}
+
+/**
+ * 切「仅看缺几何」（2026-11-07）。
+ * 它改的是服务端条件，所以要回到第一页再拉 —— 否则停在第 7 页会看到空列表。
+ */
+function toggleMissingGeometry() {
+  missingGeometry.value = !missingGeometry.value
+  pageNum.value = 1
+  loadLedger()
 }
 
 /* ===== 保存 ===== */
@@ -217,10 +228,11 @@ function cellText(row, key, index) {
       return row.spec || '—'
     case 'medium':
       return row.medium || '—'
+    // 2026-11-07：缺几何不该显示成"—"（和"没有这一列"混在一起），显示「补」
     case 'innerDiameter':
-      return row.innerDiameter ?? '—'
+      return row.innerDiameter ?? '补'
     case 'shellLength':
-      return row.shellLength ?? '—'
+      return row.shellLength ?? '补'
     case 'straightFlange':
       return row.straightFlange ?? '—'
     case 'headDepth':
@@ -267,6 +279,22 @@ onMounted(() => {
           @keyup.enter="flushLedgerQuery"
           @clear="flushLedgerQuery"
         />
+        <!--
+          仅看缺几何（2026-11-07）
+          液位→体积全靠 内径/筒长，而当时 92 张图纸里 71 张缺这两项。
+          这个开关走服务端筛选，不然要在一页 10 行里翻 71 行。
+        -->
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1.5 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+          :class="missingGeometry
+            ? 'border-transparent bg-brand-ink text-white'
+            : 'border-line text-slate-600 hover:border-slate-400 hover:text-slate-900'"
+          :aria-pressed="missingGeometry"
+          @click="toggleMissingGeometry"
+        >
+          仅看缺几何
+        </button>
         <EquipmentColumnPicker />
         <el-button @click="loadLedger">刷新</el-button>
         <el-button type="primary" @click="openCreate">新增设备</el-button>
