@@ -42,6 +42,10 @@ export function blankDraft() {
     requiredArrivalDate: '',
     oaNo: '',
     oaUrl: '',
+    // 单据类型与验收单（2026-11-09）：CGSQ / FWCGSQ / ZCSG
+    orderType: '',
+    acceptanceNo: '',
+    acceptanceUrl: '',
     deliveryNote: '',
     receivedQuantity: '',
     actualArrivalDate: '',

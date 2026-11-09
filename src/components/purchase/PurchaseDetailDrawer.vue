@@ -67,6 +67,16 @@ const emit = defineEmits(['update:modelValue', 'save', 'delete'])
 const { fetchMaterialSuggestions, cancelMaterialSearch } = useMaterialLookup()
 
 const form = ref(blankDraft())
+
+/** 按 OA 单号前缀给单据类型建议（2026-11-09）：只建议不自动写，历史单子可能没前缀 */
+const suggestedOrderType = computed(() => {
+  const no = String(form.value?.oaNo || '').toUpperCase()
+  if (!no) return ''
+  if (no.includes('FWCGSQ')) return 'FWCGSQ'
+  if (no.includes('ZCSG')) return 'ZCSG'
+  if (no.includes('CGSQ')) return 'CGSQ'
+  return ''
+})
 /** 打开时的快照，用来判断"有没有改过" */
 let snapshot = ''
 
@@ -463,6 +473,54 @@ function fieldsOf(group) {
                 aria-label="OA 表单链接"
                 :disabled="!canEdit"
               />
+
+              <!--
+                单据类型 + 验收单（2026-11-09）
+                使用方：三种单据 CGSQ（采购申请，**没有验收单**）、FWCGSQ（服务采购申请）、
+                ZCSG（资产申购）；后两种采购完成后会生成验收单据，录"单号 + 链接"就够，
+                目的是很快找到那张验收单并跳过去。
+                类型按 OA 单号前缀给建议值（CGSQ-/FWCGSQ-/ZCSG-），但允许他改 —— 历史单子可能没前缀。
+              -->
+              <div class="flex items-center gap-2">
+                <el-select
+                  v-model="form.orderType"
+                  clearable
+                  placeholder="单据类型"
+                  aria-label="单据类型"
+                  class="!w-[160px]"
+                  :disabled="!canEdit"
+                >
+                  <el-option label="CGSQ 采购申请" value="CGSQ" />
+                  <el-option label="FWCGSQ 服务采购申请" value="FWCGSQ" />
+                  <el-option label="ZCSG 资产申购" value="ZCSG" />
+                </el-select>
+                <button
+                  v-if="canEdit && suggestedOrderType && suggestedOrderType !== form.orderType"
+                  type="button"
+                  class="rounded-full border border-line px-2 py-0.5 text-[11px] text-slate-600 hover:border-slate-400 hover:text-slate-900"
+                  @click="form.orderType = suggestedOrderType"
+                >
+                  按单号推断：{{ suggestedOrderType }}
+                </button>
+              </div>
+
+              <div v-if="form.orderType !== 'CGSQ'" class="space-y-2">
+                <el-input
+                  v-model="form.acceptanceNo"
+                  placeholder="验收单号（填了就算已验收）"
+                  aria-label="验收单号"
+                  :disabled="!canEdit"
+                />
+                <el-input
+                  v-model="form.acceptanceUrl"
+                  placeholder="验收单链接（粘贴后可直接点开）"
+                  aria-label="验收单链接"
+                  :disabled="!canEdit"
+                />
+              </div>
+              <p v-else class="text-xs text-slate-500">
+                CGSQ（采购申请）一般没有验收单据；确实有就先把类型改掉再填。
+              </p>
             </div>
 
             <!-- 送货单图片：上传 / 缩略图 / 点开看原图（沿用现有组件） -->
