@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElButton, ElImage, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElImage, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
 import { hasPerm } from '../api/auth'
 import { STATUS_ROW_TONE, STATUS_TONE } from '../constants/statusTones'
 import {
@@ -125,12 +125,118 @@ function dayHint(row) {
 /** 抽屉实例：新增保存后要让它清空物料三件套（见 handleSave） */
 const drawerRef = ref(null)
 
-function openCreate() {
-  drawerMode.value = 'create'
-  drawerRow.value = null
-  drawerMessage.value = ''
-  drawerOpen.value = true
+
+/* ─────────── 表格内录入（2026-11-10） ───────────
+ * 使用方要「横向表格录入」。所以「新增需求」不再弹抽屉，而是往表格最上面插一行空行，
+ * 行内逐格填，底部「保存全部」一次提交；抽屉保留给"编辑已有行"。
+ * 失败的行**留在表里**并标红 —— 现场填十条，不能因为一条错就全丢。
+ */
+const draftRows = ref([])
+const draftSaving = ref(false)
+/** 每行的错误信息：key → 文案 */
+const draftErrors = ref({})
+
+let draftSeq = 0
+
+function todayIso() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
+
+/** 草稿行的初始值：需求人/日期给常用的，其余空 */
+function blankDraftRow() {
+  draftSeq += 1
+  return {
+    __key: `draft-${draftSeq}`,
+    requester: '',
+    requestDate: todayIso(),
+    materialName: '',
+    materialCode: '',
+    spec: '',
+    purpose: '',
+    category: '',
+    quantity: '',
+    unit: '',
+    requiredArrivalDate: '',
+    orderType: '',
+    acceptanceNo: '',
+    acceptanceUrl: '',
+    remark: '',
+  }
+}
+
+function addDraftRow() {
+  draftRows.value.unshift(blankDraftRow())
+}
+
+function removeDraftRow(key) {
+  draftRows.value = draftRows.value.filter((d) => d.__key !== key)
+  delete draftErrors.value[key]
+}
+
+function clearDrafts() {
+  draftRows.value = []
+  draftErrors.value = {}
+}
+
+/** 只校验必填（后端也校验，但这里先挡一道，免得整批 500） */
+function draftProblem(d) {
+  if (!d.requester.trim()) return '需求人必填'
+  if (!d.requestDate) return '提出需求日期必填'
+  if (!d.materialName.trim()) return '物料名称必填'
+  if (!String(d.quantity).trim()) return '数量必填'
+  if (!d.unit.trim()) return '单位必填'
+  return ''
+}
+
+async function saveAllDrafts() {
+  if (draftSaving.value) return
+  if (!draftRows.value.length) return
+  draftSaving.value = true
+  draftErrors.value = {}
+  const keep = []
+  let okCount = 0
+  for (const d of draftRows.value) {
+    const problem = draftProblem(d)
+    if (problem) {
+      draftErrors.value[d.__key] = problem
+      keep.push(d)
+      continue
+    }
+    try {
+      await savePurchase({
+        requester: d.requester.trim(),
+        requestDate: d.requestDate,
+        materialName: d.materialName.trim(),
+        materialCode: d.materialCode.trim(),
+        spec: d.spec.trim(),
+        purpose: d.purpose.trim(),
+        category: d.category,
+        quantity: Number(d.quantity),
+        unit: d.unit.trim(),
+        requiredArrivalDate: d.requiredArrivalDate || null,
+        orderType: d.orderType || null,
+        acceptanceNo: d.acceptanceNo.trim() || null,
+        acceptanceUrl: d.acceptanceUrl.trim() || null,
+        remark: d.remark.trim(),
+      })
+      okCount += 1
+    } catch (e) {
+      draftErrors.value[d.__key] = e?.response?.data?.msg || e?.message || '保存失败'
+      keep.push(d)
+    }
+  }
+  draftRows.value = keep
+  draftSaving.value = false
+  if (okCount) {
+    ElMessage.success(`已保存 ${okCount} 条${keep.length ? '，' + keep.length + ' 条有问题留在表里' : ''}`)
+    await loadPurchase()
+  } else {
+    ElMessage.error('一条都没存上，看每行后面的红字')
+  }
+}
+
 
 function openDetail(row) {
   drawerMode.value = 'edit'
@@ -261,7 +367,7 @@ onMounted(loadPurchase)
         </p>
         <div class="ml-auto flex items-center gap-2">
           <PurchaseColumnPicker />
-          <el-button v-if="canEdit" type="primary" @click="openCreate">新增需求</el-button>
+          <el-button v-if="canEdit" type="primary" @click="addDraftRow">新增一行</el-button>
         </div>
       </div>
 
@@ -315,6 +421,37 @@ onMounted(loadPurchase)
           </tr>
         </thead>
         <tbody>
+          <!-- 草稿行（2026-11-10）：表格内直接录入，行内逐格填。
+               放在真实数据上方 —— 空行在下面会随翻页/滚动看不见。 -->
+          <tr
+            v-for="d in draftRows"
+            :key="d.__key"
+            class="bg-brand-soft/40 align-top"
+          >
+            <td class="px-3 py-2 text-xs text-brand-ink">新</td>
+            <td class="px-3 py-2 text-xs text-slate-500">未保存</td>
+            <td class="px-3 py-2"><el-input v-model="d.materialName" size="small" placeholder="物料名称" aria-label="物料名称" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.spec" size="small" placeholder="规格" aria-label="规格" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.category" size="small" placeholder="类别" aria-label="类别" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.quantity" size="small" inputmode="decimal" placeholder="数量" aria-label="数量" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.requiredArrivalDate" size="small" placeholder="YYYY-MM-DD" aria-label="要求到货日期" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.requester" size="small" placeholder="需求人" aria-label="需求人" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.requestDate" size="small" placeholder="YYYY-MM-DD" aria-label="提出需求日期" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.materialCode" size="small" placeholder="物料编码" aria-label="物料编码" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.purpose" size="small" placeholder="用途" aria-label="用途" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.unit" size="small" placeholder="单位" aria-label="单位" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.orderType" size="small" placeholder="CGSQ/…" aria-label="单据类型" /></td>
+            <td class="px-3 py-2"><el-input v-model="d.acceptanceNo" size="small" placeholder="验收单号" aria-label="验收单号" /></td>
+            <td class="px-3 py-2 text-xs text-slate-500">—</td>
+            <td class="px-3 py-2 text-xs text-slate-500">—</td>
+            <td class="px-3 py-2"><el-input v-model="d.remark" size="small" placeholder="备注" aria-label="备注" /></td>
+            <td class="whitespace-nowrap px-3 py-2">
+              <button type="button" class="text-xs text-rose-700 hover:underline" @click="removeDraftRow(d.__key)">删除</button>
+              <p v-if="draftErrors[d.__key]" class="mt-1 max-w-[150px] text-[11px] leading-tight text-rose-700">
+                {{ draftErrors[d.__key] }}
+              </p>
+            </td>
+          </tr>
           <tr
             v-for="(row, index) in rows"
             :key="row.id"
@@ -503,7 +640,17 @@ onMounted(loadPurchase)
       </table>
     </div>
 
-    <div v-if="rows.length" class="flex shrink-0 justify-end border-t border-line px-6 py-3">
+    <div v-if="draftRows.length" class="flex shrink-0 items-center gap-3 border-t border-line bg-region px-6 py-2">
+          <span class="text-xs text-slate-600">
+            正在录入 {{ draftRows.length }} 条（保存成功才会消失）
+          </span>
+          <el-button size="small" :loading="draftSaving" type="primary" @click="saveAllDrafts">
+            保存全部 {{ draftRows.length }} 条
+          </el-button>
+          <el-button size="small" @click="clearDrafts">清空</el-button>
+        </div>
+
+        <div v-if="rows.length" class="flex shrink-0 justify-end border-t border-line px-6 py-3">
       <el-pagination
         v-model:current-page="pageNum"
         v-model:page-size="pageSize"
