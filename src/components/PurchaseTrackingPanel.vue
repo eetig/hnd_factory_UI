@@ -190,6 +190,29 @@ function draftProblem(d) {
   return ''
 }
 
+
+/* 草稿行里哪些列可以填、placeholder 是什么（2026-11-10）
+ * 只列"真的要手填"的；进度/序号/送货单/实际到货在草稿行显示占位。 */
+const DRAFT_TEXT = {
+  materialName: '物料名称',
+  spec: '规格',
+  category: '类别',
+  quantity: '数量',
+  requiredArrivalDate: 'YYYY-MM-DD',
+  requester: '需求人',
+  requestDate: 'YYYY-MM-DD',
+  materialCode: '物料编码',
+  purpose: '用途',
+  unit: '单位',
+  oaNo: 'OA 单号',
+  orderType: 'CGSQ/FWCGSQ/ZCSG',
+  remark: '备注',
+}
+
+/** 验收状态：有验收单号即已验收（与后端同一口径，不存冗余列） */
+function acceptanceState(row) {
+  return row && row.acceptanceNo ? '已验收' : '未验收'
+}
 async function saveAllDrafts() {
   if (draftSaving.value) return
   if (!draftRows.value.length) return
@@ -421,36 +444,33 @@ onMounted(loadPurchase)
           </tr>
         </thead>
         <tbody>
-          <!-- 草稿行（2026-11-10）：表格内直接录入，行内逐格填。
-               放在真实数据上方 —— 空行在下面会随翻页/滚动看不见。 -->
+          <!-- 草稿行（2026-11-10 v2）：按 orderedColumns 逐列渲染，不再硬编码格数。
+               上一版硬编码 18 格，与"可勾选/可排序/固定宽度"的真实列对不上，
+               多出的格子把表格撑宽，尾部（备注、删除）被裁掉。 -->
           <tr
             v-for="d in draftRows"
             :key="d.__key"
-            class="bg-brand-soft/40 align-top"
+            class="align-top"
           >
-            <td class="px-3 py-2 text-xs text-brand-ink">新</td>
-            <td class="px-3 py-2 text-xs text-slate-500">未保存</td>
-            <td class="px-3 py-2"><el-input v-model="d.materialName" size="small" placeholder="物料名称" aria-label="物料名称" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.spec" size="small" placeholder="规格" aria-label="规格" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.category" size="small" placeholder="类别" aria-label="类别" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.quantity" size="small" inputmode="decimal" placeholder="数量" aria-label="数量" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.requiredArrivalDate" size="small" placeholder="YYYY-MM-DD" aria-label="要求到货日期" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.requester" size="small" placeholder="需求人" aria-label="需求人" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.requestDate" size="small" placeholder="YYYY-MM-DD" aria-label="提出需求日期" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.materialCode" size="small" placeholder="物料编码" aria-label="物料编码" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.purpose" size="small" placeholder="用途" aria-label="用途" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.unit" size="small" placeholder="单位" aria-label="单位" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.orderType" size="small" placeholder="CGSQ/…" aria-label="单据类型" /></td>
-            <td class="px-3 py-2"><el-input v-model="d.acceptanceNo" size="small" placeholder="验收单号" aria-label="验收单号" /></td>
-            <td class="px-3 py-2 text-xs text-slate-500">—</td>
-            <td class="px-3 py-2 text-xs text-slate-500">—</td>
-            <td class="px-3 py-2"><el-input v-model="d.remark" size="small" placeholder="备注" aria-label="备注" /></td>
-            <td class="whitespace-nowrap px-3 py-2">
-              <button type="button" class="text-xs text-rose-700 hover:underline" @click="removeDraftRow(d.__key)">删除</button>
-              <p v-if="draftErrors[d.__key]" class="mt-1 max-w-[150px] text-[11px] leading-tight text-rose-700">
-                {{ draftErrors[d.__key] }}
-              </p>
-            </td>
+            <template v-for="col in orderedColumns" :key="'d-' + col.key">
+              <td v-if="col.key === 'index'" class="px-3 py-2 text-xs font-medium text-brand-ink"><div class="flex items-center gap-1">新<button type="button" class="text-rose-700 hover:underline" title="删除这一行" @click="removeDraftRow(d.__key)">✕</button></div><p v-if="draftErrors[d.__key]" class="mt-1 text-[11px] leading-tight text-rose-700" :title="draftErrors[d.__key]">!</p></td>
+              <td v-else-if="col.key === 'status'" class="px-3 py-2 text-xs text-slate-500">未保存</td>
+              <td v-else-if="col.key === 'deliveryNote' || col.key === 'actualArrival'" class="px-3 py-2 text-xs text-slate-500">—</td>
+              <td v-else-if="col.key === 'acceptanceNo'" class="px-3 py-2">
+                <el-input v-model="d.acceptanceNo" size="small" placeholder="验收单号" aria-label="验收单号" />
+                <el-input v-model="d.acceptanceUrl" size="small" placeholder="验收单链接" aria-label="验收单链接" class="mt-1" />
+              </td>
+              <td v-else class="px-3 py-2">
+                <el-input
+                  v-if="DRAFT_TEXT[col.key]"
+                  v-model="d[col.key]"
+                  size="small"
+                  :placeholder="DRAFT_TEXT[col.key]"
+                  :aria-label="col.label"
+                />
+                <span v-else class="text-xs text-slate-500">—</span>
+              </td>
+            </template>
           </tr>
           <tr
             v-for="(row, index) in rows"
@@ -570,6 +590,21 @@ onMounted(loadPurchase)
               </td>
 
               <!-- OA 三态：已关联可点 / 有单号没链接 / 都没有 -->
+              <!-- 单据类型与验收单（2026-11-10）：CGSQ 一般无验收单 -->
+              <td v-else-if="col.key === 'orderType'" class="whitespace-nowrap px-3 py-2 text-slate-600">
+                {{ row.orderType || '—' }}
+              </td>
+
+              <td v-else-if="col.key === 'acceptanceNo'" class="px-3 py-2">
+                <span class="rounded-full px-2 py-0.5 text-[11px]" :class="row.acceptanceNo ? 'bg-brand-soft text-brand-ink' : 'bg-region text-slate-500'">
+                  {{ acceptanceState(row) }}
+                </span>
+                <a v-if="row.acceptanceUrl" :href="row.acceptanceUrl" target="_blank" rel="noopener noreferrer"
+                  class="ml-1 text-[11px] text-brand-ink underline decoration-dotted underline-offset-2"
+                  :title="row.acceptanceUrl">{{ row.acceptanceNo || '打开' }}</a>
+                <span v-else-if="row.acceptanceNo" class="ml-1 text-[11px] text-slate-600">{{ row.acceptanceNo }}</span>
+              </td>
+
               <td v-else-if="col.key === 'oaNo'" class="px-3 py-2 text-slate-600">
                 <a
                   v-if="row.oaUrl"
