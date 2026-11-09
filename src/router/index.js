@@ -138,7 +138,13 @@ export const workbenchRoutes = [
     redirect: () => ({ path: '/equipment/meters', query: { tab: 'bill' } }),
     meta: { group: 'equipment', key: 'electricity', title: '电费预提' },
   },
-  {
+      {
+      path: '/equipment/tanks',
+      name: 'EquipmentTanks',
+      component: () => import('../views/equipment/TankView.vue'),
+      meta: { group: 'equipment', key: 'tanks', title: '储罐' },
+    },
+{
     path: '/equipment/meters',
     name: 'MeterReadingView',
     component: MeterReadingView,
