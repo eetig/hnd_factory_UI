@@ -45,6 +45,9 @@ export const OPTIONAL_COLUMNS = [
   { key: 'materialCode', label: '物料编码', width: 'w-[128px]' },
   { key: 'purpose', label: '用途', width: 'w-[140px]' },
   { key: 'oaNo', label: 'OA 单号', width: 'w-[104px]' },
+  // 单据类型与验收单（2026-11-09）：CGSQ 无验收单；FWCGSQ / ZCSG 才有
+  { key: 'orderType', label: '单据类型', width: 'w-[92px]' },
+  { key: 'acceptanceNo', label: '验收单', width: 'w-[128px]' },
   { key: 'deliveryNote', label: '送货单', width: 'w-[76px]' },
   { key: 'actualArrival', label: '实际到货', width: 'w-[140px]' },
   { key: 'remark', label: '备注', width: 'w-[160px]' },

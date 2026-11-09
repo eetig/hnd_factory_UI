@@ -54,6 +54,9 @@ const rangeEnd = ref('')
 const statusFilters = ref([])
 /** 类别筛选（备件/五金/原料/设备/其他；空串 = 不限） */
 const categoryFilter = ref('')
+/* 单据类型与验收状态筛选（2026-11-09）：CGSQ 无验收单；FWCGSQ / ZCSG 才有 */
+const orderTypeFilter = ref('')
+const acceptedFilter = ref('')
 
 /**
  * 切换一个状态（多选）。已在里面就移除，不在就加进去。
@@ -85,6 +88,11 @@ function buildQuery(withPaging = true) {
   if (statusFilters.value.length) params.statuses = statusFilters.value.join(',')
   const category = categoryFilter.value
   if (category) params.category = category
+  const orderType = orderTypeFilter.value
+  if (orderType) params.orderType = orderType
+  // '' 表示不过滤；'yes' → 已验收；'no' → 未验收
+  if (acceptedFilter.value === 'yes') params.accepted = true
+  else if (acceptedFilter.value === 'no') params.accepted = false
   return params
 }
 
@@ -321,6 +329,8 @@ export function usePurchaseTracking() {
     statusFilters,
     toggleStatus,
     categoryFilter,
+  orderTypeFilter,
+  acceptedFilter,
     loadPurchase,
     loadSummary,
     loadPurchasePage,
