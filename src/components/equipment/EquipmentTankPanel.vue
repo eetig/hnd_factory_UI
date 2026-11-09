@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import request from '../../api/request'
 import { deleteTank, listTanks, saveTank, setTankEnabled } from '../../api/equipmentTank'
 
