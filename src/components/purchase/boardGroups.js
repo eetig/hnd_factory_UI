@@ -44,6 +44,30 @@ for (const col of BOARD_COLUMNS) {
 }
 
 /** 状态 → 列 key；认不出来的状态返回 null（卡片会被丢掉并在控制台可查） */
+/** 需要验收的单据类型：服务采购申请 / 资产申购（CGSQ 采购申请没有验收单） */
+export const ACCEPTANCE_ORDER_TYPES = ['FWCGSQ', 'ZCSG']
+
+/** 已到货的状态（含部分到货） */
+const ARRIVED_STATUSES = ['ARRIVED', 'PARTIAL']
+
+/**
+ * 这条需求是否"待验收"（2026-11-10）。
+ *
+ * 口径只有这一处：已到货 且 验收单号为空 且 单据类型不是 CGSQ。
+ * 看板的筛选胶囊、卡片徽标都用它 —— 两处各写一遍迟早不一致。
+ *
+ * 单据类型没填的老数据不算待验收（判不了），这是刻意的：宁可漏，不要误报。
+ */
+export function needsAcceptance(row = {}) {
+  const status = String(row.status || '').toUpperCase()
+  if (!ARRIVED_STATUSES.includes(status)) return false
+  if (row.acceptanceNo) return false
+  const type = String(row.orderType || '').toUpperCase()
+  // 明确是采购申请（CGSQ）的没有验收单；没填类型的按"可能需要"算 ——
+  // 宁可多提醒一条，也不要因为历史数据没填类型而整列看不见（2026-11-10）
+  return type !== 'CGSQ'
+}
+
 export function columnOfStatus(status) {
   return KEY_TO_COLUMN.get(String(status || '').toUpperCase()) || null
 }

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { dueLabel, quantityText, requestAgeLabel, requesterSummary } from './boardGroups.js'
+import { dueLabel, needsAcceptance, quantityText, requestAgeLabel, requesterSummary } from './boardGroups.js'
 
 /*
  * 采购看板的一张卡 = **一个 OA 单**（2026-10-23，变更-168）。
@@ -64,6 +64,10 @@ const dueToneClass = computed(() => {
 /** 徽标：只看最急那条 —— 临期 / 部分到货 */
 const badge = computed(() => {
   const status = String(lead.value.status || '').toUpperCase()
+  // 待验收优先展示（2026-11-10）：已到货但还没录验收单，是"下一步要办的事"
+  if ((props.card?.rows || []).some((r) => needsAcceptance(r))) {
+    return { text: '待验收', cls: 'bg-amber-50 text-amber-800' }
+  }
   if (status === 'DUE_SOON') return { text: '临期', cls: 'bg-brand-50 text-brand-ink' }
   if (status === 'PARTIAL') return { text: '部分到货', cls: 'bg-brand-50 text-brand-ink' }
   return null
