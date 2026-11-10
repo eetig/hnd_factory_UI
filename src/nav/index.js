@@ -82,6 +82,17 @@ export const NAV_ITEMS = [
     perm: ADMIN_PERM,
     group: 'purchase',
   },
+  /*
+   * 费用申请（2026-11-10，变更-182）：资产申购 / 服务采购申请。
+   * 与采购看板同组 ⇒ 顶部页签自动多出一个 pill；侧栏点「采购」仍落采购看板。
+   */
+  {
+    key: 'purchaseExpense',
+    label: '费用申请',
+    path: '/purchase/expense',
+    perm: ADMIN_PERM,
+    group: 'purchase',
+  },
   // 设备两页（变更-150）：看板在前 —— 进「设备」先看还缺什么。
   {
     key: 'equipmentBoard',

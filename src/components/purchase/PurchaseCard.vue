@@ -41,6 +41,13 @@ const props = defineProps({
   card: { type: Object, required: true },
   /** 这一列的状态色（看板按列传入，2026-11-02） */
   color: { type: String, default: '#5B6470' },
+  /**
+   * 是否显示"还剩几天 / 超期几天"（2026-11-10）。
+   *
+   * 费用申请看板传 false —— 使用方的原话是「待提单 / 待验收 / 已验收，这个不存在超期」。
+   * 把日期留着当普通信息（明细里仍显示要求到货日），但**不着色、不算急慢**。
+   */
+  showDue: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['open', 'open-row'])
@@ -107,6 +114,7 @@ function toneClass(tone) {
 
 /** 明细行右端那个到货日：**逐条**按自己的急慢着色，口径仍走 dueLabel（后端算的） */
 function rowDueClass(row) {
+  if (!props.showDue) return 'text-slate-500'
   return toneClass(dueLabel(row).tone)
 }
 
@@ -138,6 +146,8 @@ const headerMeta = computed(() => `${requesterText.value} · ${requestAge.value}
 
 /** 徽标：只看最急那条 —— 待验收 / 临期 / 部分到货 */
 const badge = computed(() => {
+  // 费用申请：三列本身就是状态，卡片上再挂"临期/待验收"是噪音，而且会违背"没有超期"的约定
+  if (!props.showDue) return null
   const status = String(lead.value.status || '').toUpperCase()
   // 待验收优先展示（2026-11-10）：已到货但还没录验收单，是"下一步要办的事"
   if ((props.card?.rows || []).some((r) => needsAcceptance(r))) {
@@ -146,6 +156,18 @@ const badge = computed(() => {
   if (status === 'DUE_SOON') return { text: '临期', cls: 'bg-brand-50 text-brand-ink' }
   if (status === 'PARTIAL') return { text: '部分到货', cls: 'bg-brand-50 text-brand-ink' }
   return null
+})
+
+/**
+ * 采购单号（2026-11-10，使用方同意）：有就显示，没有就不占位。
+ *
+ * 取组内第一个非空的 —— 同一张 OA 单的采购单号应该一致；不一致说明数据有问题，
+ * 那也不是卡片该仲裁的事（详情里六格并排能看全）。
+ */
+const poLine = computed(() => {
+  const hit = (props.card?.rows || []).find((r) => String(r.poNo || '').trim())
+  if (!hit) return null
+  return { text: String(hit.poNo).trim(), url: String(hit.poUrl || '').trim() }
 })
 
 /** 卡片 aria-label：读屏要能听出"这单有几条料、最急的是哪条" */
@@ -194,6 +216,19 @@ function openRow(row, event) {
           <span v-else class="text-slate-500">无 OA 单号</span>
         </p>
         <p class="mt-0.5 truncate text-[11px] tabular-nums text-slate-500">{{ headerMeta }}</p>
+        <p v-if="poLine" class="mt-0.5 truncate text-[11px] tabular-nums text-slate-500">
+          <a
+            v-if="poLine.url"
+            :href="poLine.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-brand-ink hover:underline"
+            :title="`在 OA 里打开采购单：${poLine.url}`"
+            @click.stop
+            @keydown.stop
+          >采购单 {{ poLine.text }} ↗</a>
+          <span v-else>采购单 {{ poLine.text }}</span>
+        </p>
       </div>
 
       <span
@@ -264,8 +299,11 @@ function openRow(row, event) {
       </ul>
     </div>
 
-    <!-- ③ 这单最早的要求到货日 · 还剩几天 -->
-    <div class="flex items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-[11px]">
+    <!-- ③ 这单最早的要求到货日 · 还剩几天（费用申请不显示：那边没有超期口径） -->
+    <div
+      v-if="showDue"
+      class="flex items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-[11px]"
+    >
       <span class="tabular-nums text-slate-500">最早 {{ md(card.earliestArrival) }}</span>
       <span class="shrink-0 font-medium" :class="dueToneClass">{{ due.text }}</span>
     </div>

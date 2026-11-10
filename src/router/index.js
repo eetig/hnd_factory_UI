@@ -11,6 +11,7 @@ import StockView from '../views/materials/StockView.vue'
 import MaterialMasterView from '../views/materials/MasterView.vue'
 import MaterialImportView from '../views/materials/ImportView.vue'
 import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
+import PurchaseExpenseView from '../views/purchase/PurchaseExpenseView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
 import EquipmentBoardView from '../views/equipment/EquipmentBoardView.vue'
 import VesselView from '../views/equipment/VesselView.vue'
@@ -101,6 +102,17 @@ export const workbenchRoutes = [
   {
     path: '/purchase/entry',
     redirect: { path: '/purchase/board', query: { tab: 'entry' } },
+  },
+  {
+    /*
+     * 费用申请（2026-11-10，变更-182）：资产申购 + 服务采购申请走这一页。
+     * 与采购看板同一套工作台，`scope="expense"` 决定列与请求口径。
+     * 只从顶部页签进 —— 侧栏「采购」仍落采购看板（使用方 Q5 的选择）。
+     */
+    path: '/purchase/expense',
+    name: 'PurchaseExpenseView',
+    component: PurchaseExpenseView,
+    meta: { group: 'purchase', key: 'purchaseExpense', title: '费用申请', perm: ADMIN_PERM },
   },
   {
     /*

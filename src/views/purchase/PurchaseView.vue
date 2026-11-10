@@ -2,6 +2,15 @@
 import PurchaseTrackingPanel from '../../components/PurchaseTrackingPanel.vue'
 
 /*
+ * `orderTypes` / `defaultOrderType`：费用申请页复用这张台账时，把范围锁成 ZCSG + FWCGSQ
+ * （2026-11-10）。不传就是采购工作台原样，行为不变。
+ */
+defineProps({
+  orderTypes: { type: Array, default: () => [] },
+  defaultOrderType: { type: String, default: '' },
+})
+
+/*
  * 采购需求详情（原 WorkOrderList.vue 的 `purchase` 页签）。
  *
  * 面板组件现成可用（需求登记 → 下单 → 到货的流水台账），这里只包一层 ——
@@ -12,6 +21,6 @@ import PurchaseTrackingPanel from '../../components/PurchaseTrackingPanel.vue'
 
 <template>
   <div class="flex h-full flex-col">
-    <PurchaseTrackingPanel />
+    <PurchaseTrackingPanel :order-types="orderTypes" :default-order-type="defaultOrderType" />
   </div>
 </template>

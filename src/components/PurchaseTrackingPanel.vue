@@ -43,6 +43,16 @@ import { buildCopyText, copyText, isCopyColumn } from '../utils/clipboard.js'
  * · 分类/单位/必填口径与后端一致；写操作按 `purchase:edit` 显隐（后端还有一层）；
  * · 保存失败**不清理已填内容**（`usePurchaseTracking.savePurchase` 抛错即保留表单）。
  */
+/*
+ * `orderTypes`：这一页只看哪几类单据（2026-11-10）。
+ * 费用申请页传 `['ZCSG','FWCGSQ']`，采购工作台不传 —— 见 composable 的 fixedOrderTypes。
+ * `defaultOrderType`：新增一行时预选的类型（采购 CGSQ / 费用申请 ZCSG）。
+ */
+const props = defineProps({
+  orderTypes: { type: Array, default: () => [] },
+  defaultOrderType: { type: String, default: '' },
+})
+
 const {
   rows,
   total,
@@ -56,7 +66,11 @@ const {
   setPurchasePageSize,
   savePurchase,
   deletePurchase,
+  setFixedOrderTypes,
 } = usePurchaseTracking()
+
+// 页面边界在 setup 里就定下来，早于 onMounted 的第一次请求
+setFixedOrderTypes(props.orderTypes)
 
 const canEdit = computed(() => hasPerm('purchase:edit'))
 
@@ -164,7 +178,8 @@ function blankDraftRow() {
     requiredArrivalDate: '',
     oaNo: '',
     oaUrl: '',
-    orderType: '',
+    // 页面默认类型（采购 CGSQ / 费用申请 ZCSG），人仍可在行内改
+    orderType: props.defaultOrderType || '',
     acceptanceNo: '',
     acceptanceUrl: '',
     poNo: '',

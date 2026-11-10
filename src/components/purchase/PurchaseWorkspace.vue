@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import PurchaseBoard from './PurchaseBoard.vue'
 import PurchaseView from '../../views/purchase/PurchaseView.vue'
@@ -29,6 +29,20 @@ import PurchaseView from '../../views/purchase/PurchaseView.vue'
  * 但两个都一进来就挂又会让首屏多发一次列表请求，所以第一次切过去才挂载
  * （`mountedTabs`），之后只切可见性。
  */
+/*
+ * `scope`（2026-11-10，变更-182）：`purchase` = 采购工作台（原样），
+ * `expense` = 费用申请（看板三列 + 台账只放 ZCSG/FWCGSQ）。
+ * 两页共用同一套组件，靠这一个 prop 分叉，避免复制文件后两边越改越不一样。
+ */
+const props = defineProps({
+  scope: { type: String, default: 'purchase' },
+})
+
+const isExpense = computed(() => props.scope === 'expense')
+
+/** 费用申请管的两类单据，台账与看板共用同一份常量 */
+const EXPENSE_TYPES = ['ZCSG', 'FWCGSQ']
+
 const route = useRoute()
 const router = useRouter()
 
@@ -91,11 +105,15 @@ watch(
     </div>
 
     <div v-show="tab === 'board'" class="flex min-h-0 flex-1 flex-col">
-      <PurchaseBoard v-if="mountedTabs.has('board')" />
+      <PurchaseBoard v-if="mountedTabs.has('board')" :scope="scope" />
     </div>
 
     <div v-show="tab === 'entry'" class="flex min-h-0 flex-1 flex-col">
-      <PurchaseView v-if="mountedTabs.has('entry')" />
+      <PurchaseView
+        v-if="mountedTabs.has('entry')"
+        :order-types="isExpense ? EXPENSE_TYPES : []"
+        :default-order-type="isExpense ? 'ZCSG' : ''"
+      />
     </div>
   </div>
 </template>

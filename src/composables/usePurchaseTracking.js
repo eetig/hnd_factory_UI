@@ -73,6 +73,19 @@ const orderTypeFilter = ref('')
 const acceptedFilter = ref('')
 
 /**
+ * 这一页**只看哪几种单据类型**（2026-11-10，费用申请看板）。
+ *
+ * 空数组 = 不限制（采购工作台）；`['ZCSG','FWCGSQ']` = 费用申请页。
+ * 与 `orderTypeFilter` 不重叠：那是人在筛选条里选的一个值，这是页面本身的边界 ——
+ * 页面边界不能被筛选条改掉，否则费用申请页里能筛出采购申请的行。
+ * 发的是逗号串（`orderTypes=ZCSG,FWCGSQ`），与 `statuses` 同一套写法。
+ */
+const fixedOrderTypes = ref([])
+function setFixedOrderTypes(list) {
+  fixedOrderTypes.value = Array.isArray(list) ? list.filter(Boolean) : []
+}
+
+/**
  * 切换一个状态（多选）。已在里面就移除，不在就加进去。
  * `''`（「全部」chip）表示清空 —— 前端不把「全部」翻译成 6 个值发出去，
  * 那会让请求无谓地变长，也让后端的"空 = 不限"这条语义失去唯一入口。
@@ -111,8 +124,10 @@ function buildQuery(withPaging = true) {
   if (statusFilters.value.length) params.statuses = statusFilters.value.join(',')
   const category = categoryFilter.value
   if (category) params.category = category
+  if (fixedOrderTypes.value.length) params.orderTypes = fixedOrderTypes.value.join(',')
   const orderType = orderTypeFilter.value
-  if (orderType) params.orderType = orderType
+  // 页面已锁定类型时，筛选条里再选单值会互相打架 —— 以页面边界为准
+  if (orderType && !fixedOrderTypes.value.length) params.orderType = orderType
   // '' 表示不过滤；'yes' → 已验收；'no' → 未验收
   if (acceptedFilter.value === 'yes') params.accepted = true
   else if (acceptedFilter.value === 'no') params.accepted = false
@@ -366,6 +381,8 @@ export function usePurchaseTracking() {
     categoryFilter,
   orderTypeFilter,
   acceptedFilter,
+  fixedOrderTypes,
+  setFixedOrderTypes,
     loadPurchase,
     loadSummary,
     loadPurchasePage,

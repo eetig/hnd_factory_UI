@@ -70,6 +70,14 @@ const props = defineProps({
   errorMessage: { type: String, default: '' },
   /** 「在同一张单下再加一条」的预填值（父组件把 mode 切成 create 时一起给） */
   seed: { type: Object, default: null },
+  /**
+   * 新建时的默认单据类型（2026-11-10）。
+   *
+   * 采购看板给 CGSQ、费用申请给 ZCSG —— 使用方 2026-11-10 的要求是
+   * 「新增需求默认类型分开，FWCGSQ 可下拉改」。只在**空表单**里生效：
+   * 编辑已有行、或从某张单点「再加一条」时，类型跟着那张单走。
+   */
+  defaultOrderType: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue', 'save', 'delete', 'add-line'])
@@ -330,6 +338,8 @@ function openForm(row, fromDocket = false) {
   editingRow.value = row
   const seed = row ? null : props.seed || pendingSeed.value || null
   const base = row ? { ...blankDraft(), ...row } : { ...blankDraft(), ...(seed || {}) }
+  // 纯新建（没有行、也没有从某张单带过来的值）才落页面默认类型
+  if (!row && !base.orderType && props.defaultOrderType) base.orderType = props.defaultOrderType
   form.value = base
   snapshot = JSON.stringify(base)
   view.value = 'form'

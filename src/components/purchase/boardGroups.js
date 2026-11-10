@@ -300,3 +300,172 @@ export function groupBoardByOa(rows = []) {
     }
   })
 }
+
+/*
+ * ===== 费用申请看板（2026-11-10，变更-182）=====
+ *
+ * 使用方的分法（原话）：「如果是采购申请，就是在采购看板下。如果是资产申购或是
+ * 服务采购申请，就是在费用申请下」。
+ *
+ * 三列的口径是他逐条定的：
+ *   待提单  没有 OA 单号（还没提）
+ *   待验收  有 OA 单号、验收单号空着 —— **到没到货都算**（他要的是"该去要验收单了"）
+ *   已验收  验收单号非空，只放最近 30 天，更早的折叠成一行提示
+ *
+ * 这三列合起来 = 全部行，不丢任何一条；采购买板里那套「超期」在这里**不存在**
+ * （原话：「待提单 / 待验收 / 已验收，这个不存在超期」），所以列色与卡片都不带急慢语义。
+ */
+export const EXPENSE_COLUMNS = [
+  { key: 'pendingOa', label: '待提单', hint: '还没提交 OA，要人去提单', color: '#4A5A7B' },
+  { key: 'toAccept', label: '待验收', hint: 'OA 已提，验收单还没录', color: '#3F6E6A' },
+  { key: 'accepted', label: '已验收', hint: '验收单已录（近 30 天）', color: '#5B6E4F' },
+]
+
+/** 费用申请 = 资产申购 + 服务采购申请（顺序即新增时的默认值优先顺序） */
+export const EXPENSE_ORDER_TYPES = ['ZCSG', 'FWCGSQ']
+
+/** 已验收列的时间窗口（天） */
+export const EXPENSE_ACCEPTED_WINDOW_DAYS = 30
+
+/**
+ * 从 OA 单号推断单据类型（2026-11-10）。
+ *
+ * 为什么要有：历史数据里有 `order_type` 空着、单号却明明白白带 `CGSQ` 的行。
+ * 使用方 2026-11-10 确认「按单号推断，认不出才归采购」——
+ * 不推断的话这些行会从两个看板里**同时消失**（谁都不认），那是数据静默丢失。
+ */
+export function inferOrderType(oaNo = '') {
+  const s = String(oaNo || '').toUpperCase()
+  if (s.includes('FWCGSQ')) return 'FWCGSQ'
+  if (s.includes('ZCSG')) return 'ZCSG'
+  if (s.includes('CGSQ')) return 'CGSQ'
+  return ''
+}
+
+/** 这条记录真正的类型：填了就用填的，没填就按单号推断（推断不出给空串） */
+export function effectiveOrderType(row = {}) {
+  return String(row.orderType || '').toUpperCase() || inferOrderType(row.oaNo)
+}
+
+/** 把 `2026-10-19` / `2026-10-19T10:00:00` / `2026-10-19 10:00:00` 统一成日期串 */
+function isoDay(value) {
+  const s = String(value || '').trim()
+  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : ''
+}
+
+/** 距今多少天（正 = 过去）。日期非法返回 NaN —— 调用方按「不确定」处理 */
+function daysSince(iso, today = new Date()) {
+  if (!iso) return Number.NaN
+  const [y, m, d] = iso.split('-').map(Number)
+  const a = Date.UTC(y, m - 1, d)
+  const b = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  return Math.round((b - a) / 86400000)
+}
+
+/*
+ * 已验收列的排序与 30 天窗口都用这个日期：**到货日 → 更新时间 → 提出日**。
+ * 库里没有"验收单录入时间"这一列（有单号即已验收，刻意不加冗余列），
+ * 到货日是最接近"这件事办完"的时间；再退就不是时间，只是个兜底。
+ */
+function acceptanceDayOf(row = {}) {
+  return isoDay(row.actualArrivalDate) || isoDay(row.updateTime) || isoDay(row.requestDate)
+}
+
+function idOf(row) {
+  return Number(row?.id) || 0
+}
+
+/** 待提单列：提得越早越靠上（这批单等最久） */
+function byRequestDateAsc(a, b) {
+  const da = isoDay(a.requestDate)
+  const db = isoDay(b.requestDate)
+  if (da !== db) {
+    if (!da) return 1
+    if (!db) return -1
+    return da < db ? -1 : 1
+  }
+  return idOf(a) - idOf(b)
+}
+
+/** 待验收列：要求到货日早的靠上（该来的先到），没填的排最后 */
+function byArrivalAsc(a, b) {
+  const da = isoDay(a.requiredArrivalDate)
+  const db = isoDay(b.requiredArrivalDate)
+  if (da !== db) {
+    if (!da) return 1
+    if (!db) return -1
+    return da < db ? -1 : 1
+  }
+  return idOf(a) - idOf(b)
+}
+
+/** 已验收列：最近办完的靠上 */
+function byAcceptedDesc(a, b) {
+  const da = acceptanceDayOf(a)
+  const db = acceptanceDayOf(b)
+  if (da !== db) {
+    if (!da) return 1
+    if (!db) return -1
+    return da > db ? -1 : 1
+  }
+  return idOf(b) - idOf(a)
+}
+
+/**
+ * 费用申请：分三列 + 已验收 30 天窗口。
+ *
+ * @param {Array<object>} rows 采购行（VO）
+ * @param {Date} [today] 注入"今天"，便于单测
+ * @returns {{ columns: Array<{key,label,hint,color,cards,cardCount,rowCount}>, staleCount: number }}
+ *          `staleCount` = 已验收但早于窗口的**条数**（不是卡片数），界面底部用它提示
+ */
+export function groupExpenseBoardByOa(rows = [], today = new Date()) {
+  const pending = []
+  const toAccept = []
+  const accepted = []
+  let staleCount = 0
+
+  for (const row of rows || []) {
+    const oa = String(row?.oaNo || '').trim()
+    if (!oa) {
+      pending.push(row)
+      continue
+    }
+    if (!String(row?.acceptanceNo || '').trim()) {
+      toAccept.push(row)
+      continue
+    }
+    const age = daysSince(acceptanceDayOf(row), today)
+    // 日期不可解析（NaN）也算"近期"：宁可多显示一条，也不要因为脏数据把已办完的藏起来
+    if (Number.isFinite(age) && age > EXPENSE_ACCEPTED_WINDOW_DAYS) {
+      staleCount += 1
+      continue
+    }
+    accepted.push(row)
+  }
+
+  /** 先按 OA 合并，再按各列自己的口径排（行序与卡序都要重排） */
+  function cardsOf(list, rowCmp) {
+    return groupCardsByOa(list)
+      .map((card) => {
+        const sorted = card.rows.slice().sort(rowCmp)
+        return { ...card, rows: sorted, lead: sorted[0] }
+      })
+      .sort((a, b) => rowCmp(a.lead, b.lead))
+  }
+
+  const definitions = [
+    { ...EXPENSE_COLUMNS[0], cards: cardsOf(pending, byRequestDateAsc) },
+    { ...EXPENSE_COLUMNS[1], cards: cardsOf(toAccept, byArrivalAsc) },
+    { ...EXPENSE_COLUMNS[2], cards: cardsOf(accepted, byAcceptedDesc) },
+  ]
+
+  return {
+    columns: definitions.map((col) => ({
+      ...col,
+      cardCount: col.cards.length,
+      rowCount: col.cards.reduce((sum, card) => sum + card.count, 0),
+    })),
+    staleCount,
+  }
+}

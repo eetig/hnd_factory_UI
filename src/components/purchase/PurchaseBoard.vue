@@ -5,7 +5,14 @@ import request from '../../api/request'
 import { hasPerm } from '../../api/auth'
 import PurchaseCard from './PurchaseCard.vue'
 import PurchaseDetailDrawer from './PurchaseDetailDrawer.vue'
-import { BOARD_COLUMNS, OPEN_STATUSES, groupBoardByOa, needsAcceptance } from './boardGroups.js'
+import {
+  BOARD_COLUMNS,
+  EXPENSE_ORDER_TYPES,
+  OPEN_STATUSES,
+  groupBoardByOa,
+  groupExpenseBoardByOa,
+  needsAcceptance,
+} from './boardGroups.js'
 import { savePurchase, deletePurchase, usePurchaseTracking } from '../../composables/usePurchaseTracking.js'
 
 /*
@@ -36,6 +43,21 @@ const { saving } = usePurchaseTracking()
  *    不再单独请求 summary —— 两个数字对不上（一个含已到货、一个不含）比没有数字更糟。
  */
 
+/*
+ * `scope`：这一个看板管哪一批单据（2026-11-10，变更-182）。
+ *
+ *   purchase 采购看板 → 四列（待提单/等货/超期/已到货），默认只看未到货
+ *   expense  费用申请 → 三列（待提单/待验收/已验收），没有"超期"，全量拉（要看到已验收）
+ *
+ * 两个页签共用这一个组件：列定义、请求口径、开关显隐都按 scope 分叉，
+ * 而不是复制一份文件 —— 复制之后"改一处忘一处"是必然的。
+ */
+const props = defineProps({
+  scope: { type: String, default: 'purchase' },
+})
+
+const isExpense = computed(() => props.scope === 'expense')
+
 const rows = ref([])
 const loading = ref(false)
 const loadError = ref('')
@@ -54,8 +76,13 @@ async function loadBoard() {
   loadError.value = ''
   try {
     const params = { pageNum: 1, pageSize: 200 }
-    // 默认只看未到货；勾了"显示已到货"就不带 statuses（= 不限）
-    if (!showArrived.value) params.statuses = OPEN_STATUSES.join(',')
+    if (isExpense.value) {
+      // 费用申请：只拉这两类单据，且**不按状态筛** —— 已验收列要的正是"已到货/已办完"的行
+      params.orderTypes = EXPENSE_ORDER_TYPES.join(',')
+    } else if (!showArrived.value) {
+      // 采购看板默认只看未到货；勾了"显示已到货"就不带 statuses（= 不限）
+      params.statuses = OPEN_STATUSES.join(',')
+    }
     const res = await request.get('/api/purchase/list', { params })
     if (mine !== seq) return
     if (res.data?.success === false) {
@@ -83,16 +110,33 @@ const boardRows = computed(() =>
   onlyToAccept.value ? rows.value.filter((r) => needsAcceptance(r)) : rows.value,
 )
 
-const columns = computed(() => groupBoardByOa(boardRows.value))
+/** 费用申请的三列 + 30 天窗口外的条数（纯函数在 boardGroups 里，单测钉住口径） */
+const expenseGroups = computed(() => groupExpenseBoardByOa(rows.value))
+const columns = computed(() =>
+  isExpense.value ? expenseGroups.value.columns : groupBoardByOa(boardRows.value),
+)
 
 /**
  * 关掉「显示已到货」时，已到货那一列**永远为空**（那些状态根本没请求）——
  * 留一个空列白占 1/4 宽度是纯浪费，所以它跟着开关一起消失。
  */
-const visibleColumns = computed(() =>
-  showArrived.value ? columns.value : columns.value.filter((c) => c.key !== 'arrived'),
-)
+const visibleColumns = computed(() => {
+  if (isExpense.value) return columns.value
+  return showArrived.value ? columns.value : columns.value.filter((c) => c.key !== 'arrived')
+})
 const totalShown = computed(() => rows.value.length)
+
+/** 费用申请：已验收里更早的条数（界面底部提示，别让人以为记录丢了） */
+const staleAccepted = computed(() => (isExpense.value ? expenseGroups.value.staleCount : 0))
+
+/** 栅格列数跟着可见列走：3 列时用 xl:grid-cols-3，4 列时才用 4 */
+const gridClass = computed(() => {
+  const n = visibleColumns.value.length
+  if (n <= 1) return 'grid-cols-1'
+  if (n === 2) return 'grid-cols-1 md:grid-cols-2'
+  if (n === 3) return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+  return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4'
+})
 
 /**
  * 切换「待验收」筛选（2026-11-10）。
@@ -212,12 +256,19 @@ onMounted(loadBoard)
          条件越多越看不见东西；要筛就去录入页。 -->
     <div class="mb-3 flex shrink-0 flex-wrap items-center gap-3">
       <p class="text-sm text-slate-600">
-        共 <span class="font-semibold tabular-nums text-slate-900">{{ totalShown }}</span> 条待处理
-        <span class="text-slate-500">（{{ BOARD_COLUMNS.map((c) => c.label).join(' / ') }}）</span>
+        <template v-if="isExpense">
+          共 <span class="font-semibold tabular-nums text-slate-900">{{ totalShown }}</span> 条
+          <span class="text-slate-500">（{{ columns.map((c) => c.label).join(' / ') }}）</span>
+        </template>
+        <template v-else>
+          共 <span class="font-semibold tabular-nums text-slate-900">{{ totalShown }}</span> 条待处理
+          <span class="text-slate-500">（{{ BOARD_COLUMNS.map((c) => c.label).join(' / ') }}）</span>
+        </template>
       </p>
 
-      <!-- 待验收胶囊：点一下只看已到货但还没录验收单的卡片 -->
+      <!-- 待验收胶囊：点一下只看已到货但还没录验收单的卡片（费用申请自带"待验收"列，不需要） -->
       <button
+        v-if="!isExpense"
         type="button"
         class="rounded-md border px-2.5 py-1 text-xs transition-colors"
         :class="onlyToAccept ? 'border-transparent bg-brand-ink text-white' : 'border-line bg-raised text-slate-700 hover:border-slate-400'"
@@ -228,6 +279,7 @@ onMounted(loadBoard)
       </button>
 
       <label
+        v-if="!isExpense"
         class="flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1 text-xs text-slate-700"
       >
         <input
@@ -259,7 +311,12 @@ onMounted(loadBoard)
       </button>
 
       <!-- 页签就在上面，不用再教人去哪个页面（2026-11-10 并页后简化） -->
-      <span v-if="!showArrived" class="text-xs text-slate-500">默认只看未到货</span>
+      <span v-if="!isExpense && !showArrived" class="text-xs text-slate-500">默认只看未到货</span>
+
+      <!-- 费用申请：已验收只展开近 30 天，更早的给一句交代，别让人以为记录丢了 -->
+      <span v-if="isExpense && staleAccepted" class="text-xs text-slate-500">
+        另有 {{ staleAccepted }} 条更早的已验收，去「录入 / 历史」看
+      </span>
     </div>
 
     <p
@@ -270,10 +327,7 @@ onMounted(loadBoard)
     </p>
 
     <!-- 四列：列内自己滚，页面不滚（与汇总页的定高方子一致） -->
-    <div
-      class="grid min-h-0 flex-1 grid-cols-1 gap-3 md:grid-cols-2"
-      :class="showArrived ? 'xl:grid-cols-4' : 'xl:grid-cols-3'"
-    >
+    <div class="grid min-h-0 flex-1 gap-3" :class="gridClass">
       <section
         v-for="col in visibleColumns"
         :key="col.key"
@@ -315,6 +369,7 @@ onMounted(loadBoard)
             :key="card.key"
             :card="card"
             :color="col.color"
+            :show-due="!isExpense"
             @open="openCard(card.lead)"
             @open-row="openCard($event)"
           />
@@ -334,6 +389,7 @@ onMounted(loadBoard)
       :mode="drawerMode"
       :row="drawerRow"
       :seed="drawerSeed"
+      :default-order-type="isExpense ? 'ZCSG' : 'CGSQ'"
       :can-edit="canEdit"
       :saving="saving"
       :error-message="drawerMessage"
