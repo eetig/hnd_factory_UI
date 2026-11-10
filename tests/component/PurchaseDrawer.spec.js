@@ -99,6 +99,20 @@ async function fillLine(index, { requester, name, quantity }) {
   if (quantity !== undefined) await cell('数量', index).setValue(quantity)
 }
 
+/** 链接小窗是 append-to-body 的（生产里主弹窗有 transform，不传送会被裁），所以从 body 上找 */
+function bodyButton(text) {
+  return Array.from(document.body.querySelectorAll('button')).find(
+    (b) => b.textContent.replace(/\s/g, '') === text,
+  )
+}
+
+async function setNativeValue(el, value) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  setter.call(el, value)
+  el.dispatchEvent(new Event('input', { bubbles: true }))
+  await nextTick()
+}
+
 beforeEach(() => {
   vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm')
 })
@@ -168,6 +182,39 @@ describe('新增：一张 OA 单 = 一张台账', () => {
     await clickButton('保存整单')
     expect(wrapper.emitted('save'), '必填没齐却把单存了').toBeFalsy()
     expect(wrapper.text()).toContain('第 1 行数量空着')
+  })
+
+  it('链接不占表头：点单号右边的「链接」填一次，整单每行都带上', async () => {
+    await open()
+    const chip = wrapper
+      .findAll('button')
+      .find((b) => b.attributes('aria-label') === '给这张单加 OA 链接')
+    expect(chip, 'OA 单号右边没有链接按钮').toBeTruthy()
+    await chip.trigger('click')
+    await flushPromises()
+
+    // 小窗里只有一个网址输入框
+    const urlInput = document.body.querySelector('input[aria-label="链接地址"]')
+    expect(urlInput, '点了链接按钮没有弹出填地址的小窗').toBeTruthy()
+    await setNativeValue(urlInput, 'https://ekp.example.com/km/review/1')
+
+    const save = bodyButton('存下来')
+    expect(save, '小窗没有「存下来」').toBeTruthy()
+    save.click()
+    await flushPromises()
+
+    // 存完按钮变实心（aria-label 改口），说明这个字段真有值了
+    expect(
+      wrapper.findAll('button').some((b) => b.attributes('aria-label') === 'OA 链接已填，点击修改'),
+      '链接存下来后按钮没有变成已填状态',
+    ).toBe(true)
+
+    await fillLine(1, { requester: '洪旭', name: '乙炔', quantity: '1' })
+    await clickButton('保存整单')
+    const payload = wrapper.emitted('save')?.[0]?.[0]
+    expect(payload.rows[0].oaUrl, '链接没有跟着整单交出去').toBe(
+      'https://ekp.example.com/km/review/1',
+    )
   })
 
   it('默认单据类型按页面给（费用申请默认 ZCSG）', async () => {

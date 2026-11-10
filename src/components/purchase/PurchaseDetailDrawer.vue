@@ -244,6 +244,50 @@ const header = ref({
   acceptanceUrl: '',
 })
 
+/**
+ * 链接小窗：三个链接字段共用一个小弹窗。
+ * 使用方要的是「单号留在桌面上，链接点开再填」——所以在单号框右边挂一个小按钮，
+ * 不占表头格子，也让表头能塞进一行四格。
+ */
+const linkDialog = ref({ open: false, field: '', label: '', hint: '', draft: '' })
+
+function openLink(field, label, hint = '') {
+  linkDialog.value = {
+    open: true,
+    field,
+    label,
+    hint,
+    draft: String(header.value[field] || ''),
+  }
+}
+
+function saveLink() {
+  const { field } = linkDialog.value
+  if (!field) return
+  const value = String(linkDialog.value.draft || '').trim()
+  if (value && !/^https?:\/\//i.test(value)) {
+    ElMessage.warning('链接要以 http:// 或 https:// 开头')
+    return
+  }
+  header.value[field] = value
+  linkDialog.value.open = false
+}
+
+function clearLink() {
+  const { field } = linkDialog.value
+  if (field) header.value[field] = ''
+  linkDialog.value.open = false
+}
+
+function openLinkTarget() {
+  const value = String(linkDialog.value.draft || '').trim()
+  if (!/^https?:\/\//i.test(value)) {
+    ElMessage.warning('链接要以 http:// 或 https:// 开头')
+    return
+  }
+  window.open(value, '_blank', 'noopener')
+}
+
 /** 表体：一条物料一行。`id` 有值 = 库里已存在；`key` 只给 v-for 用 */
 const lines = ref([])
 /** 每行的错误提示，索引对齐 lines */
@@ -621,7 +665,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
   <el-dialog
     :model-value="modelValue"
     :append-to-body="appendToBody"
-    width="min(1440px, 98vw)"
+    width="min(1560px, 98vw)"
     top="5vh"
     :close-on-press-escape="false"
     :close-on-click-modal="false"
@@ -852,10 +896,20 @@ defineExpose({ resetForNextEntry, afterLineAdded })
 
       <!-- ══════════ 可编辑台账 ══════════ -->
       <div v-else class="flex flex-col gap-3">
-        <!-- 抬头：整单只一份的字段。两行横排，一个字段一个格子，不占整行 -->
+        <!--
+          抬头：整单只一份的字段。**一行四格**，链接不占格子。
+
+          使用方反馈（2026-11-10，变更-185）：「怎么多了个 OA 单号和链接，这个不要……
+          想办法换个方式输入 OA 链接，比如输入 OA 单号后弹出一个编辑输入框输入链接，
+          这样既简洁又能空出更多空间。」
+
+          所以三个链接（OA / 采购单 / 验收单）都收进每个单号框右边的小「链接」按钮：
+          填过的按钮变实心，鼠标悬停能看见地址；点开是一个只装一个网址输入框的小窗。
+          单号本身留在桌面上 —— 那是认单的东西，不能藏。
+        -->
         <section class="rounded-md border border-line bg-region/40 p-2.5">
           <div class="grid grid-cols-12 gap-2">
-            <label class="col-span-4 block">
+            <label class="col-span-3 block">
               <span class="mb-0.5 block text-[11px] text-slate-500">OA 单号</span>
               <el-input
                 v-model="header.oaNo"
@@ -864,19 +918,23 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 aria-label="OA 单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
-              />
+              >
+                <template #suffix>
+                  <button
+                    type="button"
+                    class="link-chip"
+                    :class="{ 'is-on': header.oaUrl }"
+                    :title="header.oaUrl || '给这张单加一个 OA 链接'"
+                    :aria-label="header.oaUrl ? 'OA 链接已填，点击修改' : '给这张单加 OA 链接'"
+                    @click.prevent.stop="openLink('oaUrl', 'OA 链接', '在 OA 里能直接打开这张单')"
+                  >
+                    链接
+                  </button>
+                </template>
+              </el-input>
             </label>
-            <label class="col-span-4 block">
-              <span class="mb-0.5 block text-[11px] text-slate-500">OA 链接</span>
-              <el-input
-                v-model="header.oaUrl"
-                size="small"
-                placeholder="粘贴后可直接点开"
-                aria-label="OA 表单链接"
-                :disabled="!canEdit"
-              />
-            </label>
-            <label class="col-span-4 block">
+
+            <label class="col-span-3 block">
               <span class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
                 单据类型
                 <button
@@ -911,26 +969,30 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               <el-input
                 v-model="header.poNo"
                 size="small"
-                placeholder="OA 采购订单"
+                placeholder="OA 采购订单号"
                 aria-label="采购单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
-              />
+              >
+                <template #suffix>
+                  <button
+                    type="button"
+                    class="link-chip"
+                    :class="{ 'is-on': header.poUrl }"
+                    :title="header.poUrl || '给采购单加一个链接'"
+                    :aria-label="header.poUrl ? '采购单链接已填，点击修改' : '给采购单加链接'"
+                    @click.prevent.stop="openLink('poUrl', '采购单链接', '采购订单在 OA 里的地址')"
+                  >
+                    链接
+                  </button>
+                </template>
+              </el-input>
             </label>
+
             <label class="col-span-3 block">
-              <span class="mb-0.5 block text-[11px] text-slate-500">采购单链接</span>
-              <el-input
-                v-model="header.poUrl"
-                size="small"
-                placeholder="粘贴后可直接点开"
-                aria-label="采购单链接"
-                :disabled="!canEdit"
-              />
-            </label>
-            <label class="col-span-3 block">
-              <span class="mb-0.5 block text-[11px] text-slate-500">
-                验收单号
-                <span v-if="header.orderType === 'CGSQ'" class="text-slate-500">（CGSQ 一般没有）</span>
+              <span class="mb-0.5 flex items-baseline gap-1 text-[11px] text-slate-500">
+                <span>验收单号</span>
+                <span v-if="header.orderType === 'CGSQ'" class="text-slate-500">CGSQ 一般没有</span>
               </span>
               <el-input
                 v-model="header.acceptanceNo"
@@ -939,41 +1001,44 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 aria-label="验收单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
-              />
-            </label>
-            <label class="col-span-3 block">
-              <span class="mb-0.5 block text-[11px] text-slate-500">验收单链接</span>
-              <el-input
-                v-model="header.acceptanceUrl"
-                size="small"
-                placeholder="粘贴后可直接点开"
-                aria-label="验收单链接"
-                :disabled="!canEdit"
-              />
+              >
+                <template #suffix>
+                  <button
+                    type="button"
+                    class="link-chip"
+                    :class="{ 'is-on': header.acceptanceUrl }"
+                    :title="header.acceptanceUrl || '给验收单加一个链接'"
+                    :aria-label="header.acceptanceUrl ? '验收单链接已填，点击修改' : '给验收单加链接'"
+                    @click.prevent.stop="openLink('acceptanceUrl', '验收单链接', '验收单在 OA 里的地址')"
+                  >
+                    链接
+                  </button>
+                </template>
+              </el-input>
             </label>
           </div>
         </section>
 
         <!-- 表体：一条物料一行 -->
         <div class="overflow-x-auto rounded-md border border-line">
-          <table class="w-full min-w-[1300px] table-fixed border-collapse text-left">
+          <table class="w-full min-w-[1516px] table-fixed border-collapse text-left">
             <colgroup>
               <col style="width: 34px" />
-              <col style="width: 84px" />
-              <col style="width: 116px" />
-              <col />
+              <col style="width: 88px" />
+              <col style="width: 112px" />
+              <col style="width: 180px" />
               <col style="width: 104px" />
-              <col style="width: 156px" />
-              <col style="width: 66px" />
-              <col style="width: 74px" />
-              <col style="width: 92px" />
-              <col style="width: 122px" />
-              <col style="width: 118px" />
-              <col style="width: 66px" />
-              <col style="width: 118px" />
+              <col style="width: 150px" />
+              <col style="width: 64px" />
+              <col style="width: 72px" />
+              <col style="width: 88px" />
               <col style="width: 120px" />
-              <col style="width: 74px" />
-              <col style="width: 32px" />
+              <col style="width: 112px" />
+              <col style="width: 60px" />
+              <col style="width: 112px" />
+              <col style="width: 110px" />
+              <col style="width: 76px" />
+              <col style="width: 34px" />
             </colgroup>
             <thead>
               <tr class="bg-region text-[11px] tracking-wide text-slate-500">
@@ -1248,9 +1313,71 @@ defineExpose({ resetForNextEntry, afterLineAdded })
       </div>
     </template>
   </el-dialog>
+
+  <!-- 链接小窗：只装一个网址输入框 -->
+  <el-dialog
+    v-model="linkDialog.open"
+    :append-to-body="true"
+    width="min(520px, 92vw)"
+    :title="linkDialog.label || '链接'"
+    class="link-dialog"
+  >
+    <p v-if="linkDialog.hint" class="mb-2 text-xs text-slate-500">{{ linkDialog.hint }}</p>
+    <el-input
+      v-model="linkDialog.draft"
+      size="small"
+      placeholder="https://…"
+      aria-label="链接地址"
+      @keyup.enter="saveLink"
+    />
+    <p class="mt-2 text-xs text-slate-500">
+      贴一次就够了：这张单下的每一行都用同一个链接。
+    </p>
+    <template #footer>
+      <div class="flex items-center justify-between">
+        <button
+          type="button"
+          class="text-xs text-slate-500 underline decoration-dotted hover:text-slate-900"
+          @click="clearLink"
+        >
+          清掉
+        </button>
+        <div class="flex items-center gap-2">
+          <el-button size="small" :disabled="!linkDialog.draft" @click="openLinkTarget">先打开看看</el-button>
+          <el-button size="small" type="primary" @click="saveLink">存下来</el-button>
+        </div>
+      </div>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
+/* 单号框右边的小链接按钮：没填是描边，填了变实心，一眼看出这张单挂没挂链接 */
+.link-chip {
+  margin-left: 2px;
+  border: 1px solid var(--line, #eaeaea);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #5b6472;
+  background: #fff;
+  white-space: nowrap;
+}
+.link-chip:hover {
+  border-color: #111;
+  color: #111;
+}
+.link-chip.is-on {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+.link-chip:focus-visible {
+  outline: 2px solid #111;
+  outline-offset: 1px;
+}
+
 .purchase-dialog :deep(.el-dialog__body) {
   overscroll-behavior: contain;
 }

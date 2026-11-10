@@ -164,17 +164,6 @@ function openCreate() {
   drawerOpen.value = true
 }
 
-/**
- * 在弹出单据里点「再加一条需求」（2026-11-10，变更-181）。
- *
- * 抽屉自己会开表单，这里只切 mode + 记预填值；不关弹窗、不清 row ——
- * 人是从这张单上点出来的，关掉再开就丢了上下文。
- */
-function handleAddLine(seed) {
-  drawerSeed.value = seed || null
-  drawerMode.value = 'create'
-  drawerMessage.value = ''
-}
 
 /**
  * 整单保存（2026-11-10，变更-184）。
@@ -379,7 +368,6 @@ onMounted(loadBoard)
       :error-message="drawerMessage"
       @save="handleSave"
       @delete="handleDelete"
-      @add-line="handleAddLine"
     />
   </div>
 </template>

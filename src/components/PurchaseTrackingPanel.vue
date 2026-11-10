@@ -316,18 +316,6 @@ function openDetail(row) {
   drawerOpen.value = true
 }
 
-/**
- * 在单据视图里点「再加一条需求」（2026-11-10，变更-181）。
- *
- * 抽屉自己已经把表单开好了（它还留着一份 pendingSeed 兜底），这里只做两件事：
- * 把 mode 切成 create（保存时才会走"新建"分支），把预填值记下来给父组件回填。
- * 不关弹窗 —— 人是从这张单里点出来的，关掉再开等于让他重新找这张单。
- */
-function handleAddLine(seed) {
-  drawerSeed.value = seed || null
-  drawerMode.value = 'create'
-  drawerMessage.value = ''
-}
 
 /** 必填口径与后端一致（界面先拦一次少一趟往返，后端拦住才是真的拦住） */
 function requiredProblem(source) {
@@ -885,7 +873,6 @@ onMounted(loadPurchase)
       :error-message="drawerMessage"
       @save="handleSave"
       @delete="handleDelete"
-      @add-line="handleAddLine"
     />
   </section>
 </template>
