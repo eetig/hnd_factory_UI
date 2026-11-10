@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElButton, ElImage, ElInput, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
+import { ElButton, ElDatePicker, ElImage, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { hasPerm } from '../api/auth'
+import { UNIT_OPTIONS } from './purchase/fields.js'
 import { STATUS_ROW_TONE, STATUS_TONE } from '../constants/statusTones'
 import {
   isStoredImage,
@@ -65,6 +66,8 @@ const { orderedColumns } = usePurchaseColumns()
 const drawerOpen = ref(false)
 const drawerMode = ref('edit')
 const drawerRow = ref(null)
+/** 「在一张已有的 OA 单下补一条」的预填值（抽屉从单据视图点「再加一条需求」时给） */
+const drawerSeed = ref(null)
 const drawerMessage = ref('')
 
 
@@ -150,7 +153,7 @@ function blankDraftRow() {
   return {
     __key: `draft-${draftSeq}`,
     requester: '',
-    requestDate: todayIso(),
+    requestDate: '',
     materialName: '',
     materialCode: '',
     spec: '',
@@ -159,12 +162,45 @@ function blankDraftRow() {
     quantity: '',
     unit: '',
     requiredArrivalDate: '',
+    oaNo: '',
+    oaUrl: '',
     orderType: '',
     acceptanceNo: '',
     acceptanceUrl: '',
     poNo: '',
     poUrl: '',
     remark: '',
+  }
+}
+
+/**
+ * 本批默认值（2026-11-10）。
+ *
+ * 一张 OA 单通常就是一批采购（5 条物料、同一个需求人、同一天提出、同一个用途）。
+ * 让人把需求人/日期/用途/单号填 5 遍，是这张表最没必要的重复劳动。
+ *
+ * 口径：**行里留空就继承这里，填了就以行为准** —— 一批里偶尔混着两张单，
+ * 那就把那一行的单号改掉，其余照旧继承。
+ */
+const batchDefaults = ref({
+  requester: '',
+  requestDate: todayIso(),
+  purpose: '',
+  oaNo: '',
+  orderType: '',
+})
+
+/** 把本批默认值填进这一行（不改原对象：失败留在表里的行还得保持用户填的样子） */
+function withBatchDefaults(d) {
+  const inherit = (key) =>
+    (d[key] ?? '').toString().trim() || (batchDefaults.value[key] ?? '').toString().trim()
+  return {
+    ...d,
+    requester: inherit('requester'),
+    requestDate: inherit('requestDate'),
+    purpose: inherit('purpose'),
+    oaNo: inherit('oaNo'),
+    orderType: inherit('orderType'),
   }
 }
 
@@ -223,31 +259,23 @@ async function saveAllDrafts() {
   const keep = []
   let okCount = 0
   for (const d of draftRows.value) {
-    const problem = draftProblem(d)
+    // 先合本批默认值，再校验：需求人/日期可能只在表头填了一次
+    const row = withBatchDefaults(d)
+    const problem = draftProblem(row)
     if (problem) {
       draftErrors.value[d.__key] = problem
       keep.push(d)
       continue
     }
     try {
-      await savePurchase({
-        requester: d.requester.trim(),
-        requestDate: d.requestDate,
-        materialName: d.materialName.trim(),
-        materialCode: d.materialCode.trim(),
-        spec: d.spec.trim(),
-        purpose: d.purpose.trim(),
-        category: d.category,
-        quantity: Number(d.quantity),
-        unit: d.unit.trim(),
-        requiredArrivalDate: d.requiredArrivalDate || null,
-        orderType: d.orderType || null,
-        acceptanceNo: d.acceptanceNo.trim() || null,
-        acceptanceUrl: d.acceptanceUrl.trim() || null,
-        poNo: d.poNo.trim() || null,
-        poUrl: d.poUrl.trim() || null,
-        remark: d.remark.trim(),
-      })
+      /*
+       * 整行丢给 savePurchase，不再手写字段清单（2026-11-10）。
+       *
+       * 上一版在这里又抄了一遍字段名，结果漏了 oaNo/oaUrl —— 和 buildPurchasePayload
+       * 漏字段是同一类事故：不报错、只是安静地不存。白名单应该只有
+       * buildPurchasePayload 一处。
+       */
+      await savePurchase(row)
       okCount += 1
     } catch (e) {
       draftErrors.value[d.__key] = e?.response?.data?.msg || e?.message || '保存失败'
@@ -268,8 +296,22 @@ async function saveAllDrafts() {
 function openDetail(row) {
   drawerMode.value = 'edit'
   drawerRow.value = row
+  drawerSeed.value = null
   drawerMessage.value = ''
   drawerOpen.value = true
+}
+
+/**
+ * 在单据视图里点「再加一条需求」（2026-11-10，变更-181）。
+ *
+ * 抽屉自己已经把表单开好了（它还留着一份 pendingSeed 兜底），这里只做两件事：
+ * 把 mode 切成 create（保存时才会走"新建"分支），把预填值记下来给父组件回填。
+ * 不关弹窗 —— 人是从这张单里点出来的，关掉再开等于让他重新找这张单。
+ */
+function handleAddLine(seed) {
+  drawerSeed.value = seed || null
+  drawerMode.value = 'create'
+  drawerMessage.value = ''
 }
 
 /** 必填口径与后端一致（界面先拦一次少一趟往返，后端拦住才是真的拦住） */
@@ -341,6 +383,18 @@ async function handleSave(payload) {
      * 编辑仍然关：改一条就是一条。
      */
     if (drawerMode.value === 'create') {
+      /*
+       * 两种情况分开（2026-11-10，变更-181）：
+       *   · 从「新增」进来 → 老口径：不关抽屉、清物料、接着录下一条
+       *   · 从某张单据的「再加一条需求」进来 → 回那张单，让他看见新加的那一行
+       */
+      if (drawerSeed.value) {
+        drawerMessage.value = ''
+        ElMessage.success('已保存，加进这张单了')
+        drawerMode.value = 'edit'
+        await drawerRef.value?.afterLineAdded?.()
+        return
+      }
       drawerRef.value?.resetForNextEntry?.()
       drawerMessage.value = ''
       ElMessage.success('已保存，接着录下一条（物料已清空）')
@@ -361,11 +415,15 @@ async function handleSave(payload) {
 async function handleDelete(row) {
   if (!row) return
   try {
-    await ElMessageBox.confirm(`删除「${row.materialName}」这条采购需求？`, '删除确认', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
+    await ElMessageBox.confirm(
+      `删除「${row.oaNo ? row.oaNo + ' · ' : ''}${row.materialName}」？删除后不可恢复，送货单图片也会一起删掉。`,
+      '删除确认',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    )
   } catch {
     return
   }
@@ -401,6 +459,55 @@ onMounted(loadPurchase)
       <!-- 筛选条：一行不换行（内部只有 chips 那段可横滚） -->
       <div class="mt-2.5">
         <PurchaseFilterBar />
+      </div>
+
+      <!--
+        本批默认值（2026-11-10）：一张 OA 单通常就是一批，需求人/日期/用途/单号填一遍就够。
+        行里留空 = 用这里的值；填了以行为准（一批里混两张单时改那一行即可）。
+      -->
+      <div
+        v-if="canEdit && draftRows.length"
+        class="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-line bg-region/50 px-3 py-2"
+      >
+        <span class="shrink-0 text-xs font-medium text-slate-600">本批默认</span>
+        <el-input
+          v-model="batchDefaults.requester"
+          size="small"
+          placeholder="需求人"
+          aria-label="本批需求人"
+          class="!w-[110px]"
+        />
+        <el-date-picker
+          v-model="batchDefaults.requestDate"
+          type="date"
+          value-format="YYYY-MM-DD"
+          size="small"
+          placeholder="提出日期"
+          aria-label="本批提出需求日期"
+          class="!w-[140px]"
+        />
+        <el-input
+          v-model="batchDefaults.purpose"
+          size="small"
+          placeholder="用途"
+          aria-label="本批用途"
+          class="!w-[120px]"
+        />
+        <el-input
+          v-model="batchDefaults.oaNo"
+          size="small"
+          placeholder="OA 单号"
+          aria-label="本批 OA 单号"
+          class="!w-[150px]"
+        />
+        <el-input
+          v-model="batchDefaults.orderType"
+          size="small"
+          placeholder="单据类型"
+          aria-label="本批单据类型"
+          class="!w-[120px]"
+        />
+        <span class="text-[11px] text-slate-500">行里留空 ＝ 用这里的值</span>
       </div>
     </div>
 
@@ -467,6 +574,30 @@ onMounted(loadPurchase)
               <td v-else-if="col.key === 'acceptanceNo'" class="px-3 py-2">
                 <el-input v-model="d.acceptanceNo" size="small" placeholder="验收单号" aria-label="验收单号" />
                 <el-input v-model="d.acceptanceUrl" size="small" placeholder="验收单链接" aria-label="验收单链接" class="mt-1" />
+              </td>
+              <td v-else-if="col.key === 'quantity'" class="px-3 py-2">
+                <!--
+                  数量与单位必须同格（2026-11-10）：单位是必填，但历史上**没有**「单位」这一列，
+                  于是批量录入时会卡在「单位必填」而无处可填 —— 只能整批放弃改走抽屉。
+                -->
+                <div class="flex items-center gap-1">
+                  <el-input
+                    v-model="d.quantity"
+                    size="small"
+                    placeholder="数量"
+                    aria-label="数量"
+                    class="!w-[60px]"
+                  />
+                  <el-select
+                    v-model="d.unit"
+                    size="small"
+                    placeholder="单位"
+                    aria-label="单位"
+                    class="!w-[64px]"
+                  >
+                    <el-option v-for="u in UNIT_OPTIONS" :key="u" :label="u" :value="u" />
+                  </el-select>
+                </div>
               </td>
               <td v-else class="px-3 py-2">
                 <el-input
@@ -678,12 +809,13 @@ onMounted(loadPurchase)
             </template>
           </tr>
 
-          <tr v-if="!rows.length">
+          <!-- 有新草稿行时不再说「还没有记录」：那行就在上面，再喊空是自相矛盾 -->
+          <tr v-if="!rows.length && !draftRows.length">
             <td
               :colspan="orderedColumns.length"
               class="px-4 py-10 text-center text-sm text-slate-500"
             >
-              {{ loading ? '正在加载…' : '还没有采购需求记录 —— 点右上「新增需求」就能记一条' }}
+              {{ loading ? '正在加载…' : '还没有采购需求记录 —— 点上方「新增一行」就能记一条' }}
             </td>
           </tr>
         </tbody>
@@ -714,15 +846,17 @@ onMounted(loadPurchase)
     </div>
 
     <PurchaseDetailDrawer
-    ref="drawerRef"
+      ref="drawerRef"
       v-model="drawerOpen"
       :mode="drawerMode"
       :row="drawerRow"
+      :seed="drawerSeed"
       :can-edit="canEdit"
       :saving="saving"
       :error-message="drawerMessage"
       @save="handleSave"
       @delete="handleDelete"
+      @add-line="handleAddLine"
     />
   </section>
 </template>

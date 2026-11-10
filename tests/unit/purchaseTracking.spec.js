@@ -83,6 +83,11 @@ describe('采购需求详情数据层', () => {
         'requiredArrivalDate',
         'oaNo',
         'oaUrl',
+        'orderType',
+        'acceptanceNo',
+        'acceptanceUrl',
+        'poNo',
+        'poUrl',
         'deliveryNote',
         'receivedQuantity',
         'actualArrivalDate',
@@ -141,14 +146,24 @@ describe('采购需求详情数据层', () => {
     expect('keyword' in params).toBe(false)
     expect('startDate' in params).toBe(false)
 
-    keyword.value = ' 硅粉 '
+    // 只有日期：日期照发
     rangeStart.value = '2026-10-01'
     rangeEnd.value = '2026-10-31'
     await loadPurchase()
     params = request.get.mock.calls.at(-1)[1].params
-    expect(params.keyword).toBe('硅粉')
     expect(params.startDate).toBe('2026-10-01')
     expect(params.endDate).toBe('2026-10-31')
+
+    /*
+     * 有关键字时**丢掉日期区间**（2026-11-10）：
+     * 搜关键字是"我知道要找哪条"，再掐在默认的近三个月里会变成"明明有却搜不到"。
+     */
+    keyword.value = ' 硅粉 '
+    await loadPurchase()
+    params = request.get.mock.calls.at(-1)[1].params
+    expect(params.keyword).toBe('硅粉')
+    expect('startDate' in params).toBe(false)
+    expect('endDate' in params).toBe(false)
   })
 
   it('loadPurchase：成功才写 rows/total/pageNum', async () => {

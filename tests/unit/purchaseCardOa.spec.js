@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /*
- * 采购看板卡片的静态约束（2026-10-23；变更-166 加 OA，变更-167 可点跳转，变更-168 一 OA 一卡）。
+ * 采购看板卡片的静态约束（2026-10-23；变更-166 加 OA，变更-167 可点跳转，变更-168 一 OA 一卡，
+ * 变更-180 卡面改成「一张 OA 单 = 一张台账」：明细行必须带齐使用方点名的七件事）。
  *
  * 这个文件钉的是"改回去就会复发"的三类问题：
  *   ① 卡片上的 OA 单号：必须有，且能点开 EKP（三态：有链接 / 只有单号 / 都没有）
@@ -60,6 +61,32 @@ describe('采购看板卡片：OA 单号与跳转', () => {
     expect(src).not.toContain('hover:shadow-card')
     expect(src).toContain('.purchase-card:hover')
     expect(src).toContain('box-shadow: inset')
+  })
+
+  it('明细行七件事都在：提出日期 / 名称 / 编码 / 规格 / 用途 / 到货 / 需求人', () => {
+    /*
+     * 2026-11-10（变更-180）使用方的原话：「每张卡片的不同之处是 OA 单号。一张 OA 单号
+     * 对应多条物料需求。比如 提出日期-物料名称-物料编码-规格型号-用途-要求到货日期-需求人」。
+     * 起因是他每隔一段时间提一张 OA，那张单收的是**不同人、不同时间**的需求 ——
+     * 卡上要能直接读出"这一单里都装了什么"，而不是只知道"这单很急"。
+     *
+     * 钉源码而不是挂载后查文本：这七件事分别落在两行、两个 grid 单元里，
+     * 挂载断言要写一堆选择器，改版时最先碎的就是它。这里只钉"字段被读到了"。
+     */
+    const src = read(CARD)
+    for (const field of [
+      'row.requestDate',
+      'row.materialName',
+      'row.materialCode',
+      'row.spec',
+      'row.purpose',
+      'row.requiredArrivalDate',
+      'row.requester',
+    ]) {
+      expect(src, `卡面丢了 ${field}`).toContain(field)
+    }
+    // 表头只出现一次（每行都重复一遍表头就不叫表了）
+    expect(src.match(/>提出</g)?.length || 0).toBe(1)
   })
 
   it('一张卡可以装多条物料：超过 4 条折叠', () => {

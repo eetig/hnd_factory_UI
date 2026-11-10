@@ -135,4 +135,68 @@ describe('采购看板', () => {
     // 抽屉打开后，DOM 里会出现抽屉的标题区（含"保存"按钮）
     expect(document.body.innerHTML + wrapper.html()).toContain('保存')
   })
+
+  /*
+   * 2026-11-10：看板补了「新增」入口 —— 以前想登记只能切到录入页，
+   * 看到缺料还得换页，是使用方这次要把两页并回一页的直接原因。
+   */
+  it('点「＋ 新增需求」开的是新建抽屉（不是编辑某条）', async () => {
+    const wrapper = await mountBoard()
+    const addBtn = wrapper.findAll('button').find((b) => b.text().includes('新增需求'))
+    expect(addBtn).toBeTruthy()
+    await addBtn.trigger('click')
+    await nextTick()
+    expect(document.body.textContent).toContain('新增采购需求')
+  })
+
+  /*
+   * 2026-11-10 事故回归：抽屉里填的单据类型 / 验收单 / 采购单，保存时被白名单丢掉。
+   *
+   * 看板这一层只负责「原样往下传」，错不在它 —— 但整条链是从这里开始的，
+   * 所以在这里钉一句：抽屉交出来的 payload，POST 体里必须一项不少。
+   */
+  it('抽屉保存 → POST 体里带着单据类型与验收单（白名单漏字段的回归）', async () => {
+    const wrapper = await mountBoard()
+    wrapper.findComponent({ name: 'PurchaseDetailDrawer' }).vm.$emit('save', {
+      ...ROWS[0],
+      orderType: 'ZCSG',
+      acceptanceNo: 'YS-001',
+      poNo: 'PO-001',
+    })
+    await flushPromises()
+
+    const post = request.post.mock.calls.find(([u]) => u === '/api/purchase/save')
+    expect(post, '保存没有发出去').toBeTruthy()
+    const body = post[1]
+    expect(body.orderType).toBe('ZCSG')
+    expect(body.acceptanceNo).toBe('YS-001')
+    expect(body.poNo).toBe('PO-001')
+  })
+
+  /*
+   * 删除是物理删除（后端 deleteById，连送货单图片一起删，没有回收站）。
+   * 所以"先问一句"必须真的发生 —— 这条守的是"不能点一下就删"。
+   */
+  it('删除先弹确认：取消就不发请求，确认才真删', async () => {
+    const { ElMessageBox } = await import('element-plus')
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue('cancel')
+
+    const wrapper = await mountBoard()
+    wrapper.findComponent({ name: 'PurchaseDetailDrawer' }).vm.$emit('delete', ROWS[0])
+    await flushPromises()
+
+    expect(confirmSpy).toHaveBeenCalled()
+    // 文案里要能看出删的是哪条，且写明不可恢复
+    const text = confirmSpy.mock.calls.at(-1)[0]
+    expect(text).toContain('电磁隔膜计量泵')
+    expect(text).toContain('不可恢复')
+    expect(request.delete).not.toHaveBeenCalled()
+
+    // 确认之后才发 DELETE
+    confirmSpy.mockResolvedValue('confirm')
+    wrapper.findComponent({ name: 'PurchaseDetailDrawer' }).vm.$emit('delete', ROWS[0])
+    await flushPromises()
+    expect(request.delete).toHaveBeenCalledWith('/api/purchase/delete', { params: { id: 1 } })
+    confirmSpy.mockRestore()
+  })
 })

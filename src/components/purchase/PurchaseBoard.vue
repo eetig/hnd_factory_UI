@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 import { hasPerm } from '../../api/auth'
 import PurchaseCard from './PurchaseCard.vue'
@@ -117,6 +117,8 @@ function toggleArrived() {
 const drawerOpen = ref(false)
 const drawerMode = ref('edit')
 const drawerRow = ref(null)
+/** 「在一张已有的 OA 单下补一条」的预填值（票据视图 → 再加一条需求） */
+const drawerSeed = ref(null)
 const drawerMessage = ref('')
 
 function openCard(row) {
@@ -124,6 +126,32 @@ function openCard(row) {
   drawerRow.value = row
   drawerMessage.value = ''
   drawerOpen.value = true
+}
+
+/**
+ * 从看板直接新增一条（2026-11-10）。
+ *
+ * 抽屉本来就支持 create（与录入页共用），这里只是给它一个入口 —— 以前想新建
+ * 只能去「采购录入」，所以看板上「看」和「填」是断开的：看到缺料，还得换页。
+ */
+function openCreate() {
+  drawerMode.value = 'create'
+  drawerRow.value = null
+  drawerSeed.value = null
+  drawerMessage.value = ''
+  drawerOpen.value = true
+}
+
+/**
+ * 在弹出单据里点「再加一条需求」（2026-11-10，变更-181）。
+ *
+ * 抽屉自己会开表单，这里只切 mode + 记预填值；不关弹窗、不清 row ——
+ * 人是从这张单上点出来的，关掉再开就丢了上下文。
+ */
+function handleAddLine(seed) {
+  drawerSeed.value = seed || null
+  drawerMode.value = 'create'
+  drawerMessage.value = ''
 }
 
 async function handleSave(payload) {
@@ -144,6 +172,21 @@ async function handleSave(payload) {
 }
 
 async function handleDelete(row) {
+  /*
+   * 删除确认（2026-11-10）。原来这里**没有**二次确认 —— 抽屉里点一下红色按钮
+   * 就直接物理删除了（后端是 deleteById，连送货单图片一起删，没有回收站）。
+   * 文案带上单号与物料名：删除是不可恢复的，至少让人在按下去之前看清楚删的是哪条。
+   */
+  const label = row.oaNo ? `${row.oaNo} · ${row.materialName}` : row.materialName
+  try {
+    await ElMessageBox.confirm(
+      `删除「${label}」？删除后不可恢复，送货单图片也会一起删掉。`,
+      '删除确认',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch {
+    return // 点了取消/关闭：什么都不做
+  }
   try {
     await deletePurchase(row.id)
     drawerOpen.value = false
@@ -205,9 +248,18 @@ onMounted(loadBoard)
         {{ loading ? '刷新中…' : '刷新' }}
       </button>
 
-      <span v-if="!showArrived" class="text-xs text-slate-500">
-        默认只看未到货；历史记录请到「采购录入」
-      </span>
+      <!-- 新增：从看板直接开一张空抽屉（2026-11-10）。没有 purchase:edit 的人看不到 -->
+      <button
+        v-if="canEdit"
+        type="button"
+        class="rounded-md bg-brand-ink px-3 py-1 text-xs font-medium text-white transition hover:opacity-90 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:ring-offset-1 focus-visible:outline-none"
+        @click="openCreate"
+      >
+        ＋ 新增需求
+      </button>
+
+      <!-- 页签就在上面，不用再教人去哪个页面（2026-11-10 并页后简化） -->
+      <span v-if="!showArrived" class="text-xs text-slate-500">默认只看未到货</span>
     </div>
 
     <p
@@ -281,11 +333,13 @@ onMounted(loadBoard)
       v-model="drawerOpen"
       :mode="drawerMode"
       :row="drawerRow"
+      :seed="drawerSeed"
       :can-edit="canEdit"
       :saving="saving"
       :error-message="drawerMessage"
       @save="handleSave"
       @delete="handleDelete"
+      @add-line="handleAddLine"
     />
   </div>
 </template>

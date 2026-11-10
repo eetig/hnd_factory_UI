@@ -72,19 +72,13 @@ export const NAV_ITEMS = [
   { key: 'master', label: '物料主数据', path: '/materials/master', group: 'materials' },
   { key: 'import', label: '物料导入', path: '/materials/import', perm: ADMIN_PERM, group: 'materials' },
   { key: 'stock', label: '物料查询', path: '/materials', group: 'materials' },
-  // 采购两页（变更-148）：看板在前 —— 进「采购」先看"今天要催谁"，
-  // 录入是低频动作，排在后面。两页平级，不是同一页的两个 Tab（各有自己的数据视角）。
+  // 采购一页（变更-148 拆两页 → 2026-11-10 并回一页两个页签）：
+  // 看板与录入/历史在同一个页面里切，导航只留一条 —— 两个菜单指向同一块内容
+  // 只会让人以为这是两套数据。
   {
     key: 'purchaseBoard',
     label: '采购看板',
     path: '/purchase/board',
-    perm: ADMIN_PERM,
-    group: 'purchase',
-  },
-  {
-    key: 'purchase',
-    label: '采购录入',
-    path: '/purchase/entry',
     perm: ADMIN_PERM,
     group: 'purchase',
   },
@@ -212,7 +206,9 @@ export function canSeeNavItem(item) {
  * 写操作一律 admin。**两边必须同时改**，否则要么数据公开、要么点进去满屏 403。
  */
 const PUBLIC_KEYS = new Set(['stock', 'vessel'])
-const ADMIN_KEYS = new Set(['purchase', 'equipment'])
+// 2026-11-10：「采购录入」并进「采购看板」之后，key 只剩 purchaseBoard —— 这里没跟着改，
+// 普通用户点采购会从"需管理员"退回"需注册"，然后被后端 403（界面说去注册，实际要管理员）。
+const ADMIN_KEYS = new Set(['purchaseBoard', 'equipment'])
 
 /** `available` = 现在就能用；`locked` = 看得见，点一下提示（提示语按 needAdmin 区分） */
 export function navItemState(item) {

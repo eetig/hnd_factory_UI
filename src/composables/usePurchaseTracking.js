@@ -38,9 +38,23 @@ const pageNum = ref(1)
 const pageSize = ref(10)
 /** 关键字：模糊匹配 需求人/物料名称/物料编码/规格型号/OA 单号/送货单号 */
 const keyword = ref('')
-/** 提出需求日期区间（yyyy-MM-dd，空串 = 不限） */
-const rangeStart = ref('')
-const rangeEnd = ref('')
+/**
+ * 提出需求日期区间（yyyy-MM-dd，空串 = 不限）。
+ *
+ * 2026-11-10：默认给「近三个月」而不是空。空区间的意思是「从第一条到最后一条」，
+ * 现在表里只有几十条看不出区别，一年后它会变成一次全表扫描 + 一页 10 条的结果，
+ * 使用者要滑到底才知道自己看到的是什么时候的数据。要看更早的，把起止日期清掉即可；
+ * 搜关键字时这两个值不参与查询（见 buildQuery 的说明）。
+ */
+const pad2 = (n) => String(n).padStart(2, '0')
+const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+const isoMonthsAgo = (months) => {
+  const d = new Date()
+  d.setMonth(d.getMonth() - months)
+  return isoOf(d)
+}
+const rangeStart = ref(isoMonthsAgo(3))
+const rangeEnd = ref(isoOf(new Date()))
 /**
  * 派生状态筛选**多选**（PENDING_OA/WAITING/DUE_SOON/OVERDUE/ARRIVED/PARTIAL；空数组 = 不限）。
  *
@@ -81,10 +95,19 @@ function buildQuery(withPaging = true) {
   }
   const kw = keyword.value.trim()
   if (kw) params.keyword = kw
-  const start = rangeStart.value
-  if (start) params.startDate = start
-  const end = rangeEnd.value
-  if (end) params.endDate = end
+  /*
+   * 有关键字时**不带日期区间**（2026-11-10）。
+   *
+   * 搜关键字是「我知道要找哪条，帮我捞出来」，这时候再把结果掐在近三个月里，
+   * 表现就是「明明有这条，搜不到」—— 比不搜更糟。日期区间是浏览时的默认视野，
+   * 不是搜索的约束条件。
+   */
+  if (!kw) {
+    const start = rangeStart.value
+    if (start) params.startDate = start
+    const end = rangeEnd.value
+    if (end) params.endDate = end
+  }
   if (statusFilters.value.length) params.statuses = statusFilters.value.join(',')
   const category = categoryFilter.value
   if (category) params.category = category
@@ -305,6 +328,18 @@ export function buildPurchasePayload(draft) {
     requiredArrivalDate: date(draft.requiredArrivalDate),
     oaNo: text(draft.oaNo),
     oaUrl: text(draft.oaUrl),
+    /*
+     * 下面 5 个字段 2026-11-10 补上。
+     *
+     * 后端 `PurchaseTrackingSaveDTO` 一直有它们，抽屉里也能填，但这份白名单漏了两处
+     * （这里 + 录入页的草稿行），表现是「单据类型/验收单号/PO 号填了，保存后没了」——
+     * 不报错，只是安静地丢字段，所以一直没人发现。
+     */
+    orderType: text(draft.orderType),
+    acceptanceNo: text(draft.acceptanceNo),
+    acceptanceUrl: text(draft.acceptanceUrl),
+    poNo: text(draft.poNo),
+    poUrl: text(draft.poUrl),
     deliveryNote: text(draft.deliveryNote),
     receivedQuantity: decimal(draft.receivedQuantity),
     actualArrivalDate: date(draft.actualArrivalDate),

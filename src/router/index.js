@@ -10,7 +10,6 @@ import InboundList from '../views/orders/InboundList.vue'
 import StockView from '../views/materials/StockView.vue'
 import MaterialMasterView from '../views/materials/MasterView.vue'
 import MaterialImportView from '../views/materials/ImportView.vue'
-import PurchaseView from '../views/purchase/PurchaseView.vue'
 import PurchaseBoardView from '../views/purchase/PurchaseBoardView.vue'
 import EquipmentView from '../views/equipment/EquipmentView.vue'
 import EquipmentBoardView from '../views/equipment/EquipmentBoardView.vue'
@@ -85,12 +84,10 @@ export const workbenchRoutes = [
   },
   {
     /*
-     * 采购拆成两页（变更-148，2026-10-22）：
-     *   /purchase/board  看板 —— 四列、只看未到货，"今天该催谁"
-     *   /purchase/entry  录入 —— 原来那张 10 列表，擅长填不擅长读
-     *
-     * `/purchase` 保留成**重定向**，不是简单改路径：抽屉/收藏里已有的 `/purchase`
-     * 链接（以及后端日志里的 referer）都还会打到这里，404 是最难解释的那种故障。
+     * 采购（变更-148 拆两页 → 2026-11-10 并回一页两个页签）：
+     *   /purchase/board  看板页签（默认）
+     *   /purchase/entry  已并入工作台，保留成重定向 —— 旧书签、后端日志里的 referer、
+     *                    以及使用方按肌肉记忆敲出来的地址都还会打到这里，404 最难解释。
      */
     path: '/purchase',
     redirect: '/purchase/board',
@@ -103,9 +100,7 @@ export const workbenchRoutes = [
   },
   {
     path: '/purchase/entry',
-    name: 'PurchaseView',
-    component: PurchaseView,
-    meta: { group: 'purchase', key: 'purchase', title: '采购录入', perm: ADMIN_PERM },
+    redirect: { path: '/purchase/board', query: { tab: 'entry' } },
   },
   {
     /*

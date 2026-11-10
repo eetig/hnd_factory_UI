@@ -31,17 +31,18 @@ import { computed, ref } from 'vue'
 export const DEFAULT_COLUMNS = [
   { key: 'index', label: '序号', width: 'w-[56px]' },
   { key: 'status', label: '进度', width: 'w-[92px]' },
-  { key: 'materialName', label: '物料名称', width: 'w-[196px]' },
-  { key: 'spec', label: '规格型号', width: 'w-[136px]' },
-  { key: 'category', label: '类别', width: 'w-[76px]' },
-  { key: 'quantity', label: '数量', width: 'w-[92px]', align: 'right' },
+  { key: 'materialName', label: '物料名称', width: 'w-[172px]' },
+  { key: 'spec', label: '规格型号', width: 'w-[120px]' },
+  { key: 'category', label: '类别', width: 'w-[72px]' },
+  // 2026-11-10：数量格内并排放「单位」下拉（单位是必填，但从来没有单独一列可填）
+  { key: 'quantity', label: '数量', width: 'w-[152px]', align: 'right' },
   { key: 'requiredArrivalDate', label: '要求到货日期', width: 'w-[116px]' },
   { key: 'requester', label: '需求人', width: 'w-[84px]' },
   // 2026-11-10（使用方选 A）：验收单默认可见，因为他要在表格里直接填单号与链接。
   // 2026-11-10 追加：使用方要求「采购单 + 验收单」两列并存，各存单号与链接。
-  // 10 列合计 1096px（物料名称 -32、规格 -14、验收单 -16 换来的），仍在 1100 预算内。
+  // 10 列合计 1100px（规格 -16、类别 -4、验收单 -12 让出的位置给了数量格内的单位下拉）。
   { key: 'poNo', label: '采购单', width: 'w-[116px]' },
-  { key: 'acceptanceNo', label: '验收单', width: 'w-[132px]' },
+  { key: 'acceptanceNo', label: '验收单', width: 'w-[120px]' },
 ]
 
 /** 可选列（默认关）。顺序 = 勾开后它们出现的顺序 */
