@@ -509,6 +509,23 @@ function fieldsOf(group) {
                 </button>
               </div>
 
+              <!-- 采购单（2026-11-10）：采购申请批完后 OA 那张采购订单。
+                   与下面的验收单各存一份 —— 使用方原话「两列都要」。 -->
+              <div class="space-y-2">
+                <el-input
+                  v-model="form.poNo"
+                  placeholder="采购单号（OA 采购订单）"
+                  aria-label="采购单号"
+                  :disabled="!canEdit"
+                />
+                <el-input
+                  v-model="form.poUrl"
+                  placeholder="采购单链接（粘贴后可直接点开）"
+                  aria-label="采购单链接"
+                  :disabled="!canEdit"
+                />
+              </div>
+
               <div v-if="form.orderType !== 'CGSQ'" class="space-y-2">
                 <el-input
                   v-model="form.acceptanceNo"

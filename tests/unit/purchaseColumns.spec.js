@@ -34,7 +34,7 @@ beforeEach(() => {
 })
 
 describe('默认列', () => {
-  it('默认 9 列，且就是那 9 个 key（顺序即表格顺序）', () => {
+  it('默认 10 列，且就是那 10 个 key（顺序即表格顺序）', () => {
     expect(DEFAULT_VISIBLE_KEYS).toEqual([
       'index',
       'status',
@@ -44,9 +44,10 @@ describe('默认列', () => {
       'quantity',
       'requiredArrivalDate',
       'requester',
+    'poNo',
     'acceptanceNo',
     ])
-    expect(DEFAULT_VISIBLE_KEYS).toHaveLength(9)
+    expect(DEFAULT_VISIBLE_KEYS).toHaveLength(10)
   })
 
   it('每一列都必须有固定宽度（否则列一多就会被压成 0 宽，2026-10-22 的 bug）', () => {
@@ -62,14 +63,14 @@ describe('默认列', () => {
     ).toEqual([])
   })
 
-  it('默认 9 列的宽度合计 ≤ 1100px（1280 视口不横滚的前提）', () => {
+  it('默认 10 列的宽度合计 ≤ 1100px（1280 视口不横滚的前提）', () => {
     const px = (cls) => {
       const m = /w-\[(\d+)px\]/.exec(cls ?? '')
       return m ? Number(m[1]) : 0
     }
     const defs = ALL_COLUMNS.filter((c) => DEFAULT_VISIBLE_KEYS.includes(c.key))
     const fixed = defs.reduce((sum, c) => sum + px(c.width), 0)
-    expect(fixed, `默认 9 列合计 ${fixed}px 已超过预算`).toBeLessThanOrEqual(1100)
+    expect(fixed, `默认 10 列合计 ${fixed}px 已超过预算`).toBeLessThanOrEqual(1100)
   })
 })
 

@@ -46,6 +46,9 @@ export function blankDraft() {
     orderType: '',
     acceptanceNo: '',
     acceptanceUrl: '',
+    // 采购单（2026-11-10）：采购申请批完后 OA 里那张采购订单，与验收单各存一份
+    poNo: '',
+    poUrl: '',
     deliveryNote: '',
     receivedQuantity: '',
     actualArrivalDate: '',

@@ -162,6 +162,8 @@ function blankDraftRow() {
     orderType: '',
     acceptanceNo: '',
     acceptanceUrl: '',
+    poNo: '',
+    poUrl: '',
     remark: '',
   }
 }
@@ -242,6 +244,8 @@ async function saveAllDrafts() {
         orderType: d.orderType || null,
         acceptanceNo: d.acceptanceNo.trim() || null,
         acceptanceUrl: d.acceptanceUrl.trim() || null,
+        poNo: d.poNo.trim() || null,
+        poUrl: d.poUrl.trim() || null,
         remark: d.remark.trim(),
       })
       okCount += 1
@@ -456,6 +460,10 @@ onMounted(loadPurchase)
               <td v-if="col.key === 'index'" class="px-3 py-2 text-xs font-medium text-brand-ink"><div class="flex items-center gap-1">新<button type="button" class="text-rose-700 hover:underline" title="删除这一行" @click="removeDraftRow(d.__key)">✕</button></div><p v-if="draftErrors[d.__key]" class="mt-1 text-[11px] leading-tight text-rose-700" :title="draftErrors[d.__key]">!</p></td>
               <td v-else-if="col.key === 'status'" class="px-3 py-2 text-xs text-slate-500">未保存</td>
               <td v-else-if="col.key === 'deliveryNote' || col.key === 'actualArrival'" class="px-3 py-2 text-xs text-slate-500">—</td>
+              <td v-else-if="col.key === 'poNo'" class="px-3 py-2">
+                <el-input v-model="d.poNo" size="small" placeholder="采购单号" aria-label="采购单号" />
+                <el-input v-model="d.poUrl" size="small" placeholder="采购单链接" aria-label="采购单链接" class="mt-1" />
+              </td>
               <td v-else-if="col.key === 'acceptanceNo'" class="px-3 py-2">
                 <el-input v-model="d.acceptanceNo" size="small" placeholder="验收单号" aria-label="验收单号" />
                 <el-input v-model="d.acceptanceUrl" size="small" placeholder="验收单链接" aria-label="验收单链接" class="mt-1" />
@@ -595,6 +603,13 @@ onMounted(loadPurchase)
                 {{ row.orderType || '—' }}
               </td>
 
+              <td v-else-if="col.key === 'poNo'" class="px-3 py-2">
+                <a v-if="row.poUrl" :href="row.poUrl" target="_blank" rel="noopener noreferrer"
+                  class="block truncate text-[11px] text-brand-ink underline decoration-dotted underline-offset-2"
+                  :title="row.poUrl">{{ row.poNo || '打开采购单' }}</a>
+                <span v-else-if="row.poNo" class="block truncate text-[11px] text-slate-600" :title="row.poNo">{{ row.poNo }}</span>
+                <span v-else class="text-xs text-slate-500">—</span>
+              </td>
               <td v-else-if="col.key === 'acceptanceNo'" class="px-3 py-2">
                 <span class="rounded-full px-2 py-0.5 text-[11px]" :class="row.acceptanceNo ? 'bg-brand-soft text-brand-ink' : 'bg-region text-slate-500'">
                   {{ acceptanceState(row) }}
