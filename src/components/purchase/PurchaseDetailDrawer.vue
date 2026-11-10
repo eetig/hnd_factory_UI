@@ -4,7 +4,7 @@ import {
   ElAutocomplete,
   ElButton,
   ElDatePicker,
-  ElDrawer,
+  ElDialog,
   ElInput,
   ElMessageBox,
   ElOption,
@@ -290,15 +290,20 @@ function fieldsOf(group) {
 </script>
 
 <template>
-  <el-drawer
+  <!--
+    2026-11-10：使用方说"侧边弹窗看不习惯"，改成居中卡片弹窗。
+    宽 min(920px, 94vw)、上边距 6vh；before-close 保留，有未保存改动仍先确认。
+  -->
+  <el-dialog
     :model-value="modelValue"
     :append-to-body="appendToBody"
-    direction="rtl"
-    :size="'min(520px, 100vw)'"
+    width="min(920px, 94vw)"
+    top="6vh"
     :close-on-press-escape="false"
+    :close-on-click-modal="false"
     :before-close="beforeClose"
     :show-close="false"
-    class="purchase-drawer"
+    class="purchase-dialog"
     @update:model-value="(v) => emit('update:modelValue', v)"
   >
     <template #header>
@@ -568,7 +573,7 @@ function fieldsOf(group) {
         </div>
       </div>
     </template>
-  </el-drawer>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -589,7 +594,7 @@ function fieldsOf(group) {
  */
 
 /* 抽屉内滚动不带动页面（全局 style.css 已有一条，这里按组件再兜一次） */
-.purchase-drawer :deep(.el-drawer__body) {
+.purchase-dialog :deep(.el-dialog__body) {
   overscroll-behavior: contain;
 }
 
@@ -605,10 +610,10 @@ function fieldsOf(group) {
  * 只动 opacity / transform（合成层），不动 height / margin —— 前者不触发重排。
  */
 .drawer-enter.is-entering {
-  animation: purchase-drawer-enter 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: purchase-dialog-enter 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes purchase-drawer-enter {
+@keyframes purchase-dialog-enter {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -627,7 +632,7 @@ function fieldsOf(group) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .purchase-drawer :deep(.el-drawer) {
+  .purchase-dialog {
     transition: none;
   }
 }
