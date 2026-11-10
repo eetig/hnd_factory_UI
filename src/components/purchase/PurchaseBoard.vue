@@ -46,7 +46,7 @@ const { saving } = usePurchaseTracking()
  * `scope`：这一个看板管哪一批单据（2026-11-10，变更-182）。
  *
  *   purchase 采购看板 → 四列（待提单/等货/超期/已到货），默认只看未到货
- *   expense  费用申请 → 三列（待提单/待验收/已验收），没有"超期"，全量拉（要看到已验收）
+ *   expense  费用申请 → 三列（待提单/待验收/已关联验收），没有"超期"，全量拉（要看全）
  *
  * 两个页签共用这一个组件：列定义、请求口径、开关显隐都按 scope 分叉，
  * 而不是复制一份文件 —— 复制之后"改一处忘一处"是必然的。
@@ -74,7 +74,7 @@ async function loadBoard() {
   try {
     const params = { pageNum: 1, pageSize: 200 }
     if (isExpense.value) {
-      // 费用申请：只拉这两类单据，且**不按状态筛** —— 已验收列要的正是"已到货/已办完"的行
+      // 费用申请：只拉这两类单据，且**不按状态筛** —— 已关联验收列要的正是"已到货/已办完"的行
       params.orderTypes = EXPENSE_ORDER_TYPES.join(',')
     } else if (!showArrived.value) {
       // 采购看板默认只看未到货；勾了"显示已到货"就不带 statuses（= 不限）
@@ -118,7 +118,7 @@ const visibleColumns = computed(() => {
 })
 const totalShown = computed(() => rows.value.length)
 
-/** 费用申请：已验收里更早的条数（界面底部提示，别让人以为记录丢了） */
+/** 费用申请：已关联验收里更早的条数（界面底部提示，别让人以为记录丢了） */
 const staleAccepted = computed(() => (isExpense.value ? expenseGroups.value.staleCount : 0))
 
 /** 栅格列数跟着可见列走：3 列时用 xl:grid-cols-3，4 列时才用 4 */
@@ -279,9 +279,9 @@ onMounted(loadBoard)
       <!-- 页签就在上面，不用再教人去哪个页面（2026-11-10 并页后简化） -->
       <span v-if="!isExpense && !showArrived" class="text-xs text-slate-500">默认只看未到货</span>
 
-      <!-- 费用申请：已验收只展开近 30 天，更早的给一句交代，别让人以为记录丢了 -->
+      <!-- 费用申请：已关联验收只展开近 30 天，更早的给一句交代，别让人以为记录丢了 -->
       <span v-if="isExpense && staleAccepted" class="text-xs text-slate-500">
-        另有 {{ staleAccepted }} 条更早的已验收，去「录入 / 历史」看
+        另有 {{ staleAccepted }} 条更早的已关联验收，看板只展开近 30 天
       </span>
     </div>
 

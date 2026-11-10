@@ -16,9 +16,9 @@ import {
  *
  * 使用方逐条定的口径，全部钉在这里：
  *   · 采购申请(CGSQ) 留采购看板；资产申购(ZCSG) + 服务采购申请(FWCGSQ) 归这一页
- *   · 三列 = 待提单(没 OA 单号) / 待验收(有单号、验收单号空) / 已验收(验收单号非空)
- *   · 已验收只展开最近 30 天，更早的折叠成一句提示（staleCount）
- *   · 没有"超期"这一列，也不按急慢排序（待提单按提出日、待验收按到货日、已验收按办完日倒序）
+ *   · 三列 = 待提单(没 OA 单号) / 待验收(有单号、验收单号空) / 已关联验收(验收单号非空)
+ *   · 已关联验收只展开最近 30 天，更早的折叠成一句提示（staleCount）
+ *   · 没有"超期"这一列，也不按急慢排序（待提单按提出日、待验收按到货日、已关联验收按办完日倒序）
  *   · 单号带 CGSQ/FWCGSQ/ZCSG 而 order_type 空着的老数据，按单号推断，不能两边都不认
  */
 
@@ -43,12 +43,12 @@ function row(over = {}) {
 }
 
 describe('费用申请：三列口径', () => {
-  it('三列就是待提单 / 待验收 / 已验收，且没有超期列', () => {
-    expect(EXPENSE_COLUMNS.map((c) => c.label)).toEqual(['待提单', '待验收', '已验收'])
+  it('三列就是待提单 / 待验收 / 已关联验收，且没有超期列', () => {
+    expect(EXPENSE_COLUMNS.map((c) => c.label)).toEqual(['待提单', '待验收', '已关联验收'])
     expect(EXPENSE_COLUMNS.some((c) => c.label.includes('超期'))).toBe(false)
   })
 
-  it('没 OA 单号 → 待提单；有单号没验收单号 → 待验收；有验收单号 → 已验收', () => {
+  it('没 OA 单号 → 待提单；有单号没验收单号 → 待验收；有验收单号 → 已关联验收', () => {
     const { columns, staleCount } = groupExpenseBoardByOa(
       [
         row({ id: 1, oaNo: '', orderType: '' }),
@@ -90,7 +90,7 @@ describe('费用申请：三列口径', () => {
   })
 })
 
-describe('费用申请：已验收 30 天窗口', () => {
+describe('费用申请：已关联验收 30 天窗口', () => {
   it('30 天内的留在列里，更早的只计数、不进列', () => {
     const { columns, staleCount } = groupExpenseBoardByOa(
       [

@@ -310,21 +310,21 @@ export function groupBoardByOa(rows = []) {
  * 三列的口径是他逐条定的：
  *   待提单  没有 OA 单号（还没提）
  *   待验收  有 OA 单号、验收单号空着 —— **到没到货都算**（他要的是"该去要验收单了"）
- *   已验收  验收单号非空，只放最近 30 天，更早的折叠成一行提示
+ *   已关联验收  验收单号非空，只放最近 30 天，更早的折叠成一行提示
  *
  * 这三列合起来 = 全部行，不丢任何一条；采购买板里那套「超期」在这里**不存在**
- * （原话：「待提单 / 待验收 / 已验收，这个不存在超期」），所以列色与卡片都不带急慢语义。
+ * （原话：「待提单 / 待验收 / 已验收，这个不存在超期」；2026-11-10 使用方把列名改成「已关联验收」），所以列色与卡片都不带急慢语义。
  */
 export const EXPENSE_COLUMNS = [
   { key: 'pendingOa', label: '待提单', hint: '还没提交 OA，要人去提单', color: '#4A5A7B' },
   { key: 'toAccept', label: '待验收', hint: 'OA 已提，验收单还没录', color: '#3F6E6A' },
-  { key: 'accepted', label: '已验收', hint: '验收单已录（近 30 天）', color: '#5B6E4F' },
+  { key: 'accepted', label: '已关联验收', hint: '验收单已关联（近 30 天）', color: '#5B6E4F' },
 ]
 
 /** 费用申请 = 资产申购 + 服务采购申请（顺序即新增时的默认值优先顺序） */
 export const EXPENSE_ORDER_TYPES = ['ZCSG', 'FWCGSQ']
 
-/** 已验收列的时间窗口（天） */
+/** 已关联验收列的时间窗口（天） */
 export const EXPENSE_ACCEPTED_WINDOW_DAYS = 30
 
 /**
@@ -363,7 +363,7 @@ function daysSince(iso, today = new Date()) {
 }
 
 /*
- * 已验收列的排序与 30 天窗口都用这个日期：**到货日 → 更新时间 → 提出日**。
+ * 已关联验收列的排序与 30 天窗口都用这个日期：**到货日 → 更新时间 → 提出日**。
  * 库里没有"验收单录入时间"这一列（有单号即已验收，刻意不加冗余列），
  * 到货日是最接近"这件事办完"的时间；再退就不是时间，只是个兜底。
  */
@@ -399,7 +399,7 @@ function byArrivalAsc(a, b) {
   return idOf(a) - idOf(b)
 }
 
-/** 已验收列：最近办完的靠上 */
+/** 已关联验收列：最近办完的靠上 */
 function byAcceptedDesc(a, b) {
   const da = acceptanceDayOf(a)
   const db = acceptanceDayOf(b)
@@ -412,12 +412,12 @@ function byAcceptedDesc(a, b) {
 }
 
 /**
- * 费用申请：分三列 + 已验收 30 天窗口。
+ * 费用申请：分三列 + 已关联验收 30 天窗口。
  *
  * @param {Array<object>} rows 采购行（VO）
  * @param {Date} [today] 注入"今天"，便于单测
  * @returns {{ columns: Array<{key,label,hint,color,cards,cardCount,rowCount}>, staleCount: number }}
- *          `staleCount` = 已验收但早于窗口的**条数**（不是卡片数），界面底部用它提示
+ *          `staleCount` = 已关联验收但早于窗口的**条数**（不是卡片数），界面底部用它提示
  */
 export function groupExpenseBoardByOa(rows = [], today = new Date()) {
   const pending = []
