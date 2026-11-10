@@ -37,6 +37,9 @@ export const DEFAULT_COLUMNS = [
   { key: 'quantity', label: '数量', width: 'w-[92px]', align: 'right' },
   { key: 'requiredArrivalDate', label: '要求到货日期', width: 'w-[116px]' },
   { key: 'requester', label: '需求人', width: 'w-[84px]' },
+  // 2026-11-10（使用方选 A）：验收单默认可见，因为他要在表格里直接填单号与链接。
+  // 9 列合计 1042px，仍在 1100 预算内，1280 视口不横滚。
+  { key: 'acceptanceNo', label: '验收单', width: 'w-[148px]' },
 ]
 
 /** 可选列（默认关）。顺序 = 勾开后它们出现的顺序 */
@@ -47,7 +50,6 @@ export const OPTIONAL_COLUMNS = [
   { key: 'oaNo', label: 'OA 单号', width: 'w-[104px]' },
   // 单据类型与验收单（2026-11-09）：CGSQ 无验收单；FWCGSQ / ZCSG 才有
   { key: 'orderType', label: '单据类型', width: 'w-[92px]' },
-  { key: 'acceptanceNo', label: '验收单', width: 'w-[128px]' },
   { key: 'deliveryNote', label: '送货单', width: 'w-[76px]' },
   { key: 'actualArrival', label: '实际到货', width: 'w-[140px]' },
   { key: 'remark', label: '备注', width: 'w-[160px]' },
