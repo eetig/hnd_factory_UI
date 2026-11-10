@@ -16,14 +16,19 @@ import request from '../../src/api/request'
 import PurchaseDetailDrawer from '../../src/components/purchase/PurchaseDetailDrawer.vue'
 
 /**
- * 采购需求抽屉（变更-117 → 变更-181）。
+ * 采购需求弹窗（变更-117 → 变更-181 → 变更-184）。
  *
- * 2026-11-10 起弹窗有**两层**：
- *   docket —— 有 OA 单号时打开先看「这一张单装了什么」（只读台账）
- *   form   —— 点某一行进去改，或从「再加一条需求」进新表单
+ * 使用方原话（2026-11-10）：
  *
- * 所以要守的东西比原来多一条：docket 不能把表单的断言顺手带过去 ——
- * 以前"打开就有输入框"是默认，现在只有从 docket 点进 form 才有。
+ *   「最上面固定信息是 OA 单号，下面就是序号、物料名称、物料编码、规格型号、数量、
+ *     类别、用途、要求到货日期、实际到货数量、实际到货日期、备注、送货单图片。
+ *     为什么要加序号呢，因为一个 OA 单号一般不会只买一种物料。
+ *     所以之前很多输入框占一行就不行，它没必要占一行，太占位置了。」
+ *
+ * 所以这里守三件事：
+ *   1. 台账是**多行**的，一行一条物料，加行/删行不整单重开；
+ *   2. 抬头（OA 单号/类型/采购单/验收单）只填一份，保存时逐行冗余下去；
+ *   3. 只读单据视图（docket）不能漏出输入框，也不能把别的单的明细混进来。
  */
 const ROW = {
   id: 7,
@@ -39,6 +44,10 @@ const ROW = {
   requiredArrivalDate: '2026-10-20',
   oaNo: 'CG-CGSQ-20261022006',
   oaUrl: 'https://ekp.example.com/km/review',
+  poNo: '',
+  poUrl: '',
+  acceptanceNo: '',
+  acceptanceUrl: '',
   deliveryNote: '',
   receivedQuantity: '',
   actualArrivalDate: '',
@@ -62,22 +71,32 @@ async function open(props = {}) {
   await flushPromises()
   await nextTick()
   // 自动聚焦是延迟一帧做的（等焦点陷阱先落位）
-  await new Promise((r) => setTimeout(r, 120))
+  await new Promise((r) => setTimeout(r, 140))
   return wrapper
 }
 
-/** 找抽屉里的按钮（按文案，去掉空白） */
+/** 找弹窗里的按钮（按文案，去掉空白） */
 function buttonByText(text) {
   return wrapper.findAll('button').find((b) => b.text().replace(/\s/g, '') === text)
 }
 
-/** docket 是只读的：要断言表单，得先点这一行的「编辑」进第二层 */
-async function enterForm() {
-  const edit = buttonByText('编辑')
-  expect(edit, '单据视图里没有「编辑」，进不了表单').toBeTruthy()
-  await edit.trigger('click')
+async function clickButton(text) {
+  const btn = wrapper.findAll('button').find((b) => b.text().replace(/\s/g, '').includes(text))
+  expect(btn, `找不到「${text}」按钮`).toBeTruthy()
+  await btn.trigger('click')
   await flushPromises()
   await nextTick()
+}
+
+/** 台账里的某一格（第 n 行，1 起） */
+function cell(label, index = 1) {
+  return wrapper.find(`input[aria-label="第 ${index} 行${label}"]`)
+}
+
+async function fillLine(index, { requester, name, quantity }) {
+  if (requester !== undefined) await cell('需求人', index).setValue(requester)
+  if (name !== undefined) await cell('物料名称', index).setValue(name)
+  if (quantity !== undefined) await cell('数量', index).setValue(quantity)
 }
 
 beforeEach(() => {
@@ -91,37 +110,75 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('新建模式', () => {
-  it('打开即空表，且光标落在物料名称（第三次点击可以省成打字）', async () => {
+describe('新增：一张 OA 单 = 一张台账', () => {
+  it('打开就是一行空白台账，光标落在物料名称（少点一次）', async () => {
     await open()
-    const input = wrapper.find('input[aria-label="物料名称"]')
-    expect(input.exists(), '抽屉里没有物料名称输入框').toBe(true)
+    const input = cell('物料名称')
+    expect(input.exists(), '新建没有物料名称输入框').toBe(true)
     expect(input.element.value).toBe('')
-    expect(document.activeElement, '新建模式没有自动聚焦物料名称').toBe(input.element)
+    expect(document.activeElement, '新建没有自动聚焦物料名称').toBe(input.element)
+    // 提出日期预填今天，省得每次点日期
+    expect(cell('提出需求日期').element.value).toBeTruthy()
   })
 
-  it('在输入框里回车 → 直接提交（不用点保存）', async () => {
+  it('加一行 → 表里多一行，序号跟着变', async () => {
     await open()
-    await wrapper.find('input[aria-label="需求人"]').setValue('李四')
-    await wrapper.find('input[aria-label="物料名称"]').setValue('乙炔')
-    await wrapper.find('input[aria-label="物料名称"]').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.findAll('tbody tr').length).toBe(1)
 
-    const saved = wrapper.emitted('save')
-    expect(saved, '回车没有触发保存').toBeTruthy()
-    expect(saved[0][0]).toMatchObject({ requester: '李四', materialName: '乙炔' })
+    await clickButton('加一行')
+    expect(wrapper.findAll('tbody tr').length, '点了加一行没有多出一行').toBe(2)
+    expect(cell('物料名称', 2).element.value).toBe('')
   })
 
-  it('在下拉里回车**不**提交（否则选个类别就把表存了）', async () => {
+  it('整单保存：两行一起交出去，抬头逐行冗余', async () => {
     await open()
-    const select = wrapper.find('.el-select')
-    expect(select.exists()).toBe(true)
-    await select.trigger('keydown', { key: 'Enter' })
-    expect(wrapper.emitted('save')).toBeFalsy()
+    await wrapper.find('input[aria-label="OA 单号"]').setValue('CG-CGSQ-20261110001')
+    await clickButton('加一行')
+    await fillLine(1, { requester: '洪旭', name: '水泵接合器保温罩', quantity: '8' })
+    await fillLine(2, { requester: '章主任', name: '方形吨袋', quantity: '30' })
+
+    await clickButton('保存整单')
+    const payload = wrapper.emitted('save')?.[0]?.[0]
+    expect(payload, '点保存整单没有抛出 save').toBeTruthy()
+    expect(payload.rows.length, '两行没有一起交出去').toBe(2)
+    expect(payload.rows[0]).toMatchObject({
+      oaNo: 'CG-CGSQ-20261110001',
+      requester: '洪旭',
+      materialName: '水泵接合器保温罩',
+      requestDate: expect.any(String),
+    })
+    expect(payload.rows[1].materialName).toBe('方形吨袋')
+    // 每行都要带上抬头，否则后端按行存的时候又得回填一遍
+    expect(payload.rows[1].oaNo).toBe('CG-CGSQ-20261110001')
+  })
+
+  it('有空行（物料名称没填）不保存，且提示第几行', async () => {
+    await open()
+    await clickButton('加一行')
+    await fillLine(1, { requester: '洪旭', name: '乙炔', quantity: '1' })
+    // 第 2 行留空：既不该拦住整单，也不该把空行写进库
+    await clickButton('保存整单')
+    const payload = wrapper.emitted('save')?.[0]?.[0]
+    expect(payload.rows.length, '空行被当成一条需求存进去了').toBe(1)
+  })
+
+  it('缺必填（数量）不让存，并说清是第几行', async () => {
+    await open()
+    await fillLine(1, { requester: '洪旭', name: '乙炔' })
+    await clickButton('保存整单')
+    expect(wrapper.emitted('save'), '必填没齐却把单存了').toBeFalsy()
+    expect(wrapper.text()).toContain('第 1 行数量空着')
+  })
+
+  it('默认单据类型按页面给（费用申请默认 ZCSG）', async () => {
+    await open({ defaultOrderType: 'ZCSG' })
+    const selects = wrapper.findAllComponents({ name: 'ElSelect' })
+    expect(selects.some((c) => c.props('modelValue') === 'ZCSG')).toBe(true)
   })
 })
 
 describe('单据视图（一张 OA 单 = 一张单据）', () => {
-  it('有 OA 单号时打开先给整张单：单号、同单其它明细、单据级单号都在', async () => {
+  it('有 OA 单号时打开先给整张单：同单合并、按提出日期正序、只读', async () => {
     request.get.mockResolvedValueOnce({
       data: {
         success: true,
@@ -134,49 +191,16 @@ describe('单据视图（一张 OA 单 = 一张单据）', () => {
     })
     await open({ mode: 'edit', row: ROW })
 
-    // 抬头是单号本身 —— 这是他认这张单的唯一标识
     expect(wrapper.text()).toContain('CG-CGSQ-20261022006')
-    // 关键字捞回来的结果按单号**全等**过滤：别的单不能混进这张单的台账
+    // 关键字捞回来的结果按单号**全等**过滤：别的单不能混进这张单
     expect(wrapper.text()).not.toContain('别的单的料')
 
     const rows = wrapper.findAll('tbody tr')
     expect(rows.length, '同单两条明细没合并进来').toBe(2)
-    // 按提出日期正序：10-01 在上
     expect(rows[0].text()).toContain('三氯氢硅')
     expect(rows[1].text()).toContain('乙炔')
-
-    // 单据视图里没有表单输入框（只读台账）
+    // 只读台账里一个输入框都没有
     expect(wrapper.findAll('input').length).toBe(0)
-  })
-
-  it('「再加一条需求」→ 把这张单的单号与需求人带给新表单', async () => {
-    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
-    await open({ mode: 'edit', row: ROW })
-
-    await buttonByText('再加一条需求').trigger('click')
-    await flushPromises()
-    await nextTick()
-
-    const seed = wrapper.emitted('add-line')?.[0]?.[0]
-    expect(seed, '没有把预填值抛给父组件').toMatchObject({
-      oaNo: 'CG-CGSQ-20261022006',
-      oaUrl: 'https://ekp.example.com/km/review',
-      requester: '张三',
-    })
-
-    // 表单已经就地打开，且单号是带过来的（不用重填）
-    const oaNo = wrapper.find('input[aria-label="OA 单号"]')
-    expect(oaNo.exists(), '点了「再加一条」没有切到表单').toBe(true)
-    expect(oaNo.element.value).toBe('CG-CGSQ-20261022006')
-
-    // 补完一条要能回到整张单，不能只剩「取消」把人连同单据一起关掉
-    expect(wrapper.text(), '在单里加一条却没有回单据的路').toContain('返回单据')
-    const back = wrapper.findAll('button').find((b) => b.text().includes('返回单据'))
-    expect(back, '回单据的按钮不在').toBeTruthy()
-    await back.trigger('click')
-    await flushPromises()
-    await nextTick()
-    expect(wrapper.text(), '点了返回单据没回到整张单').toContain('再加一条需求')
   })
 
   it('order_type 空着就按单号认类型，不写「单据类型未填」', async () => {
@@ -186,97 +210,123 @@ describe('单据视图（一张 OA 单 = 一张单据）', () => {
     expect(wrapper.text()).not.toContain('单据类型未填')
   })
 
-  it('没有 OA 单号的老数据不伪造单据，直接落表单', async () => {
+  it('没有 OA 单号的老数据不伪造单据，直接落台账', async () => {
     await open({ mode: 'edit', row: { ...ROW, oaNo: '' } })
-    expect(wrapper.find('input[aria-label="需求人"]').exists()).toBe(true)
-    expect(wrapper.text()).not.toContain('再加一条需求')
+    expect(cell('需求人').exists(), '没有 OA 单号时应当直接可编辑').toBe(true)
+    expect(cell('需求人').element.value).toBe('张三')
+    expect(buttonByText('编辑这张单')).toBeFalsy()
   })
 })
 
-describe('编辑模式（从单据点进某一条）', () => {
-  it('点行进表单，字段是这条记录的值', async () => {
+describe('编辑：整张单一起改', () => {
+  it('点「编辑这张单」→ 台账里就是这张单的所有行，抬头带过来', async () => {
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
-    await enterForm()
-    expect(wrapper.find('input[aria-label="需求人"]').element.value).toBe('张三')
-    expect(wrapper.find('input[aria-label="物料名称"]').element.value).toBe('三氯氢硅')
-    // 超期天数由后端给，抽屉只显示
-    expect(wrapper.text()).toContain('超 3 天')
+
+    await clickButton('编辑这张单')
+    expect(wrapper.findAll('tbody tr').length).toBe(1)
+    expect(cell('需求人').element.value).toBe('张三')
+    expect(cell('物料名称').element.value).toBe('三氯氢硅')
+    expect(wrapper.find('input[aria-label="OA 单号"]').element.value).toBe('CG-CGSQ-20261022006')
+    // 从单据进来的，要能回去；不能只剩「取消」把人连单一起关掉
+    expect(wrapper.findAll('button').some((b) => b.text().includes('返回单据'))).toBe(true)
   })
 
-  /*
-   * 2026-11-10 使用方报的 bug：「我保存了单据类型，再次点开就没了」。
-   *
-   * 真因不在抽屉（抽屉一直有这一格），而在保存时的那份字段白名单
-   * `buildPurchasePayload` 漏了 orderType / acceptanceNo / acceptanceUrl / poNo / poUrl ——
-   * 白名单漏字段**不会报错**，后端收到的就是没这两项，于是库里一直空。
-   * 这条守两端：① 编辑打开时行里的 orderType 要装进下拉；② 保存时原样带回去。
-   */
-  it('编辑模式把单据类型装进下拉，保存时原样带回去', async () => {
+  it('删除已有行先确认，确认后把那条抛给父组件', async () => {
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
+    await open({ mode: 'edit', row: ROW })
+    await clickButton('编辑这张单')
+
+    const del = wrapper.find('button[aria-label="删掉第 1 行"]')
+    expect(del.exists(), '台账里没有删除这一行的按钮').toBe(true)
+    await del.trigger('click')
+    await flushPromises()
+
+    expect(ElMessageBox.confirm).toHaveBeenCalled()
+    expect(wrapper.emitted('delete')?.[0]?.[0]).toMatchObject({ id: 7 })
+  })
+
+  it('取消删除确认 → 行还在，不抛 delete', async () => {
+    ElMessageBox.confirm.mockRejectedValueOnce(new Error('cancel'))
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
+    await open({ mode: 'edit', row: ROW })
+    await clickButton('编辑这张单')
+
+    await wrapper.find('button[aria-label="删掉第 1 行"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('delete')).toBeFalsy()
+    expect(wrapper.findAll('tbody tr').length).toBe(1)
+  })
+
+  it('编辑时把单据类型装进下拉，保存时原样带回去', async () => {
+    request.get.mockResolvedValueOnce({
+      data: { success: true, dataList: [{ ...ROW, orderType: 'FWCGSQ' }] },
+    })
     await open({ mode: 'edit', row: { ...ROW, orderType: 'FWCGSQ' } })
-    await enterForm()
+    await clickButton('编辑这张单')
 
     const selects = wrapper.findAllComponents({ name: 'ElSelect' })
     const orderTypeSelect = selects.find((c) => c.props('modelValue') === 'FWCGSQ')
     expect(orderTypeSelect, '打开编辑时单据类型没装进下拉').toBeTruthy()
 
-    await buttonByText('保存').trigger('click')
+    await clickButton('保存整单')
     const saved = wrapper.emitted('save')?.[0]?.[0]
-    expect(saved, '点保存没有抛 save').toBeTruthy()
-    expect(saved.orderType).toBe('FWCGSQ')
-    // 同一份白名单还漏过这两个：验收单与采购单
-    expect(saved).toHaveProperty('acceptanceNo')
-    expect(saved).toHaveProperty('poNo')
-  })
-
-  it('点删除 → 抛给父组件（二次确认在父组件里做）', async () => {
-    await open({ mode: 'edit', row: ROW })
-    await enterForm()
-    const del = buttonByText('删除')
-    expect(del, '编辑模式没有删除按钮').toBeTruthy()
-    await del.trigger('click')
-    expect(wrapper.emitted('delete')?.[0][0]).toMatchObject({ id: 7 })
+    expect(saved.rows[0].orderType).toBe('FWCGSQ')
+    // 白名单漏字段不会报错，只会静默丢数据 —— 这两项以前漏过
+    expect(saved.rows[0]).toHaveProperty('acceptanceNo')
+    expect(saved.rows[0]).toHaveProperty('poNo')
   })
 })
 
 describe('权限', () => {
-  it('无 purchase:edit → 单据只读：没有保存、删除、编辑入口', async () => {
+  it('无 purchase:edit → 单据只读：没有保存、编辑、加行、删除', async () => {
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW, canEdit: false })
-    expect(wrapper.text()).toContain('三氯氢硅')
-    expect(buttonByText('保存'), '无权限时不该出现保存按钮').toBeFalsy()
-    expect(buttonByText('删除'), '无权限时不该出现删除按钮').toBeFalsy()
-    expect(buttonByText('编辑'), '无权限时不该出现编辑入口').toBeFalsy()
-    expect(buttonByText('再加一条需求'), '无权限时不该能往单里加需求').toBeFalsy()
-  })
 
-  it('有权限时保存按钮在（从单据点进去之后）', async () => {
-    await open({ mode: 'edit', row: ROW, canEdit: true })
-    await enterForm()
-    expect(buttonByText('保存')).toBeTruthy()
+    expect(wrapper.text()).toContain('三氯氢硅')
+    expect(buttonByText('保存整单'), '无权限时不该出现保存按钮').toBeFalsy()
+    expect(buttonByText('编辑这张单'), '无权限时不该出现编辑入口').toBeFalsy()
+    expect(buttonByText('加一行')).toBeFalsy()
+    expect(wrapper.find('button[aria-label="删掉第 1 行"]').exists()).toBe(false)
   })
 })
 
 describe('关闭保护', () => {
-  it('改过内容再按 Esc → 先弹确认；用户选"继续编辑"就留在抽屉里', async () => {
+  it('台账里改过内容再按 Esc → 先问一句，选「继续编辑」就留在原地', async () => {
     ElMessageBox.confirm.mockRejectedValueOnce(new Error('cancel'))
-    await open({ mode: 'edit', row: ROW })
-    await enterForm()
-    await wrapper.find('input[aria-label="需求人"]').setValue('王五')
+    await open()
+    await cell('物料名称').setValue('乙炔')
 
-    await wrapper.find('input[aria-label="需求人"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.find('.drawer-enter').trigger('keydown', { key: 'Escape' })
     await flushPromises()
 
     expect(ElMessageBox.confirm).toHaveBeenCalled()
-    // 表单里按 Esc 是"回单据"，不是关窗 —— 无论选什么，弹窗都不该被关掉
     const closed = wrapper.emitted('update:modelValue')
-    expect(closed?.[closed.length - 1]?.[0], '选了继续编辑却把抽屉关了').not.toBe(false)
+    expect(closed?.[closed.length - 1]?.[0], '选了继续编辑却把弹窗关了').not.toBe(false)
   })
 
-  it('单据视图按 Esc → 直接关（只读，没什么可丢的）', async () => {
+  it('只读单据视图按 Esc → 直接关（没东西可丢）', async () => {
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
     await wrapper.find('.drawer-enter').trigger('keydown', { key: 'Escape' })
     await flushPromises()
+
     expect(ElMessageBox.confirm).not.toHaveBeenCalled()
     const closed = wrapper.emitted('update:modelValue')
     expect(closed?.[closed.length - 1]?.[0]).toBe(false)
+  })
+
+  it('从单据进台账后按 Esc → 回单据，不关窗', async () => {
+    request.get.mockResolvedValue({ data: { success: true, dataList: [ROW] } })
+    await open({ mode: 'edit', row: ROW })
+    await clickButton('编辑这张单')
+
+    await wrapper.find('.drawer-enter').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+
+    expect(wrapper.text(), 'Esc 没有回到整张单').toContain('编辑这张单')
+    const closed = wrapper.emitted('update:modelValue')
+    expect(closed?.[closed.length - 1]?.[0], 'Esc 把弹窗关掉了').not.toBe(false)
   })
 })

@@ -379,17 +379,31 @@ function cellClass(row, key) {
   return `cursor-pointer transition-colors ${flashing ? 'bg-region' : 'hover:bg-region'}`
 }
 
-/** 抽屉里点保存（新建与编辑同一个入口，靠 id 有没有值区分） */
+/**
+ * 抽屉里点保存（新建与编辑同一个入口，靠 id 有没有值区分）。
+ *
+ * 2026-11-10（变更-184）抽屉改成「一张 OA 单 = 一张台账」，载荷变成
+ * `{ header, rows }`；这里统一成数组后逐行保存。兼容老的单个对象。
+ */
 async function handleSave(payload) {
-  const problem = requiredProblem(payload)
-  if (problem) {
-    drawerMessage.value = problem
-    ElMessage.error(problem)
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [payload]
+  if (!rows.length) {
+    drawerMessage.value = '没有可保存的行'
+    ElMessage.error(drawerMessage.value)
     return
   }
+  const badIndex = rows.findIndex((row) => requiredProblem(row))
+  if (badIndex >= 0) {
+    drawerMessage.value = `第 ${badIndex + 1} 行：${requiredProblem(rows[badIndex])}`
+    ElMessage.error(drawerMessage.value)
+    return
+  }
+  const wasCreate = drawerMode.value === 'create'
   try {
     // gotoFirstPage：排序是"提出需求日期倒序"，翻在第 2 页时新加的行看不见
-    await savePurchase(payload, { gotoFirstPage: drawerMode.value === 'create' })
+    for (const row of rows) {
+      await savePurchase(row, { gotoFirstPage: wasCreate })
+    }
 
     /*
      * 新建：**不关抽屉**，清掉物料三件套继续录（2026-10-22，变更-142）。

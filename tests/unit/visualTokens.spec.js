@@ -2539,22 +2539,29 @@ const PURCHASE_UI = [
       '采购面板又出现了 el-dialog：使用方明确要求 PC 端不要卡片式弹窗，改成表格第一行直接填、某行原地编辑。',
     ).toBe(false)
 
-    // 变更-117：字段表驱动渲染，物料名称与物料编码**共用同一个 el-autocomplete**
-    // （由 `field.kind` 决定谁出现）。上一版两行各写一遍才是 2 个、加上新增行是 4 个 ——
-    // 数量变少不是功能缩水，恰恰是"只留一份实现"。
+    // 变更-117：物料名称与物料编码必须是远程检索。
+    // 变更-184 起抽屉是「一张 OA 单 = 一张台账」，一行物料里名称与编码**并排两个格子**，
+    // 所以源码里是 2 个 el-autocomplete（以前字段表驱动、二选一出现，只有 1 个）。
+    // 数量从 1 变 2 不是加了一份实现，是两种搜法同时摆在一条行上：按名字搜、按编码搜。
     expect(
       (PURCHASE_UI.match(/<el-autocomplete/g) || []).length,
       '物料名称/物料编码必须是 el-autocomplete 远程检索（普通输入框就没有「实时搜索 + 互相带出」了）',
-    ).toBe(1)
+    ).toBe(2)
     expect(
       PURCHASE_UI.includes('fetchMaterialSuggestions'),
       '两个物料框没有接上防抖远程检索（useMaterialLookup 的 fetchMaterialSuggestions）',
     ).toBe(true)
 
-    // 字段表只留一份（fields.js），抽屉按 DRAWER_GROUPS 分组渲染
+    // 台账化（变更-184）：一条物料一行，列宽由 colgroup 钉住；底部一次交整单。
+    // 这条替代旧的「按 DRAWER_GROUPS 分组渲染」断言 —— 分组表单已经被拆成表格了，
+    // 但「15 个字段平铺成一列、人找不到到货日期」这个毛病仍要防，所以改钉表格骨架。
     expect(
-      PURCHASE_UI.includes('DRAWER_GROUPS'),
-      '抽屉没有按语义分组渲染（15 个字段平铺在一列里，人会找不到到货日期）',
+      PURCHASE_UI.includes('<colgroup'),
+      '台账没有固定列宽（table-fixed + colgroup），序号与物料名两列会随内容抖',
+    ).toBe(true)
+    expect(
+      PURCHASE_UI.includes('保存整单'),
+      '底部没有「保存整单」：整张单要一次交出去，不许退回逐条保存',
     ).toBe(true)
   })
 

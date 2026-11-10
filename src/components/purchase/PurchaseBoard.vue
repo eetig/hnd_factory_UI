@@ -176,16 +176,34 @@ function handleAddLine(seed) {
   drawerMessage.value = ''
 }
 
+/**
+ * 整单保存（2026-11-10，变更-184）。
+ *
+ * 抽屉现在是「一张 OA 单 = 一张台账」，一次交出 `{ header, rows }`：
+ * 抬头（单号/类型/采购单/验收单）已经在抽屉里逐行冗余进每行了，这里只管
+ * 一行一行落后端。仍然是**逐条**调 savePurchase —— 后端是按行存的，
+ * 没有批量接口，也不打算为十来行新开一个（见待办里的取舍）。
+ *
+ * 兼容老的单个对象载荷：老测试与「从别处直接塞一条」的调用还这么用。
+ */
 async function handleSave(payload) {
+  const rows = Array.isArray(payload?.rows) ? payload.rows : [payload]
+  if (!rows.length) return feedback('没有可保存的行')
   // 必填口径与录入页一致（界面先拦一次，后端拦住才是真的拦住）
-  if (!payload.requester?.trim()) return feedback('需求人不能为空')
-  if (!payload.materialName?.trim()) return feedback('物料名称不能为空')
+  const badIndex = rows.findIndex(
+    (row) => !String(row?.requester || '').trim() || !String(row?.materialName || '').trim(),
+  )
+  if (badIndex >= 0) {
+    return feedback(`第 ${badIndex + 1} 行还缺${String(rows[badIndex]?.requester || '').trim() ? '物料名称' : '需求人'}`)
+  }
   try {
-    await savePurchase(payload)
+    for (const row of rows) {
+      await savePurchase(row)
+    }
     drawerOpen.value = false
     drawerRow.value = null
     drawerMessage.value = ''
-    ElMessage.success('已保存')
+    ElMessage.success(rows.length > 1 ? `已保存 ${rows.length} 行` : '已保存')
     await loadBoard()
   } catch (e) {
     drawerMessage.value = `保存失败：${e?.response?.data?.msg || e?.message || '未知错误'}`
