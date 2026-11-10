@@ -11,7 +11,6 @@ import {
   OPEN_STATUSES,
   groupBoardByOa,
   groupExpenseBoardByOa,
-  needsAcceptance,
 } from './boardGroups.js'
 import { savePurchase, deletePurchase, usePurchaseTracking } from '../../composables/usePurchaseTracking.js'
 
@@ -62,8 +61,6 @@ const rows = ref([])
 const loading = ref(false)
 const loadError = ref('')
 const showArrived = ref(false)
-/* 只看待验收（2026-11-10）：使用方说看板上"待验收"看不见 */
-const onlyToAccept = ref(false)
 
 const canEdit = computed(() => hasPerm('purchase:edit'))
 
@@ -102,13 +99,8 @@ async function loadBoard() {
 
 // 按 **OA 单号** 合并成卡片（变更-168）：一个 OA 通常就是一批采购，含多条物料。
 // 卡片归哪一列由组内**最急**那条的状态决定，见 boardGroups.groupBoardByOa。
-/** 当前数据里"已到货但没录验收单"的条数（含 OA 合并前的明细行） */
-const toAcceptCount = computed(() => rows.value.filter((r) => needsAcceptance(r)).length)
-
-/** 看板渲染用的行：开了"只看待验收"就只留待验收的 */
-const boardRows = computed(() =>
-  onlyToAccept.value ? rows.value.filter((r) => needsAcceptance(r)) : rows.value,
-)
+/** 看板渲染用的行（2026-11-10 变更-183：去掉"只看待验收"过滤后就是原始行） */
+const boardRows = computed(() => rows.value)
 
 /** 费用申请的三列 + 30 天窗口外的条数（纯函数在 boardGroups 里，单测钉住口径） */
 const expenseGroups = computed(() => groupExpenseBoardByOa(rows.value))
@@ -137,20 +129,6 @@ const gridClass = computed(() => {
   if (n === 3) return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
   return 'grid-cols-1 md:grid-cols-2 xl:grid-cols-4'
 })
-
-/**
- * 切换「待验收」筛选（2026-11-10）。
- *
- * 待验收 = 已到货但没录验收单，而已到货的行默认**不请求** ——
- * 所以开过滤时要顺带把"显示已到货"打开并重新拉数，否则永远 0 条。
- */
-function toggleToAccept() {
-  onlyToAccept.value = !onlyToAccept.value
-  if (onlyToAccept.value && !showArrived.value) {
-    showArrived.value = true
-    loadBoard()
-  }
-}
 
 function toggleArrived() {
   showArrived.value = !showArrived.value
@@ -265,18 +243,6 @@ onMounted(loadBoard)
           <span class="text-slate-500">（{{ BOARD_COLUMNS.map((c) => c.label).join(' / ') }}）</span>
         </template>
       </p>
-
-      <!-- 待验收胶囊：点一下只看已到货但还没录验收单的卡片（费用申请自带"待验收"列，不需要） -->
-      <button
-        v-if="!isExpense"
-        type="button"
-        class="rounded-md border px-2.5 py-1 text-xs transition-colors"
-        :class="onlyToAccept ? 'border-transparent bg-brand-ink text-white' : 'border-line bg-raised text-slate-700 hover:border-slate-400'"
-        :aria-pressed="onlyToAccept"
-        @click="toggleToAccept"
-      >
-        待验收 <span class="tabular-nums">{{ toAcceptCount }}</span>
-      </button>
 
       <label
         v-if="!isExpense"

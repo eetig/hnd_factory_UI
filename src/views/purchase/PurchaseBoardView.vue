@@ -1,17 +1,19 @@
 <script setup>
-import PurchaseWorkspace from '../../components/purchase/PurchaseWorkspace.vue'
+import PurchaseBoard from '../../components/purchase/PurchaseBoard.vue'
 
 /*
- * 采购工作台（变更-148 的看板 → 2026-11-10 并成「看板 + 录入/历史」两个页签）。
+ * 采购看板（2026-11-10 变更-183：去掉「看板 / 录入·历史」页签）。
  *
- * 薄壳：定高链交给自己（`flex h-full flex-col`），完整理由在 PurchaseWorkspace.vue 头部。
- * 页签**不是**路由：两个视图共用同一份路由 meta（h1 / 面包屑 / 侧栏高亮都指「采购看板」），
- * 切换只改 `?tab=`，所以刷新与分享都不会丢视图。
+ * 使用方的原话是「不要录入和历史了」，所以这一页只剩看板：
+ * 录入/历史那张台账的页面、路由、页签入口都已删除，新增需求走看板右上角的抽屉
+ * （抽屉里「再加一条需求」可以接着往同一张 OA 单里补明细）。
+ *
+ * 薄壳：定高链（`flex h-full flex-col`）留在这里，完整链条在 PurchaseBoard.vue 里。
  */
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PurchaseWorkspace />
+    <PurchaseBoard scope="purchase" />
   </div>
 </template>

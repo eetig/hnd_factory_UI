@@ -236,7 +236,7 @@ const WORKBENCH_FILES = [
   'views/orders/InboundList.vue',
   'views/orders/CostingView.vue',
   'views/materials/StockView.vue',
-  'views/purchase/PurchaseView.vue',
+  'views/purchase/PurchaseBoardView.vue',
   'views/equipment/EquipmentView.vue',
   'views/equipment/VesselView.vue',
   // 2026-11-04：ElectricityView.vue 已删除（路由改 redirect，组件无人引用）
@@ -2311,7 +2311,7 @@ describe('卡片内滚的页签（汇总 ×4 + 储罐液位）：卡片撑满玻
     // 下面三个是「面板 + 包装层」的页：包装层同样搬到了各自的页面文件
     tankLevel: 'views/stats/TankLevelView.vue',
     equipment: 'views/equipment/EquipmentView.vue',
-    purchase: 'views/purchase/PurchaseView.vue',
+    purchase: 'views/purchase/PurchaseBoardView.vue',
   }
   const TANK_PANEL = read(join(SRC, 'components', 'TankLevelPanel.vue'))
   // 锚点再失效时，下面用例的第一条断言会先红（解析出来是空串）。

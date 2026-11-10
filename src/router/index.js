@@ -85,10 +85,11 @@ export const workbenchRoutes = [
   },
   {
     /*
-     * 采购（变更-148 拆两页 → 2026-11-10 并回一页两个页签）：
-     *   /purchase/board  看板页签（默认）
-     *   /purchase/entry  已并入工作台，保留成重定向 —— 旧书签、后端日志里的 referer、
-     *                    以及使用方按肌肉记忆敲出来的地址都还会打到这里，404 最难解释。
+     * 采购（2026-11-10 变更-183：使用方要求「不要录入和历史了」）：
+     *   /purchase/board    采购看板
+     *   /purchase/expense  费用申请
+     * 录入/历史那张台账的页面与路由（/purchase/entry）已删除；旧地址落到 404 页，
+     * 不再做重定向 —— 留重定向等于留一个「以为还在」的入口，更难解释。
      */
     path: '/purchase',
     redirect: '/purchase/board',
@@ -98,10 +99,6 @@ export const workbenchRoutes = [
     name: 'PurchaseBoardView',
     component: PurchaseBoardView,
     meta: { group: 'purchase', key: 'purchaseBoard', title: '采购看板', perm: ADMIN_PERM },
-  },
-  {
-    path: '/purchase/entry',
-    redirect: { path: '/purchase/board', query: { tab: 'entry' } },
   },
   {
     /*
