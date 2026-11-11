@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { authState, isAdmin } from '../../api/auth'
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
@@ -161,10 +161,19 @@ function clearDraft() {
 }
 const showList = ref(false)
 
-/** 排序：表内编号升序；没有编号的（150车间）排最后 */
+/**
+ * 排序用的名次。
+ *
+ * 没编号的那块（150车间+精品四甲）要给 27.5：现场动线是抄完 27 号乙炔车间就进 150 车间，
+ * 再往下才是 28 号低压循环泵。（2026-11-11 使用方再次确认这个位置。）
+ */
+const UNNUMBERED_RANK = 27.5
+
 function numberRank(row) {
-  const n = Number(row.excelNo)
-  return Number.isFinite(n) && row.excelNo !== '' ? n : 999
+  const raw = String(row?.excelNo ?? '').trim()
+  if (raw === '') return UNNUMBERED_RANK
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : 999
 }
 
 const cards = computed(() =>
@@ -192,6 +201,23 @@ const list = computed(() => {
 
 const card = computed(() => cards.value[index.value] || null)
 const filledCount = computed(() => cards.value.filter((c) => c.reading !== null && c.reading !== undefined).length)
+/*
+ * 顶部「已填」用这个（2026-11-11）。
+ * 原来直接把 filledCount 摆上去，它只认服务端已入库的读数 ⇒
+ * 现场填了三块还没提交，头上还是「已填 0」，跟底部「提交全部（3）」自相矛盾。
+ * 现在把本地 entries 里刚填的也算进来。
+ */
+const filledNow = computed(
+  () =>
+    cards.value.filter(
+      (c) => c.reading !== null && c.reading !== undefined,
+    ).length +
+    cards.value.filter(
+      (c) =>
+        (c.reading === null || c.reading === undefined) &&
+        String(entries?.[c.meterId]?.reading ?? '').trim() !== '',
+    ).length,
+)
 const total = computed(() => cards.value.length)
 
 /** 用量预览：(本次 − 上次) × 倍率 */
@@ -313,6 +339,15 @@ async function loadSheet() {
 
 function goTo(next) {
   if (next < 0 || next >= cards.value.length) return
+  if (next === index.value) return
+  /*
+   * 2026-11-11 修：滑走前先把当前这张的读数写进 entries。
+   *
+   * 原来只有输入框 blur 才 commitDraft；手机上滑卡片时输入框不会失焦，
+   * 于是刚填的数字还只活在 draft 里，翻到下一张再 loadCard 就被草稿覆盖成空 ——
+   * 表现就是「19 号填好了，左滑到 20 号，19 号的数没了」。
+   */
+  commitDraft()
   index.value = next
   if (card.value) loadCard(card.value)
 }
@@ -324,7 +359,8 @@ function step(delta) {
   const nextItem = list.value[Math.min(list.value.length - 1, Math.max(0, (at === -1 ? 0 : at) + delta))]
   if (!nextItem) return
   const realIndex = cards.value.findIndex((c) => c.meterId === nextItem.meterId)
-  if (realIndex >= 0) goTo(realIndex)
+  // 走吸附动画，不要硬切 —— 箭头和手势看到的是同一种过渡
+  if (realIndex >= 0) jumpTo(realIndex)
 }
 
 /** 切换"只看没抄的"：切完把当前卡挪到列表里最近的没填那张 */
@@ -530,7 +566,7 @@ async function submitAll() {
 }
 
 async function submit(direction) {
-  if (!card.value || saving.value || gesture.flying) return
+  if (!card.value || saving.value || pagerSnapping.value) return
   const reading = draft.reading === '' ? null : Number(draft.reading)
   if (reading !== null && !Number.isFinite(reading)) {
     uni.showToast({ title: '读数不是数字', icon: 'none' })
@@ -604,115 +640,140 @@ const gesture = reactive({
   flying: false,
 })
 
-const SWIPE_MIN = 96 // 位移阈值（px）
-const FLING_V = 0.35 // 速度阈值（px/ms）
+/* ===== 卡片轨道 / ViewPager（2026-11-11） =====
+ *
+ * 使用方要求：「标签和下方卡片手势联动、连续跟手、松手吸附，像 ViewPager」。
+ *
+ * 做法：轨道里并排三张（上一张 / 当前 / 下一张），手指按住时整条轨道
+ * 实时跟着位移（transform 直接跟手，不加 transition）；松手按「位移过半
+ * 或甩得够快」吸附到相邻一张，动画结束后换 index，再把轨道瞬时复位到中间。
+ * 只有中间那张是可编辑的真实卡片，两侧是轻量预览，避免 38 张卡片全部渲染。
+ */
+const PAGER_MS = 260
+// 页面左右各有 24rpx 内边距，先用"窗口宽减去它"兜底，measureNames 里会量到精确值
+const stageW = ref(Math.max(1, (uni.getSystemInfoSync?.().windowWidth || 375) - 24))
+const pagerSnapping = ref(false)
+const prevCard = computed(() => cards.value[index.value - 1] || null)
+const nextCard = computed(() => cards.value[index.value + 1] || null)
+
+/** 第一张再往右 / 最后一张再往左时的橡皮筋阻尼 */
+const PAGER_RESIST = 0.35
+
+const trackStyle = computed(() => ({
+  transform: `translate3d(${(-stageW.value + gesture.dx).toFixed(1)}px, 0, 0)`,
+  transition: pagerSnapping.value
+    ? `transform ${PAGER_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+    : 'none',
+}))
+
+/* 标签带的测量结果：每个标签中心相对带子左边缘的 px */
+const nameCenters = ref([])
+const namesViewport = ref(0)
 
 /*
- * 卡片的位移样式（2026-11-05，使用方：「手势左右滑，要跟手，动画要丝滑」）
- *
- * 三种状态，三套缓动：
- *   拖动中   transition: none          → 手指到哪卡片到哪（跟手）
- *   飞出去   cubic-bezier(.22,1,.36,1)  → 先快后缓，像被甩出去
- *   弹回来   cubic-bezier(.34,1.56,.64,1) → 轻微过冲再停下，手感"有弹性"
- * 旋转和透明度跟着位移走，幅度很小（最多 6°、最多淡到 65%），不喧宾夺主。
+ * 组件实例要在 setup 期间抓一次存下来。
+ * getCurrentInstance() 只在 setup / 生命周期里有效，放到 setTimeout 里再调就是 null，
+ * 之前就是这样导致标签一次都没量到（一直用 fallback 的 -i*84）。
  */
-const FLY_MS = 280
+const pageInst = getCurrentInstance()
+
+function measureNames(tries = 0) {
+  if (!pageInst || !uni.createSelectorQuery) return
+  const query = uni.createSelectorQuery().in(pageInst.proxy)
+  query.select('.mr__names').boundingClientRect()
+  query.selectAll('.mr__name').boundingClientRect()
+  query.select('.mr__stage').boundingClientRect()
+  query.select('.mr__names-inner').boundingClientRect()
+  query.exec((res) => {
+    const box = res?.[0]
+    const items = res?.[1]
+    const stage = res?.[2]
+    const inner = res?.[3]
+    // 舞台宽度才是"一屏"的真实宽度（页面有左右内边距，不等于 windowWidth）
+    if (stage && stage.width) stageW.value = stage.width
+    if (!box || !Array.isArray(items) || !items.length) {
+      // 首帧可能还没渲染出标签（数据刚到）：等一会再量，最多三次
+      if (tries < 3) setTimeout(() => measureNames(tries + 1), 120)
+      return
+    }
+    namesViewport.value = box.width
+    /*
+     * 中心点必须相对"标签带内部"量，不能相对带子左边缘：
+     * 带子本身带着 transform，量到的绝对坐标已经包含当前位移，
+     * 拿它反算位移会形成"量一次→改一次→再量又变"的回授，最后总是 0。
+     */
+    const origin = inner && typeof inner.left === 'number' ? inner.left : box.left
+    nameCenters.value = items.map((it) => it.left - origin + it.width / 2)
+  })
+}
+
+function nameShiftAt(i) {
+  const centers = nameCenters.value
+  if (!centers.length) return -i * 84
+  const at = Math.max(0, Math.min(centers.length - 1, i))
+  const viewport = namesViewport.value || stageW.value
+  return viewport / 2 - centers[at]
+}
+
+/** 标签带位移：拖动时在相邻两个标签之间按进度插值，松手停在中间那个 */
+const namesShift = computed(() => {
+  const base = nameShiftAt(index.value)
+  if (!gesture.dx) return base
+  const progress = Math.min(1, Math.abs(gesture.dx) / Math.max(1, stageW.value))
+  const away = gesture.dx < 0 ? index.value + 1 : index.value - 1
+  return base + (nameShiftAt(away) - base) * progress
+})
+
+const namesStyle = computed(() => ({
+  transform: `translate3d(${namesShift.value.toFixed(1)}px, 0, 0)`,
+  transition: pagerSnapping.value
+    ? `transform ${PAGER_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
+    : 'none',
+}))
+
 
 /**
- * 拖动时的方向提示（2026-11-06）。
- * 位移过 24px 就浮出标签，透明度随进度上升 —— 松手前就知道会触发"提交"还是"跳过"。
+ * 拖动时的方向提示：翻页语义下不再提示"提交/跳过"，
+ * 保留这个 computed 只是为了模板不用改（恒为空）。
  */
-const intent = computed(() => {
-  if (gesture.flying || !gesture.decided) return { kind: '', opacity: 0 }
-  const offset = gesture.dx
-  if (Math.abs(offset) < 24) return { kind: '', opacity: 0 }
-  const progress = Math.min(1, Math.abs(offset) / 160)
-  return { kind: offset > 0 ? '提交' : '跳过', opacity: 0.25 + progress * 0.75 }
-})
+const intent = computed(() => ({ kind: '', opacity: 0 }))
 
-const cardStyle = computed(() => {
-  const dragging = gesture.dragging && gesture.decided && !gesture.flying
-  const transition = dragging
-    ? 'none'
-    : gesture.flying
-      ? `transform ${FLY_MS}ms cubic-bezier(.22,1,.36,1), opacity ${FLY_MS}ms ease`
-      : 'transform 320ms cubic-bezier(.34,1.56,.64,1), opacity 220ms ease'
-  const dx = gesture.dx
-  const progress = Math.min(1, Math.abs(dx) / 380)
-  /*
-   * 方向感（2026-11-05）：阴影跟着位移走 —— 往右滑，阴影就往左拖，
-   * 看起来像卡片被"推离"桌面；退出方向那一侧再加一层同色淡光晕。
-   */
-  const shadowX = -dx * 0.06
-  const shadowBlur = 30 + progress * 26
-  const glowColor = tint(sectionColor.value, 0.16 * progress)
-  const shadow = dx === 0
-    ? '0 8rpx 30rpx rgba(90, 70, 40, 0.06)'
-    : `${shadowX.toFixed(1)}px 14rpx ${shadowBlur.toFixed(0)}rpx rgba(70, 60, 45, 0.12), ` +
-      `${(dx > 0 ? 1 : -1) * 10}px 0 0 ${glowColor}`
-  return {
-    transition,
-    transform: `translate3d(${dx}px, 0, 0) rotate(${(dx * 0.015).toFixed(2)}deg)`,
-    opacity: dragging ? String(1 - progress * 0.35) : '1',
-    boxShadow: shadow,
-    // 顶部一层 12% 同色洗染：色条之外再加一点"这块表属于哪个车间"的暗示
-    backgroundImage: `linear-gradient(180deg, ${tint(sectionColor.value, 0.12)} 0, rgba(255,255,255,0) 96rpx)`,
-  }
-})
+const cardStyle = computed(() => ({
+  boxShadow: '0 8rpx 30rpx rgba(90, 70, 40, 0.06)',
+  // 顶部一层 12% 同色洗染：色条之外再加一点"这块表属于哪个车间"的暗示
+  backgroundImage: `linear-gradient(180deg, ${tint(sectionColor.value, 0.12)} 0, rgba(255,255,255,0) 96rpx)`,
+}))
 
-/** 还剩几块没填（提交按钮上要显示） */
-/** 已填条数（2026-11-06：一次性提交时按钮上显示这个数） */
+/** 已填条数（一次性提交时按钮上显示这个数） */
 const filledEntries = computed(
   () => Object.values(entries).filter((entry) => String(entry?.reading || '').trim() !== '').length,
 )
 
-/** 名称带要滚到的那一项（切表时自动可见，2026-11-06） */
-const nameAnchor = computed(() => (card.value ? `mn${card.value.meterId}` : ''))
-
-/** 点名字直接跳 */
+/** 点名字直接跳（带吸附动画，和翻页一致） */
 function goToName(row) {
+  // 刚拖过标签带：这次 click 是拖动带出来的，不再额外跳一次
+  if (Date.now() - lastDragAt < 350) return
   const at = cards.value.findIndex((c) => c.meterId === row.meterId)
-  if (at >= 0) goTo(at)
+  if (at < 0 || at === index.value) return
+  jumpTo(at)
 }
 
-/* 在名称带上左右拖也能切表：与电费页签同一套判定（跟手 → 过阈值切） */
-let namesStartX = 0
-let namesDragging = false
-
+/*
+ * 标签带不再自己滚动：它就是轨道的"进度条"。
+ * 手指在标签带上拖 → 直接复用卡片的拖拽逻辑（onTouchStart/Move/End），
+ * 于是标签和卡片共用同一个 gesture.dx，天然同步。
+ */
 function onNamesTouchStart(event) {
-  const touch = event.touches?.[0]
-  if (!touch) return
-  namesStartX = touch.clientX
-  namesLastX = touch.clientX
-  namesDragging = true
+  onTouchStart(event)
 }
-
-// 记录最后一次横向位置：某些环境下 touchend 的 changedTouches 是空的，
-// 靠它算位移比靠 touchend 更稳（2026-11-06）
-let namesLastX = 0
-
 function onNamesTouchMove(event) {
-  // 不做跟手位移（带子本身要能滚），只记录最后位置，松手判定
-  const touch = event.touches?.[0]
-  if (touch) namesLastX = touch.clientX
+  onTouchMove(event)
+}
+function onNamesTouchEnd() {
+  onTouchEnd()
 }
 
-function onNamesTouchEnd(event) {
-  if (!namesDragging) return
-  namesDragging = false
-  const touch = event.changedTouches?.[0]
-  const lastX = touch ? touch.clientX : namesLastX
-  if (!lastX) return
-  const dx = lastX - namesStartX
-  const threshold = (uni.getSystemInfoSync().windowWidth || 375) * 0.12
-  if (dx <= -threshold) step(1)
-  else if (dx >= threshold) step(-1)
-}
-
-const remaining = computed(() => {
-  const unfilled = cards.value.filter((c) => c.reading === null || c.reading === undefined).length
-  return Math.max(0, unfilled - 0)
-})
+const remaining = computed(() => Math.max(0, total.value - filledNow.value))
 
 /** 立刻把当前这张提交（底部按钮） */
 function doSubmit() {
@@ -723,54 +784,38 @@ function doSubmit() {
 function doSkip() {
   if (!card.value || saving.value) return
   skipped.value = [...skipped.value, card.value.meterId]
-  fly('left', () => step(1))
+  step(1)
 }
 
 /**
- * 把已经飞出去的卡片收回来（失败时用，2026-11-06）。
- *
- * 用同一套缓动倒着走：从屏外飞回原位，再把 index 退一格（fly 的 after 已经 step 过去了）。
- * 顺序很重要：先 step 回到上一张 → 让它从屏外飞回来。
+ * 失败回退（兼容老调用）：回到上一张，不做飞出动画 ——
+ * 现在是轨道吸附模型，"飞回来"没有意义，直接复位即可。
  */
 function restore() {
-  const back = Math.max(0, index.value - 1)
-  index.value = back
-  if (card.value) loadCard(card.value)
-  gesture.flying = true
-  gesture.dx = gesture.dx > 0 ? 520 : -520
-  // 下一帧再归零，才有"飞回来"的过渡
-  setTimeout(() => {
-    gesture.dx = 0
-    setTimeout(() => {
-      gesture.flying = false
-      gesture.decided = false
-      gesture.dragging = false
-    }, FLY_MS)
-  }, 16)
+  pagerSnapping.value = false
+  gesture.dx = 0
+  gesture.dragging = false
+  gesture.decided = false
 }
 
-function fly(direction, after) {
-  gesture.flying = true
-  gesture.dragging = false
-  gesture.decided = true
-  // 位移要够远，卡片才真正飞出屏幕；时长与 CSS 里的 FLY_MS 对齐
-  const target = direction === 'right' ? 520 : -520
-  gesture.dx = target
-  setTimeout(() => {
-    gesture.flying = false
-    gesture.decided = false
-    gesture.dragging = false
-    gesture.dx = 0
-    if (after) after()
-  }, FLY_MS)
+/** 老的 fly 接口：现在翻页由轨道吸附完成，这里只保留"动画结束后做点什么" */
+function fly(_direction, after) {
+  if (after) after()
 }
+
+let touchStartedAt = 0
+/** 最后一次"真的拖动过"的时间戳：用来吞掉拖动结束后的那次 click */
+let lastDragAt = 0
 
 function onTouchStart(e) {
-  if (gesture.flying) return
-  const t = e.touches[0]
-  // 左缘 24px 不接管：那里是系统"返回"手势区
+  if (pagerSnapping.value) return
+  // 第一次摸之前还没量到标签（比如极快的手势）：补量一次，别用估算值跑偏
+  if (!nameCenters.value.length) measureNames()
+  const t = e.touches?.[0]
+  if (!t) return
   gesture.startX = t.clientX
   gesture.startY = t.clientY
+  // 左缘 24px 不接管：那里是系统"返回"手势区
   gesture.dragging = t.clientX > 24
   gesture.decided = false
   gesture.dx = 0
@@ -779,8 +824,9 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
-  if (!gesture.dragging || gesture.flying) return
-  const t = e.touches[0]
+  if (!gesture.dragging || pagerSnapping.value) return
+  const t = e.touches?.[0]
+  if (!t) return
   const dx = t.clientX - gesture.startX
   const dy = t.clientY - gesture.startY
   if (!gesture.decided) {
@@ -792,31 +838,83 @@ function onTouchMove(e) {
     }
     gesture.decided = true
   }
-  gesture.dx = dx
+  const w = stageW.value
+  const atStart = index.value === 0 && dx > 0
+  const atEnd = index.value >= cards.value.length - 1 && dx < 0
+  // 到头了给阻尼：还能拉动一点，但拉不远，手感上有"到底了"
+  gesture.dx = atStart || atEnd ? dx * PAGER_RESIST : Math.max(-w, Math.min(w, dx))
   gesture.dy = dy
 }
 
-let touchStartedAt = 0
 function onTouchEnd() {
-  if (!gesture.dragging || gesture.flying) return
+  if (!gesture.dragging || pagerSnapping.value) return
   const dx = gesture.dx
-  const velocity = Math.abs(dx) / Math.max(1, Date.now() - touchStartedAt || 1)
+  const elapsed = Math.max(1, Date.now() - touchStartedAt || 1)
+  const velocity = Math.abs(dx) / elapsed
   gesture.dragging = false
+  gesture.decided = false
+  if (Math.abs(dx) > 8) lastDragAt = Date.now()
 
-  /*
-   * 2026-11-06 改语义：滑动不再"提交/跳过"，只翻页。
-   * 使用方要的是"一路填过去、最后一次性提交"，所以左滑 = 下一块、右滑 = 上一块。
-   * 没填读数的自然就是跳过（提交时按无读数处理）。
-   */
-  if (dx < -SWIPE_MIN || (dx < -40 && velocity > FLING_V)) {
-    fly('left', () => step(1))
+  const w = stageW.value
+  // 位移过 22% 就算翻页；或者甩得够快（轻扫）
+  const far = Math.abs(dx) > w * 0.22
+  const fling = Math.abs(dx) > 40 && velocity > 0.5
+  if ((far || fling) && dx < 0) {
+    snap(1)
     return
   }
-  if (dx > SWIPE_MIN || (dx > 40 && velocity > FLING_V)) {
-    fly('right', () => step(-1))
+  if ((far || fling) && dx > 0) {
+    snap(-1)
     return
   }
-  gesture.dx = 0
+  snap(0)
+}
+
+/**
+ * 吸附。
+ * delta=0 回弹到当前张；±1 动画移到相邻张，动画结束后换 index，
+ * 再在同一帧把轨道瞬时复位到"中间"（不设 transition，否则会看到回弹）。
+ */
+function snap(delta) {
+  const w = stageW.value
+  const target = index.value + delta
+  if (delta !== 0 && (target < 0 || target >= cards.value.length)) {
+    snap(0)
+    return
+  }
+  pagerSnapping.value = true
+  gesture.dx = delta === 0 ? 0 : delta > 0 ? -w : w
+  setTimeout(() => {
+    if (delta !== 0) {
+      commitDraft()
+      index.value = target
+      if (card.value) loadCard(card.value)
+    }
+    pagerSnapping.value = false
+    gesture.dx = 0
+  }, PAGER_MS)
+}
+
+/** 直接跳到第 i 张（点标签、提交校验回跳）：有动画，不等同"硬切" */
+function jumpTo(target) {
+  if (pagerSnapping.value) return
+  const at = index.value
+  if (target === at) return
+  const delta = target > at ? 1 : -1
+  if (Math.abs(target - at) === 1) {
+    snap(delta)
+    return
+  }
+  // 隔了好几格：先按方向动画推一格，落位后立刻切到目标（避免长距离滚动 38 屏）
+  pagerSnapping.value = true
+  gesture.dx = delta > 0 ? -stageW.value : stageW.value
+  setTimeout(() => {
+    commitDraft()
+    index.value = target
+    if (card.value) loadCard(card.value)
+    pagerSnapping.value = false
+    gesture.dx = 0
+  }, PAGER_MS)
 }
 
 /* ===== 提交进度提示 ===== */
@@ -847,8 +945,23 @@ onMounted(() => {
     setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 900)
     return
   }
-  loadSheet()
+  loadSheet().then(() => {
+    // 标签带是"轨道的进度条"，必须先量出每个标签的中心点才能对齐
+    nextTick(() => setTimeout(measureNames, 80))
+  })
 })
+
+/*
+ * 标签带只在数据到手后才有内容：长度变化时重量一次，
+ * 否则只能退回 -i*84 的估算，越往右偏得越多。
+ */
+watch(
+  () => list.value.length,
+  () => {
+    if (!list.value.length) return
+    nextTick(() => setTimeout(measureNames, 80))
+  },
+)
 </script>
 
 <template>
@@ -878,7 +991,7 @@ onMounted(() => {
           <picker mode="date" :value="readDate" @change="onReadDateChange">
             <text class="mr__date">{{ readDate.slice(5) }}</text>
           </picker>
-          <text class="mr__filled" @click="showList = true">已填 {{ filledCount }}</text>
+          <text class="mr__filled" @click="showList = true">已填 {{ filledNow }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
           <text
             class="mr__filter"
@@ -908,19 +1021,22 @@ onMounted(() => {
         参考电费页的页签：左右滑切表，当前那块是主色胶囊。
         点名字也能直接跳 —— 38 块表时比滑 37 次快。
       -->
-      <scroll-view
+      <!--
+        电表名称带（2026-11-11 改成轨道的"进度条"）
+        标签不再自己滚：拖动时和下方卡片共用同一份 gesture.dx，
+        在相邻两个标签之间按进度插值，所以标签与卡片是同一个手势、同一个进度。
+      -->
+      <view
         v-if="list.length"
         class="mr__names"
-        scroll-x
-        scroll-with-animation
-        :scroll-into-view="nameAnchor"
         @touchstart.stop="onNamesTouchStart"
         @touchmove.stop.prevent="onNamesTouchMove"
         @touchend.stop="onNamesTouchEnd"
+        @touchcancel.stop="onNamesTouchEnd"
       >
-        <view class="mr__names-inner">
+        <view class="mr__names-inner" :style="namesStyle">
           <view
-            v-for="(row, i) in list"
+            v-for="row in list"
             :id="'mn' + row.meterId"
             :key="row.meterId"
             class="mr__name"
@@ -931,9 +1047,40 @@ onMounted(() => {
             <text class="mr__name-text">{{ row.meterName }}</text>
           </view>
         </view>
-      </scroll-view>
+      </view>
 
-      <view v-if="card" class="mr__stage">
+      <!--
+        卡片轨道（2026-11-11）：三张并排 —— 上一张 / 当前 / 下一张。
+        拖的时候整条轨道跟手平移；松手吸附。中间那张才是可编辑的真卡。
+      -->
+      <view
+        v-if="card"
+        class="mr__stage"
+        @touchstart.stop="onTouchStart"
+        @touchmove.stop.prevent="onTouchMove"
+        @touchend.stop="onTouchEnd"
+        @touchcancel.stop="onTouchEnd"
+      >
+        <view class="mr__track" :style="trackStyle">
+          <!-- 上一张（预览态，不可编辑） -->
+          <view class="mr__slot">
+            <view v-if="prevCard" class="mr__peek" @click="step(-1)">
+              <view class="mr__peek-head">
+                <text class="mr__peek-no">{{ displayNo(prevCard) }}</text>
+                <text class="mr__peek-name">{{ prevCard.meterName }}</text>
+              </view>
+              <text class="mr__peek-meta">
+                {{ prevCard.meterCode || '无柜号' }} · 上次 {{ prevCard.prevReading ?? '—' }}
+              </text>
+              <text class="mr__peek-value">
+                {{ String(entries?.[prevCard.meterId]?.reading ?? '').trim() || '还没填' }}
+              </text>
+              <text class="mr__peek-hint">‹ 松手回到这张</text>
+            </view>
+          </view>
+
+          <!-- 当前（可编辑） -->
+          <view class="mr__slot">
         <view
           class="mr__card"
           :class="{ 'is-anomaly': anomaly }"
@@ -971,7 +1118,14 @@ onMounted(() => {
           </text>
 
           <view class="mr__input-row">
+            <!--
+              :key 绑当前表号（2026-11-11）：翻到下一张再翻回来时，
+              uni 的 <input> 不会把更新后的 v-model 值刷回原生输入框，
+              画面上还是空的 —— 用户就以为「刚填的数没了」（数据其实在 entries 里）。
+              换 key 强制重建这个输入框，重建时按当前 draft.reading 初始化。
+            -->
             <input
+              :key="card ? `reading-${card.meterId}` : 'reading-none'"
               v-model="draft.reading"
             @blur="commitDraft"
               class="mr__input"
@@ -1008,6 +1162,25 @@ onMounted(() => {
               <text class="mr__photo-remove" @click.stop="draft.photo = ''">×</text>
             </view>
             <text v-else class="mr__photo-add" @click.stop="openPhotoSheet">📷 拍表存证（可选）</text>
+          </view>
+        </view>
+          </view>
+
+          <!-- 下一张（预览态，不可编辑） -->
+          <view class="mr__slot">
+            <view v-if="nextCard" class="mr__peek" @click="step(1)">
+              <view class="mr__peek-head">
+                <text class="mr__peek-no">{{ displayNo(nextCard) }}</text>
+                <text class="mr__peek-name">{{ nextCard.meterName }}</text>
+              </view>
+              <text class="mr__peek-meta">
+                {{ nextCard.meterCode || '无柜号' }} · 上次 {{ nextCard.prevReading ?? '—' }}
+              </text>
+              <text class="mr__peek-value">
+                {{ String(entries?.[nextCard.meterId]?.reading ?? '').trim() || '还没填' }}
+              </text>
+              <text class="mr__peek-hint">继续往左滑 ›</text>
+            </view>
           </view>
         </view>
 
@@ -1242,8 +1415,13 @@ onMounted(() => {
   flex: 0 0 auto;
   height: 96rpx;
   width: 100%;
-  padding: 0 24rpx;
+  /* 两侧留白放到 inner 上：这样 inner 的原点就是带子的左边缘，
+     量出来的标签中心减去位移才对得齐（否则差一个 padding） */
+  padding: 0;
   white-space: nowrap;
+  /* 2026-11-11：不再用 scroll-view 自己滚，改成轨道式平移；两侧裁掉 */
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .mr__names::-webkit-scrollbar {
@@ -1255,7 +1433,10 @@ onMounted(() => {
   align-items: center;
   height: 96rpx;
   gap: 14rpx;
-  padding-right: 24rpx;
+  padding: 0 24rpx;
+  /* 轨道的位移由 JS 写 transform，和下方卡片共用同一个手势进度 */
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 .mr__name {
@@ -1301,6 +1482,94 @@ onMounted(() => {
   flex-direction: column;
   /* 2026-11-04：卡片按内容收紧后下方会空一块，垂直居中让空白看起来是有意的留白 */
   justify-content: center;
+  /* 2026-11-11：轨道左右两侧的邻居卡要裁掉，不能溢出屏幕 */
+  overflow: hidden;
+  position: relative;
+}
+
+/* 三张一排的轨道：默认露出中间那张，位移由 JS 直接写 transform */
+.mr__track {
+  display: flex;
+  align-items: stretch;
+  width: 300%;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+.mr__slot {
+  flex: 0 0 33.3333%;
+  width: 33.3333%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2rpx;
+  box-sizing: border-box;
+}
+
+/* 槽里的卡片要撑满槽宽，否则 flex 居中会把卡片压成内容宽 */
+.mr__slot .mr__card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 邻居卡：只给"这是哪块表、上次多少、填没填"，不提供输入，避免误触 */
+.mr__peek {
+  width: 100%;
+  max-height: 62vh;
+  padding: 28rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid var(--ui-border);
+  border-left: 8rpx solid var(--ui-border-strong);
+  background-color: var(--ui-surface);
+  opacity: 0.72;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.mr__peek-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.mr__peek-no {
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--ui-text-2);
+  padding: 2rpx 12rpx;
+  border-radius: 10rpx;
+  background-color: var(--ui-raise-2);
+}
+
+.mr__peek-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mr__peek-meta {
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__peek-value {
+  margin-top: 8rpx;
+  font-size: 44rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: var(--ui-text);
+}
+
+.mr__peek-hint {
+  margin-top: auto;
+  font-size: 24rpx;
+  color: var(--ui-text-3);
 }
 
 .mr__card {
@@ -1388,22 +1657,42 @@ onMounted(() => {
   transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 240ms ease;
 }
 
-/* 左下角原文案位置改成动作条：两个大按钮各占一半，拇指够得到 */
+/* 底部动作条（2026-11-11 收小）：提交按钮不再是"半屏大砖头"，左右翻页各给一个 104rpx 的方块 */
 .mr__actions {
   display: flex;
-  gap: 24rpx;
-  margin-top: 28rpx;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+/* 左右翻页：原来这个类没有样式，只有一个 ‹ 字符，手指根本按不到 */
+.mr__arrow {
+  flex: none;
+  width: 104rpx;
+  height: 96rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--ui-raise-2);
+  border: 2rpx solid var(--ui-border);
+}
+
+.mr__arrow .mr__action-icon {
+  font-size: 40rpx;
+  line-height: 1;
+  color: var(--ui-text-2);
 }
 
 .mr__action {
   flex: 1;
-  height: 112rpx;
-  border-radius: 28rpx;
+  height: 96rpx;
+  border-radius: 24rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10rpx;
-  font-size: 32rpx;
+  gap: 8rpx;
+  font-size: 28rpx;
   font-weight: 600;
 }
 
@@ -1425,10 +1714,11 @@ onMounted(() => {
 }
 
 .mr__action-sub {
-  margin-left: 8rpx;
-  font-size: 22rpx;
+  margin-left: 6rpx;
+  font-size: 20rpx;
   font-weight: 500;
-  opacity: 0.8;
+  opacity: 0.82;
+  white-space: nowrap;
 }
 
 /* 完成态（2026-11-05） */
