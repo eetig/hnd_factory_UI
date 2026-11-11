@@ -1,9 +1,10 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElButton, ElCheckbox, ElDialog, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElCheckbox, ElDialog, ElOption, ElSelect, ElSlider } from 'element-plus'
 import { IS_DESKTOP } from '../api/base'
 import { autostartOn, checkUpdate, desktopVersion, installUpdate, setAutostart } from '../desktop'
 import { CLOSE_ACTIONS, getCloseAction, setCloseAction } from '../desktop/closePreference'
+import { WALLPAPERS, appearance, compressImage, resetAppearance } from '../desktop/appearance'
 
 /**
  * 桌面版的小设置面板（2026-11-11，Tauri 接入）。
@@ -18,6 +19,13 @@ const open = ref(false)
 const version = ref('')
 const autostart = ref(false)
 const busy = ref(false)
+
+/**
+ * 是否显示这块面板：真桌面版才显示；开发时加 `?desktop=1` 可以在浏览器里预览外观设置
+ * （窗口/更新这些按钮在浏览器里点了只会报错，不影响静态预览）。
+ */
+const visible =
+  IS_DESKTOP || (import.meta.env.DEV && new URLSearchParams(window.location.search).has('desktop'))
 
 /*
  * 关闭按钮的行为（2026-11-11 第二轮）：默认「最小化到托盘」——点 ✕ 直接收起、不弹窗。
@@ -81,10 +89,40 @@ async function runInstall() {
     updateError.value = '下载失败，稍后再试'
   }
 }
+
+/* 壁纸：内置四张渐变 + 自己选的图（压到 1920 宽后存本地）。 */
+const wallpaperError = ref('')
+const picking = ref(false)
+
+async function onPickWallpaper(event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  picking.value = true
+  wallpaperError.value = ''
+  try {
+    appearance.custom = await compressImage(file)
+    appearance.enabled = true
+  } catch (error) {
+    wallpaperError.value = error?.message || '这张图用不了'
+  } finally {
+    picking.value = false
+    event.target.value = ''
+  }
+}
+
+function usePresetWallpaper(id) {
+  appearance.custom = ''
+  appearance.wallpaper = id
+  appearance.enabled = true
+}
+
+function clearWallpaper() {
+  appearance.enabled = false
+}
 </script>
 
 <template>
-  <template v-if="IS_DESKTOP">
+  <template v-if="visible">
     <button
       type="button"
       class="rounded-full border border-line bg-raised px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
@@ -161,6 +199,74 @@ async function runInstall() {
             <ElButton v-else size="small" :loading="updateState === 'checking'" @click="runCheck">
               检查更新
             </ElButton>
+          </div>
+        </div>
+
+        <div class="border-t border-line pt-3">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-slate-900">背景</p>
+              <p class="mt-0.5 text-xs text-slate-500">
+                窗口材质是 Windows 原生亚克力；壁纸只压在内容后面，不参与滚动
+              </p>
+            </div>
+            <ElCheckbox v-model="appearance.enabled">启用</ElCheckbox>
+          </div>
+
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              v-for="item in WALLPAPERS"
+              :key="item.id"
+              type="button"
+              class="h-8 w-8 rounded-md border transition"
+              :class="
+                appearance.enabled && !appearance.custom && appearance.wallpaper === item.id
+                  ? 'border-brand-ink ring-2 ring-brand-ink/25'
+                  : 'border-line hover:border-slate-400'
+              "
+              :style="{ background: item.css }"
+              :title="item.label"
+              :aria-label="`壁纸：${item.label}`"
+              :aria-pressed="appearance.enabled && !appearance.custom && appearance.wallpaper === item.id"
+              @click="usePresetWallpaper(item.id)"
+            />
+
+            <label
+              class="cursor-pointer rounded-md border border-line px-2.5 py-1 text-xs text-slate-700 transition hover:bg-region"
+            >
+              {{ picking ? '处理中…' : '选本地图片' }}
+              <input type="file" accept="image/*" class="hidden" @change="onPickWallpaper" />
+            </label>
+
+            <button
+              type="button"
+              class="rounded-md border border-line px-2.5 py-1 text-xs text-slate-600 transition hover:bg-region"
+              @click="clearWallpaper"
+            >
+              不用壁纸
+            </button>
+            <button
+              type="button"
+              class="ml-auto text-xs text-slate-500 underline-offset-2 hover:text-slate-900 hover:underline"
+              @click="resetAppearance"
+            >
+              恢复默认
+            </button>
+          </div>
+
+          <p v-if="wallpaperError" class="mt-2 text-xs text-rose-700">{{ wallpaperError }}</p>
+
+          <div class="mt-3 space-y-2">
+            <div class="flex items-center gap-3">
+              <span class="w-14 shrink-0 text-xs text-slate-500">模糊</span>
+              <ElSlider v-model="appearance.blur" :min="0" :max="40" :step="1" class="flex-1" />
+              <span class="w-9 text-right text-xs text-slate-500">{{ appearance.blur }}px</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="w-14 shrink-0 text-xs text-slate-500">纸面</span>
+              <ElSlider v-model="appearance.veil" :min="0.3" :max="1" :step="0.02" class="flex-1" />
+              <span class="w-9 text-right text-xs text-slate-500">{{ Math.round(appearance.veil * 100) }}%</span>
+            </div>
           </div>
         </div>
 

@@ -229,3 +229,88 @@ describe('关闭按钮默认直接收起，偏好可改', () => {
     expect(mount(DesktopPanel).text()).toBe('')
   })
 })
+
+/*
+ * 2026-11-11 第四轮（使用方原话）：
+ *   「无边框自定义标题栏…窗口使用 Windows 原生亚克力磨砂…重点强调：毛玻璃是 Tauri 窗口
+ *     原生材质，不是前端 CSS 模拟，防止抄表滑动卡顿」
+ *
+ * 两条硬约束：
+ *   ① 材质必须在 Rust 侧申请（window-vibrancy），前端不许用 backdrop-filter；
+ *   ② 无边框之后，拖动/最小化/最大化/关闭必须自己接上，否则窗口"关不掉也拖不动"。
+ */
+describe('原生窗口材质与自绘标题栏', () => {
+  it('窗口无边框 + 透明，材质由 Rust 申请', () => {
+    const conf = JSON.parse(read('src-tauri/tauri.conf.json'))
+    const win = conf.app.windows[0]
+    expect(win.decorations).toBe(false)
+    expect(win.transparent).toBe(true)
+
+    expect(read('src-tauri/Cargo.toml')).toContain('window-vibrancy')
+    const lib = read('src-tauri/src/lib.rs')
+    expect(lib).toContain('apply_acrylic')
+    expect(lib).toContain('apply_mica')
+  })
+
+  it('前端不用 backdrop-filter 模拟磨砂（会把长列表滚动拖慢）', () => {
+    for (const file of [
+      'src/layouts/AppShell.vue',
+      'src/components/shell/TitleBar.vue',
+      'src/desktop/appearance.js',
+    ]) {
+      expect(read(file)).not.toMatch(/backdrop-filter/)
+    }
+  })
+
+  it('标题栏三段动作齐全，且能拖窗口', () => {
+    const source = read('src/components/shell/TitleBar.vue')
+    expect(source).toContain('data-tauri-drag-region')
+    expect(source).toContain("aria-label=\"最小化\"")
+    expect(source).toContain('maximized ? \'向下还原\' : \'最大化\'')
+    expect(source).toContain('aria-label="关闭"')
+    // 关闭必须走 win.close()：Rust 侧的 CloseRequested 才会拦下并交给"最小化到托盘 / 退出"
+    expect(source).toContain('win.value?.close()')
+  })
+
+  it('窗口操作权限已放行（不放行会点了没反应）', () => {
+    const caps = JSON.parse(read('src-tauri/capabilities/default.json'))
+    for (const perm of [
+      'core:window:allow-minimize',
+      'core:window:allow-toggle-maximize',
+      'core:window:allow-is-maximized',
+      'core:window:allow-start-dragging',
+    ]) {
+      expect(caps.permissions).toContain(perm)
+    }
+  })
+
+  it('页签缓存用 KeepAlive，切回来不重新加载', () => {
+    const source = read('src/layouts/AppShell.vue')
+    expect(source).toContain('<KeepAlive :max="8">')
+    expect(source).toContain(':key="viewRoute.path"')
+  })
+})
+
+describe('外观设置（壁纸 / 模糊 / 纸面浓度）', () => {
+  it('默认有壁纸，关掉就返回空（退回纯亚克力）', async () => {
+    const { appearance, wallpaperCss, resetAppearance } = await import('../../src/desktop/appearance')
+    resetAppearance()
+    expect(appearance.enabled).toBe(true)
+    expect(wallpaperCss(appearance)).toContain('gradient')
+    expect(wallpaperCss({ ...appearance, enabled: false })).toBe('')
+    // 自定义图优先于内置渐变
+    expect(wallpaperCss({ ...appearance, custom: 'data:image/jpeg;base64,xx' })).toContain('url("data:image')
+    resetAppearance()
+  })
+
+  it('设置写进 localStorage，重开能记住', async () => {
+    localStorage.clear()
+    const mod = await import('../../src/desktop/appearance')
+    mod.appearance.blur = 30
+    await Promise.resolve()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(localStorage.getItem('hnd-desktop-appearance')).toContain('"blur":30')
+    mod.resetAppearance()
+    localStorage.clear()
+  })
+})

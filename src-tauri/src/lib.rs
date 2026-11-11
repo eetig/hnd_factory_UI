@@ -2,6 +2,29 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
+use window_vibrancy::{apply_acrylic, apply_mica};
+
+/// 给主窗口上原生材质（2026-11-11）。
+///
+/// 为什么放在 Rust 侧：Windows 的亚克力是 DWM 合成的真实材质，WebView 里用
+/// `backdrop-filter: blur()` 模拟会让每一帧滚动都重新采样背景，抄表页那种长列表
+/// 一滑就掉帧。系统材质只付一次合成成本。
+///
+/// 顺序：先亚克力（Win10 1803+ 都支持，带色调），失败再云母（Win11 22H2+）。
+/// 两者都不支持时什么都不做 —— 前端有兜底底色，不会变白。
+fn paint_window_material(window: &tauri::WebviewWindow) {
+    #[cfg(target_os = "windows")]
+    {
+        // 参数是 RGBA 色调：微微偏冷的中性灰，让底层壁纸/桌面透上来但不脏。
+        if apply_acrylic(window, Some((24, 24, 28, 150))).is_err() {
+            let _ = apply_mica(window, Some(true));
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window;
+    }
+}
 
 /// 把主窗口叫回前台（托盘左键、托盘菜单「打开主界面」都走这里）。
 fn focus_main(app: &tauri::AppHandle) {
@@ -82,6 +105,11 @@ pub fn run() {
                 builder = builder.icon(icon.clone());
             }
             builder.build(app)?;
+
+            // 无边框窗口 + 原生亚克力：前端画标题栏与页面，窗口背景是系统材质。
+            if let Some(window) = app.get_webview_window("main") {
+                paint_window_material(&window);
+            }
 
             Ok(())
         })

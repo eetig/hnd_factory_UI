@@ -13,6 +13,9 @@ import AppRail from '../components/shell/AppRail.vue'
 import AppSidebar from '../components/shell/AppSidebar.vue'
 import TabStrip from '../components/shell/TabStrip.vue'
 import CommandPalette from '../components/shell/CommandPalette.vue'
+import TitleBar from '../components/shell/TitleBar.vue'
+import { IS_DESKTOP } from '../api/base'
+import { appearance, wallpaperCss } from '../desktop/appearance'
 import { usePalette } from '../composables/usePalette'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { useWorkspaceTabs } from '../composables/useWorkspaceTabs.js'
@@ -277,6 +280,39 @@ const collapsed = ref(readCollapsedFlag())
  */
 const { palette } = usePalette()
 
+/*
+ * 桌面版外壳（2026-11-11）：无边框窗口 + 原生亚克力 + 自绘标题栏 + 壁纸层。
+ *
+ * 壁纸的模糊是**图层上的一次性 filter**，不是背景模糊滤镜：
+ * 后者每滚一帧都要重新采样背景，抄表页那种长列表会明显掉帧（用户明确要求
+ * "毛玻璃必须是 Tauri 原生材质，不能前端 CSS 模拟")。
+ */
+const isDesktop =
+  IS_DESKTOP ||
+  (import.meta.env.DEV && new URLSearchParams(window.location.search).has('desktop'))
+
+const wallpaperStyle = computed(() => {
+  const css = wallpaperCss(appearance)
+  if (!css) return null
+  return {
+    background: css,
+    filter: `blur(${appearance.blur}px)`,
+    transform: 'scale(1.08)',
+  }
+})
+
+/** 纸面不透明度：越小越通透，亚克力/壁纸透上来得越多。 */
+const paperStyle = computed(() => {
+  if (!isDesktop || !appearance.enabled) return null
+  /*
+   * 深色壁纸（夜 / 自定义图）压在地后面时，30% 的通明白纸会让深灰字掉到 4.5:1 以下。
+   * 所以对深底抬一个下限：用户仍可往上调，但不会调到"字看不清"。
+   */
+  const dark = appearance.custom ? true : appearance.wallpaper === 'night'
+  const alpha = dark ? Math.max(appearance.veil, 0.78) : appearance.veil
+  return { backgroundColor: `rgba(255, 255, 255, ${alpha})` }
+})
+
 watch(collapsed, (value) => {
   try {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0')
@@ -292,11 +328,22 @@ function toggleSidebar() {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-desk p-4">
+    <main class="min-h-screen bg-desk p-4" :class="isDesktop ? 'shell-desktop' : ''">
+      <!-- 壁纸层（仅桌面版）：静态图 + 一次性的 blur，不做背景模糊滤镜 -->
       <div
-        class="minimal-field flex h-[calc(100vh-2rem)] overflow-hidden rounded-card border border-line bg-canvas"
+        v-if="isDesktop && wallpaperStyle"
+        class="wallpaper-layer"
+        :style="wallpaperStyle"
+        aria-hidden="true"
+      ></div>
+      <div
+        class="minimal-field flex h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-card border border-line bg-canvas"
+        :class="isDesktop ? 'shell-paper' : ''"
+        :style="paperStyle"
         :data-palette="palette"
       >
+        <TitleBar v-if="isDesktop" />
+        <div class="flex min-h-0 flex-1 overflow-hidden">
         <!--
           侧栏 = 图标栏 + 页清单，合成**一个 aside**：
           两块之间的分界靠 1px 竖线，不靠留缝 —— 留缝会把"一条侧栏"拆成两块浮物。
@@ -431,10 +478,19 @@ function toggleSidebar() {
             <router-view v-else v-slot="{ Component, route: viewRoute }">
               <!-- 变更-105 的 <Transition mode="out-in"> 已在 2026-10-20 摘掉：
                    切回某页会整块空白（老问题，非近期改动）。要淡入请用纯 CSS keyframe。 -->
-              <component :is="Component" :key="viewRoute.path" />
+              <!--
+                页签缓存（2026-11-11）：单 WebView + <KeepAlive> 按路径缓存页面实例。
+                切页签不销毁组件，筛选条件/滚动位置/抄表页的当前块都还在，
+                回到这一页是"接着看"而不是"重新加载"。max=8 与页签上限 12 留了余量：
+                超过 8 个最久没看的会被丢掉，避免内存一路涨。
+              -->
+              <KeepAlive :max="8">
+                <component :is="Component" :key="viewRoute.path" />
+              </KeepAlive>
             </router-view>
           </div>
         </div>
+      </div>
       </div>
     </main>
   </el-config-provider>
@@ -476,5 +532,25 @@ function toggleSidebar() {
   .page-mount > :first-child {
     animation: none;
   }
+}
+
+/*
+ * 桌面版：窗口是透明 + 原生亚克力的，页面不能再铺一层不透明的桌面底色，
+ * 否则亚克力白做了。壁纸层是一张静态、已模糊的图层，压在内容和窗口之间。
+ */
+.shell-desktop {
+  background: transparent;
+}
+.wallpaper-layer {
+  position: fixed;
+  inset: -24px;
+  z-index: 0;
+  pointer-events: none;
+}
+.shell-desktop .shell-paper {
+  position: relative;
+  z-index: 1;
+  /* 纸面自己带 1px 亮边，浮在壁纸上时不至于"糊"进背景 */
+  box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.35);
 }
 </style>
