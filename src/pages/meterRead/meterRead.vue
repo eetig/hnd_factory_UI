@@ -685,6 +685,7 @@ const PAGER_MS_MAX = 1100    // 吸附动画最长时长（一下甩好几页时
 const VELOCITY_WINDOW = 60   // 只取松手前 60ms 的速度：窗口越长，抬手前那点减速越会被平均进去，甩动被判得越慢
 const PEEK_SCALE = 0.14      // 离中心一整页时缩到 86%
 const PEEK_FADE = 0.45       // 离中心一整页时淡到 55%
+const PEEK_PX = 8            // 邻居卡往中间收 8px，露出一点边当"能滑"的暗示
 
 // 舞台宽度先用窗口宽兜底，measureNames 会量到精确值
 const stageW = ref(Math.max(1, uni.getSystemInfoSync?.().windowWidth || 375))
@@ -749,10 +750,17 @@ function pageStyleAt(i) {
   const d = Math.min(1, away)
   const scale = 1 - PEEK_SCALE * d
   const opacity = 1 - PEEK_FADE * d
+  /*
+   * 往中间收几像素（2026-11-11）：原来邻居卡被舞台完全裁掉，
+   * 首屏看不出"可以左右滑"；收进来 8px 就露出一点边，是那种能滑的暗示。
+   * 越靠近正中收得越少（乘 d），落位时正好归零。
+   */
+  const shift = PEEK_PX * d * (i < floatIndex.value ? 1 : -1)
   return {
     width: `${Math.round(w)}px`,
-    transform: `translate3d(${r2(i * w)}px, 0, 0) scale(${r4(scale)})`,
+    transform: `translate3d(${r2(i * w + shift)}px, 0, 0) scale(${r4(scale)})`,
     opacity: `${r2(opacity)}`,
+    zIndex: away < 0.5 ? 2 : 1,
   }
 }
 
@@ -1192,13 +1200,19 @@ watch(
     <template v-else>
       <!-- 顶部：进度 + 已填 + 列表入口 -->
       <view class="mr__head">
-        <view class="mr__progress">
+        <!--
+          「1 / 38 车间」既是进度也是列表入口（2026-11-11）
+          原来列表入口挂在「已填 0」上，但那读起来是状态、没人会去点；
+          这里把入口挪到左上角的计数上，并给一个小箭头明示可点。
+        -->
+        <view class="mr__progress" @click="showList = true">
           <text class="mr__progress-text">
             {{ index + 1 }} / {{ total }}
           </text>
           <text v-if="card" class="mr__section" :style="{ color: sectionColor }">
             {{ card.section || '未分组' }}
           </text>
+          <wd-icon name="arrow-down" size="12px" custom-class="mr__progress-caret" />
         </view>
         <view class="mr__head-right">
           <!--
@@ -1208,9 +1222,13 @@ watch(
             改日期会重新拉那一期的抄表表（loadSheet）。
           -->
           <picker mode="date" :value="readDate" @change="onReadDateChange">
-            <text class="mr__date">{{ readDate.slice(5) }}</text>
+            <view class="mr__date">
+              <wd-icon name="calendar" size="14px" custom-class="mr__date-icon" />
+              <text class="mr__date-text">{{ readDate.slice(5) }}</text>
+            </view>
           </picker>
-          <text class="mr__filled" @click="showList = true">已填 {{ filledNow }}</text>
+          <!-- 已填只是状态，不再当按钮用（列表入口挪到左上角计数上了） -->
+          <text class="mr__filled">已填 {{ filledNow }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
           <text
             class="mr__filter"
@@ -1228,7 +1246,7 @@ watch(
       <view class="mr__progress-bar">
         <view
           class="mr__progress-fill"
-          :style="{ width: ((index + 1) / Math.max(1, total)) * 100 + '%', backgroundColor: sectionColor }"
+          :style="{ width: ((index + 1) / Math.max(1, total)) * 100 + '%' }"
         ></view>
       </view>
 
@@ -1318,14 +1336,29 @@ watch(
               :style="{ backgroundColor: tint(sectionColor, 0.14), color: sectionColor }"
             >{{ displayNo(card) }}</text>
             <text class="mr__name">{{ card.meterName }}</text>
-            <text v-if="card.multiplier > 1" class="mr__mult">倍率 ×{{ card.multiplier }}</text>
             <text v-if="hasReading(card)" class="mr__done">已填</text>
           </view>
 
-          <text class="mr__meta">
-            {{ card.meterCode || '无柜号' }} · 上次 {{ card.prevReading ?? '—' }}
-            <text v-if="card.prevDate">（{{ String(card.prevDate).slice(5) }}）</text>
-          </text>
+          <!--
+            信息条（2026-11-11）：原来这一行是「柜号 · 上次读数（日期）」一长串，
+            字小、读起来要一个个数；改成三格，标签在上、数值在下，
+            柜号/上次/倍率各归各位 —— 也把卡片上下那两百像素的空白收回来一点。
+          -->
+          <view class="mr__facts">
+            <view class="mr__fact">
+              <text class="mr__fact-k">柜号</text>
+              <text class="mr__fact-v">{{ card.meterCode || '无柜号' }}</text>
+            </view>
+            <view class="mr__fact">
+              <text class="mr__fact-k">上次读数</text>
+              <text class="mr__fact-v">{{ card.prevReading === null || card.prevReading === undefined ? '暂无' : card.prevReading }}</text>
+              <text v-if="card.prevDate" class="mr__fact-d">{{ String(card.prevDate).slice(5) }}</text>
+            </view>
+            <view class="mr__fact">
+              <text class="mr__fact-k">倍率</text>
+              <text class="mr__fact-v">{{ card.multiplier > 1 ? '×' + card.multiplier : '×1' }}</text>
+            </view>
+          </view>
 
           <view class="mr__entry">
           <view class="mr__input-row">
@@ -1373,7 +1406,10 @@ watch(
               />
               <text class="mr__photo-remove" @click.stop="draft.photo = ''">×</text>
             </view>
-            <text v-else class="mr__photo-add" @click.stop="openPhotoSheet">📷 拍表存证（可选）</text>
+            <view v-else class="mr__photo-add" @click.stop="openPhotoSheet">
+              <wd-icon name="camera" size="18px" custom-class="mr__photo-icon" />
+              <text class="mr__photo-add-text">拍表存证</text>
+            </view>
           </view>
         </view>
             </view>
@@ -1590,7 +1626,10 @@ watch(
 }
 
 .mr__date {
-  /* 表头上的日期入口（2026-11-06）：小胶囊，与已填/跳过同一行 */
+  /* 日期入口（2026-11-11）：带日历图标的小胶囊 —— 三个胶囊里只有它是"能改的东西" */
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
   background-color: var(--ui-raise-2);
@@ -1599,11 +1638,20 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
+.mr__date-icon {
+  color: var(--ui-text-2);
+}
+
+.mr__date-text {
+  line-height: 1;
+}
+
+/* 已填 / 跳过：只是状态文字，不再是按钮，所以没有下划线、没有底色 */
 .mr__filled,
 .mr__skipped {
   font-size: 24rpx;
   color: var(--ui-text-2);
-  text-decoration: underline;
+  font-variant-numeric: tabular-nums;
 }
 
 .mr__skipped {
@@ -1735,10 +1783,17 @@ watch(
 
 .mr__page-fill {
   width: 100%;
+  height: 100%;
   box-sizing: border-box;
   display: flex;
   justify-content: center;
-  align-items: center;
+  /*
+   * 顶部对齐（2026-11-11）：原来垂直居中，卡片上下各空 ~200px，像页面坏了一半。
+   * 现在贴近标签栏，剩下的空间全留在按钮上方 —— 一块空地，而不是两块。
+   * 顺带好处：键盘弹出后输入框还在上半屏，不会被顶出去。
+   */
+  align-items: flex-start;
+  padding-top: 8rpx;
 }
 
 .mr__page-fill .mr__card,
@@ -1900,7 +1955,14 @@ watch(
 .mr__progress-fill {
   height: 100%;
   border-radius: 999rpx;
+  /* 进度统一用主色（2026-11-11）：橙只留给"异常/超期"，车间身份交给卡片左色条 */
+  background-color: var(--ui-accent);
   transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 240ms ease;
+}
+
+.mr__progress-caret {
+  margin-left: 6rpx;
+  color: var(--ui-text-2);
 }
 
 /* 底部动作条（2026-11-11 收小）：提交按钮不再是"半屏大砖头"，左右翻页各给一个 104rpx 的方块 */
@@ -2258,6 +2320,55 @@ watch(
   color: var(--ui-text-2);
 }
 
+/*
+  信息条（2026-11-11）：柜号 / 上次读数 / 倍率 三格。
+  原来是一行小字长句，读起来要一个个数；现在标签在上、数值在下，一眼对上。
+*/
+.mr__facts {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.mr__fact {
+  flex: 1;
+  min-width: 0;
+  padding: 14rpx 16rpx;
+  border-radius: 14rpx;
+  background-color: var(--ui-surface-2);
+}
+
+.mr__fact-k {
+  display: block;
+  font-size: 20rpx;
+  color: var(--ui-text-2);
+  letter-spacing: 1rpx;
+}
+
+.mr__fact-v {
+  display: block;
+  margin-top: 4rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mr__fact-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.mr__fact-d {
+  font-size: 20rpx;
+  color: var(--ui-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 .mr__input-row {
   display: flex;
   align-items: center;
@@ -2362,12 +2473,23 @@ watch(
 }
 
 .mr__photo-add {
-  display: inline-block;
+  /* 用 wd-icon 的相机，不再用 emoji（emoji 在不同安卓机上是彩色贴纸，和整套线性图标不搭） */
+  display: inline-flex;
+  align-items: center;
+  gap: 10rpx;
   padding: 18rpx 24rpx;
   border-radius: 16rpx;
   border: 2rpx dashed var(--ui-border);
   font-size: 26rpx;
   color: var(--ui-text-2);
+}
+
+.mr__photo-icon {
+  color: var(--ui-text-2);
+}
+
+.mr__photo-add-text {
+  line-height: 1;
 }
 
 .mr__hints {
