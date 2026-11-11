@@ -57,12 +57,12 @@
  */
 .minimal-field {
   /* 圆形揭露的遮罩色 = 纸色（铺满那一刻不跳色）；见 src/utils/circularReveal.js */
-  --hnd-reveal-color: #ffffff;
-  background-color: #ffffff;
+  --hnd-reveal-color: #fafbfc;
+  background-color: #fafbfc;
   background-image:
-    radial-gradient(58% 52% at 12% -6%, rgb(187 173 230 / 0.18), rgb(187 173 230 / 0) 62%),
-    radial-gradient(52% 46% at 92% 4%, rgb(254 201 109 / 0.16), rgb(254 201 109 / 0) 60%),
-    radial-gradient(70% 60% at 68% 108%, rgb(226 173 180 / 0.16), rgb(226 173 180 / 0) 66%);
+    radial-gradient(58% 52% at 12% -6%, rgb(148 163 184 / 0.07), rgb(148 163 184 / 0) 62%),
+    radial-gradient(52% 46% at 92% 4%, rgb(203 213 225 / 0.06), rgb(203 213 225 / 0) 60%),
+    radial-gradient(70% 60% at 68% 108%, rgb(148 163 184 / 0.06), rgb(148 163 184 / 0) 66%);
   background-repeat: no-repeat;
 }
 

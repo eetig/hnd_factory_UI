@@ -1229,7 +1229,7 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
 // 10. 纸：纯白 + 一道 α≤0.04 的暖径向 + 发丝线（x-minimalist）
 // ---------------------------------------------------------------------------
 
-describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + 发丝线', () => {
+describe.skip('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + 发丝线', () => {
   /*
    * 这一组的来路要连着 037 讲，不然读不出为什么管得这么宽。
    *
@@ -1458,7 +1458,7 @@ describe('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + �
 // 11. 面走 token + 发丝线：抬起来的面全是 bg-raised（x-minimalist）
 // ---------------------------------------------------------------------------
 
-describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作台不再有裸 bg-white', () => {
+describe.skip('面走 token + 发丝线：卡片是 bg-raised + border-line，工作台不再有裸 bg-white', () => {
   /*
    * 使用方 2026-10-11 看 037 的成果时说「很多地方都是白色的，看着很刺眼」——
    * 那轮把抬起来的面全换成了暖白。041 换了底（蓝之上，白是雾）；043 又翻回浅底、
@@ -1685,7 +1685,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
 // 12. 不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面）
 // ---------------------------------------------------------------------------
 
-describe('不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面，x-minimalist）', () => {
+describe.skip('不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面，x-minimalist）', () => {
   /*
    * 病史先记着，不然看不出为什么还是「三块」：
    *
@@ -2060,18 +2060,18 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
   it('侧栏深字族的锚点 —— 三档 slate、白透块三档、Steep 桃色胶囊串、焦点环都在', () => {
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
     const tokens = classAttrsOf(stripComments(asideBlock + SHELL_TEXT)).flatMap((a) => a.tokens)
-    for (const t of ['text-slate-900', 'text-slate-700', 'text-slate-600']) {
+    for (const t of ['text-slate-900', 'text-slate-800', 'text-slate-600']) {
       expect(tokens, `侧栏里没有 ${t} —— 深字族的三档没了`).toContain(t)
     }
     // 选中行：墨色胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
     expect(
-      SHELL_TEXT.includes('bg-white/85 text-accent-ink ring-1'),
-      '图标栏选中态不是「bg-white/85 + text-accent-ink + ring-1」那串了 —— ' +
-        '三段各管一件事（透白块/墨色图标/描边粗细），别拆',
+      SHELL_TEXT.includes('bg-white/80 text-slate-900'),
+      '图标栏选中态不是「bg-white/80 + text-slate-900」那串了 —— ' +
+        'v6 的选中态是「透白块 + 墨字」，不再用强调色描边',
     ).toBe(true)
     expect(
-      tokens.includes('bg-white/85'),
-      '图标栏选中块不是透白（bg-white/85）了 —— 侧栏面 #F7F6F3 是浅的，' +
+      tokens.includes('bg-white/80'),
+      '图标栏选中块不是透白（bg-white/80）了 —— 侧栏是半透明白，' +
         '实白块会刺眼（037 使用方诉状同一个理），层次靠透明度。',
     ).toBe(true)
     expect(
@@ -2131,12 +2131,12 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
         '橙被调浅、深字余量收窄，重新决定选中胶囊上的字色再拆这条',
     ).toBeGreaterThanOrEqual(4.5)
     // 版面上的锚：提示行那一串里得有「选中 → 深墨」的分支
-    const hi = SHELL_TEXT.indexOf('bg-white/85 text-accent-ink ring-1')
+    const hi = SHELL_TEXT.indexOf('bg-white/80 text-slate-900')
     expect(hi, '没扫到图标栏选中态那一串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
       SHELL_TEXT.slice(Math.max(0, hi - 240), hi + 240),
-      "图标栏选中态没有 'text-accent-ink' —— 深浅两态的层次靠它",
-    ).toContain('text-accent-ink')
+      "图标栏选中态没有 'text-slate-900' —— 墨字压透白块，v6 的层次靠它",
+    ).toContain('text-slate-900')
   })
 
   it('白面上的弱化文字：slate-600 过 AA（实算 7.58）—— 043「霜面最深端 4.37」那条推理随玻璃消失', () => {
@@ -2942,24 +2942,23 @@ describe('042 的边缘光学与真折射样张：整组退场（x-minimalist）
     for (const [key, value] of Object.entries(ext)) {
       const segs = splitTop(value)
       expect(
-        segs,
-        `${key} 不是恰好一段（实为 ${segs.length} 段）—— 七段结构是 042 的边缘光学，` +
-          '它随玻璃整组退役',
-      ).toHaveLength(1)
-      const rgba = (segs[0].match(/rgba?\(([^)]*)\)/) || [])[1]
-      expect(rgba, `${key} 的投影颜色没解析出来`).toBeTruthy()
-      const [r, g, b, a] = rgba.split(',').map((n) => Number(n.trim()))
-      expect(
-        a,
-        `${key} 的 α=${a} 超过 0.05 —— minimalist 的阴影"几乎不存在"（定稿 0.04 / 0.03）`,
-      ).toBeLessThanOrEqual(0.05)
-      expect(a, `${key} 的 α=${a} 不为正 —— 那就是没有投影，请直接删掉这个 token`).toBeGreaterThan(
-        0,
-      )
-      expect(
-        [r, g, b],
-        `${key} 的投影不是中性黑（${r},${g},${b}）—— 白纸上任何色偏都会显脏`,
-      ).toEqual([0, 0, 0])
+        segs.length,
+        `${key} 有 ${segs.length} 段 —— v6 最多两段（近距 1px 定义边缘 + 远距弥散定义浮起）`,
+      ).toBeLessThanOrEqual(2)
+      for (const seg of segs) {
+        const rgba = (seg.match(/rgba?\(([^)]*)\)/) || [])[1]
+        expect(rgba, `${key} 的投影颜色没解析出来`).toBeTruthy()
+        const [r, g, b, a] = rgba.split(',').map((n) => Number(n.trim()))
+        expect(a, `${key} 的 α=${a} 超过 0.2 —— v6 的阴影只做"离开纸面一点点"`).toBeLessThanOrEqual(0.2)
+        expect(a, `${key} 的 α=${a} 不为正 —— 那就是没有投影，请直接删掉这个 token`).toBeGreaterThan(
+          0,
+        )
+        // v6：投影允许"冷中性"（16,24,40）——纯黑压冷白纸会发死，带一点点冷调更贴 DSH。
+        expect(
+          [r, g, b],
+          `${key} 的投影不是冷中性或纯黑（${r},${g},${b}）—— 有色偏会显脏`,
+        ).toSatisfy(([rr, gg, bb]) => (rr === 0 && gg === 0 && bb === 0) || (rr === 16 && gg === 24 && bb === 40))
+      }
     }
   })
 
@@ -3684,5 +3683,81 @@ describe('变更-124：动效与表格禁令', () => {
     const alpha = Number((zebra.match(/rgba\([^)]*?,\s*([\d.]+)\s*\)/) || [])[1])
     expect(alpha, '配方里读不到斑马纹透明度').toBeGreaterThan(0)
     expect(alpha, '斑马纹太深：会和 hover / 选中态抢注意力（上限 0.03）').toBeLessThanOrEqual(0.03)
+  })
+})
+
+/*
+ * ============================================================
+ * v6（DSH 表面语言，2026-11-11 变更-188）
+ * ============================================================
+ *
+ * 上面三组 `describe.skip` 写的是 v5（x-minimalist「不透明白纸」）的配方：
+ * 侧栏 = bg-veil 不透明面、卡片与纸同色、阴影只剩一段。v6 把它们整体换掉了 ——
+ * 分层从**颜色**移交给**透明度**：侧栏/页签/内容卡都是压在半透明纸上的浮层。
+ *
+ * 这一组只钉 v6 自己的不变量，不重复已经退役的那几条。
+ */
+describe('v6：半透明浮层 + 中性色 + 发丝线（变更-188）', () => {
+  const WORKBENCH_V6 = ['src/layouts/AppShell.vue', 'src/components/shell/AppRail.vue',
+    'src/components/shell/AppSidebar.vue', 'src/components/shell/TabStrip.vue',
+    'src/components/shell/TitleBar.vue'].map(read)
+
+  it('侧栏是半透明浮层（bg-white/55 + border-white/55），不是不透明 veil 面', () => {
+    const aside = WORKBENCH_V6[0].slice(WORKBENCH_V6[0].indexOf('<aside'), WORKBENCH_V6[0].indexOf('</aside>'))
+    expect(aside).toContain('ds-sidebar')
+    expect(aside).toContain('bg-white/55')
+    expect(aside).toContain('border-white/55')
+    expect(aside).toContain('rounded-card')
+    expect(aside, 'v6 的侧栏不再是 bg-veil 的不透明面').not.toContain('bg-veil')
+  })
+
+  it('内容卡是半透明白（bg-white/62）且内边距比 v5 更大（p-6）', () => {
+    expect(WORKBENCH_V6[0]).toContain('page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/55 bg-white/62 p-6')
+  })
+
+  it('页签条不再画底线、页签是浮起来的白块（选中 bg-white/80）', () => {
+    const strip = WORKBENCH_V6[3]
+    expect(strip, '页签条还画着一整条 border-b —— v6 的页签条只靠块本身分层').not.toContain('border-b border-line')
+    expect(strip).toContain('bg-white/80')
+    expect(strip).toContain('role="tablist"')
+  })
+
+  it('调色板是冷中性：没有暖骨（#F2EEE6 / #E8E2D6 / #F6F3EC）', () => {
+    const cfg = read('tailwind.config.js')
+    for (const warm of ['#F2EEE6', '#E8E2D6', '#F6F3EC', '#F7F6F3', '#F7F7F5']) {
+      expect(cfg.toLowerCase(), `暖色 ${warm} 回流了 —— v6 是冷中性`).not.toContain(warm.toLowerCase())
+    }
+    expect(cfg).toContain("desk: '#E8EAEF'")
+    expect(cfg).toContain("region: '#F3F5F8'")
+    expect(cfg).toContain("line: '#E4E7EC'")
+  })
+
+  it('卡片：圆角 18px、两段式软阴影（α ≤ 0.2）', () => {
+    const cfg = read('tailwind.config.js')
+    expect(cfg).toContain("card: '18px'")
+    expect(cfg).toContain('0 1px 2px rgba(16, 24, 40, 0.04)')
+    expect(cfg, '不再允许第二段带 0.04 以上的实底硬阴影').not.toContain('rgba(0, 0, 0, 0.2)')
+  })
+
+  it('表格：表头无实色底、行线 ≤ 5% 墨、斑马纹 ≤ 2%', () => {
+    const css = read('src/table.css')
+    expect(css, '表头又填了实色（region/brand 实底）').not.toMatch(/thead th[\s\S]{0,200}background:\s*(theme\(colors\.region\)|#[0-9a-f]{6})/i)
+    expect(css).toContain('color-mix(in srgb, theme(colors.canvas) 88%, transparent)')
+    expect(css).toMatch(/border-bottom: 1px solid rgba\(16, 24, 40, 0\.045\)/)
+    expect(css).toMatch(/nth-child\(even\)[\s\S]{0,60}rgba\(16, 24, 40, 0\.012\)/)
+    expect(css, 'hover 又在给行加 box-shadow —— v6 只提亮').not.toMatch(/tr:hover[\s\S]{0,120}box-shadow/)
+  })
+
+  it('控件更轻：EP 组件高 30px、圆角 8px、输入框是发丝线内阴影', () => {
+    const css = read('src/styles/dsh.css')
+    expect(css).toContain('--el-component-size: 30px')
+    expect(css).toContain('--el-border-radius-base: 8px')
+    expect(css).toMatch(/\.el-input__wrapper[\s\S]{0,160}box-shadow: 0 0 0 1px var\(--ds-hairline\) inset/)
+  })
+
+  it('外壳仍然不许出现背景模糊滤镜（亚克力必须由 Rust 侧申请）', () => {
+    for (const src of WORKBENCH_V6) {
+      expect(src, '前端出现了背景模糊滤镜 —— 亚克力必须走系统材质').not.toMatch(/backdrop-filter|backdrop-blur/)
+    }
   })
 })

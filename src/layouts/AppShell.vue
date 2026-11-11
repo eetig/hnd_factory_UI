@@ -351,7 +351,7 @@ function toggleSidebar() {
         -->
         <aside
           id="app-sidebar"
-          class="sticky top-0 z-20 flex shrink-0 overflow-hidden rounded-card border border-line bg-veil"
+          class="ds-sidebar sticky top-0 z-20 flex shrink-0 overflow-hidden rounded-card border border-white/55 bg-white/55"
           :class="collapsed ? 'w-[88px]' : 'w-72'"
         >
           <AppRail
@@ -430,7 +430,7 @@ function toggleSidebar() {
           高度分配交给 flex：纸定高 → 本列 flex-col → 页签条 / 标题卡 shrink-0
           → 内容栏 flex-1 min-h-0 overflow-y-auto。缺一级，「固定」就退化成「跟着内容长」。
         -->
-        <div class="flex min-w-0 flex-1 flex-col py-3 pr-3">
+        <div class="flex min-w-0 flex-1 flex-col gap-3 py-4 pr-4">
           <TabStrip
             :tabs="tabs"
             :active-key="activeKey"
@@ -452,9 +452,9 @@ function toggleSidebar() {
             页签已经从这张卡里搬走了（上面那条 TabStrip），所以这里只留标题与面包屑。
           -->
           <div
-            class="sticky top-0 z-30 mb-3 mt-3 shrink-0 rounded-card border border-line bg-raised px-6 py-4"
+            class="sticky top-0 z-30 shrink-0 rounded-card border border-white/55 bg-white/45 px-7 py-5"
           >
-            <h1 class="mb-2 text-2xl font-serif font-bold tracking-tight text-slate-900">
+            <h1 class="mb-1.5 text-[22px] font-semibold tracking-[-0.01em] text-slate-900">
               {{ pageTitle }}
             </h1>
             <!-- 面包屑（组名 › 页面名）：给深链接进来的人看的（侧栏高亮只说明在哪个组） -->
@@ -465,7 +465,7 @@ function toggleSidebar() {
             </nav>
           </div>
 
-          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4">
+          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/55 bg-white/62 p-6">
             <!-- 断网提示（2026-11-11）：桌面版断网时页面能开、接口全失败，
                  让"点了没反应"变成一句人话。网页版同样生效，但只在真的 offline 时出现。 -->
             <OfflineBanner />

@@ -24,11 +24,11 @@ const emit = defineEmits(['navigate', 'lock', 'collapse'])
   <div class="flex min-w-0 flex-1 flex-col" role="group" aria-label="页面">
     <div class="flex items-start justify-between gap-2 px-4 pb-3 pt-4">
       <div class="min-w-0">
-        <p v-show="!collapsed" class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+        <p v-show="!collapsed" class="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
           Factory Ops
         </p>
-        <p v-show="!collapsed" class="mt-1 text-lg font-bold tracking-tight text-slate-900">HND生产助手</p>
-        <p v-show="!collapsed" class="mt-0.5 truncate text-xs text-slate-600">工单与物料查询助手</p>
+        <p v-show="!collapsed" class="mt-1 text-lg font-semibold tracking-tight text-slate-800">HND生产助手</p>
+        <p v-show="!collapsed" class="mt-0.5 truncate text-xs text-slate-500">工单与物料查询助手</p>
       </div>
       <button
         type="button"
@@ -52,9 +52,9 @@ const emit = defineEmits(['navigate', 'lock', 'collapse'])
       </button>
     </div>
 
-    <div v-show="!collapsed" class="flex min-h-0 flex-1 flex-col border-t border-line px-3 pt-3">
+    <div v-show="!collapsed" class="flex min-h-0 flex-1 flex-col px-3 pt-2">
       <div v-if="group" class="px-1">
-        <p class="text-[13px] font-semibold text-slate-900">{{ group.label }}</p>
+        <p class="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-500">{{ group.label }}</p>
         <p v-if="group.hint" class="mt-0.5 text-[11px] text-slate-600">{{ group.hint }}</p>
       </div>
 
@@ -64,7 +64,7 @@ const emit = defineEmits(['navigate', 'lock', 'collapse'])
             <button
               v-if="navItemState(page) === 'locked'"
               type="button"
-              class="block w-full rounded-md px-2.5 py-1.5 text-left text-sm text-slate-500 opacity-60 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              class="block w-full rounded-lg px-2.5 py-2 text-left text-sm text-slate-500 opacity-70 transition hover:bg-white/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
               aria-disabled="true"
               :aria-label="`${page.label}（需注册后可用）`"
               @click="emit('lock', page)"
@@ -74,11 +74,11 @@ const emit = defineEmits(['navigate', 'lock', 'collapse'])
             <button
               v-else
               type="button"
-              class="relative block w-full rounded-md px-2.5 py-1.5 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              class="relative block w-full rounded-lg px-2.5 py-2 text-left text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
               :class="
                 currentPath === page.path
-                  ? 'bg-region font-medium text-slate-900'
-                  : 'text-slate-700 hover:bg-region'
+                  ? 'bg-white/80 font-medium text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.05)]'
+                  : 'text-slate-600 hover:bg-white/45 hover:text-slate-900'
               "
               :aria-current="currentPath === page.path ? 'page' : undefined"
               @click="emit('navigate', page.path)"
@@ -90,7 +90,7 @@ const emit = defineEmits(['navigate', 'lock', 'collapse'])
       </nav>
     </div>
 
-    <div v-show="!collapsed" class="border-t border-line p-3">
+    <div v-show="!collapsed" class="mt-1 px-1 pb-1 pt-2">
       <slot name="footer" />
     </div>
   </div>

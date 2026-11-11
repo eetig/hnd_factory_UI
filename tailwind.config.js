@@ -44,7 +44,7 @@ export default {
          * 与 canvas 的分离比 1.11（spec 实算钉 ≥1.08）—— 外框与纸必须分得开，
          * 否则就是"整屏泛白、看不出有一张纸"（037 使用方原话）。
          */
-        desk: '#F2EEE6',
+        desk: '#E8EAEF',
         /*
          * 纸 —— **纯白 #FFFFFF**（x-minimalist；043 的浅中性场 #E9E9EE 已退役）。
          *
@@ -56,7 +56,7 @@ export default {
          * α 是硬上限 —— 再亮就在宽表里看出色斑，也会让白卡与纸的分离比跌破 1.046。
          * 深字（slate-900）压它 17.9:1。
          */
-        canvas: '#FFFFFF',
+        canvas: '#FAFBFC',
         /*
          * 抬起来的一层 —— 也是**纯白**。
          *
@@ -74,16 +74,16 @@ export default {
          */
         raised: '#FFFFFF',
         /*
-         * 区域底 —— 暖中性一档 #F7F7F5（043 的冷中性 #EEEEF1 已退役）。
+         * 区域底 —— 中性一档（v6 起走冷中性，具体值看 region）。
          * 表头带、列表行 hover、输入框静止底、分组垫底。
          * 压白卡 1.07 —— 「看得见表头」的 1.046 底线由 spec 实算钉着
          * （宽表后台里这条比任何装饰都重要：表头带一没，15 个 tab 的读表速度就掉）。
          * 它是全站唯一的垫底档：不许 slate-50/100 之类的调色板灰回流
          * （spec 有一条反扫钉着这个角色）。EP 的 --el-fill-color 与它同值。
          */
-        region: '#F6F3EC',
+        region: '#F3F5F8',
         /*
-         * 侧栏面 —— 暖骨一档 #F7F6F3（043 的冷灰纱 #CED0D4 已退役）。
+         * 侧栏面 —— v6 起不再是实色：改用半透明白浮层（bg-white/55）。
          *
          * 侧栏不再是一块半透明玻璃，而是**不透明的面 + 1px 发丝线** ——
          * minimalist 的分层是"用描边而不是材质"（它把 glassmorphism 列为反模式，
@@ -93,7 +93,7 @@ export default {
          * 纱面**托不住浅色字**（这条从 043 起没变）：侧栏字族是 slate 深字族，
          * 白色只留在选中胶囊（墨色实底，18.9）里面。
          */
-        veil: '#F6F3EC',
+        veil: '#F5F7FA',
         /*
          * 发丝线 —— **1px #EAEAEA**（minimalist 的形状条直接点名这个值）。
          *
@@ -102,7 +102,7 @@ export default {
          * 键名是 `line` 而不是 `border` —— 与 Tailwind 自己的 borderWidth 键区分开，
          * 也避免与 `borderColor` 的角色名撞车（spec §14 钉着命名不许撞）。
          */
-        line: '#E8E2D6',
+        line: '#E4E7EC',
         /*
          * 品牌色族 —— **墨色 #111111**（x-minimalist；043 的石墨 #1D1D1F 与
          * x-ai 分支的薰衣草蓝 #5e6ad2 都在 git 历史里）。
@@ -166,7 +166,7 @@ export default {
       },
       borderRadius: {
         // 卡片 / 面板。linear 的卡片铬合金圆角 = rounded.sm（8px），原来是 20px
-        card: '16px',
+        card: '18px',
       },
       boxShadow: {
         /*
@@ -232,8 +232,8 @@ export default {
          * 原来的 rgb(150 190 255) / rgb(255 180 175) 两道色散线是"玻璃厚度"的
          * 光学，白色纸面上没有玻璃可镶边，一并去掉（含 §17 的样张）。
          */
-        card: '0 2px 8px rgba(0, 0, 0, 0.04)',
-        panel: '0 1px 2px rgba(0, 0, 0, 0.03)',
+        card: '0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -18px rgba(16, 24, 40, 0.16)',
+        panel: '0 1px 2px rgba(16, 24, 40, 0.03), 0 18px 48px -28px rgba(16, 24, 40, 0.20)',
       },
     },
   },

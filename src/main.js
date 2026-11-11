@@ -75,6 +75,7 @@ import './theme.css'
 import './style.css'
 import './styles/image-viewer-glass.css'
 import './table.css'
+import './styles/dsh.css'
 import './minimal-field.css'
 
 // 日历滚轮翻页（变更-039）：一条 document 级监听，与登录态 / 数据都无关，顶层装一次即可。

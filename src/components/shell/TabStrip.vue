@@ -43,7 +43,7 @@ function handleWheel(event) {
 </script>
 
 <template>
-  <div class="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
+  <div class="flex h-11 shrink-0 items-center gap-2 px-2">
     <button
       v-if="collapsed"
       type="button"
@@ -69,8 +69,8 @@ function handleWheel(event) {
         class="group flex shrink-0 items-center rounded-md border transition"
         :class="
           activeKey === tab.key
-            ? 'border-line bg-region text-slate-900'
-            : 'border-transparent text-slate-600 hover:bg-region/70'
+            ? 'border-white/70 bg-white/80 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.05)]'
+            : 'border-transparent text-slate-500 hover:bg-white/45 hover:text-slate-800'
         "
       >
         <button

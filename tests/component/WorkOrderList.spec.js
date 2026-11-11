@@ -908,8 +908,8 @@ describe('侧栏收起 / 展开', () => {
     // 当前组的标记落在图标块上：白色透块（bg-white/15）+ 白图标。
     // 顺带确认选中的确**转移**了，而不是两块一起亮
     const tools = groups.find((b) => b.attributes('aria-label') === '物料')
-    expect(stats.classes()).toContain('bg-white/85')
-    expect(tools.classes()).not.toContain('bg-white/85')
+    expect(stats.classes()).toContain('bg-white/80')
+    expect(tools.classes()).not.toContain('bg-white/80')
   })
 
   it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记）', async () => {
@@ -929,7 +929,7 @@ describe('侧栏收起 / 展开', () => {
 
     const marked = groups.filter((b) => b.attributes('aria-current') === 'true')
     expect(marked, '同时有 0 个或 1 个以上分组被标成当前 —— 选中标记只能有一个').toHaveLength(1)
-    expect(marked[0].classes(), '当前组的标记是白色透块（bg-white/85），不是旧胶囊').toContain('bg-white/85')
+    expect(marked[0].classes(), '当前组的标记是白色透块（bg-white/80），不是旧胶囊').toContain('bg-white/80')
   })
 
   it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {

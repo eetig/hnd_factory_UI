@@ -18,14 +18,14 @@ const emit = defineEmits(['select'])
 
 <template>
   <div
-    class="flex shrink-0 flex-col items-center border-r border-line bg-veil py-3"
+    class="flex shrink-0 flex-col items-center py-3"
     :class="compact ? 'w-[88px]' : 'w-[76px]'"
     role="group"
     aria-label="模块"
   >
     <!-- 品牌标：一个墨块，不做 logo 图片（零资源、深浅底都清楚） -->
     <div
-      class="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-[15px] font-bold text-on-brand"
+      class="mb-5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900/90 text-[14px] font-semibold text-white"
       aria-hidden="true"
     >
       H
@@ -40,8 +40,8 @@ const emit = defineEmits(['select'])
         class="nav-group-btn flex h-11 w-11 items-center justify-center rounded-lg transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.97]"
         :class="
           currentGroup === group.key
-            ? 'bg-white/85 text-accent-ink ring-1 ring-accent-ink/10'
-            : 'text-slate-600 hover:bg-white/55 hover:text-slate-900'
+            ? 'bg-white/80 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.06)]'
+            : 'text-slate-500 hover:bg-white/45 hover:text-slate-800'
         "
         :title="`${group.label} · ${group.hint}`"
         :aria-label="group.label"

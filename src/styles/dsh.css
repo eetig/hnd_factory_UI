@@ -1,0 +1,171 @@
+/*
+ * ============================================================
+ * DSH 表面语言（v6，2026-11-11 变更-188）
+ * ============================================================
+ *
+ * 目标不是"再加一套主题"，而是把**外壳与容器的材质**换成 DSH 那一套：
+ * 低饱和中性色、弱对比、半透明浮层、极淡的弥散阴影、更松的留白。
+ *
+ * 为什么必须在这一层做（而不是只改 Tailwind token）：
+ *   · `element-plus` 的输入框/按钮/分页/日期选择器是它自己画的，改类名改不到；
+ *   · 表格的 `th` / `tr` 由 `table.css` 统一接管，但卡片容器的"半透"必须落在
+ *     具体容器上（每页的卡片都写了 `bg-raised`，而 `bg-raised` 是不透明 token）。
+ *
+ * 这一层只做**外观**，不碰任何业务逻辑、表格字段、查询条件。
+ */
+
+:root {
+  /* 几档"墨"，用 alpha 表达层次：DSH 里次要文字不靠换色，靠降透明度 */
+  --ds-ink-1: rgba(16, 24, 40, 0.9);
+  --ds-ink-2: rgba(16, 24, 40, 0.66);
+  --ds-ink-3: rgba(16, 24, 40, 0.45);
+  --ds-hairline: rgba(16, 24, 40, 0.07);
+  --ds-hairline-strong: rgba(16, 24, 40, 0.1);
+
+  /* 半透明浮层：侧栏、页签条、卡片 */
+  --ds-veil: rgba(255, 255, 255, 0.5);
+  --ds-veil-strong: rgba(255, 255, 255, 0.68);
+  --ds-card: rgba(255, 255, 255, 0.74);
+
+  /* 极淡弥散阴影：只做"离开纸面一点点"，不做立体 */
+  --ds-shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -18px rgba(16, 24, 40, 0.16);
+  --ds-shadow-float: 0 1px 2px rgba(16, 24, 40, 0.05), 0 18px 44px -24px rgba(16, 24, 40, 0.22);
+
+  /* 控件更轻：DSH 的输入框/按钮比后台系统矮一档 */
+  --el-component-size: 30px;
+  --el-component-size-small: 26px;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+
+  /* 面：全部中性冷白，去掉暖色 */
+  --el-fill-color-blank: rgba(255, 255, 255, 0.72);
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: rgba(255, 255, 255, 0.94);
+  --el-fill-color-lighter: rgba(16, 24, 40, 0.02);
+  --el-fill-color-light: rgba(16, 24, 40, 0.035);
+  --el-fill-color: rgba(16, 24, 40, 0.05);
+
+  /* 边：一律发丝线，没有"框" */
+  --el-border-color: rgba(16, 24, 40, 0.1);
+  --el-border-color-light: rgba(16, 24, 40, 0.08);
+  --el-border-color-lighter: rgba(16, 24, 40, 0.06);
+  --el-border-color-extra-light: rgba(16, 24, 40, 0.04);
+}
+
+/* ---------- 字体：轻一档、松一点 ---------- */
+body {
+  letter-spacing: 0.006em;
+}
+
+/* 页面大标题：衬线保留（编辑感），但不再压到 700 */
+h1 {
+  font-weight: 600;
+}
+
+/* ---------- Element Plus：细线输入、轻按钮 ---------- */
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  box-shadow: 0 0 0 1px var(--ds-hairline) inset;
+  background-color: rgba(255, 255, 255, 0.6);
+  transition: box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.el-input__wrapper:hover,
+.el-select__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--ds-hairline-strong) inset;
+  background-color: rgba(255, 255, 255, 0.78);
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px rgba(90, 146, 229, 0.55) inset;
+  background-color: #fff;
+}
+
+/* 按钮：默认态是"幽灵"，只有主按钮才上色 */
+.el-button {
+  --el-button-bg-color: rgba(255, 255, 255, 0.5);
+  --el-button-border-color: var(--ds-hairline);
+  --el-button-hover-bg-color: rgba(255, 255, 255, 0.8);
+  --el-button-hover-border-color: var(--ds-hairline-strong);
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #5a92e5;
+  --el-button-border-color: #5a92e5;
+  --el-button-hover-bg-color: #74a4ea;
+  --el-button-hover-border-color: #74a4ea;
+  --el-button-text-color: #ffffff;
+  --el-button-hover-text-color: #ffffff;
+  box-shadow: 0 6px 16px -10px rgba(90, 146, 229, 0.55);
+}
+
+/* 分页：不要白底方块 */
+.el-pagination.is-background .el-pager li,
+.el-pagination .btn-prev,
+.el-pagination .btn-next {
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.el-pagination.is-background .el-pager li:hover {
+  background: rgba(16, 24, 40, 0.04);
+}
+
+.el-pagination.is-background .el-pager li.is-active {
+  background: #5a92e5;
+  color: #fff;
+}
+
+/* 日期/下拉弹层：浮起来一点，但别硬 */
+.el-picker-panel,
+.el-select-dropdown,
+.el-popper.is-light {
+  border-radius: 12px;
+  border-color: var(--ds-hairline);
+  box-shadow: var(--ds-shadow-float);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+/* 滚动条：极细 */
+.page-mount::-webkit-scrollbar,
+.purchase-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.page-mount::-webkit-scrollbar-thumb,
+.purchase-scroll::-webkit-scrollbar-thumb {
+  background: rgba(16, 24, 40, 0.12);
+  border-radius: 999px;
+}
+
+/*
+ * 卡片容器：所有页面的 `rounded-card border border-line bg-raised` 都会落到这里。
+ * 这里给一点"弱透明"——桌面版底下是壁纸+亚克力，卡片本该透一点出来；
+ * 网页版底下就是纸，透出来的是纸色，观感是"更轻的卡"。
+ */
+.rounded-card.bg-raised {
+  background-color: var(--ds-card);
+  box-shadow: var(--ds-shadow-soft);
+  border-color: rgba(16, 24, 40, 0.06);
+}
+
+/* 卡片里的表头行、标题行：别再用实色底 */
+.rounded-card.bg-region {
+  background-color: rgba(16, 24, 40, 0.035);
+}
+
+/* 次要文字统一走"降透明度"，不再一个个挑 slate 色号 */
+.ds-muted {
+  color: var(--ds-ink-3);
+}
+
+.ds-muted-strong {
+  color: var(--ds-ink-2);
+}
