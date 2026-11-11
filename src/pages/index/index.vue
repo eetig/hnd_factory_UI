@@ -47,6 +47,7 @@ import WorkOrderImport from '../../components/WorkOrderImport.vue'
 import ImageParse from '../../components/ImageParse.vue'
 import { REPORT_ORDER_TYPES, getReportOrderType } from '../../constants/orderTypes'
 import { normalizeImageList } from '../../utils/image'
+import { chooseImages } from '../../utils/chooseImages'
 import { UTubeBundle, shellVolumeMm3 } from '../../utils/vesselVolume'
 import {
   formatDate,
@@ -857,6 +858,20 @@ const imageDialogVisible = ref(false)
 const imageUploading = ref(false)
 const imageDeleting = ref(false)
 
+/*
+ * 上传图片先选来源（拍摄 / 从相册选择），再调对应的系统能力。
+ *
+ * 为什么不再把 sourceType 写成 ['camera','album']：
+ *   App 端那样会把「拍摄 / 从相册选择」交给框架自绘的选图界面（绿色那套），
+ *   既丑又和本 App 不搭；而且相册那一支根本不是系统相册。
+ * 现在照「图片解析」页的做法：自绘底部弹层当入口，两个来源各走各的 ——
+ *   拍照 → uni.chooseImage({ sourceType: ['camera'] })（系统相机）
+ *   相册 → utils/chooseImages（安卓起手机自带相册，见该文件说明）
+ * 两个上传点（工单图片 / 周汇总图片）共用这一个弹层，用 photoSheetKind 区分。
+ */
+const photoSheetOpen = ref(false)
+const photoSheetKind = ref('order')
+
 // 工单原图给内嵌查看器用的地址数组（与下面的 imageList 同源）
 const workOrderViewerUrls = computed(() => imageList.value.map((item) => resolveAssetUrl(item.url)))
 
@@ -940,17 +955,45 @@ const MAX_IMAGE_PICK = 9
 
 function openImagePicker() {
   if (imageUploading.value || !currentOrderNo.value) return
+  openPhotoSheet('order')
+}
 
-  // 改造前是隐藏的 <input type="file" multiple> + .click()，
-  // 小程序/App 端没有 DOM，改用 uni.chooseImage（三端统一，且能直接调相机）
-  uni.chooseImage({
+/** 打开来源选择弹层（order = 工单图片，weekly = 周汇总图片） */
+function openPhotoSheet(kind) {
+  photoSheetKind.value = kind
+  photoSheetOpen.value = true
+}
+
+/**
+ * 选完来源后的实际取图。
+ *
+ * @param {'camera'|'album'} source 来源
+ *
+ * 一次只给一个 sourceType（理由见上方 photoSheetOpen 的注释）：
+ * 相册走 chooseImages（安卓系统相册），拍照走 uni.chooseImage（系统相机）。
+ */
+function pickPhotosFrom(source) {
+  photoSheetOpen.value = false
+  const isWeekly = photoSheetKind.value === 'weekly'
+
+  if (isWeekly ? weeklyImageUploading.value || !weeklyCurrentOrderNo.value : imageUploading.value || !currentOrderNo.value) {
+    return
+  }
+
+  const options = {
     count: MAX_IMAGE_PICK,
     sizeType: ['original', 'compressed'],
-    sourceType: ['camera', 'album'],
+    sourceType: [source],
     success: (res) => {
-      handleImageSelected(res.tempFilePaths || [])
+      const paths = res.tempFilePaths || []
+      if (!paths.length) return
+      if (isWeekly) handleWeeklyImageSelected(paths)
+      else handleImageSelected(paths)
     },
-  })
+  }
+
+  if (source === 'album') chooseImages(options)
+  else uni.chooseImage(options)
 }
 
 function handleImportCancel() {
@@ -1660,15 +1703,7 @@ function clearWeeklyProductFilter() {
 
 function openWeeklyFilePicker() {
   if (weeklyImageUploading.value || !weeklyCurrentOrderNo.value) return
-
-  uni.chooseImage({
-    count: MAX_IMAGE_PICK,
-    sizeType: ['original', 'compressed'],
-    sourceType: ['camera', 'album'],
-    success: (res) => {
-      handleWeeklyImageSelected(res.tempFilePaths || [])
-    },
-  })
+  openPhotoSheet('weekly')
 }
 
 function showWeeklyPreviousImage() {
@@ -4000,6 +4035,35 @@ onPullDownRefresh(async () => {
           </view>
         </wd-popup>
 
+        <!--
+          上传来源选择：与「图片解析」「抄表」共用同一套视觉
+          （奶白卡片行 + 40px 蓝色图标块 + 底部整宽胶囊取消）。
+        -->
+        <wd-popup
+          v-model="photoSheetOpen"
+          position="bottom"
+          round
+          safe-area-inset-bottom
+          custom-style="background-color: var(--ui-sheet-fill);"
+        >
+          <view class="photo-sheet">
+            <text class="photo-sheet__title">添加图片</text>
+            <view class="photo-sheet__item" @click="pickPhotosFrom('camera')">
+              <view class="photo-sheet__icon">
+                <wd-icon name="camera" size="20px" />
+              </view>
+              <text class="photo-sheet__text">拍摄</text>
+            </view>
+            <view class="photo-sheet__item" @click="pickPhotosFrom('album')">
+              <view class="photo-sheet__icon">
+                <wd-icon name="picture" size="20px" />
+              </view>
+              <text class="photo-sheet__text">从相册选择</text>
+            </view>
+            <view class="photo-sheet__cancel" @click="photoSheetOpen = false">取消</view>
+          </view>
+        </wd-popup>
+
         <ProductSelectDialog
           v-model="weeklyProductDialogVisible"
           :options="weeklyProductOptions"
@@ -4778,6 +4842,59 @@ onPullDownRefresh(async () => {
 </template>
 
 <style scoped lang="scss">
+/* 上传来源弹层：与 ImageParse 的 .source-sheet、抄表的 .photo-sheet 同一套视觉。
+   条目是带底色的卡片、图标 40×40 圆角块、底部一颗整宽的胶囊取消键。 */
+.photo-sheet {
+  padding: 20px 16px 12px;
+}
+
+.photo-sheet__title {
+  display: block;
+  margin: 0 0 12px 4px;
+  font-size: 13px;
+  color: $ui-text-3;
+}
+
+.photo-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border-radius: $ui-radius-md;
+  background-color: $ui-surface-2;
+}
+
+.photo-sheet__item:active {
+  background-color: $ui-raise-2;
+}
+
+.photo-sheet__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background-color: $ui-accent-soft;
+  color: $ui-accent;
+}
+
+.photo-sheet__text {
+  font-size: 16px;
+  color: $ui-text;
+}
+
+.photo-sheet__cancel {
+  margin-top: 6px;
+  padding: 15px;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-raise-2;
+  text-align: center;
+  font-size: 16px;
+  color: $ui-text-2;
+}
+
 /* 页面外壳。
    本页在 pages.json 里声明了 navigationStyle: custom —— 页面自带标题栏，
    就不该再叠一条原生导航栏。代价是要自己给状态栏让出高度，
