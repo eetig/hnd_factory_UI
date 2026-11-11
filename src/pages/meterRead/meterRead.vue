@@ -220,6 +220,19 @@ const filledNow = computed(
 const total = computed(() => cards.value.length)
 
 /*
+ * 卡片下方那一行（2026-11-11）：本车间抄了几块、下一块是哪块。
+ * 目的有两个：把卡片下面那块空场用上；顺便告诉你"往左滑就是它"，
+ * 比单纯留白有用 —— 使用方是站在配电室一块块往下抄的。
+ */
+const nextOf = computed(() => cards.value[index.value + 1] || null)
+const sectionStat = computed(() => {
+  const sec = card.value?.section || ''
+  if (!sec) return { total: 0, filled: 0 }
+  const same = cards.value.filter((c) => (c.section || '') === sec)
+  return { total: same.length, filled: same.filter((c) => hasReading(c)).length }
+})
+
+/*
  * 「全部 38 块表」列表里这张表该显示什么（2026-11-11）。
  * 原来只认服务端 reading ⇒ 现场刚填、还没「提交全部」的表在列表里全写「未填」，
  * 跟顶上的「已填 2」自相矛盾（用户就是这么发现的）。
@@ -1412,6 +1425,21 @@ watch(
             </view>
           </view>
         </view>
+
+            <!--
+              卡片下面那一行（2026-11-11）：本车间进度 + 下一块。
+              原来这里是纯空白（约 200px）；现在放两件现场真用得上的信息，
+              也顺便给个方向提示：往左滑就是下一块。
+            -->
+            <view v-if="sectionStat.total || nextOf" class="mr__upnext">
+              <text v-if="sectionStat.total" class="mr__upnext-stat">
+                本车间已抄 {{ sectionStat.filled }}/{{ sectionStat.total }}
+              </text>
+              <text v-if="nextOf" class="mr__upnext-next">
+                下一块 {{ displayNo(nextOf) }} {{ nextOf.meterName }}
+              </text>
+              <text v-if="nextOf" class="mr__upnext-arrow">→</text>
+            </view>
             </view>
 
             <view v-else class="mr__page-fill" @click="jumpTo(item.i)">
@@ -1421,7 +1449,8 @@ watch(
                   <text class="mr__peek-name">{{ item.meterName }}</text>
                 </view>
                 <text class="mr__peek-meta">
-                  {{ item.meterCode || '无柜号' }} · 上次 {{ item.prevReading ?? '—' }}
+                  {{ item.meterCode || '无柜号' }} · 上次
+                  {{ item.prevReading === null || item.prevReading === undefined ? '暂无' : item.prevReading }}
                 </text>
                 <text class="mr__peek-value">
                   {{ hasReading(item) ? shownReading(item) : '还没填' }}
@@ -1786,14 +1815,45 @@ watch(
   height: 100%;
   box-sizing: border-box;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   /*
    * 顶部对齐（2026-11-11）：原来垂直居中，卡片上下各空 ~200px，像页面坏了一半。
-   * 现在贴近标签栏，剩下的空间全留在按钮上方 —— 一块空地，而不是两块。
+   * 现在贴近标签栏，剩下的空间留给下面那行"本车间进度 / 下一块"，
    * 顺带好处：键盘弹出后输入框还在上半屏，不会被顶出去。
    */
-  align-items: flex-start;
+  align-items: stretch;
+  justify-content: flex-start;
   padding-top: 8rpx;
+}
+
+/* 卡片下方那行：本车间已抄 x/y · 下一块 n 名称 → */
+.mr__upnext {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 18rpx;
+  padding: 0 10rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__upnext-stat {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mr__upnext-next {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.mr__upnext-arrow {
+  flex: none;
+  color: var(--ui-text-3);
 }
 
 .mr__page-fill .mr__card,
