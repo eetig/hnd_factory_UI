@@ -680,7 +680,6 @@ const gesture = reactive({
  * 轨道里始终只有三张（上一张 / 当前 / 下一张）：位移越过一整页就把 index 挪一格、
  * offset 折回页内（内容在屏幕外换），所以 38 张表也不会同时挂载。
  */
-const PAGER_TAU = 325        // 松手后按这个时间常数做速度预测
 const PAGER_MS_MIN = 200     // 吸附动画最短时长
 const PAGER_MS_MAX = 1100    // 吸附动画最长时长（一下甩好几页时会到这一档）
 const VELOCITY_WINDOW = 100  // 只取松手前 100ms 的速度
@@ -723,9 +722,14 @@ const trackStyle = computed(() => ({
  * 拖到一半（d = 0.5）时，上一张和下一张都是"半大不小"的状态；
  * 松手动画走的也是同一个函数，所以动画过程和手指拖动完全一致。
  */
+const FAR_PAGE_STYLE = { display: 'none' }
+
 function pageStyleAt(i) {
   const w = Math.max(1, stageW.value)
-  const d = Math.min(1, Math.abs(i * w - scrollX.value) / w)
+  const away = Math.abs(i * w - scrollX.value) / w
+  // 离得远的页直接藏掉：留 38 个 transform 合成层一起缩放，手机会掉帧，摸起来发黏
+  if (away > 1.6) return FAR_PAGE_STYLE
+  const d = Math.min(1, away)
   const scale = 1 - PEEK_SCALE * d
   const opacity = 1 - PEEK_FADE * d
   return {
@@ -968,20 +972,70 @@ function onTouchEnd() {
   const v = releaseVelocity()
   samples = []
   if (Math.abs(scrollX.value - gesture.startScroll) > 8) lastDragAt = Date.now()
-  const w = Math.max(1, stageW.value)
   /*
-   * v 是手指速度（px/ms，向左为负），轨道方向相反 ⇒ 预测位置 = 当前 - v × 325。
-   * 再按页宽取整：甩得越快，落点越远，可以一次跨好几页。
+   * 手感的关键：松手这一帧的速度要"接着走"，不能重新起一段缓动。
+   * 上一版是先算落点再 easeOut，起手加速度是松手速度的 2.6 倍 —— 手指抬起来
+   * 还会被"推一把"，反过来慢滑时又立刻停住，摸起来就是发黏。
+   * 现在把速度直接交给惯性滑行（指数衰减），速度是连续的，然后才轻轻吸附。
    */
-  const predicted = scrollX.value - v * PAGER_TAU
-  animateTo(Math.round(clampX(predicted) / w) * w, v)
+  startGlide(-v)
+}
+
+/** 惯性衰减系数（每 ms）：距离 ≈ 初速度 / 这个数，越小滑得越远 */
+const GLIDE_DECAY = 0.003
+
+/**
+ * 松手后的惯性滑行：速度按 e^(-λt) 衰减，位置一路积分。
+ * 这里只改 scrollX，视觉上的放大/缩小/标签高亮全都跟着它走；
+ * 速度降到肉眼看不见时才吸附到最近一整页（abs(v) < 0.06 px/ms）。
+ */
+function startGlide(v0) {
+  const token = ++flingToken
+  if (!Number.isFinite(v0) || Math.abs(v0) < 0.04) {
+    pagerAnimating.value = false
+    snapNearest()
+    return
+  }
+  let v = v0
+  let last = nowMs()
+  pagerAnimating.value = true
+  lastTickAt = last
+  const tick = () => {
+    if (token !== flingToken) return
+    const now = nowMs()
+    const dt = Math.min(48, Math.max(1, now - last))
+    last = now
+    lastTickAt = now
+    v *= Math.exp(-GLIDE_DECAY * dt)
+    const max = maxScroll.value
+    let next = scrollX.value + v * dt
+    if (next <= 0 || next >= max) {
+      next = Math.max(0, Math.min(max, next))
+      v = 0
+    }
+    scrollX.value = next
+    if (Math.abs(v) > 0.06) {
+      rafTick(tick)
+      return
+    }
+    pagerAnimating.value = false
+    snapNearest()
+  }
+  rafTick(tick)
+}
+
+/** 滑行停下后，轻轻吸到最近的一整页（很短，不再有"被拽一下"） */
+function snapNearest() {
+  const w = Math.max(1, stageW.value)
+  animateTo(Math.round(scrollX.value / w) * w, 0, 200)
 }
 
 /**
- * 吸附动画：easeOutCubic，先快后慢，时长按「距离 / 初速度」推。
- * 手指拖着走的是 scrollX 本身，所以动画起点就是松手那一帧的位置，不会有跳变。
+ * 吸附动画：easeOutCubic。
+ * forceMs 给了就用它（滑行结束后的贴齐），否则按「距离 / 初速度」推。
+ * 起点就是当前 scrollX，所以不会跳。
  */
-function animateTo(target, v = 0) {
+function animateTo(target, v = 0, forceMs = 0) {
   const from = scrollX.value
   const to = clampX(target)
   const dist = Math.abs(to - from)
@@ -990,9 +1044,9 @@ function animateTo(target, v = 0) {
     return
   }
   const speed = Math.max(0.9, Math.abs(v))
-  const ms = Math.abs(v) > 0.05
+  const ms = forceMs || (Math.abs(v) > 0.05
     ? Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, (dist / speed) * 1.15))
-    : Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, 320 + (dist / Math.max(1, stageW.value) - 1) * 90))
+    : Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, 320 + (dist / Math.max(1, stageW.value) - 1) * 90)))
   const t0 = nowMs()
   const token = ++flingToken
   lastTickAt = t0
@@ -1630,6 +1684,8 @@ watch(
 /* 邻居卡：只给"这是哪块表、上次多少、填没填"，不提供输入，避免误触 */
 .mr__peek {
   width: 100%;
+  /* 和可编辑卡差不多高：这样左右两张在缩放时是"同一张卡变小"，不会突然变矮 */
+  min-height: 460rpx;
   max-height: 62vh;
   padding: 28rpx;
   border-radius: 28rpx;
