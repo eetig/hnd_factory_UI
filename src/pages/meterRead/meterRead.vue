@@ -432,22 +432,17 @@ function toggleOnlyUnfilled() {
 /* ===== 拍照（可选）===== */
 
 /**
- * 拍照入口（2026-11-11 定稿：走系统原生选择框）。
+ * 拍照入口。
  *
- * 演变：最初是 uni.chooseImage 自带的系统 ActionSheet（使用方嫌丑）→ 2026-11-06
- * 改成自绘底部抽屉 → 2026-11-11 使用方明确「用手机原生的选择框」，于是换回
- * uni.showActionSheet：相机/相册两项由系统弹，跟系统一致、也不占页面 DOM。
+ * 2026-11-11 定稿：入口用项目自己的底部弹层（跟「图片解析」的"添加单据图片"一模一样），
+ * 点「拍摄 / 从相册选择」之后才交给系统相机/相册 —— 系统那套选择器不用改也改不了。
+ * 中间试过纯 uni.showActionSheet，使用方嫌它跟页面不是一套观感，已换回自绘入口。
  */
+const photoSheetOpen = ref(false)
+
 function openPhotoSheet() {
   if (!card.value) return
-  uni.showActionSheet({
-    itemList: ['拍照', '从相册选择'],
-    success: (res) => {
-      takePhoto(res.tapIndex === 1 ? 'album' : 'camera')
-    },
-    // 用户点空白取消：什么都不做
-    fail: () => {},
-  })
+  photoSheetOpen.value = true
 }
 
 /** 把刚拍的图存进系统相册（App/小程序；H5 无相册概念，跳过） */
@@ -478,6 +473,8 @@ async function saveToAlbum(filePath) {
 
 async function takePhoto(from) {
   if (!card.value) return
+  // 先把弹层收起来，再交系统相机/相册，回来时用户看到的是卡片而不是半开的弹层
+  photoSheetOpen.value = false
   try {
     const chosen = await new Promise((resolve, reject) => {
       uni.chooseImage({
@@ -1694,6 +1691,36 @@ watch(
         </view>
       </view>
     </template>
+
+      <!-- 拍表存证入口：跟「图片解析」的"添加单据图片"同一套弹层，选完才进系统相机/相册 -->
+      <wd-popup
+        v-model="photoSheetOpen"
+        position="bottom"
+        round
+        safe-area-inset-bottom
+        custom-style="background-color: var(--ui-sheet-fill);"
+        @close="photoSheetOpen = false"
+      >
+        <view class="photo-sheet">
+          <text class="photo-sheet__title">拍表存证</text>
+
+          <view class="photo-sheet__item" @click="takePhoto('camera')">
+            <view class="photo-sheet__icon">
+              <wd-icon name="camera" size="20px" />
+            </view>
+            <text class="photo-sheet__label">拍摄</text>
+          </view>
+
+          <view class="photo-sheet__item" @click="takePhoto('album')">
+            <view class="photo-sheet__icon">
+              <wd-icon name="picture" size="20px" />
+            </view>
+            <text class="photo-sheet__label">从相册选择</text>
+          </view>
+
+          <view class="photo-sheet__cancel" @click="photoSheetOpen = false">取消</view>
+        </view>
+      </wd-popup>
   
 </view>
 </template>
@@ -2759,5 +2786,73 @@ watch(
    教训：改配对标签不要用非贪婪正则跨行匹配。 */
 .mr__intent {
   display: none !important;
+}
+
+/* ===== 拍表存证弹层 =====
+   直接沿用「图片解析」里"添加单据图片"那套观感（使用方指定"参考这种"）：
+   大圆角、条目是带底色的卡片、蓝色图标块、底部一颗整宽的胶囊取消键。
+   选择本身仍交给系统相机/相册，只有入口是我们自己的。 */
+.photo-sheet {
+  padding: 20px 16px 12px;
+}
+
+.photo-sheet__title {
+  display: block;
+  padding: 0 4px 14px;
+  color: $ui-text-3;
+  font-size: 13px;
+}
+
+.photo-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: $ui-radius-md;
+  background-color: $ui-surface-2;
+  color: $ui-text;
+  font-size: 15px;
+  transition: background-color $ui-dur $ui-ease;
+}
+
+.photo-sheet__item + .photo-sheet__item {
+  margin-top: 8px;
+}
+
+.photo-sheet__item:active {
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.photo-sheet__icon {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: $ui-radius-sm;
+  background-color: $ui-accent-soft;
+  color: $ui-accent-text;
+}
+
+.photo-sheet__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-sheet__cancel {
+  margin-top: 18px;
+  padding: 15px;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-raise-2;
+  color: $ui-text-2;
+  font-size: 15px;
+  text-align: center;
+  transition: background-color $ui-dur $ui-ease;
+}
+
+.photo-sheet__cancel:active {
+  background-color: $ui-raise-3;
 }
 </style>
