@@ -8,13 +8,13 @@ import { hasPerm } from '../api/auth'
 import { uploadFile } from '../api/upload'
 import { useEquipmentLedger } from '../composables/useEquipmentLedger'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
+import { chooseImages } from '../utils/chooseImages'
 import {
   TANK_LEVEL_LOCATIONS,
   buildTankLevelDraft,
   useTankLevelData,
 } from '../composables/useTankLevelData'
 import { useTankLevelImages } from '../composables/useTankLevelImages'
-import { chooseImages } from '../utils/chooseImages'
 import { buildStampLines, CANVAS_EDGE, watermarkPhoto } from '../utils/photoWatermark'
 
 /**
@@ -495,7 +495,7 @@ async function recognizeTankFromUploaded(image) {
 /** 识别面板里直接拍照/选图：拍到的图**同时进图据**（本来就是这张罐体照） */
 function pickPhotoForOcr(source) {
   const count = source === 'camera' ? 1 : 9
-  uni.chooseImage({
+  const options = {
     count,
     sizeType: ['compressed'],
     sourceType: [source],
@@ -505,7 +505,10 @@ function pickPhotoForOcr(source) {
       pendingPhotos.value = [...pendingPhotos.value, ...paths]
       recognizeTankName(paths[0], 'tank.jpg')
     },
-  })
+  }
+  // 相册这一支在 App 端要起手机自带相册（框架自绘的选图界面使用方不要），见 utils/chooseImages
+  if (source === 'album') chooseImages(options)
+  else uni.chooseImage(options)
 }
 
 /** 用户点了某个候选：填进容器名称，并顺带把属地填上（复用"填了容器名就带属地"） */
