@@ -921,6 +921,17 @@ function releaseVelocity() {
   return (last.x - first.x) / dt
 }
 
+/**
+ * 刹车：立刻掐断正在跑的惯性/吸附动画，冻结在当前 offset。
+ * 帧循环每次 tick 都会核对 flingToken，这里把代次 +1，
+ * 已经在队列里的那一帧回来就直接退出 —— 不会再往前多滑一像素。
+ */
+function brake() {
+  flingToken += 1
+  pagerAnimating.value = false
+  lastTickAt = 0
+}
+
 /* ---------- 手势：1:1 跟手，拖动时不做任何分页判定 ---------- */
 function onTouchStart(e) {
   /*
@@ -930,7 +941,12 @@ function onTouchStart(e) {
   if (pagerAnimating.value && nowMs() - lastTickAt > 400) {
     pagerAnimating.value = false
   }
-  if (pagerAnimating.value) return
+  /*
+   * 滑行途中按下 = 刹车：动画当场停住，位置就冻在这里；
+   * 这次按下继续往下面走，直接当作本次拖拽的起点，
+   * 所以刹完不用再摸第二下才能拖。
+   */
+  if (pagerAnimating.value) brake()
   if (!nameCenters.value.length) measureNames()
   const t = e.touches?.[0]
   if (!t) return
