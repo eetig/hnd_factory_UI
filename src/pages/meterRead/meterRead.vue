@@ -682,7 +682,7 @@ const gesture = reactive({
  */
 const PAGER_MS_MIN = 200     // 吸附动画最短时长
 const PAGER_MS_MAX = 1100    // 吸附动画最长时长（一下甩好几页时会到这一档）
-const VELOCITY_WINDOW = 100  // 只取松手前 100ms 的速度
+const VELOCITY_WINDOW = 60   // 只取松手前 60ms 的速度：窗口越长，抬手前那点减速越会被平均进去，甩动被判得越慢
 const PEEK_SCALE = 0.14      // 离中心一整页时缩到 86%
 const PEEK_FADE = 0.45       // 离中心一整页时淡到 55%
 
@@ -704,6 +704,21 @@ const floatIndex = computed(() => scrollX.value / Math.max(1, stageW.value))
 const activeIndex = computed(() => {
   const at = Math.round(floatIndex.value)
   return Math.max(0, Math.min(cards.value.length - 1, at))
+})
+
+/** 只渲染视口附近的几张：38 张全挂 DOM 时每帧要 diff 38 个节点，低端机容易掉帧 */
+const WINDOW_RADIUS = 2
+const windowCards = computed(() => {
+  const n = cards.value.length
+  if (!n) return []
+  const from = Math.max(0, activeIndex.value - WINDOW_RADIUS)
+  const to = Math.min(n - 1, activeIndex.value + WINDOW_RADIUS)
+  const out = []
+  for (let i = from; i <= to; i += 1) {
+    const row = cards.value[i]
+    if (row) out.push({ ...row, i })
+  }
+  return out
 })
 
 /** 标签高亮跟着滚动手势连续走（50% 就是中间态），不是松手才切 */
@@ -998,7 +1013,11 @@ function onTouchEnd() {
 }
 
 /** 惯性衰减系数（每 ms）：距离 ≈ 初速度 / 这个数，越小滑得越远 */
-const GLIDE_DECAY = 0.0015
+const GLIDE_DECAY = 0.003
+/** 滑行初速度的放大系数：拖动仍是 1:1，只把"甩出去"这一下放大，手感更快 */
+const GLIDE_BOOST = 2.4
+/** 甩出去的初速度上限：太快的一甩不至于一路飞到最后一页，还留得住"减速感" */
+const GLIDE_VMAX = 11
 
 /**
  * 松手后的惯性滑行：速度按 e^(-λt) 衰减，位置一路积分。
@@ -1007,12 +1026,12 @@ const GLIDE_DECAY = 0.0015
  */
 function startGlide(v0) {
   const token = ++flingToken
-  if (!Number.isFinite(v0) || Math.abs(v0) < 0.04) {
+  if (!Number.isFinite(v0) || Math.abs(v0) < 0.03) {
     pagerAnimating.value = false
     snapNearest()
     return
   }
-  let v = v0
+  let v = Math.max(-GLIDE_VMAX, Math.min(GLIDE_VMAX, v0 * GLIDE_BOOST))
   let last = nowMs()
   pagerAnimating.value = true
   lastTickAt = last
@@ -1030,7 +1049,7 @@ function startGlide(v0) {
       v = 0
     }
     scrollX.value = next
-    if (Math.abs(v) > 0.12) {
+    if (Math.abs(v) > 0.3) {
       rafTick(tick)
       return
     }
@@ -1043,7 +1062,7 @@ function startGlide(v0) {
 /** 滑行停下后，轻轻吸到最近的一整页（很短，不再有"被拽一下"） */
 function snapNearest() {
   const w = Math.max(1, stageW.value)
-  animateTo(Math.round(scrollX.value / w) * w, 0, 200)
+  animateTo(Math.round(scrollX.value / w) * w, 0, 160)
 }
 
 /**
@@ -1239,12 +1258,12 @@ watch(
       >
         <view class="mr__track" :style="trackStyle">
           <view
-            v-for="(item, i) in cards"
+            v-for="item in windowCards"
             :key="item.meterId"
             class="mr__page"
-            :style="pageStyleAt(i)"
+            :style="pageStyleAt(item.i)"
           >
-            <view v-if="i === activeIndex" class="mr__page-fill">
+            <view v-if="item.i === activeIndex" class="mr__page-fill">
         <view
           class="mr__card"
           :class="{ 'is-anomaly': anomaly }"
@@ -1330,7 +1349,7 @@ watch(
         </view>
             </view>
 
-            <view v-else class="mr__page-fill" @click="jumpTo(i)">
+            <view v-else class="mr__page-fill" @click="jumpTo(item.i)">
               <view class="mr__peek">
                 <view class="mr__peek-head">
                   <text class="mr__peek-no">{{ displayNo(item) }}</text>
