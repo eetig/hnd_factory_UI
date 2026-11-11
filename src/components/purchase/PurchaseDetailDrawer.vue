@@ -870,7 +870,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               <col style="width: 92px" />
               <col style="width: 64px" />
               <col style="width: 62px" />
-              <col style="width: 48px" />
             </colgroup>
             <thead>
               <tr class="bg-region text-[11px] tracking-wide text-slate-500">
@@ -883,18 +882,13 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 <th scope="col" class="px-2 py-1.5 font-normal">要求到货</th>
                 <th scope="col" class="px-2 py-1.5 font-normal">需求人</th>
                 <th scope="col" class="px-2 py-1.5 text-right font-normal">数量</th>
-                <th scope="col" class="px-2 py-1.5"><span class="sr-only">操作</span></th>
               </tr>
             </thead>
             <tbody class="text-xs">
               <tr
                 v-for="line in sortedRows"
                 :key="line.id"
-                class="border-t border-line align-top transition-colors focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-                :class="canEdit ? 'cursor-pointer hover:bg-region focus-within:bg-region' : ''"
-                :tabindex="canEdit ? 0 : undefined"
-                @keydown.enter.prevent="canEdit && editOrder()"
-                @click="canEdit && editOrder()"
+                class="border-t border-line align-top"
               >
                 <td class="px-2.5 py-2">
                   <span class="rounded-full px-1.5 py-0.5 text-[11px]" :class="statusClass(line.status)">
@@ -949,17 +943,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                   {{ line.requester || '—' }}
                 </td>
                 <td class="px-2 py-2 text-right tabular-nums text-slate-600">{{ quantityText(line) }}</td>
-                <td class="px-2 py-2 text-right">
-                  <button
-                    v-if="canEdit"
-                    type="button"
-                    class="rounded px-1.5 py-1 text-[11px] text-slate-600 transition-colors hover:bg-raised hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-                    :aria-label="`编辑 ${line.materialName || '这条物料'}`"
-                    @click.stop="editOrder"
-                  >
-                    编辑
-                  </button>
-                </td>
               </tr>
             </tbody>
           </table>

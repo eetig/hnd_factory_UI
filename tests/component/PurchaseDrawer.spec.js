@@ -507,3 +507,24 @@ describe('单据视图：物料名称 / 编码 / 规格点一下就能复制', (
     expect(writeText).toHaveBeenLastCalledWith('99%')
   })
 })
+
+describe('单据视图只能从底部「编辑」进编辑态', () => {
+  it('点明细的任意一格都不会进编辑，行尾也没有编辑按钮', async () => {
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
+    await open({ mode: 'edit', row: ROW })
+
+    const row = wrapper.findAll('tbody tr')[0]
+    // 状态 / 提出 / 物料名称 / 编码 / 规格 / 用途 / 要求到货 / 需求人 / 数量
+    const purposeCell = row.findAll('td')[5]
+    expect(purposeCell.text()).toContain('合成')
+    await purposeCell.trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(cell('需求人').exists(), '点「用途」不该进编辑').toBe(false)
+    expect(footerEditButton(), '底部「编辑」不见了').toBeTruthy()
+
+    const rowButtons = row.findAll('button').map((b) => b.text().trim())
+    expect(rowButtons, '行尾还留着编辑按钮').not.toContain('编辑')
+    expect(rowButtons.length, '行里应当只剩名称/编码/规格三个复制块').toBe(3)
+  })
+})
