@@ -357,6 +357,8 @@ async function loadSheet() {
     // 默认停在第一张还没填的卡上
     const firstUnfilled = cards.value.findIndex((c) => c.reading === null || c.reading === undefined)
     index.value = firstUnfilled === -1 ? 0 : firstUnfilled
+    // 轨道要跟着落位：否则"表单挂在第 index 张、轨道却停在第 0 张"
+    scrollX.value = index.value * Math.max(1, stageW.value)
     if (card.value) loadCard(card.value)
   } catch (e) {
     rows.value = []
@@ -370,15 +372,11 @@ function goTo(next) {
   if (next < 0 || next >= cards.value.length) return
   if (next === index.value) return
   /*
-   * 2026-11-11 修：滑走前先把当前这张的读数写进 entries。
-   *
-   * 原来只有输入框 blur 才 commitDraft；手机上滑卡片时输入框不会失焦，
-   * 于是刚填的数字还只活在 draft 里，翻到下一张再 loadCard 就被草稿覆盖成空 ——
-   * 表现就是「19 号填好了，左滑到 20 号，19 号的数没了」。
+   * 2026-11-11：翻页现在由轨道位置驱动，所以不能只改 index，
+   * 必须让轨道滚到那一页（jumpTo 内部会动 scrollX，index 由 activeIndex 跟着交接）。
+   * 交接时会 commitDraft，滑走那张的读数不会丢。
    */
-  commitDraft()
-  index.value = next
-  if (card.value) loadCard(card.value)
+  jumpTo(next)
 }
 
 /** 在"翻卡列表"里前进/后退（筛选打开时跳过已填的） */
@@ -663,6 +661,7 @@ const gesture = reactive({
   dragging: false,
   startX: 0,
   startY: 0,
+  startScroll: 0,
   dx: 0,
   dy: 0,
   decided: false,
@@ -681,32 +680,80 @@ const gesture = reactive({
  * 轨道里始终只有三张（上一张 / 当前 / 下一张）：位移越过一整页就把 index 挪一格、
  * offset 折回页内（内容在屏幕外换），所以 38 张表也不会同时挂载。
  */
-const PAGER_TAU = 325       // 预测时间常数 ms
-const PAGER_MS_MIN = 180    // 吸附动画最短时长
-const PAGER_MS_MAX = 900    // 吸附动画最长时长
-const EDGE_RESIST = 0.35    // 第一张往右 / 最后一张往左的橡皮筋
-const VELOCITY_WINDOW = 100 // 只取松手前 100ms 的速度
+const PAGER_TAU = 325        // 松手后按这个时间常数做速度预测
+const PAGER_MS_MIN = 200     // 吸附动画最短时长
+const PAGER_MS_MAX = 1100    // 吸附动画最长时长（一下甩好几页时会到这一档）
+const VELOCITY_WINDOW = 100  // 只取松手前 100ms 的速度
+const PEEK_SCALE = 0.14      // 离中心一整页时缩到 86%
+const PEEK_FADE = 0.45       // 离中心一整页时淡到 55%
 
-// 页面左右各有内边距，先用"窗口宽"兜底，measureNames 会量到舞台精确宽度
+// 舞台宽度先用窗口宽兜底，measureNames 会量到精确值
 const stageW = ref(Math.max(1, uni.getSystemInfoSync?.().windowWidth || 375))
 const pagerAnimating = ref(false)
-const offset = ref(0) // 页内实时位移 px：负数 = 往左（看下一张）
-const prevCard = computed(() => cards.value[index.value - 1] || null)
-const nextCard = computed(() => cards.value[index.value + 1] || null)
+// 轨道已经滚了多少 px：0 = 第一张居中，w = 第二张居中
+const scrollX = ref(0)
 
-/** 浮点页号：index 是锚点，offset 是页内进度，标签带与高亮都从它推 */
-const progressF = computed(() => index.value - offset.value / Math.max(1, stageW.value))
+const r2 = (n) => Math.round(n * 100) / 100
+const r4 = (n) => Math.round(n * 10000) / 10000
+const maxScroll = computed(() => Math.max(0, (cards.value.length - 1) * Math.max(1, stageW.value)))
+const clampX = (v) => Math.max(0, Math.min(maxScroll.value, v))
 
-/** 高亮按进度走：滚过 60% 就切到下一张（不用等松手） */
+/** 浮点页号：0 = 第一张居中，1.5 = 卡在第二、三张中间 */
+const floatIndex = computed(() => scrollX.value / Math.max(1, stageW.value))
+
+/** 表单挂在哪张：永远挂在"最接近正中"的那张，跨过 50% 就交接 */
+const activeIndex = computed(() => {
+  const at = Math.round(floatIndex.value)
+  return Math.max(0, Math.min(cards.value.length - 1, at))
+})
+
+/** 标签高亮跟着滚动手势连续走（50% 就是中间态），不是松手才切 */
 const highlightIndex = computed(() => {
-  const at = Math.floor(progressF.value + 0.4)
+  const at = Math.floor(floatIndex.value + 0.5)
   return Math.max(0, Math.min(cards.value.length - 1, at))
 })
 const highlightMeterId = computed(() => cards.value[highlightIndex.value]?.meterId || '')
 
 const trackStyle = computed(() => ({
-  transform: `translate3d(${(-stageW.value + offset.value).toFixed(2)}px, 0, 0)`,
+  transform: `translate3d(${-r2(scrollX.value)}px, 0, 0)`,
 }))
+
+/*
+ * 每张卡的位置、大小、透明度都在这里算，全部只写 transform / opacity：
+ * 拖到一半（d = 0.5）时，上一张和下一张都是"半大不小"的状态；
+ * 松手动画走的也是同一个函数，所以动画过程和手指拖动完全一致。
+ */
+function pageStyleAt(i) {
+  const w = Math.max(1, stageW.value)
+  const d = Math.min(1, Math.abs(i * w - scrollX.value) / w)
+  const scale = 1 - PEEK_SCALE * d
+  const opacity = 1 - PEEK_FADE * d
+  return {
+    width: `${Math.round(w)}px`,
+    transform: `translate3d(${r2(i * w)}px, 0, 0) scale(${r4(scale)})`,
+    opacity: `${r2(opacity)}`,
+  }
+}
+
+/*
+ * 表单跟着"正中那张"交接：交接前先把上一张的读数落进 entries，
+ * 否则滑走的那张会丢（老问题，2026-11-11 又踩过一次）。
+ */
+watch(activeIndex, (now) => {
+  if (now === index.value) return
+  commitDraft()
+  index.value = now
+  if (card.value) loadCard(card.value)
+})
+
+/*
+ * 舞台宽度是后量到的（页面左右有内边距，不等于窗口宽）：
+ * 量完按新页宽重算一次位置，否则轨道会和"表单挂在哪张"差半屏。
+ */
+watch(stageW, (w) => {
+  if (pagerAnimating.value || gesture.dragging) return
+  scrollX.value = index.value * Math.max(1, w)
+})
 
 /* 标签带的测量结果：每个标签中心相对带子左边缘的 px */
 const nameCenters = ref([])
@@ -759,8 +806,9 @@ function nameShiftAt(i) {
 
 /** 标签带位移：按浮点页号在两个标签中心之间插值，和卡片完全同一个进度 */
 const namesShift = computed(() => {
-  const at = Math.floor(progressF.value)
-  const frac = progressF.value - at
+  const raw = floatIndex.value
+  const at = Math.max(0, Math.min(nameCenters.value.length - 1, Math.floor(raw)))
+  const frac = Math.max(0, Math.min(1, raw - at))
   const from = nameShiftAt(at)
   return from + (nameShiftAt(at + 1) - from) * frac
 })
@@ -829,7 +877,6 @@ function doSkip() {
  */
 function restore() {
   pagerAnimating.value = false
-  offset.value = 0
   gesture.dragging = false
   gesture.decided = false
 }
@@ -870,43 +917,14 @@ function releaseVelocity() {
   return (last.x - first.x) / dt
 }
 
-/** 换页：先 commitDraft 再切 index，保证"滑走的那张"不丢读数 */
-function advancePage(delta) {
-  const next = index.value + delta
-  if (next < 0 || next >= cards.value.length) return false
-  commitDraft()
-  index.value = next
-  if (card.value) loadCard(card.value)
-  return true
-}
-
-/** 越过一整页就换页并把 offset 折回页内：轨道永远只有三张 */
-function recyclePages() {
-  const w = Math.max(1, stageW.value)
-  while (offset.value >= w) {
-    if (!advancePage(-1)) {
-      offset.value = 0
-      return
-    }
-    offset.value -= w
-  }
-  while (offset.value <= -w) {
-    if (!advancePage(1)) {
-      offset.value = 0
-      return
-    }
-    offset.value += w
-  }
-}
-
+/* ---------- 手势：1:1 跟手，拖动时不做任何分页判定 ---------- */
 function onTouchStart(e) {
   /*
    * 动画卡住的自愈：rAF 在后台标签页/系统省电时会停，
-   * 一旦超过 400ms 没有新帧，就认为这次滚动已经死了，别让页面永远划不动。
+   * 超过 400ms 没有新帧就认为这次滚动已经死了，别让页面永远划不动。
    */
   if (pagerAnimating.value && nowMs() - lastTickAt > 400) {
     pagerAnimating.value = false
-    offset.value = 0
   }
   if (pagerAnimating.value) return
   if (!nameCenters.value.length) measureNames()
@@ -914,7 +932,7 @@ function onTouchStart(e) {
   if (!t) return
   gesture.startX = t.clientX
   gesture.startY = t.clientY
-  gesture.lastX = t.clientX
+  gesture.startScroll = scrollX.value
   // 左缘 24px 不接管：那里是系统"返回"手势区
   gesture.dragging = t.clientX > 24
   gesture.decided = false
@@ -931,7 +949,7 @@ function onTouchMove(e) {
   const dy = t.clientY - gesture.startY
   if (!gesture.decided) {
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
-    // 竖向多于横向 ⇒ 判定为页面滚动，不再动卡片
+    // 竖向多于横向 ⇒ 这是页面滚动，不要抢
     if (Math.abs(dy) > Math.abs(dx)) {
       gesture.dragging = false
       return
@@ -939,15 +957,8 @@ function onTouchMove(e) {
     gesture.decided = true
   }
   pushSample(t.clientX)
-  const w = Math.max(1, stageW.value)
-  let move = t.clientX - (gesture.lastX ?? gesture.startX)
-  gesture.lastX = t.clientX
-  const atStart = index.value === 0 && offset.value >= 0 && move > 0
-  const atEnd = index.value >= cards.value.length - 1 && offset.value <= 0 && move < 0
-  if (atStart || atEnd) move *= EDGE_RESIST
-  offset.value = Math.max(-w, Math.min(w, offset.value + move))
-  recyclePages()
-  gesture.dy = dy
+  // 1:1：手指走多少，轨道走多少。只在两端夹住，不加阻尼
+  scrollX.value = clampX(gesture.startScroll - dx)
 }
 
 function onTouchEnd() {
@@ -956,44 +967,32 @@ function onTouchEnd() {
   gesture.decided = false
   const v = releaseVelocity()
   samples = []
-  if (Math.abs(offset.value) > 8) lastDragAt = Date.now()
+  if (Math.abs(scrollX.value - gesture.startScroll) > 8) lastDragAt = Date.now()
   const w = Math.max(1, stageW.value)
-  // 预测落点：当前位置 + 速度 × 325ms，再按页宽取整 ⇒ 快滑自然跨多页
-  const predicted = offset.value + v * PAGER_TAU
   /*
-   * pages 是"轨道页坐标"，不是 index 增量：往左滑一页 = -1，
-   * 目标 index = index - pages，所以范围是 [index-(n-1), index]。
-   * 第一版把上下界写反（写成 [-index, n-1-index]），在第一张往左滑就被夹成 0，
-   * 表现是"怎么甩都弹回来"。
+   * v 是手指速度（px/ms，向左为负），轨道方向相反 ⇒ 预测位置 = 当前 - v × 325。
+   * 再按页宽取整：甩得越快，落点越远，可以一次跨好几页。
    */
-  const pages = Math.max(
-    index.value - (cards.value.length - 1),
-    Math.min(index.value, Math.round(predicted / w)),
-  )
-  flingTo(pages, v)
+  const predicted = scrollX.value - v * PAGER_TAU
+  animateTo(Math.round(clampX(predicted) / w) * w, v)
 }
 
 /**
- * 惯性滚动到 pages（相对当前页，可多页）。
- * 时长按「距离 / 初速度」推，easeOutCubic 先快后慢；
- * 动画里越过整页就换页并折回坐标，最后精确对齐到页边界。
+ * 吸附动画：easeOutCubic，先快后慢，时长按「距离 / 初速度」推。
+ * 手指拖着走的是 scrollX 本身，所以动画起点就是松手那一帧的位置，不会有跳变。
  */
-function flingTo(pages, v = 0) {
-  const w = Math.max(1, stageW.value)
-  let from = offset.value / w
-  let to = pages
-  const dist = Math.abs(to - from) * w
+function animateTo(target, v = 0) {
+  const from = scrollX.value
+  const to = clampX(target)
+  const dist = Math.abs(to - from)
   if (dist < 0.6) {
-    offset.value = 0
+    scrollX.value = to
     return
-  }  /*
-   * 时长：跟着手指甩出去的用「距离 / 初速度」推（快甩拉不住、慢拖慢慢归位）；
-   * 点标签这种没有速度的跳转，按跨了几页线性加一点，别让人等 900ms。
-   */
+  }
   const speed = Math.max(0.9, Math.abs(v))
   const ms = Math.abs(v) > 0.05
     ? Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, (dist / speed) * 1.15))
-    : Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, 300 + (dist / Math.max(1, w) - 1) * 80))
+    : Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, 320 + (dist / Math.max(1, stageW.value) - 1) * 90))
   const t0 = nowMs()
   const token = ++flingToken
   lastTickAt = t0
@@ -1003,47 +1002,22 @@ function flingTo(pages, v = 0) {
     lastTickAt = nowMs()
     const t = Math.min(1, (nowMs() - t0) / ms)
     const eased = 1 - Math.pow(1 - t, 3)
-    let pg = from + (to - from) * eased
-    while (pg <= -1) {
-      if (!advancePage(1)) {
-        pg = 0
-        from = 1
-        to = 1
-        break
-      }
-      from += 1
-      to += 1
-      pg += 1
-    }
-    while (pg >= 1) {
-      if (!advancePage(-1)) {
-        pg = 0
-        from = -1
-        to = -1
-        break
-      }
-      from -= 1
-      to -= 1
-      pg -= 1
-    }
-    offset.value = pg * w
+    scrollX.value = from + (to - from) * eased
     if (t < 1) {
       rafTick(tick)
       return
     }
-    offset.value = 0
+    scrollX.value = to
     pagerAnimating.value = false
   }
   rafTick(tick)
 }
 
-/** 直接跳到第 i 张（点标签、提交校验回跳）：走同一套惯性动画 */
+/** 直接跳到第 i 张（点标签、点预览卡、箭头）：走同一套吸附动画 */
 function jumpTo(target) {
   if (pagerAnimating.value) return
-  // 参数是"轨道页坐标"：往左一页是 -1，往右回到上一张是 +1
-  const pages = index.value - target
-  if (!pages) return
-  flingTo(pages, 0)
+  const at = Math.max(0, Math.min(cards.value.length - 1, target))
+  animateTo(at * Math.max(1, stageW.value), 0)
 }
 
 /* ===== 提交进度提示 ===== */
@@ -1179,11 +1153,14 @@ watch(
       </view>
 
       <!--
-        卡片轨道（2026-11-11）：三张并排 —— 上一张 / 当前 / 下一张。
-        拖的时候整条轨道跟手平移；松手吸附。中间那张才是可编辑的真卡。
+        卡片轨道（2026-11-11 v3）：一条连续的横向容器，38 张表排在同一条线上。
+        拖动时整条轨道 1:1 跟手（没有阻尼、没有"过半才翻"的判定）；
+        每张卡的缩放与透明度由"它离屏幕中心多远"实时算出来，
+        所以拖到一半时上一张和下一张都处在中间尺寸 —— 不是松手才变。
+        只有正中间那张挂可编辑表单，其余是轻量预览：38 张表不会同时挂表单。
       -->
       <view
-        v-if="card"
+        v-if="cards.length"
         class="mr__stage"
         @touchstart.stop="onTouchStart"
         @touchmove.stop.prevent="onTouchMove"
@@ -1191,25 +1168,13 @@ watch(
         @touchcancel.stop="onTouchEnd"
       >
         <view class="mr__track" :style="trackStyle">
-          <!-- 上一张（预览态，不可编辑） -->
-          <view class="mr__slot">
-            <view v-if="prevCard" class="mr__peek" @click="step(-1)">
-              <view class="mr__peek-head">
-                <text class="mr__peek-no">{{ displayNo(prevCard) }}</text>
-                <text class="mr__peek-name">{{ prevCard.meterName }}</text>
-              </view>
-              <text class="mr__peek-meta">
-                {{ prevCard.meterCode || '无柜号' }} · 上次 {{ prevCard.prevReading ?? '—' }}
-              </text>
-              <text class="mr__peek-value">
-                {{ hasReading(prevCard) ? shownReading(prevCard) : '还没填' }}
-              </text>
-              <text class="mr__peek-hint">‹ 松手回到这张</text>
-            </view>
-          </view>
-
-          <!-- 当前（可编辑） -->
-          <view class="mr__slot">
+          <view
+            v-for="(item, i) in cards"
+            :key="item.meterId"
+            class="mr__page"
+            :style="pageStyleAt(i)"
+          >
+            <view v-if="i === activeIndex" class="mr__page-fill">
         <view
           class="mr__card"
           :class="{ 'is-anomaly': anomaly }"
@@ -1293,22 +1258,21 @@ watch(
             <text v-else class="mr__photo-add" @click.stop="openPhotoSheet">📷 拍表存证（可选）</text>
           </view>
         </view>
-          </view>
+            </view>
 
-          <!-- 下一张（预览态，不可编辑） -->
-          <view class="mr__slot">
-            <view v-if="nextCard" class="mr__peek" @click="step(1)">
-              <view class="mr__peek-head">
-                <text class="mr__peek-no">{{ displayNo(nextCard) }}</text>
-                <text class="mr__peek-name">{{ nextCard.meterName }}</text>
+            <view v-else class="mr__page-fill" @click="jumpTo(i)">
+              <view class="mr__peek">
+                <view class="mr__peek-head">
+                  <text class="mr__peek-no">{{ displayNo(item) }}</text>
+                  <text class="mr__peek-name">{{ item.meterName }}</text>
+                </view>
+                <text class="mr__peek-meta">
+                  {{ item.meterCode || '无柜号' }} · 上次 {{ item.prevReading ?? '—' }}
+                </text>
+                <text class="mr__peek-value">
+                  {{ hasReading(item) ? shownReading(item) : '还没填' }}
+                </text>
               </view>
-              <text class="mr__peek-meta">
-                {{ nextCard.meterCode || '无柜号' }} · 上次 {{ nextCard.prevReading ?? '—' }}
-              </text>
-              <text class="mr__peek-value">
-                {{ hasReading(nextCard) ? shownReading(nextCard) : '还没填' }}
-              </text>
-              <text class="mr__peek-hint">继续往左滑 ›</text>
             </view>
           </view>
         </view>
@@ -1456,7 +1420,7 @@ watch(
   background-attachment: scroll;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - var(--window-top, 0px));
   padding: 16rpx 24rpx 0;
   box-sizing: border-box;
 }
@@ -1616,28 +1580,49 @@ watch(
   position: relative;
 }
 
-/* 三张一排的轨道：默认露出中间那张，位移由 JS 直接写 transform */
+/* 一条连续横向轨道：38 张表排在同一条线上，只有 translate3d 在动 */
 .mr__track {
-  display: flex;
-  align-items: stretch;
-  width: 300%;
+  /*
+   * 不能用 absolute：那样它不占高度，舞台就只剩底部按钮那么高，
+   * 卡片会被压扁、按钮还会浮到卡片中间（2026-11-11 踩过）。
+   * 这里让它作为一个会伸缩的普通块，撑满按钮之外的空间。
+   */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
   will-change: transform;
   backface-visibility: hidden;
 }
 
-.mr__slot {
-  flex: 0 0 33.3333%;
-  width: 33.3333%;
-  min-width: 0;
+/*
+ * 每一页绝对定位在自己的横坐标上（pageStyle 写 translate3d(i*w)），
+ * 缩放与透明度同样由 pageStyle 按"离屏幕中心多远"实时算，
+ * 于是拖动过程中两侧卡片是连续放大/缩小的，不是松手才跳。
+ */
+.mr__page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 2rpx;
+  padding: 0 12rpx;
   box-sizing: border-box;
+  will-change: transform, opacity;
+  transform-origin: center center;
 }
 
-/* 槽里的卡片要撑满槽宽，否则 flex 居中会把卡片压成内容宽 */
-.mr__slot .mr__card {
+.mr__page-fill {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+
+.mr__page-fill .mr__card,
+.mr__page-fill .mr__peek {
   width: 100%;
   box-sizing: border-box;
 }
@@ -1651,7 +1636,6 @@ watch(
   border: 2rpx solid var(--ui-border);
   border-left: 8rpx solid var(--ui-border-strong);
   background-color: var(--ui-surface);
-  opacity: 0.72;
   display: flex;
   flex-direction: column;
   gap: 10rpx;
