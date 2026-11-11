@@ -1012,51 +1012,46 @@ function onTouchEnd() {
   startGlide(-v)
 }
 
-/** 惯性衰减系数（每 ms）：距离 ≈ 初速度 / 这个数，越小滑得越远 */
-const GLIDE_DECAY = 0.003
-/** 滑行初速度的放大系数：拖动仍是 1:1，只把"甩出去"这一下放大，手感更快 */
-const GLIDE_BOOST = 2.4
-/** 甩出去的初速度上限：太快的一甩不至于一路飞到最后一页，还留得住"减速感" */
-const GLIDE_VMAX = 11
+/*
+ * 松手之后怎么"滑"：
+ * 距离 = 初速度 × 时间常数，时长 = 3 × 时间常数 ⇒ easeOutCubic 的起手导数
+ * 正好等于初速度（3D/T），速度是接得上的，不会像早先那样被"推一把"。
+ * 三个旋钮：
+ *   GLIDE_TAU  —— 时间常数（ms）；越大滑得越远，时长也跟着变长
+ *   GLIDE_BOOST —— 把手指速度放大成甩动速度（拖动本身还是 1:1）
+ *   GLIDE_VMAX —— 初速度上限，避免一甩飞到底
+ */
+const GLIDE_TAU = 330
+const GLIDE_BOOST = 3.6
+const GLIDE_VMAX = 15
+const GLIDE_MIN_MS = 420
 
 /**
- * 松手后的惯性滑行：速度按 e^(-λt) 衰减，位置一路积分。
- * 这里只改 scrollX，视觉上的放大/缩小/标签高亮全都跟着它走；
- * 速度降到肉眼看不见时才吸附到最近一整页（abs(v) < 0.06 px/ms）。
+ * 松手：按速度算一段"该滑多远"，再用 easeOutCubic 走过去。
+ * 起点速度与手指速度连续（导数匹配），所以手感是"接着滑"而不是"重新起一段动画"。
  */
 function startGlide(v0) {
-  const token = ++flingToken
-  if (!Number.isFinite(v0) || Math.abs(v0) < 0.03) {
+  const w = Math.max(1, stageW.value)
+  const n = cards.value.length
+  // 调用方传进来的是"轨道方向"的速度（往左拖 = 正），这里只放大，不再取反
+  const vTrack = Math.max(-GLIDE_VMAX, Math.min(GLIDE_VMAX, v0 * GLIDE_BOOST))
+  if (!Number.isFinite(vTrack) || Math.abs(vTrack) < 0.05) {
     pagerAnimating.value = false
     snapNearest()
     return
   }
-  let v = Math.max(-GLIDE_VMAX, Math.min(GLIDE_VMAX, v0 * GLIDE_BOOST))
-  let last = nowMs()
-  pagerAnimating.value = true
-  lastTickAt = last
-  const tick = () => {
-    if (token !== flingToken) return
-    const now = nowMs()
-    const dt = Math.min(48, Math.max(1, now - last))
-    last = now
-    lastTickAt = now
-    v *= Math.exp(-GLIDE_DECAY * dt)
-    const max = maxScroll.value
-    let next = scrollX.value + v * dt
-    if (next <= 0 || next >= max) {
-      next = Math.max(0, Math.min(max, next))
-      v = 0
-    }
-    scrollX.value = next
-    if (Math.abs(v) > 0.3) {
-      rafTick(tick)
-      return
-    }
-    pagerAnimating.value = false
+  const minX = 0
+  const maxX = Math.max(0, (n - 1) * w)
+  const want = scrollX.value + vTrack * GLIDE_TAU
+  const target = Math.max(minX, Math.min(maxX, want))
+  const dist = Math.abs(target - scrollX.value)
+  if (dist < 0.6) {
     snapNearest()
+    return
   }
-  rafTick(tick)
+  // 3D/T = 初速度 ⇒ 起手速度与松手速度一致；时长下限防止极短距离过冲
+  const ms = Math.max(GLIDE_MIN_MS, (dist / Math.abs(vTrack)) * 3)
+  animateTo(target, vTrack, ms)
 }
 
 /** 滑行停下后，轻轻吸到最近的一整页（很短，不再有"被拽一下"） */
