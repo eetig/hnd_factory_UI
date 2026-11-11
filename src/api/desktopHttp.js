@@ -16,10 +16,43 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 function resolveUrl(config) {
   const url = config.url || ''
-  if (/^https?:\/\//i.test(url)) return url
-  const base = (config.baseURL || '').replace(/\/+$/, '')
-  if (!base) return url
-  return base + (url.startsWith('/') ? url : `/${url}`)
+  const absolute = /^https?:\/\//i.test(url)
+  let full = absolute ? url : url
+  if (!absolute) {
+    const base = (config.baseURL || '').replace(/\/+$/, '')
+    if (base) full = base + (url.startsWith('/') ? url : `/${url}`)
+  }
+  const query = serializeParams(config.params)
+  if (!query) return full
+  return full + (full.includes('?') ? '&' : '?') + query
+}
+
+/*
+ * 把 axios 的 config.params 拼成查询串。
+ *
+ * ⚠️ 这是 1.0.2 的真实事故：自写 adapter 只顾了 URL 和 body，忘了 params，
+ * 于是所有带查询条件的接口都变成"裸请求"——物料查询页直接报「缺少分页参数 pageNum」。
+ * 浏览器版由 axios 自己拼，所以网页版一直是好的，只有桌面版踩中。
+ * 数组按 axios 默认风格写成 `key[]=a&key[]=b`（后端的 String[] / List 都能接）。
+ */
+export function serializeParams(params) {
+  if (!params) return ''
+  const parts = []
+  const push = (key, value) => {
+    if (value === undefined || value === null || value === '') return
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item === undefined || item === null) continue
+        parts.push(`${encodeURIComponent(`${key}[]`)}=${encodeURIComponent(String(item))}`)
+      }
+      continue
+    }
+    push(key, value)
+  }
+  return parts.join('&')
 }
 
 function headerObject(config) {

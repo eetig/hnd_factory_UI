@@ -1,8 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElButton, ElCheckbox, ElDialog } from 'element-plus'
+import { ElButton, ElCheckbox, ElDialog, ElOption, ElSelect } from 'element-plus'
 import { IS_DESKTOP } from '../api/base'
 import { autostartOn, checkUpdate, desktopVersion, installUpdate, setAutostart } from '../desktop'
+import { CLOSE_ACTIONS, getCloseAction, setCloseAction } from '../desktop/closePreference'
 
 /**
  * 桌面版的小设置面板（2026-11-11，Tauri 接入）。
@@ -17,6 +18,20 @@ const open = ref(false)
 const version = ref('')
 const autostart = ref(false)
 const busy = ref(false)
+
+/*
+ * 关闭按钮的行为（2026-11-11 第二轮）：默认「最小化到托盘」——点 ✕ 直接收起、不弹窗。
+ * 想改成每次问、或直接退出，在这里改，存在本机 localStorage。
+ */
+const closeAction = ref(getCloseAction())
+
+function changeCloseAction(next) {
+  closeAction.value = setCloseAction(next)
+}
+
+function closeHint(value) {
+  return CLOSE_ACTIONS.find((item) => item.value === value)?.hint || ''
+}
 
 /** 更新检查的四种状态：idle 未查 / checking 查中 / latest 已最新 / found 有新版 */
 const updateState = ref('idle')
@@ -98,6 +113,26 @@ async function runInstall() {
           >
             {{ autostart ? '已开启' : '已关闭' }}
           </ElCheckbox>
+        </div>
+
+        <div class="flex items-start justify-between gap-4 border-t border-line pt-3">
+          <div>
+            <p class="text-slate-900">点关闭时</p>
+            <p class="mt-0.5 text-xs text-slate-500">{{ closeHint(closeAction) }}</p>
+          </div>
+          <ElSelect
+            :model-value="closeAction"
+            class="!w-[132px]"
+            size="small"
+            @update:model-value="changeCloseAction"
+          >
+            <ElOption
+              v-for="item in CLOSE_ACTIONS"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </ElSelect>
         </div>
 
         <div class="border-t border-line pt-3">

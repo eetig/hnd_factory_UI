@@ -145,3 +145,87 @@ describe('桌面版绕开浏览器跨域', () => {
     expect(read('src/App.vue')).toContain('installDesktopCloseBehavior')
   })
 })
+
+/*
+ * 1.0.2 现场事故（2026-11-11）：
+ *   桌面版物料查询页报「缺少分页参数 pageNum」——自写 adapter 把 config.params 整个忘了。
+ *   网页版由 axios 自己拼查询串，所以一直正常；只有桌面版会踩。
+ */
+describe('桌面 adapter 必须带上查询参数', () => {
+  it('把 params 拼成查询串（含中文与数组）', async () => {
+    const { serializeParams } = await import('../../src/api/desktopHttp')
+
+    expect(serializeParams({ pageNum: 1, pageSize: 20 })).toBe('pageNum=1&pageSize=20')
+    expect(serializeParams({ keyword: '阀 门' })).toBe('keyword=%E9%98%80%20%E9%97%A8')
+    // 空值不发（与 axios 默认一致，避免后端把 "" 当成筛选条件）
+    expect(serializeParams({ a: '', b: null, c: undefined, d: 0 })).toBe('d=0')
+    // 数组按 axios 默认风格
+    expect(serializeParams({ statuses: ['A', 'B'] })).toBe('statuses%5B%5D=A&statuses%5B%5D=B')
+    expect(serializeParams(null)).toBe('')
+  })
+
+  it('adapter 里确实用了它（而不是只拼 baseURL 和 url）', () => {
+    const source = read('src/api/desktopHttp.js')
+    expect(source).toContain('serializeParams(config.params)')
+    // 回归：1.0.2 里这里只有 `return base + url`，params 被丢掉
+    expect(source).not.toMatch(/return base \+ \(url\.startsWith/)
+  })
+})
+
+describe('关闭询问的两个动作都不能静默失败', () => {
+  it('hide / exit 失败要提示，不能和"用户点了取消"共用一个 catch', () => {
+    const source = read('src/desktop/closeBehavior.js')
+    expect(source).toContain("await win.hide()")
+    expect(source).toContain("ElMessage.error(`收不到托盘")
+    expect(source).toContain("ElMessage.error(`退不出去")
+    // 权限：窗口收起、进程退出必须显式放行
+    const caps = JSON.parse(read('src-tauri/capabilities/default.json'))
+    expect(caps.permissions).toContain('core:window:allow-hide')
+    expect(caps.permissions).toContain('process:allow-exit')
+  })
+})
+
+/*
+ * 2026-11-11 第三轮（使用方原话）：
+ *   「记住选择，最小化到后台，点击关闭就是直接最小化，不弹出提示窗口。这个设置可在设置中修改」
+ * 默认必须是不弹窗直接收起 —— 车间电脑上这是挂机程序，多点一次都是噪音。
+ */
+describe('关闭按钮默认直接收起，偏好可改', () => {
+  it('没设置过时默认 minimize，而不是 ask', async () => {
+    localStorage.clear()
+    const { getCloseAction, setCloseAction, CLOSE_ACTIONS } = await import(
+      '../../src/desktop/closePreference'
+    )
+    expect(getCloseAction()).toBe('minimize')
+    expect(CLOSE_ACTIONS.map((c) => c.value)).toEqual(['minimize', 'quit', 'ask'])
+
+    setCloseAction('ask')
+    expect(getCloseAction()).toBe('ask')
+    // 存了脏值也要能回到默认，不能让窗口打不开
+    localStorage.setItem('hnd-desktop-close-action', 'wat')
+    expect(getCloseAction()).toBe('minimize')
+    expect(setCloseAction('nope')).toBe('minimize')
+    localStorage.clear()
+  })
+
+  it('closeBehavior 先看偏好，只有 ask 才弹窗', () => {
+    const source = read('src/desktop/closeBehavior.js')
+    expect(source).toContain("from './closePreference'")
+    expect(source).toContain("if (action === 'minimize') return hideToTray()")
+    expect(source).toContain("if (action === 'quit') return quitApp()")
+    // 弹窗只出现在 ask 分支之后（先认 minimize / quit，剩下的才问）
+    const askCall = 'const choice = await askChoice()'
+    expect(source).toContain(askCall)
+    expect(source.indexOf(askCall)).toBeGreaterThan(source.indexOf("action === 'quit'"))
+  })
+
+  it('设置面板里能改（网页版仍然是空的）', async () => {
+    const source = read('src/components/DesktopPanel.vue')
+    expect(source).toContain('CLOSE_ACTIONS')
+    expect(source).toContain('点关闭时')
+    expect(source).toContain('setCloseAction')
+
+    const DesktopPanel = (await import('../../src/components/DesktopPanel.vue')).default
+    expect(mount(DesktopPanel).text()).toBe('')
+  })
+})

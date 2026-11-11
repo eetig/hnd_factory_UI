@@ -1,12 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "HND 桌面端默认权限：开机自启、进程重启、自动更新、以及只对自家域名的 HTTP 直连。",
+  "description": "HND 桌面端默认权限：开机自启、进程重启/退出、自动更新、窗口收起、以及只对自家域名的 HTTP 直连。",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
+    "core:window:allow-destroy",
     "autostart:default",
     "process:default",
+    "process:allow-exit",
     "updater:default",
     {
       "identifier": "http:default",
