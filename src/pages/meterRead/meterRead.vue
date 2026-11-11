@@ -689,6 +689,8 @@ const PEEK_FADE = 0.45       // 离中心一整页时淡到 55%
 // 舞台宽度先用窗口宽兜底，measureNames 会量到精确值
 const stageW = ref(Math.max(1, uni.getSystemInfoSync?.().windowWidth || 375))
 const pagerAnimating = ref(false)
+// 本次按下是否刹住了一段还在跑的动画：刹车后的松手用更短的吸附（150ms）
+let touchBraked = false
 // 轨道已经滚了多少 px：0 = 第一张居中，w = 第二张居中
 const scrollX = ref(0)
 
@@ -929,8 +931,16 @@ function pushSample(x) {
 /** 松手速度 px/ms（往左为负） */
 function releaseVelocity() {
   if (samples.length < 2) return 0
-  const first = samples[0]
-  const last = samples[samples.length - 1]
+  /*
+   * 只认"抬手前这一小段"的速度：手指停住不动时不会再有 touchmove，
+   * 采样表里留着的还是拖动早段的数据。不按时间过滤的话，
+   * "按住表盘停一下再松手"会被当成还在高速滑动，白白飞出去好几页。
+   */
+  const now = nowMs()
+  const fresh = samples.filter((s) => now - s.t <= 120)
+  if (fresh.length < 2) return 0
+  const first = fresh[0]
+  const last = fresh[fresh.length - 1]
   const dt = last.t - first.t
   if (dt <= 0) return 0
   return (last.x - first.x) / dt
@@ -958,12 +968,17 @@ function onTouchStart(e) {
   if (pagerAnimating.value && nowMs() - lastTickAt > 400) {
     pagerAnimating.value = false
   }
+  // 本次触摸是不是"按停了一段还在跑的动画"（决定松手后吸附用短时长）
+  touchBraked = false
   /*
    * 滑行途中按下 = 刹车：动画当场停住，位置就冻在这里；
    * 这次按下继续往下面走，直接当作本次拖拽的起点，
    * 所以刹完不用再摸第二下才能拖。
    */
-  if (pagerAnimating.value) brake()
+  if (pagerAnimating.value) {
+    brake()
+    touchBraked = true
+  }
   if (!nameCenters.value.length) measureNames()
   const t = e.touches?.[0]
   if (!t) return
@@ -1027,6 +1042,14 @@ const GLIDE_TAU = 480
 const GLIDE_BOOST = 3.6
 const GLIDE_VMAX = 15
 const GLIDE_MIN_MS = 420
+/*
+ * 吸附时长分两种：
+ *   SNAP_MS_BRAKE —— 按停动画后自己拖一小段再松手：手感要"立刻贴齐"，用 150ms；
+ *   SNAP_MS_GLIDE —— 远距离惯性滑完之后贴齐：慢一点（220ms）才自然，
+ *                    太快会像被人拽了一把、把刚建立的速度感截断。
+ */
+const SNAP_MS_BRAKE = 150
+const SNAP_MS_GLIDE = 220
 
 /**
  * 松手：按速度算一段"该滑多远"，再用 easeOutCubic 走过去。
@@ -1037,9 +1060,10 @@ function startGlide(v0) {
   const n = cards.value.length
   // 调用方传进来的是"轨道方向"的速度（往左拖 = 正），这里只放大，不再取反
   const vTrack = Math.max(-GLIDE_VMAX, Math.min(GLIDE_VMAX, v0 * GLIDE_BOOST))
+  const snapMs = touchBraked ? SNAP_MS_BRAKE : SNAP_MS_GLIDE
   if (!Number.isFinite(vTrack) || Math.abs(vTrack) < 0.05) {
     pagerAnimating.value = false
-    snapNearest()
+    snapNearest(snapMs)
     return
   }
   const minX = 0
@@ -1048,7 +1072,7 @@ function startGlide(v0) {
   const target = Math.max(minX, Math.min(maxX, want))
   const dist = Math.abs(target - scrollX.value)
   if (dist < 0.6) {
-    snapNearest()
+    snapNearest(snapMs)
     return
   }
   // 3D/T = 初速度 ⇒ 起手速度与松手速度一致；时长下限防止极短距离过冲
@@ -1057,13 +1081,13 @@ function startGlide(v0) {
    * 关键：滑行的终点是"按速度算出来的任意位置"，不等于卡片对齐线。
    * 所以滑完必须再走一次吸附，否则就会停在两张卡中间（14:52 那个 bug）。
    */
-  animateTo(target, vTrack, ms, snapNearest)
+  animateTo(target, vTrack, ms, () => snapNearest(SNAP_MS_GLIDE))
 }
 
-/** 滑行停下后，轻轻吸到最近的一整页（很短，不再有"被拽一下"） */
-function snapNearest() {
+/** 停下后吸到最近的一整页；ms 默认按"滑行收尾"的 220ms，刹车路径传 150ms */
+function snapNearest(ms = SNAP_MS_GLIDE) {
   const w = Math.max(1, stageW.value)
-  animateTo(Math.round(scrollX.value / w) * w, 0, 160)
+  animateTo(Math.round(scrollX.value / w) * w, 0, ms)
 }
 
 /**
