@@ -17,6 +17,8 @@ import { useMaterialLookup } from '../../composables/useMaterialLookup'
 import DeliveryNoteUpload from '../DeliveryNoteUpload.vue'
 import { CATEGORY_OPTIONS, UNIT_OPTIONS, blankDraft } from './fields.js'
 
+const CATEGORY_STORE_KEY = 'hnd-purchase-categories'
+
 /**
  * 采购需求：一张 OA 单 = 一张可编辑的单据（2026-11-10 变更-184）。
  *
@@ -374,6 +376,8 @@ function openEditor(rows, extraSeed = null, fromDocket = false) {
     header.value.orderType = inferOrderType(header.value.oaNo)
   }
   const draft = list.map(lineOf)
+  // 老数据里出现过的类别也收进下拉，换个词就知道能不能选
+  mergeCategories(draft.map((l) => l.category))
   const seedLine = extraSeed ? newLine({ ...extraSeed, requester: extraSeed.requester || '' }) : null
   lines.value = seedLine ? [seedLine, ...draft] : draft.length ? draft : [newLine()]
   lineErrors.value = []
@@ -480,10 +484,48 @@ function submit() {
     ElMessage.error(`还有 ${problemText.value.length} 行没填全，先补齐再保存`)
     return
   }
+  mergeCategories(rows.map((r) => r.category))
   emit('save', { header: { ...header.value }, rows })
 }
 
 /** 物料联想：选中名称/编码后把另一半补齐（一行一套） */
+/* ─────────── 类别：内置几个 + 自己填过的 ───────────
+   类别没有主数据表，就在浏览器里记住用户填过的值，
+   下次打开下拉能直接选；后端 /api/purchase/categories 上线后再并进来。 */
+const categoryOptions = ref([...CATEGORY_OPTIONS])
+
+function loadRememberedCategories() {
+  try {
+    const raw = localStorage.getItem(CATEGORY_STORE_KEY)
+    const saved = raw ? JSON.parse(raw) : []
+    if (Array.isArray(saved)) mergeCategories(saved)
+  } catch {
+    // 存储被禁或内容坏了都不影响填表
+  }
+}
+
+function mergeCategories(values) {
+  const set = new Set(categoryOptions.value)
+  let changed = false
+  for (const raw of values) {
+    const v = String(raw ?? '').trim()
+    if (v && !set.has(v)) {
+      set.add(v)
+      changed = true
+    }
+  }
+  if (changed) {
+    categoryOptions.value = [...set]
+    try {
+      localStorage.setItem(CATEGORY_STORE_KEY, JSON.stringify(categoryOptions.value))
+    } catch {
+      // 存不进去也无所谓，本次会话里照样能选
+    }
+  }
+}
+
+loadRememberedCategories()
+
 function pickMaterial(option, index, source) {
   if (!option) return
   const line = lines.value[index]
@@ -495,7 +537,8 @@ function pickMaterial(option, index, source) {
     line.materialCode = option.code
     if (option.name) line.materialName = option.name
   }
-  if (!line.spec) line.spec = option.spec || ''
+  // 规格跟着物料走：换物料就得换规格，不能留着上一条的（只有物料本身没规格时才保留已填内容）
+  if (option.spec) line.spec = option.spec
 }
 
 function setNameRef(el, index) {
@@ -1121,13 +1164,16 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                   <el-select
                     v-model="line.category"
                     size="small"
+                    filterable
+                    allow-create
+                    default-first-option
                     clearable
                     placeholder="类别"
                     :aria-label="`第 ${index + 1} 行类别`"
                     :disabled="!canEdit"
                     class="w-full"
                   >
-                    <el-option v-for="c in CATEGORY_OPTIONS" :key="c" :label="c" :value="c" />
+                    <el-option v-for="c in categoryOptions" :key="c" :label="c" :value="c" />
                   </el-select>
                 </td>
                 <td class="px-1 py-1">

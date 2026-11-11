@@ -419,3 +419,53 @@ describe('关闭保护', () => {
     expect(closed?.[closed.length - 1]?.[0], 'Esc 把弹窗关掉了').not.toBe(false)
   })
 })
+
+describe('物料带出规格、类别可以自己填', () => {
+  it('选编码时把规格型号一起带出来（换物料规格也跟着换）', async () => {
+    await open()
+    const autos = wrapper.findAllComponents({ name: 'ElAutocomplete' })
+    // 顺序：物料名称、物料编码
+    const codeAuto = autos[1]
+    codeAuto.vm.$emit('select', {
+      code: '230016578',
+      name: '电磁隔膜计量泵',
+      spec: '额定流量:120L/h',
+      label: '电磁隔膜计量泵',
+    })
+    await nextTick()
+    expect(cell('物料名称').element.value).toBe('电磁隔膜计量泵')
+    expect(cell('规格型号').element.value, '选中物料后规格型号没跟着带出来').toBe('额定流量:120L/h')
+
+    // 再选另一个物料，规格必须换成新的，不能留着上一条
+    codeAuto.vm.$emit('select', {
+      code: '230016590',
+      name: '法兰弹簧全启式安全阀',
+      spec: '公称通径:DN50',
+      label: '法兰弹簧全启式安全阀',
+    })
+    await nextTick()
+    expect(cell('规格型号').element.value).toBe('公称通径:DN50')
+  })
+
+  it('类别能自己填，填过的会留在下拉里（下次直接选）', async () => {
+    localStorage.removeItem('hnd-purchase-categories')
+    await open()
+    const categorySelect = wrapper
+      .findAllComponents({ name: 'ElSelect' })
+      .find((c) => c.props('placeholder') === '类别')
+    expect(categorySelect, '没找到类别下拉').toBeTruthy()
+    expect(categorySelect.props('allowCreate'), '类别下拉不能自己填').toBe(true)
+    expect(categorySelect.props('filterable'), '类别下拉不能搜索').toBe(true)
+
+    await cell('需求人').setValue('洪旭')
+    await cell('物料名称').setValue('自制类别测试料')
+    await cell('数量').setValue('1')
+    categorySelect.vm.$emit('update:modelValue', '临时杂项')
+    await nextTick()
+
+    await clickButton('保存整单')
+    const saved = JSON.parse(localStorage.getItem('hnd-purchase-categories') || '[]')
+    expect(saved, '自己填的类别没被记住').toContain('临时杂项')
+    localStorage.removeItem('hnd-purchase-categories')
+  })
+})
