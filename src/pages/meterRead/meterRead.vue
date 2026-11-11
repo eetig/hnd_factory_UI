@@ -134,6 +134,10 @@ function saveDraft() {
   }
 }
 
+/* 恢复草稿的提示条（不用原生 toast：真机上那条黑框会不消失） */
+const restoredCount = ref(0)
+let restoredTimer = 0
+
 function restoreDraft() {
   try {
     const raw = uni.getStorageSync(draftKey())
@@ -364,7 +368,14 @@ async function loadSheet() {
     // 恢复这个日期下的本地草稿（2026-11-06）
     const restored = restoreDraft()
     if (restored > 0) {
-      uni.showToast({ title: `已恢复 ${restored} 块未提交的读数`, icon: 'none' })
+      /*
+       * 2026-11-11：原来用 uni.showToast 提示，真机上那条黑色 toast 会赖在屏幕中间不消失
+       * （原生 toast 的 duration 在这台机上没生效）。改成页面内的一条提示条，4 秒自己收，
+       * 也能点掉，绝不会盖住输入框。
+       */
+      restoredCount.value = restored
+      clearTimeout(restoredTimer)
+      restoredTimer = setTimeout(() => { restoredCount.value = 0 }, 4000)
       if (card.value) loadCard(card.value)
     }
     // 默认停在第一张还没填的卡上
@@ -1330,6 +1341,12 @@ watch(
         </view>
       </view>
 
+      <!-- 恢复草稿的内联提示：4 秒自动收，也可点掉（原生 toast 在真机上会赖着不走） -->
+      <view v-if="restoredCount" class="mr__note">
+        <text class="mr__note-text">已恢复 {{ restoredCount }} 块未提交的读数</text>
+        <text class="mr__note-x" @click.stop="restoredCount = 0">知道了</text>
+      </view>
+
       <!--
         卡片轨道（2026-11-11 v3）：一条连续的横向容器，38 张表排在同一条线上。
         拖动时整条轨道 1:1 跟手（没有阻尼、没有"过半才翻"的判定）；
@@ -1730,6 +1747,29 @@ watch(
 
 /* 卡片 */
 /* 电表名称带（2026-11-06） */
+.mr__note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin: 8rpx 24rpx 0;
+  padding: 14rpx 20rpx;
+  border-radius: 16rpx;
+  background-color: var(--ui-raise-2);
+}
+
+.mr__note-text {
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+}
+
+.mr__note-x {
+  flex: none;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
 .mr__names {
   /* 2026-11-06：给死高度并居中 —— 之前没定高，scroll-view 被 flex 拉满，胶囊变成竖长条 */
   flex: 0 0 auto;
