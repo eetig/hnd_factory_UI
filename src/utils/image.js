@@ -1,5 +1,7 @@
 // 图片数据结构归一化（后端返回格式可能为字符串、对象或 JSON 字符串）
 
+import { assetUrl } from '../api/base'
+
 /**
  * 单张图片归一化。
  *
@@ -49,7 +51,8 @@ export function handleImgError(event, record) {
 
   if (record?.imageUrl && el.dataset.thumbFallback !== '1') {
     el.dataset.thumbFallback = '1'
-    el.src = record.imageUrl
+    // 回退到原图时同样要补域名，否则桌面版里这张还是 404
+    el.src = assetUrl(record.imageUrl)
     return
   }
 

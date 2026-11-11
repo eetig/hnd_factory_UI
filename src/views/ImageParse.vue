@@ -1074,7 +1074,7 @@ onUnmounted(() => {
           class="group relative overflow-hidden rounded-card border border-line"
         >
           <img
-            :src="image.url"
+            :src="assetUrl(image.url)"
             :alt="image.name"
             class="h-32 w-full bg-region object-cover"
             loading="lazy"
@@ -1137,7 +1137,7 @@ onUnmounted(() => {
         >
           <header class="flex items-center gap-3 border-b border-line bg-region/60 px-4 py-3">
             <img
-              :src="image.url"
+              :src="assetUrl(image.url)"
               :alt="image.name"
               class="h-10 w-10 shrink-0 rounded-md border border-line object-cover"
             />
@@ -1285,8 +1285,8 @@ onUnmounted(() => {
                       <!-- 线下单据：原图缩略图，点开可放大 -->
                       <div v-if="col.key === 'image'" class="flex justify-center">
                         <el-image
-                          :src="image.url"
-                          :preview-src-list="[image.url]"
+                          :src="assetUrl(image.url)"
+                          :preview-src-list="[assetUrl(image.url)]"
                           :preview-teleported="true"
                           fit="cover"
                   alt="线下单据缩略图（点开可看原图）"

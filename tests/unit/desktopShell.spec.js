@@ -336,6 +336,7 @@ describe('桌面版的图片地址：服务端相对路径必须补域名', () =
     'src/views/orders/PickingList.vue',
     'src/views/ImageParse.vue',
     'src/composables/useVesselList.js',
+    'src/utils/image.js',
   ]
 
   it.each(IMAGE_SITES)('%s 渲染图片前过 assetUrl', (rel) => {
@@ -353,6 +354,12 @@ describe('桌面版的图片地址：服务端相对路径必须补域名', () =
     expect(assetUrl(null)).toBe(null)
     // 非桌面构建（测试/网页）没有 host，原样返回 —— 网页版行为不变
     expect(assetUrl('/files/a.png')).toBe('/files/a.png')
+  })
+
+  it('图片识别页的表格图与本地预览都过 assetUrl', () => {
+    const src = read('src/views/ImageParse.vue')
+    expect(src).not.toMatch(/:src="image\.url"/)
+    expect(src).toContain('assetUrl(image.url)')
   })
 
   it('设备底图：纯文件名走内置资源，不再被补成域名', () => {
