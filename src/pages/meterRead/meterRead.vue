@@ -1038,7 +1038,7 @@ function onTouchEnd() {
  *   GLIDE_BOOST —— 把手指速度放大成甩动速度（拖动本身还是 1:1）
  *   GLIDE_VMAX —— 初速度上限，避免一甩飞到底
  */
-const GLIDE_TAU = 480
+const GLIDE_TAU = 760
 const GLIDE_BOOST = 3.6
 const GLIDE_VMAX = 15
 const GLIDE_MIN_MS = 420
