@@ -813,6 +813,13 @@ const nameCenters = ref([])
 const namesViewport = ref(0)
 
 /*
+ * 液体胶囊（2026-11-11）：选中态不再靠"给某个 chip 换底色"，
+ * 而是一条独立的蓝色胶囊，跟着卡片进度被拉长、压扁、回弹。
+ * 要做出"从这张流向下一张"的形状，光有中心点不够，得知道每个 chip 的左右边界。
+ */
+const nameBoxes = ref([])
+
+/*
  * 组件实例要在 setup 期间抓一次存下来。
  * getCurrentInstance() 只在 setup / 生命周期里有效，放到 setTimeout 里再调就是 null，
  * 之前就是这样导致标签一次都没量到（一直用 fallback 的 -i*84）。
@@ -876,7 +883,14 @@ function measureNames(tries = 0) {
      * 拿它反算位移会形成"量一次→改一次→再量又变"的回授，最后总是 0。
      */
     const origin = inner && typeof inner.left === 'number' ? inner.left : box.left
+    const originTop = inner && typeof inner.top === 'number' ? inner.top : box.top
     nameCenters.value = items.map((it) => it.left - origin + it.width / 2)
+    nameBoxes.value = items.map((it) => ({
+      left: it.left - origin,
+      top: it.top - originTop,
+      width: it.width,
+      height: it.height,
+    }))
   })
 }
 
@@ -900,6 +914,67 @@ const namesShift = computed(() => {
 const namesStyle = computed(() => ({
   transform: `translate3d(${namesShift.value.toFixed(2)}px, 0, 0)`,
 }))
+
+/* 液体胶囊的形变参数：只在半页处鼓一下，再多就夸张了 */
+const LIQUID_BLUR = 1.1
+
+/** 轻微果冻回弹：只用在"吸附到位"那一小段，正常 easing 时不会用到 */
+function easeOutBackSoft(t) {
+  const c1 = 1.18
+  const c3 = c1 + 1
+  const u = t - 1
+  return 1 + c3 * u * u * u + c1 * u * u
+}
+
+/**
+ * 液体胶囊：完全由 floatIndex（和卡片同一个进度）驱动，没有独立定时器。
+ *
+ * 形状规则（往右滑为例）：
+ * - 前缘（右端）先冲出去：easeOut 一直往目标标签跑；
+ * - 后缘（左端）前半程黏在原地不动，过 45% 才开始跟过去（easeIn），
+ *   所以中间会被"拉长"，看起来像被拽出去的粘液；
+ * - 半页处纵向略鼓一点（高度 +7px），像被挤出来的鼓包；
+ * - 吸附动画（pagerAnimating）时给一点点 easeOutBack，收拢有轻微回弹。
+ *
+ * 它画在标签文字下面（z-index 0），标签自己有底色，所以文字始终
+ * 要么是"白字压蓝底"、要么是"深字压浅底"，不会出现深字浮在蓝底上看不清。
+ */
+const liquidStyle = computed(() => {
+  const boxes = nameBoxes.value
+  if (!boxes.length) return { display: 'none' }
+
+  const f = Math.max(0, Math.min(boxes.length - 1, floatIndex.value))
+  const at = Math.min(boxes.length - 1, Math.floor(f))
+  const next = Math.min(boxes.length - 1, at + 1)
+  const raw = Math.max(0, Math.min(1, f - at))
+  const t = pagerAnimating.value ? easeOutBackSoft(raw) : raw
+
+  const a = boxes[at]
+  const b = boxes[next]
+  const clamp01 = (v) => Math.max(0, Math.min(1, v))
+  const easeOut = (v) => 1 - (1 - v) * (1 - v)
+  const easeIn = (v) => v * v * v
+
+  const lead = easeOut(clamp01(t))
+  const trail = easeIn(clamp01((t - 0.45) / 0.55))
+
+  const x1 = a.left + (b.left - a.left) * trail
+  const x2 = a.left + a.width + (b.left + b.width - (a.left + a.width)) * lead
+  const width = Math.max(24, x2 - x1)
+
+  // 半页处最鼓：横向被拉长，纵向微微鼓起，像被挤出来的一团
+  const bulge = Math.sin(Math.PI * raw)
+  const height = (a.height + b.height) / 2 + bulge * 7
+  const top = (a.top + b.top) / 2 - bulge * 3.5
+
+  return {
+    width: `${Math.round(width)}px`,
+    height: `${Math.round(height)}px`,
+    transform: `translate3d(${x1.toFixed(2)}px, ${top.toFixed(2)}px, 0)`,
+    // 拉扯时边缘略微发散，像流体的柔边；静止时为 0，文字依旧锐利
+    filter: bulge > 0.02 ? `blur(${(bulge * LIQUID_BLUR).toFixed(2)}px)` : 'none',
+  }
+})
 
 /**
  * 拖动时的方向提示：翻页语义下不再提示"提交/跳过"，
@@ -1327,6 +1402,8 @@ watch(
         @touchcancel.stop="onNamesTouchEnd"
       >
         <view class="mr__names-inner" :style="namesStyle">
+          <!-- 液体胶囊：位置/宽度/形变全来自 floatIndex，和下方卡片同一个进度 -->
+          <view class="mr__liquid" :style="liquidStyle" />
           <view
             v-for="row in list"
             :id="'mn' + row.meterId"
@@ -1798,6 +1875,8 @@ watch(
   /* 轨道的位移由 JS 写 transform，和下方卡片共用同一个手势进度 */
   will-change: transform;
   backface-visibility: hidden;
+  /* 液体胶囊是绝对定位子元素，锚点要落在这条带子上 */
+  position: relative;
 }
 
 .mr__name {
@@ -1809,16 +1888,38 @@ watch(
   padding: 0 24rpx;
   border-radius: 999rpx;
   white-space: nowrap;
-  background-color: var(--ui-raise-2);
+  /*
+   * 底色必须不透明：液体胶囊画在它下面（z-index 0），
+   * 半透明的话蓝色会透上来，和深色文字糊在一起。
+   */
+  background-color: var(--ui-surface-2);
   font-size: 26rpx;
   color: var(--ui-text-2);
   transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease;
+  /* 文字压在液体胶囊上面 */
+  position: relative;
+  z-index: 1;
 }
 
+/* 选中态：chip 自己刷蓝底（文字始终有稳定的底色衬托） */
 .mr__name.is-active {
   background-color: var(--ui-accent);
   color: var(--ui-on-accent);
   font-weight: 600;
+}
+
+/* 液体胶囊本体：只是一层背景，永远在文字下面 */
+.mr__liquid {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 999rpx;
+  background-color: var(--ui-accent);
+  /* 往右流锚左边、往左流锚右边（JS 里已按方向平移过，这里固定左锚即可） */
+  transform-origin: left center;
+  will-change: transform, filter;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .mr__name-no {
