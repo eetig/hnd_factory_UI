@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElButton, ElDatePicker, ElImage, ElInput, ElMessage, ElMessageBox, ElOption, ElPagination, ElSelect } from 'element-plus'
 import { hasPerm } from '../api/auth'
+import { assetUrl } from '../api/base'
 import { UNIT_OPTIONS } from './purchase/fields.js'
 import { STATUS_ROW_TONE, STATUS_TONE } from '../constants/statusTones'
 import {
@@ -790,8 +791,8 @@ onMounted(loadPurchase)
               <td v-else-if="col.key === 'deliveryNote'" class="px-3 py-2 text-slate-600">
                 <el-image
                   v-if="isStoredImage(row.deliveryNote)"
-                  :src="storedImageThumb(row.deliveryNote)"
-                  :preview-src-list="[row.deliveryNote]"
+                  :src="assetUrl(storedImageThumb(row.deliveryNote))"
+                  :preview-src-list="[assetUrl(row.deliveryNote)]"
                   :preview-teleported="true"
                   fit="cover"
                   alt="送货单图片"

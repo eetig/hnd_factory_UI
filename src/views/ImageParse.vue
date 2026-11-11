@@ -3,6 +3,7 @@ import { computed, onUnmounted, ref } from 'vue'
 import { ElDatePicker, ElDialog, ElImage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
 import { formatFileSize } from '../utils/format'
+import { assetUrl } from '../api/base'
 import { STATUS_TEXT, STATUS_TONE } from '../constants/statusTones'
 import { matchMaterial, materialLookupError, searchMaterials } from '../composables/useMaterialMaster'
 import { useLiveQuery } from '../composables/useLiveQuery'
@@ -770,7 +771,8 @@ function docCheckNames(image) {
  * 生产由 Nginx 同源路由，两端都不必加工（与 vesselImageUrl 同口径）。
  */
 function docCheckThumb(image) {
-  return image.docCheck?.thumbnailUrl || image.docCheck?.imageUrl || ''
+  const path = image.docCheck?.thumbnailUrl || image.docCheck?.imageUrl || ''
+  return assetUrl(path)
 }
 
 /** 整单删除的二次确认（变更-047 三重闸门的第一重），返回是否确认 */

@@ -6,6 +6,7 @@ import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import { canOpenImage, handleImgError } from '../../utils/image'
+import { assetUrl } from '../../api/base'
 import { ElDatePicker, ElDialog, ElPagination } from 'element-plus'
 import ZoomableImage from '../../components/ZoomableImage.vue'
 import MonthQuickButton from '../../components/MonthQuickButton.vue'
@@ -241,7 +242,7 @@ onMounted(() => {
                       <!-- 缩略图：缺失时回退原图；加载失败逐级降级，最终露出底层占位图标 -->
                       <img
                         v-if="record.thumbnailUrl || record.imageUrl"
-                        :src="record.thumbnailUrl || record.imageUrl"
+                        :src="assetUrl(record.thumbnailUrl || record.imageUrl)"
                         alt="领料单据"
                         loading="lazy"
                         decoding="async"

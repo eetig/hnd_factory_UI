@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { ElButton, ElImage, ElMessage } from 'element-plus'
 import { isStoredImage, storedImageThumb, uploadDeliveryNote } from '../composables/usePurchaseTracking'
+import { assetUrl } from '../api/base'
 
 /**
  * 送货单图片：上传 / 缩略图预览 / 删除（变更-094，使用方「送货单是一张图片」）。
@@ -26,7 +27,7 @@ const busy = ref(false)
 
 const hasImage = computed(() => isStoredImage(props.value))
 /** 表格里看缩略图（小、快），点开看原图 */
-const thumb = computed(() => storedImageThumb(props.value))
+const thumb = computed(() => assetUrl(storedImageThumb(props.value)))
 
 function pick() {
   inputRef.value?.click()

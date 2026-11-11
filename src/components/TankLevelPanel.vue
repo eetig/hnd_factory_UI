@@ -11,6 +11,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import { hasPerm } from '../api/auth'
+import { assetUrl } from '../api/base'
 import LoadingMask from './LoadingMask.vue'
 import { useLiveQuery } from '../composables/useLiveQuery'
 import PanelState from './PanelState.vue'
@@ -356,8 +357,9 @@ function handleThumbError(event, image) {
   const img = event?.target
   if (!img) return
 
-  if (image?.url && img.getAttribute('src') !== image.url) {
-    img.src = image.url
+  const full = assetUrl(image?.url)
+  if (full && img.getAttribute('src') !== full) {
+    img.src = full
     return
   }
   img.style.display = 'none'
@@ -767,7 +769,7 @@ function handleThumbError(event, image) {
                     <!-- 首张缩略图；缺失时回退原图，再失败露出底层占位图标 -->
                     <img
                       v-if="record.images.length"
-                      :src="record.images[0].thumbnailUrl || record.images[0].url"
+                      :src="assetUrl(record.images[0].thumbnailUrl || record.images[0].url)"
                       alt="图据缩略图"
                       loading="lazy"
                       decoding="async"

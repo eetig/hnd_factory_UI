@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { assetUrl } from '../api/base'
 
 /*
  * 图片查看台（2026-11-02，使用方：「所有图片预览都能旋转方向，改变大小」）。
@@ -153,7 +154,7 @@ defineExpose({ reset, zoomBy, rotateBy })
     >
       <img
         v-if="src"
-        :src="src"
+        :src="assetUrl(src)"
         :alt="alt"
         class="zs__image"
         :style="{ transform: transformStyle }"

@@ -314,3 +314,50 @@ describe('外观设置（壁纸 / 模糊 / 纸面浓度）', () => {
     localStorage.clear()
   })
 })
+
+/*
+ * 图片地址（2026-11-11，用户报障「图片还是有问题」）。
+ *
+ * 桌面版的页面来自 `tauri.localhost`，后端返回的 `/files/x.jpg`、`/thumbs/x.jpg`
+ * 都是**相对路径** —— 浏览器会拿它们去 exe 自己身上找，结果整列图全是破图。
+ * 视觉上看是"图没了"，实际是一次 404。这类 bug 只会在 exe 里出现，网页版永远正常，
+ * 所以必须有一条护栏盯着「所有渲染服务端图片的地方都过 assetUrl」。
+ */
+describe('桌面版的图片地址：服务端相对路径必须补域名', () => {
+  const read = (rel) => fs.readFileSync(path.resolve(__dirname, '../..', rel), 'utf8')
+
+  const IMAGE_SITES = [
+    'src/components/TankLevelPanel.vue',
+    'src/components/ImageGalleryDialog.vue',
+    'src/components/ZoomableImage.vue',
+    'src/components/PurchaseTrackingPanel.vue',
+    'src/components/DeliveryNoteUpload.vue',
+    'src/views/orders/InboundList.vue',
+    'src/views/orders/PickingList.vue',
+    'src/views/ImageParse.vue',
+    'src/composables/useVesselList.js',
+  ]
+
+  it.each(IMAGE_SITES)('%s 渲染图片前过 assetUrl', (rel) => {
+    const src = read(rel)
+    expect(src, `${rel} 没引 assetUrl —— 桌面版里这张图会 404`).toContain('assetUrl')
+    expect(src).toMatch(/assetUrl\(/)
+  })
+
+  it('assetUrl 只动"以 / 开头"的相对路径，绝对地址与 data/blob 原样返回', async () => {
+    const { assetUrl } = await import('../../src/api/base')
+    expect(assetUrl('https://hbhnd.cloud/files/a.png')).toBe('https://hbhnd.cloud/files/a.png')
+    expect(assetUrl('data:image/png;base64,xx')).toBe('data:image/png;base64,xx')
+    expect(assetUrl('blob:http://localhost/xx')).toBe('blob:http://localhost/xx')
+    expect(assetUrl('')).toBe('')
+    expect(assetUrl(null)).toBe(null)
+    // 非桌面构建（测试/网页）没有 host，原样返回 —— 网页版行为不变
+    expect(assetUrl('/files/a.png')).toBe('/files/a.png')
+  })
+
+  it('设备底图：纯文件名走内置资源，不再被补成域名', () => {
+    const src = read('src/composables/useVesselList.js')
+    expect(src).toContain("fileName.startsWith('/')")
+    expect(src).toContain('return assetUrl(fileName)')
+  })
+})

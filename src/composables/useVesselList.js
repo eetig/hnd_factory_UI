@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import request from '../api/request'
+import { assetUrl } from '../api/base'
 
 // ===== 容器列表（压力容器体积计算页的下拉候选）=====
 //
@@ -41,7 +42,9 @@ const VESSEL_IMAGES = import.meta.glob('../assets/vessel*.png', {
  */
 function imageUrlOf(fileName) {
   if (!fileName) return ''
-  if (/^(https?:)?\/\//i.test(fileName) || fileName.startsWith('/')) return fileName
+  if (/^(https?:)?\/\//i.test(fileName)) return fileName
+  // 桌面版的老毛病：`/files/...` 是相对路径，会打到 exe 自己身上，补上域名再返回
+  if (fileName.startsWith('/')) return assetUrl(fileName)
   return VESSEL_IMAGES[`../assets/${fileName}`] ?? ''
 }
 

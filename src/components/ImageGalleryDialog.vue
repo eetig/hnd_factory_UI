@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElDialog } from 'element-plus'
+import { assetUrl } from '../api/base'
 
 /**
  * 图片浏览弹窗（纯展示）：看大图 / 左右翻页 / 缩放平移 / 加图 / 删图。
@@ -263,7 +264,7 @@ function askDelete() {
         </button>
 
         <img
-          :src="currentImage.url"
+          :src="assetUrl(currentImage.url)"
           :alt="imageAlt"
           class="max-h-[calc(100vh-190px)] max-w-full select-none rounded-md object-contain shadow-[0_24px_60px_-24px_rgba(0,0,0,0.55)]"
           :style="transformStyle"
@@ -309,7 +310,7 @@ function askDelete() {
             :aria-label="`第 ${index + 1} 张`"
             @click="index === currentIndex ? undefined : index > currentIndex ? emit('next') : emit('prev')"
           >
-            <img :src="item.thumbnailUrl || item.url" alt="" class="h-14 w-14 object-cover" />
+            <img :src="assetUrl(item.thumbnailUrl || item.url)" alt="" class="h-14 w-14 object-cover" />
           </button>
         </div>
 
