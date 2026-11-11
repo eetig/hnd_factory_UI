@@ -945,6 +945,8 @@ function brake() {
   flingToken += 1
   pagerAnimating.value = false
   lastTickAt = 0
+  // 把刹车前的速度样本清掉：否则"刹住后原地抬手"会被当成还在高速滑行，又甩一次
+  samples = []
 }
 
 /* ---------- 手势：1:1 跟手，拖动时不做任何分页判定 ---------- */
@@ -1021,7 +1023,7 @@ function onTouchEnd() {
  *   GLIDE_BOOST —— 把手指速度放大成甩动速度（拖动本身还是 1:1）
  *   GLIDE_VMAX —— 初速度上限，避免一甩飞到底
  */
-const GLIDE_TAU = 330
+const GLIDE_TAU = 480
 const GLIDE_BOOST = 3.6
 const GLIDE_VMAX = 15
 const GLIDE_MIN_MS = 420
@@ -1051,7 +1053,11 @@ function startGlide(v0) {
   }
   // 3D/T = 初速度 ⇒ 起手速度与松手速度一致；时长下限防止极短距离过冲
   const ms = Math.max(GLIDE_MIN_MS, (dist / Math.abs(vTrack)) * 3)
-  animateTo(target, vTrack, ms)
+  /*
+   * 关键：滑行的终点是"按速度算出来的任意位置"，不等于卡片对齐线。
+   * 所以滑完必须再走一次吸附，否则就会停在两张卡中间（14:52 那个 bug）。
+   */
+  animateTo(target, vTrack, ms, snapNearest)
 }
 
 /** 滑行停下后，轻轻吸到最近的一整页（很短，不再有"被拽一下"） */
@@ -1065,12 +1071,13 @@ function snapNearest() {
  * forceMs 给了就用它（滑行结束后的贴齐），否则按「距离 / 初速度」推。
  * 起点就是当前 scrollX，所以不会跳。
  */
-function animateTo(target, v = 0, forceMs = 0) {
+function animateTo(target, v = 0, forceMs = 0, onDone = null) {
   const from = scrollX.value
   const to = clampX(target)
   const dist = Math.abs(to - from)
   if (dist < 0.6) {
     scrollX.value = to
+    if (onDone) onDone()
     return
   }
   const speed = Math.max(0.9, Math.abs(v))
@@ -1093,6 +1100,7 @@ function animateTo(target, v = 0, forceMs = 0) {
     }
     scrollX.value = to
     pagerAnimating.value = false
+    if (onDone) onDone()
   }
   rafTick(tick)
 }
