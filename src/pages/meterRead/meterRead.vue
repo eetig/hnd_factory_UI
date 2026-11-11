@@ -982,7 +982,7 @@ function onTouchEnd() {
 }
 
 /** 惯性衰减系数（每 ms）：距离 ≈ 初速度 / 这个数，越小滑得越远 */
-const GLIDE_DECAY = 0.003
+const GLIDE_DECAY = 0.0015
 
 /**
  * 松手后的惯性滑行：速度按 e^(-λt) 衰减，位置一路积分。
@@ -1014,7 +1014,7 @@ function startGlide(v0) {
       v = 0
     }
     scrollX.value = next
-    if (Math.abs(v) > 0.06) {
+    if (Math.abs(v) > 0.12) {
       rafTick(tick)
       return
     }
