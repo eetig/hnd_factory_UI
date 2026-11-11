@@ -84,12 +84,6 @@ const TYPE_TEXT = {
   ZCSG: '资产申购',
 }
 
-const ORDER_TYPE_OPTIONS = [
-  { value: 'CGSQ', label: 'CGSQ 采购申请' },
-  { value: 'FWCGSQ', label: 'FWCGSQ 服务采购申请' },
-  { value: 'ZCSG', label: 'ZCSG 资产申购' },
-]
-
 function statusClass(key) {
   switch (key) {
     case 'OVERDUE':
@@ -332,7 +326,37 @@ function headerOf(rows) {
 
 const dirty = computed(() => JSON.stringify({ h: header.value, l: lines.value }) !== snapshot)
 
-const suggestedOrderType = computed(() => inferOrderType(header.value.oaNo))
+/**
+ * 单据类型只读、跟着单号自动走（使用方 2026-11-11 定口径）。
+ *
+ * 单号认得出就以单号为准；认不出（或还没填单号）才用打开时给的默认值 ——
+ * 费用申请页新增时默认 ZCSG，这样不填单号也能先把明细录进去。
+ */
+const effectiveType = computed(
+  () => inferOrderType(header.value.oaNo) || header.value.orderType || '',
+)
+
+/** 只读单据里要不要留「验收单」这一行：该类型会有，或者老数据已经填过 */
+const docketShowsAcceptance = computed(
+  () => ['ZCSG', 'FWCGSQ'].includes(docket.value.orderType) || !!docket.value.acceptanceNo,
+)
+
+/** 只有资产申购 / 服务采购申请才产生验收单，CGSQ 后面就没有了 */
+const hasAcceptance = computed(() => ['ZCSG', 'FWCGSQ'].includes(effectiveType.value))
+
+function typeLabelOf(t) {
+  if (!t) return ''
+  return TYPE_TEXT[t] ? `${TYPE_TEXT[t]} ${t}` : t
+}
+
+// 单号一敲完就把类型定下来，抬头即时跟着变
+watch(
+  () => header.value.oaNo,
+  (value) => {
+    const inferred = inferOrderType(value)
+    if (inferred) header.value.orderType = inferred
+  },
+)
 
 const filledCount = computed(
   () => lines.value.filter((l) => String(l.materialName || '').trim()).length,
@@ -432,7 +456,7 @@ function buildRows() {
     .filter((l) => !isBlank(l) && problemOf(l) === '')
     .map((l) => {
       const { _key, ...rest } = l
-      const row = { ...rest, ...header.value }
+      const row = { ...rest, ...header.value, orderType: effectiveType.value || rest.orderType || '' }
       // 后端不需要前端算出来的状态与天数
       delete row.status
       delete row.statusLabel
@@ -750,22 +774,15 @@ defineExpose({ resetForNextEntry, afterLineAdded })
 
       <!-- ══════════ 只读单据视图 ══════════ -->
       <div v-if="isDocket" class="flex flex-col">
-        <dl class="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-2">
-          <div class="flex min-w-0 items-baseline gap-2 bg-raised px-3 py-2">
-            <dt class="shrink-0 text-[11px] tracking-wide text-slate-500">采购单</dt>
-            <dd class="min-w-0 truncate text-xs">
-              <a
-                v-if="docket.poNo && docket.poUrl"
-                :href="docket.poUrl"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="tabular-nums text-brand-ink hover:underline"
-              >{{ docket.poNo }} ↗</a>
-              <span v-else-if="docket.poNo" class="tabular-nums text-slate-700">{{ docket.poNo }}</span>
-              <span v-else class="text-slate-500">未关联</span>
-              <span v-if="docket.poExtra" class="ml-1 text-slate-500">（同单有多个单号）</span>
-            </dd>
-          </div>
+        <!--
+          单据级信息只剩「验收单」一行：采购单号就是 OA 单号（使用方 2026-11-11 明确
+          「OA单号就是采购单号，这不是重复了吗」），再摆一格只会让人以为还差一个号。
+          CGSQ 不产生验收单，整块不出现；老数据里已经填了验收单的仍然显示。
+        -->
+        <dl
+          v-if="docketShowsAcceptance"
+          class="grid grid-cols-1 gap-px overflow-hidden rounded-md border border-line bg-line"
+        >
           <div class="flex min-w-0 items-baseline gap-2 bg-raised px-3 py-2">
             <dt class="shrink-0 text-[11px] tracking-wide text-slate-500">验收单</dt>
             <dd class="min-w-0 truncate text-xs">
@@ -777,9 +794,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 class="tabular-nums text-brand-ink hover:underline"
               >{{ docket.acceptanceNo }} ↗</a>
               <span v-else-if="docket.acceptanceNo" class="tabular-nums text-slate-700">{{ docket.acceptanceNo }}</span>
-              <span v-else class="text-slate-500">
-                {{ docket.orderType === 'CGSQ' ? '采购申请一般无验收单' : '未关联' }}
-              </span>
+              <span v-else class="text-slate-500">未关联</span>
               <span v-if="docket.acceptanceExtra" class="ml-1 text-slate-500">（同单有多个单号）</span>
             </dd>
           </div>
@@ -897,24 +912,25 @@ defineExpose({ resetForNextEntry, afterLineAdded })
       <!-- ══════════ 可编辑台账 ══════════ -->
       <div v-else class="flex flex-col gap-3">
         <!--
-          抬头：整单只一份的字段。**一行四格**，链接不占格子。
+          抬头：整单只一份的字段，一行之内解决。
 
-          使用方反馈（2026-11-10，变更-185）：「怎么多了个 OA 单号和链接，这个不要……
-          想办法换个方式输入 OA 链接，比如输入 OA 单号后弹出一个编辑输入框输入链接，
-          这样既简洁又能空出更多空间。」
+          使用方 2026-11-11 把口径说清了（原话）：
+            「OA单号如果是包含cgsq，单据类型自动识别为采购申请，后面就没有了。
+              如果包含ZCSG或者是fwcgsq，自动识别对应的单据类型，并且后面显示验收单号。」
+          以及：「采购单号不要了呀。OA单号就是采购单号，这不是重复了吗」。
 
-          所以三个链接（OA / 采购单 / 验收单）都收进每个单号框右边的小「链接」按钮：
-          填过的按钮变实心，鼠标悬停能看见地址；点开是一个只装一个网址输入框的小窗。
-          单号本身留在桌面上 —— 那是认单的东西，不能藏。
+          所以：OA 单号是唯一的号；单据类型只读、跟着单号自动走；
+          只有 ZCSG / FWCGSQ 才出现「验收单号」（CGSQ 不产生验收单）。
+          采购单号/链接字段从界面撤掉，但状态里仍保留（老数据带值的保存时不会被抹）。
         -->
         <section class="rounded-md border border-line bg-region/40 p-2.5">
           <div class="grid grid-cols-12 gap-2">
-            <label class="col-span-3 block">
+            <label class="block" :class="hasAcceptance ? 'col-span-5' : 'col-span-6'">
               <span class="mb-0.5 block text-[11px] text-slate-500">OA 单号</span>
               <el-input
                 v-model="header.oaNo"
                 size="small"
-                placeholder="CG-CGSQ-…"
+                placeholder="CG-CGSQ-… / F-ZCSG-…"
                 aria-label="OA 单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
@@ -934,66 +950,24 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               </el-input>
             </label>
 
-            <label class="col-span-3 block">
-              <span class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                单据类型
-                <button
-                  v-if="canEdit && suggestedOrderType && suggestedOrderType !== header.orderType"
-                  type="button"
-                  class="rounded border border-line bg-raised px-1 text-[11px] text-slate-600 hover:border-slate-400 hover:text-slate-900"
-                  @click="header.orderType = suggestedOrderType"
-                >
-                  按单号认：{{ suggestedOrderType }}
-                </button>
-              </span>
-              <el-select
-                v-model="header.orderType"
-                size="small"
-                clearable
-                placeholder="选择单据类型"
+            <div class="block" :class="hasAcceptance ? 'col-span-3' : 'col-span-6'">
+              <span class="mb-0.5 block text-[11px] text-slate-500">单据类型</span>
+              <div
+                class="flex h-[32px] items-center gap-2 rounded border border-line bg-raised px-2 text-xs"
                 aria-label="单据类型"
-                :disabled="!canEdit"
-                class="w-full"
+                :aria-readonly="true"
+                data-test="order-type-readonly"
               >
-                <el-option
-                  v-for="t in ORDER_TYPE_OPTIONS"
-                  :key="t.value"
-                  :label="t.label"
-                  :value="t.value"
-                />
-              </el-select>
-            </label>
+                <span v-if="effectiveType" class="font-medium text-slate-900">
+                  {{ typeLabelOf(effectiveType) }}
+                </span>
+                <span v-else class="text-slate-500">单号里没写类型</span>
+                <span class="ml-auto text-[11px] text-slate-500">按单号自动认</span>
+              </div>
+            </div>
 
-            <label class="col-span-3 block">
-              <span class="mb-0.5 block text-[11px] text-slate-500">采购单号</span>
-              <el-input
-                v-model="header.poNo"
-                size="small"
-                placeholder="OA 采购订单号"
-                aria-label="采购单号"
-                :disabled="!canEdit"
-                class="tabular-nums"
-              >
-                <template #suffix>
-                  <button
-                    type="button"
-                    class="link-chip"
-                    :class="{ 'is-on': header.poUrl }"
-                    :title="header.poUrl || '给采购单加一个链接'"
-                    :aria-label="header.poUrl ? '采购单链接已填，点击修改' : '给采购单加链接'"
-                    @click.prevent.stop="openLink('poUrl', '采购单链接', '采购订单在 OA 里的地址')"
-                  >
-                    链接
-                  </button>
-                </template>
-              </el-input>
-            </label>
-
-            <label class="col-span-3 block">
-              <span class="mb-0.5 flex items-baseline gap-1 text-[11px] text-slate-500">
-                <span>验收单号</span>
-                <span v-if="header.orderType === 'CGSQ'" class="text-slate-500">CGSQ 一般没有</span>
-              </span>
+            <label v-if="hasAcceptance" class="col-span-4 block">
+              <span class="mb-0.5 block text-[11px] text-slate-500">验收单号</span>
               <el-input
                 v-model="header.acceptanceNo"
                 size="small"

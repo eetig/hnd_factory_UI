@@ -88,6 +88,12 @@ async function clickButton(text) {
   await nextTick()
 }
 
+/** 抬头里只读的单据类型（不是输入框，是一块文字） */
+function typeText() {
+  const el = wrapper.find('[data-test="order-type-readonly"]')
+  return el.exists() ? el.text().replace(/\s+/g, ' ') : ''
+}
+
 /** 台账里的某一格（第 n 行，1 起） */
 function cell(label, index = 1) {
   return wrapper.find(`input[aria-label="第 ${index} 行${label}"]`)
@@ -217,10 +223,45 @@ describe('新增：一张 OA 单 = 一张台账', () => {
     )
   })
 
-  it('默认单据类型按页面给（费用申请默认 ZCSG）', async () => {
+  it('单据类型只读：空单号时用页面给的默认值', async () => {
     await open({ defaultOrderType: 'ZCSG' })
-    const selects = wrapper.findAllComponents({ name: 'ElSelect' })
-    expect(selects.some((c) => c.props('modelValue') === 'ZCSG')).toBe(true)
+    expect(typeText()).toContain('资产申购 ZCSG')
+    expect(
+      wrapper.find('input[aria-label="单据类型"]').exists(),
+      '单据类型又变成能手动填/选的了',
+    ).toBe(false)
+  })
+
+  it('单号带 CGSQ → 类型自动是采购申请，后面就没有验收单号', async () => {
+    await open()
+    await wrapper.find('input[aria-label="OA 单号"]').setValue('CG-CGSQ-20261111001')
+    await nextTick()
+    expect(typeText()).toContain('采购申请 CGSQ')
+    expect(
+      wrapper.find('input[aria-label="验收单号"]').exists(),
+      'CGSQ 还显示验收单号（采购申请不产生验收单）',
+    ).toBe(false)
+
+    await fillLine(1, { requester: '洪旭', name: '乙炔', quantity: '1' })
+    await clickButton('保存整单')
+    expect(wrapper.emitted('save')?.[0]?.[0].rows[0].orderType).toBe('CGSQ')
+  })
+
+  it('单号带 ZCSG → 类型自动是资产申购，并且出现验收单号', async () => {
+    await open()
+    await wrapper.find('input[aria-label="OA 单号"]').setValue('F-ZCSG-20261111002')
+    await nextTick()
+    expect(typeText()).toContain('资产申购 ZCSG')
+
+    const acc = wrapper.find('input[aria-label="验收单号"]')
+    expect(acc.exists(), 'ZCSG 没有出现验收单号').toBe(true)
+    await acc.setValue('YS-20261111-01')
+
+    await fillLine(1, { requester: '洪旭', name: '乙炔', quantity: '1' })
+    await clickButton('保存整单')
+    const saved = wrapper.emitted('save')?.[0]?.[0]
+    expect(saved.rows[0].orderType).toBe('ZCSG')
+    expect(saved.rows[0].acceptanceNo).toBe('YS-20261111-01')
   })
 })
 
@@ -306,20 +347,21 @@ describe('编辑：整张单一起改', () => {
     expect(wrapper.findAll('tbody tr').length).toBe(1)
   })
 
-  it('编辑时把单据类型装进下拉，保存时原样带回去', async () => {
+  it('编辑服务采购申请：类型按单号认，验收单号与已有字段原样带回去', async () => {
+    const row = { ...ROW, oaNo: 'F-FWCGSQ-20261109003', orderType: 'FWCGSQ', acceptanceNo: 'YS-OLD-1' }
     request.get.mockResolvedValueOnce({
-      data: { success: true, dataList: [{ ...ROW, orderType: 'FWCGSQ' }] },
+      data: { success: true, dataList: [row] },
     })
-    await open({ mode: 'edit', row: { ...ROW, orderType: 'FWCGSQ' } })
+    await open({ mode: 'edit', row })
     await clickButton('编辑这张单')
 
-    const selects = wrapper.findAllComponents({ name: 'ElSelect' })
-    const orderTypeSelect = selects.find((c) => c.props('modelValue') === 'FWCGSQ')
-    expect(orderTypeSelect, '打开编辑时单据类型没装进下拉').toBeTruthy()
+    expect(typeText()).toContain('服务采购申请 FWCGSQ')
+    expect(wrapper.find('input[aria-label="验收单号"]').exists()).toBe(true)
 
     await clickButton('保存整单')
     const saved = wrapper.emitted('save')?.[0]?.[0]
     expect(saved.rows[0].orderType).toBe('FWCGSQ')
+    expect(saved.rows[0].acceptanceNo).toBe('YS-OLD-1')
     // 白名单漏字段不会报错，只会静默丢数据 —— 这两项以前漏过
     expect(saved.rows[0]).toHaveProperty('acceptanceNo')
     expect(saved.rows[0]).toHaveProperty('poNo')
