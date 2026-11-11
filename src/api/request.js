@@ -1,6 +1,7 @@
 import axios from 'axios'
 import router from '../router'
 import { clearAuth, getToken } from './auth'
+import { API_BASE } from './base'
 
 /*
  * 「登录失效」的统一判定（2026-11-03）。
@@ -20,7 +21,8 @@ function redirectToLogin() {
 }
 
 const request = axios.create({
-  baseURL: '/',
+  // 网页版为空串（同源），桌面版是 https://hbbhnd.cloud —— 见 api/base.js 的说明
+  baseURL: API_BASE,
   // 超时放宽到 5 分钟：Excel 导入（解析/预览/保存）耗时较长，
   // 原 20s 会在解析大文件时误报 "timeout of 20000ms exceeded"。
   timeout: 300000,

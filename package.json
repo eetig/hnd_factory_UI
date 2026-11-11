@@ -1,25 +1,33 @@
 {
   "name": "hnd-factory-ui",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "engines": {
     "node": ">=20",
     "npm": ">=10"
   },
   "scripts": {
-    "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --max-warnings=0",
-    "lint:fix": "eslint . --fix",
+    "build:desktop": "vite build --mode desktop",
+    "desktop:build": "tauri build",
+    "desktop:dev": "tauri dev",
+    "publish:desktop": "node scripts/publish-desktop.mjs",
+    "dev": "vite",
     "format": "prettier --write \"src/**/*.{js,vue,css}\" \"tests/**/*.js\"",
     "format:check": "prettier --check \"src/**/*.{js,vue,css}\" \"tests/**/*.js\"",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-autostart": "^2.7.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "axios": "^1.20.0",
     "dayjs": "^1.11.23",
     "element-plus": "^2.14.5",
@@ -29,6 +37,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
+    "@tauri-apps/cli": "^2.12.4",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.5.1",
     "autoprefixer": "^10.6.1",

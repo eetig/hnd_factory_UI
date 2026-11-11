@@ -7,6 +7,8 @@ import { authState, clearAuth, getDisplayName, getRoleName, isLoggedIn } from '.
 import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
 import PaletteToggle from '../components/PaletteToggle.vue'
+import DesktopPanel from '../components/DesktopPanel.vue'
+import OfflineBanner from '../components/OfflineBanner.vue'
 import { usePalette } from '../composables/usePalette'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { ElConfigProvider, ElDialog, ElTooltip } from 'element-plus'
@@ -700,9 +702,12 @@ function toggleSidebar() {
                 <span aria-hidden="true">›</span>
                 <span class="font-medium text-slate-700">{{ pageTitle }}</span>
               </nav>
-              <!-- 配色切换（2026-10-23，变更-170）：右上角，与面包屑同一行。
-                   ml-auto 把它推到右边；面包屑 min-w-0 保证长标题不会把它挤出去。 -->
-              <PaletteToggle class="ml-auto" />
+              <!-- 右上角一组：桌面版设置（只有 Tauri 里才渲染）+ 配色切换。
+                   ml-auto 推到最右；面包屑 min-w-0 保证长标题不会把它们挤出去。 -->
+              <div class="ml-auto flex items-center gap-2">
+                <DesktopPanel />
+                <PaletteToggle />
+              </div>
             </div>
             <!--
           横向滚动：
@@ -754,6 +759,10 @@ function toggleSidebar() {
           **这块料上，抬起来的一律是白 + 一道发丝线**。
           -->
           <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-line bg-raised p-4">
+            <!-- 断网提示（2026-11-11）：桌面版断网时页面能开、接口全失败，
+                 让"点了没反应"变成一句人话。网页版同样生效，但浏览器自己也会提示，
+                 所以它只在真的 offline 时出现，平时不占位置。 -->
+            <OfflineBanner />
             <!-- 页面的挂载点。路由天然「一次只挂一页」：切走的那页会被卸载，
                  不存在「进来过的面板同时显示、叠在一起」这个隐患（改造前要靠
                  v-if 管存在性 + v-show 管可见性两个一起写才防得住）。

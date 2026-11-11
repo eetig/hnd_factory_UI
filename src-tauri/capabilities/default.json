@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "HND 桌面端默认权限：只开开机自启与进程重启，其余一律不开。",
+  "windows": ["main"],
+  "permissions": ["core:default", "autostart:default", "process:default", "updater:default"]
+}

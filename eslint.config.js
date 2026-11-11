@@ -13,7 +13,9 @@ import globals from 'globals'
  */
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '*.log'],
+    // src-tauri/target 是 Rust 的构建缓存：里面会生成 tauri 的 CSP 脚本资产（非 UTF-8 的 JS 片段），
+    // 一旦被 lint 扫到就是几十条 Parsing error，把真正的告警淹掉。
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '*.log', 'src-tauri/**'],
   },
   js.configs.recommended,
   ...pluginVue.configs['flat/essential'],
@@ -64,6 +66,13 @@ export default [
         beforeAll: 'readonly',
         afterAll: 'readonly',
       },
+    },
+  },
+  {
+    // scripts/ 是给 npm 跑的 Node 脚本（发布桌面版等），用 Node 全局量
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
 ]

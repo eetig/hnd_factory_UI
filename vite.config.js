@@ -16,7 +16,18 @@ import vue from '@vitejs/plugin-vue'
  */
 const REMOTE = process.env.HND_REMOTE || ''
 
-export default defineConfig({
+/*
+ * `mode` 有两个值：默认的 production（给网页用，`base: '/'`），
+ * 和 `desktop`（Tauri 桌面版，`--mode desktop`，`base: './'`）。
+ *
+ * 为什么要分成两种模式：
+ *   · 网页版由 Nginx 挂在域名根下，资源必须从 `/assets/...` 取；
+ *   · 桌面版页面来源是 `tauri.localhost`（本地文件），绝对路径 `/assets/...`
+ *     会被当成 `tauri.localhost/assets/...` 去解析，直接 404 —— 所以要用相对路径。
+ * 两边的差异只在这一处，业务代码完全一样。
+ */
+export default defineConfig(({ mode }) => ({
+  base: mode === 'desktop' ? './' : '/',
   plugins: [vue()],
   server: {
     port: 9091,
@@ -124,4 +135,4 @@ export default defineConfig({
     setupFiles: ['./tests/setup.js'],
     include: ['tests/**/*.spec.js'],
   },
-})
+}))
