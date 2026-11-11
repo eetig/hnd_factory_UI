@@ -88,6 +88,21 @@ async function clickButton(text) {
   await nextTick()
 }
 
+/** 单据视图底部那颗主按钮「编辑」（行尾也有「编辑」，按无 aria-label 区分） */
+function footerEditButton() {
+  return wrapper
+    .findAll('button')
+    .find((b) => b.text().replace(/\s/g, '') === '编辑' && !b.attributes('aria-label'))
+}
+
+async function clickFooterEdit() {
+  const btn = footerEditButton()
+  expect(btn, '单据视图底部没有「编辑」').toBeTruthy()
+  await btn.trigger('click')
+  await flushPromises()
+  await nextTick()
+}
+
 /** 抬头里只读的单据类型（不是输入框，是一块文字） */
 function typeText() {
   const el = wrapper.find('[data-test="order-type-readonly"]')
@@ -302,16 +317,16 @@ describe('单据视图（一张 OA 单 = 一张单据）', () => {
     await open({ mode: 'edit', row: { ...ROW, oaNo: '' } })
     expect(cell('需求人').exists(), '没有 OA 单号时应当直接可编辑').toBe(true)
     expect(cell('需求人').element.value).toBe('张三')
-    expect(buttonByText('编辑这张单')).toBeFalsy()
+    expect(footerEditButton(), '无权限时不该出现编辑入口').toBeFalsy()
   })
 })
 
 describe('编辑：整张单一起改', () => {
-  it('点「编辑这张单」→ 台账里就是这张单的所有行，抬头带过来', async () => {
+  it('点「编辑」→ 台账里就是这张单的所有行，抬头带过来', async () => {
     request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
 
-    await clickButton('编辑这张单')
+    await clickFooterEdit()
     expect(wrapper.findAll('tbody tr').length).toBe(1)
     expect(cell('需求人').element.value).toBe('张三')
     expect(cell('物料名称').element.value).toBe('三氯氢硅')
@@ -323,7 +338,7 @@ describe('编辑：整张单一起改', () => {
   it('删除已有行先确认，确认后把那条抛给父组件', async () => {
     request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
-    await clickButton('编辑这张单')
+    await clickFooterEdit()
 
     const del = wrapper.find('button[aria-label="删掉第 1 行"]')
     expect(del.exists(), '台账里没有删除这一行的按钮').toBe(true)
@@ -338,7 +353,7 @@ describe('编辑：整张单一起改', () => {
     ElMessageBox.confirm.mockRejectedValueOnce(new Error('cancel'))
     request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
-    await clickButton('编辑这张单')
+    await clickFooterEdit()
 
     await wrapper.find('button[aria-label="删掉第 1 行"]').trigger('click')
     await flushPromises()
@@ -353,7 +368,7 @@ describe('编辑：整张单一起改', () => {
       data: { success: true, dataList: [row] },
     })
     await open({ mode: 'edit', row })
-    await clickButton('编辑这张单')
+    await clickFooterEdit()
 
     expect(typeText()).toContain('服务采购申请 FWCGSQ')
     expect(wrapper.find('input[aria-label="验收单号"]').exists()).toBe(true)
@@ -375,7 +390,7 @@ describe('权限', () => {
 
     expect(wrapper.text()).toContain('三氯氢硅')
     expect(buttonByText('保存整单'), '无权限时不该出现保存按钮').toBeFalsy()
-    expect(buttonByText('编辑这张单'), '无权限时不该出现编辑入口').toBeFalsy()
+    expect(footerEditButton(), '无权限时不该出现编辑入口').toBeFalsy()
     expect(buttonByText('加一行')).toBeFalsy()
     expect(wrapper.find('button[aria-label="删掉第 1 行"]').exists()).toBe(false)
   })
@@ -409,12 +424,12 @@ describe('关闭保护', () => {
   it('从单据进台账后按 Esc → 回单据，不关窗', async () => {
     request.get.mockResolvedValue({ data: { success: true, dataList: [ROW] } })
     await open({ mode: 'edit', row: ROW })
-    await clickButton('编辑这张单')
+    await clickFooterEdit()
 
     await wrapper.find('.drawer-enter').trigger('keydown', { key: 'Escape' })
     await flushPromises()
 
-    expect(wrapper.text(), 'Esc 没有回到整张单').toContain('编辑这张单')
+    expect(footerEditButton(), 'Esc 没有回到整张单').toBeTruthy()
     const closed = wrapper.emitted('update:modelValue')
     expect(closed?.[closed.length - 1]?.[0], 'Esc 把弹窗关掉了').not.toBe(false)
   })
@@ -467,5 +482,28 @@ describe('物料带出规格、类别可以自己填', () => {
     const saved = JSON.parse(localStorage.getItem('hnd-purchase-categories') || '[]')
     expect(saved, '自己填的类别没被记住').toContain('临时杂项')
     localStorage.removeItem('hnd-purchase-categories')
+  })
+})
+
+describe('单据视图：物料名称 / 编码 / 规格点一下就能复制', () => {
+  it('点名称复制名称，点规格复制规格，且不会顺手进编辑', async () => {
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [ROW] } })
+    await open({ mode: 'edit', row: ROW })
+
+    const nameBtn = wrapper.findAll('button').find((b) => b.text().includes('三氯氢硅'))
+    expect(nameBtn, '物料名称不是可点的复制块').toBeTruthy()
+    await nameBtn.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith('三氯氢硅')
+    // 点完还在单据视图（没有误触进行编辑）
+    expect(footerEditButton(), '点复制却跑进编辑了').toBeTruthy()
+
+    const specBtn = wrapper.findAll('button').find((b) => b.text().trim() === '99%')
+    expect(specBtn, '规格型号不是可点的复制块').toBeTruthy()
+    await specBtn.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenLastCalledWith('99%')
   })
 })

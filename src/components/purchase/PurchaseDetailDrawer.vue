@@ -526,6 +526,29 @@ function mergeCategories(values) {
 
 loadRememberedCategories()
 
+/* 点一下就复制：单号、编码、规格这些都要拿去别处粘贴，尤其手机/截图对账时 */
+async function copyText(text, label) {
+  const value = String(text ?? '').trim()
+  if (!value || value === '—') return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = value
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    ElMessage.success(`已复制${label}`)
+  } catch {
+    ElMessage.warning('复制失败，手动选中吧')
+  }
+}
+
 function pickMaterial(option, index, source) {
   if (!option) return
   const line = lines.value[index]
@@ -880,13 +903,34 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 </td>
                 <td class="px-1 py-2 tabular-nums text-slate-500">{{ md(line.requestDate) }}</td>
                 <td class="px-2 py-2">
-                  <span class="line-clamp-2 font-medium leading-snug text-slate-900">{{ line.materialName || '未填物料' }}</span>
+                  <button
+                    type="button"
+                    class="line-clamp-2 text-left font-medium leading-snug text-slate-900 hover:underline focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    :title="`点击复制：${line.materialName || ''}`"
+                    @click.stop="copyText(line.materialName, '物料名称')"
+                  >
+                    {{ line.materialName || '未填物料' }}
+                  </button>
                 </td>
-                <td class="truncate px-2 py-2 tabular-nums text-slate-600" :title="line.materialCode || ''">
-                  {{ line.materialCode || '—' }}
+                <td class="truncate px-2 py-2 tabular-nums text-slate-600">
+                  <button
+                    type="button"
+                    class="tabular-nums hover:underline focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    :title="`点击复制：${line.materialCode || ''}`"
+                    @click.stop="copyText(line.materialCode, '物料编码')"
+                  >
+                    {{ line.materialCode || '—' }}
+                  </button>
                 </td>
-                <td class="px-2 py-2 text-slate-600" :title="line.spec || ''">
-                  <span class="line-clamp-2 leading-snug">{{ line.spec || '—' }}</span>
+                <td class="px-2 py-2 text-slate-600">
+                  <button
+                    type="button"
+                    class="line-clamp-2 text-left leading-snug hover:underline focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                    :title="`点击复制：${line.spec || ''}`"
+                    @click.stop="copyText(line.spec, '规格型号')"
+                  >
+                    {{ line.spec || '—' }}
+                  </button>
                 </td>
                 <td class="px-2 py-2 text-slate-600" :title="line.purpose || ''">
                   <span class="line-clamp-2 leading-snug">{{ line.purpose || '—' }}</span>
@@ -939,9 +983,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
           </p>
         </div>
 
-        <p class="mt-2 text-[11px] leading-relaxed text-slate-500">
-          点「编辑这张单」进台账，一次改完整张单；同一张单里的行可以增删。
-        </p>
       </div>
 
       <!-- ══════════ 可编辑台账 ══════════ -->
@@ -1299,7 +1340,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
         </span>
         <div class="flex items-center gap-2">
           <el-button @click="requestClose">关闭</el-button>
-          <el-button v-if="canEdit" type="primary" @click="editOrder">编辑这张单</el-button>
+          <el-button v-if="canEdit" type="primary" @click="editOrder">编辑</el-button>
         </div>
       </div>
 
