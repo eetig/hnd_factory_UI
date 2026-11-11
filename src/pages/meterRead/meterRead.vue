@@ -808,6 +808,37 @@ const namesViewport = ref(0)
  */
 const pageInst = getCurrentInstance()
 
+/*
+ * 轨道高度（2026-11-11）：卡片高度会变（有没有"比上次小"那行提示、
+ * 键盘弹起时收起拍照区），写死 720rpx 会在有提示行时让"本车间/下一块"
+ * 那行顶到按钮条下面 —— 使用方截图里就压住字了。
+ * 所以量一次真实高度再写回去。
+ */
+const trackH = ref(0)
+
+function measureTrack(tries = 0) {
+  if (!pageInst || !uni.createSelectorQuery) return
+  const query = uni.createSelectorQuery().in(pageInst.proxy)
+  query.select('.mr__card').boundingClientRect()
+  query.select('.mr__upnext').boundingClientRect()
+  query.exec((res) => {
+    const card = res?.[0]
+    const row = res?.[1]
+    if (!card || !card.height) {
+      if (tries < 3) setTimeout(() => measureTrack(tries + 1), 120)
+      return
+    }
+    const extra = row && row.height ? row.height + 14 : 0
+    trackH.value = Math.ceil(card.height + extra + 10)
+  })
+}
+
+watch(
+  () => [activeIndex.value, anomaly.value, keyboardOpen.value, cards.value.length],
+  () => nextTick(() => setTimeout(() => measureTrack(), 30)),
+  { immediate: true },
+)
+
 function measureNames(tries = 0) {
   if (!pageInst || !uni.createSelectorQuery) return
   const query = uni.createSelectorQuery().in(pageInst.proxy)
@@ -1315,7 +1346,7 @@ watch(
         @touchend.stop="onTouchEnd"
         @touchcancel.stop="onTouchEnd"
       >
-        <view class="mr__track" :style="trackStyle">
+        <view class="mr__track" :style="[trackStyle, trackH ? { height: trackH + 'px' } : null]">
           <view
             v-for="item in windowCards"
             :key="item.meterId"
@@ -1791,25 +1822,19 @@ watch(
    */
   position: relative;
   /*
-   * 轨道高度写死 720rpx（2026-11-11，B 方案）：页是 absolute，轨道不给高度就塌成 0。
-   * 这样"卡片 + 下面那行"的高度是确定的，按钮条紧跟其后，
-   * 空白全部落到按钮下面 —— 舞台不再 flex:1 撑满整屏。
+   * 轨道高度不能写死（2026-11-11，使用方实测被压字）：
+   * 卡片有没有"比上次读数小"那行提示、键盘是否弹起，都让高度差 40~90px，
+   * 写死 720rpx 时"本车间/下一块"那行会从轨道里溢出来顶到按钮条下面。
+   * 现在由 measureTrack() 量真实卡片高度写进内联 style，这里只给个下限兜底。
    */
   flex: none;
-  height: 720rpx;
-  min-height: 0;
+  min-height: 640rpx;
   width: 100%;
   will-change: transform;
   backface-visibility: hidden;
 }
 
-/*
- * 键盘弹起时轨道收矮（2026-11-11）：卡片这时已经把"拍表存证"收起来了，
- * 高度少 90px 左右；轨道跟着收到 520rpx，按钮就不会被键盘顶出屏幕。
- */
-.mr__stage.is-keyboard .mr__track {
-  height: 520rpx;
-}
+/* 键盘弹起时卡片已收起拍照区，量出来的高度自然变矮，这里不再写死 */
 
 /*
  * 每一页绝对定位在自己的横坐标上（pageStyle 写 translate3d(i*w)），
