@@ -5,6 +5,7 @@ import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
+import DateField from '../../components/DateField.vue'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -315,9 +316,14 @@ watch(
 /**
  * 改抄表日期（2026-11-06）。
  * 补录历史数据用：选到那一天，之后提交的读数就记到那期上。
- */function onReadDateChange(event) {
-  const value = event?.detail?.value
-  if (!value) return
+ * 2026-11-11：日期入口从系统 <picker mode="date">（安卓原生日历，蓝色主题、
+ * 和页面风格完全不搭）换成项目自己的 DateField（同样的底部月历弹层，
+ * 工单/领料/报表筛选都在用它）。DateField 的 change 直接给 'YYYY-MM-DD' 字符串，
+ * 这里兼容两种入参，旧的 event 调用也不会坏。
+ */
+function onReadDateChange(payload) {
+  const value = typeof payload === 'string' ? payload : payload?.detail?.value
+  if (!value || value === readDate.value) return
   readDate.value = value
   skipped.value = []
   if (card.value) loadCard(card.value)
@@ -426,21 +432,22 @@ function toggleOnlyUnfilled() {
 /* ===== 拍照（可选）===== */
 
 /**
- * 自绘的拍照选项（2026-11-06）。
+ * 拍照入口（2026-11-11 定稿：走系统原生选择框）。
  *
- * 使用方：「这个弹出的拍照选项有点丑」。原来弹的是 uni.chooseImage 自己的系统
- * ActionSheet —— 样式由系统决定，改不了。所以自己做一个底部抽屉，
- * 跟 App 里其它弹层用同一套视觉（圆角、拖拽条、safe-area）。
+ * 演变：最初是 uni.chooseImage 自带的系统 ActionSheet（使用方嫌丑）→ 2026-11-06
+ * 改成自绘底部抽屉 → 2026-11-11 使用方明确「用手机原生的选择框」，于是换回
+ * uni.showActionSheet：相机/相册两项由系统弹，跟系统一致、也不占页面 DOM。
  */
-const photoSheetOpen = ref(false)
-
 function openPhotoSheet() {
   if (!card.value) return
-  photoSheetOpen.value = true
-}
-
-function closePhotoSheet() {
-  photoSheetOpen.value = false
+  uni.showActionSheet({
+    itemList: ['拍照', '从相册选择'],
+    success: (res) => {
+      takePhoto(res.tapIndex === 1 ? 'album' : 'camera')
+    },
+    // 用户点空白取消：什么都不做
+    fail: () => {},
+  })
 }
 
 /** 把刚拍的图存进系统相册（App/小程序；H5 无相册概念，跳过） */
@@ -471,7 +478,6 @@ async function saveToAlbum(filePath) {
 
 async function takePhoto(from) {
   if (!card.value) return
-  photoSheetOpen.value = false
   try {
     const chosen = await new Promise((resolve, reject) => {
       uni.chooseImage({
@@ -1352,12 +1358,13 @@ watch(
             readDate 也一直是有的（默认今天），只是界面上没给入口 —— 这里补上。
             改日期会重新拉那一期的抄表表（loadSheet）。
           -->
-          <picker mode="date" :value="readDate" @change="onReadDateChange">
-            <view class="mr__date">
-              <wd-icon name="calendar" size="14px" custom-class="mr__date-icon" />
-              <text class="mr__date-text">{{ readDate.slice(5) }}</text>
-            </view>
-          </picker>
+          <DateField
+            v-model="readDate"
+            variant="inline"
+            display="monthDay"
+            placeholder="抄表日期"
+            @change="onReadDateChange"
+          />
           <!-- 已填只是状态，不再当按钮用（列表入口挪到左上角计数上了） -->
           <text class="mr__filled">已填 {{ filledNow }}</text>
           <text v-if="skipped.length" class="mr__skipped">跳过 {{ skipped.length }}</text>
@@ -1688,33 +1695,6 @@ watch(
       </view>
     </template>
   
-      <view v-if="photoSheetOpen" class="mr__ps" @click="closePhotoSheet">
-              <view class="mr__ps-panel" @click.stop>
-                <view class="mr__ps-grabber"></view>
-                <text class="mr__ps-title">拍表存证</text>
-                <text class="mr__ps-hint">拍照会自动存一份到手机相册，方便日后对账</text>
-      
-                <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('camera')">
-                  <text class="mr__ps-icon">📷</text>
-                  <view class="mr__ps-body">
-                    <text class="mr__ps-label">拍摄</text>
-                    <text class="mr__ps-sub">调起相机，拍完自动存相册</text>
-                  </view>
-                  <text class="mr__ps-arrow">›</text>
-                </view>
-      
-                <view class="mr__ps-action" hover-class="mr__ps-action--pressed" @click="takePhoto('album')">
-                  <text class="mr__ps-icon">🖼</text>
-                  <view class="mr__ps-body">
-                    <text class="mr__ps-label">从相册选择</text>
-                    <text class="mr__ps-sub">已经拍过的表，直接从相册挑</text>
-                  </view>
-                  <text class="mr__ps-arrow">›</text>
-                </view>
-      
-                <view class="mr__ps-cancel" hover-class="mr__ps-action--pressed" @click="closePhotoSheet">取消</view>
-              </view>
-            </view>
 </view>
 </template>
 
@@ -2383,126 +2363,6 @@ watch(
 }
 
 /* ===== 拍照选项抽屉（2026-11-06）===== */
-.mr__ps {
-  /* 2026-11-06：弹层已挪到页面根，这里按模态抽屉重写：满屏遮罩 + 贴底 + 上圆角 */
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 900;
-  display: flex;
-  align-items: flex-end;
-  background-color: rgba(24, 20, 16, 0.5);
-  animation: mr-fade-in 160ms ease both;
-}
-
-@keyframes mr-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.mr__ps-panel {
-  width: 100%;
-  max-height: 82vh;
-  padding: 16rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
-  border-radius: 32rpx 32rpx 0 0;
-  background-color: var(--ui-surface);
-  box-shadow: 0 -12rpx 40rpx rgba(60, 50, 40, 0.18);
-  animation: mr-sheet-up 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes mr-sheet-up {
-  from {
-    transform: translateY(100%);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-.mr__ps-grabber {
-  width: 72rpx;
-  height: 8rpx;
-  margin: 4rpx auto 18rpx;
-  border-radius: 8rpx;
-  background-color: var(--ui-border-strong);
-}
-
-.mr__ps-title {
-  display: block;
-  font-size: 32rpx;
-  font-weight: 600;
-  color: var(--ui-text);
-}
-
-.mr__ps-hint {
-  display: block;
-  margin-top: 6rpx;
-  margin-bottom: 20rpx;
-  font-size: 22rpx;
-  color: var(--ui-text-2);
-}
-
-.mr__ps-action {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  padding: 24rpx 22rpx;
-  margin-bottom: 16rpx;
-  border-radius: 22rpx;
-  border: 2rpx solid var(--ui-border);
-  background-color: var(--ui-raise-2);
-}
-
-.mr__ps-action--pressed {
-  opacity: 0.75;
-  transform: scale(0.99);
-}
-
-.mr__ps-icon {
-  font-size: 38rpx;
-}
-
-.mr__ps-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4rpx;
-}
-
-.mr__ps-label {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: var(--ui-text);
-}
-
-.mr__ps-sub {
-  font-size: 22rpx;
-  color: var(--ui-text-2);
-}
-
-.mr__ps-arrow {
-  font-size: 34rpx;
-  color: var(--ui-text-3);
-}
-
-.mr__ps-cancel {
-  /* 次级操作：不与上面两项同权重（2026-11-06） */
-  height: 84rpx;
-  line-height: 84rpx;
-  margin-top: 4rpx;
-  text-align: center;
-  border-radius: 22rpx;
-  font-size: 28rpx;
-  color: var(--ui-text-2);
-  background-color: transparent;
-}
-
 .mr__action-icon {
   font-size: 30rpx;
   opacity: 0.9;

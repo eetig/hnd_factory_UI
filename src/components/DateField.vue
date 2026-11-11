@@ -44,6 +44,13 @@ const props = defineProps({
    * 形态差异只是外壳，日期逻辑一行不变。
    */
   variant: { type: String, default: 'pill' },
+  /**
+   * 触发器上显示什么：
+   *   'full'     —— 2026-11-11（默认，表单里要能看见年份）
+   *   'monthDay' —— 11-11（挤在一行工具条里时用，年份靠弹层里看）
+   * 只影响触发器文案，v-model 与 change 仍是完整 'YYYY-MM-DD'。
+   */
+  display: { type: String, default: 'full' },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -159,6 +166,13 @@ const months = computed(() => {
     list.push(buildMonth(first, todayKey))
   }
   return list
+})
+
+// 触发器上的文字：完整日期，或只留「月-日」（抄表页头部一行里挤不下年份）
+const triggerText = computed(() => {
+  if (!props.modelValue) return props.placeholder
+  if (props.display === 'monthDay') return String(props.modelValue).slice(5)
+  return props.modelValue
 })
 
 // 头部胶囊里的文字：9月30日（跨年时补上年份，否则只看月日会有歧义）
@@ -280,7 +294,7 @@ function confirm() {
          （原来挂在 wd-datetime-picker 的默认插槽上，由它负责弹层） -->
     <view class="date-field" :class="{ 'is-inline': variant === 'inline' }" @click="openSheet">
       <text class="date-field__text" :class="{ 'is-empty': !modelValue }">
-        {{ modelValue || placeholder }}
+        {{ triggerText }}
       </text>
       <wd-icon name="calendar" size="16px" custom-class="date-field__icon" />
     </view>
