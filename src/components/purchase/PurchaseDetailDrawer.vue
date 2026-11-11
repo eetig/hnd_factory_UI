@@ -916,8 +916,8 @@ defineExpose({ resetForNextEntry, afterLineAdded })
           采购单号/链接字段从界面撤掉，但状态里仍保留（老数据带值的保存时不会被抹）。
         -->
         <section class="rounded-md border border-line bg-region/40 p-2.5">
-          <div class="grid grid-cols-12 gap-2">
-            <label class="block" :class="hasAcceptance ? 'col-span-5' : 'col-span-6'">
+          <div class="flex flex-wrap items-end gap-3">
+            <label class="block w-[300px]">
               <span class="mb-0.5 block text-[11px] text-slate-500">OA 单号</span>
               <el-input
                 v-model="header.oaNo"
@@ -942,22 +942,22 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               </el-input>
             </label>
 
-            <div class="block" :class="hasAcceptance ? 'col-span-3' : 'col-span-6'">
+            <div class="block w-[200px]">
               <span class="mb-0.5 block text-[11px] text-slate-500">单据类型</span>
               <div
-                class="flex h-[32px] items-center gap-2 rounded border border-line bg-raised px-2 text-xs"
+                class="flex h-6 items-center gap-2 rounded border border-line bg-raised px-2 text-xs"
                 aria-label="单据类型"
                 :aria-readonly="true"
                 data-test="order-type-readonly"
               >
-                <span v-if="effectiveType" class="font-medium text-slate-900">
+                <span v-if="effectiveType" class="truncate font-medium text-slate-900">
                   {{ typeLabelOf(effectiveType) }}
                 </span>
                 <span v-else class="text-slate-500">单号里没写类型</span>
               </div>
             </div>
 
-            <label v-if="hasAcceptance" class="col-span-4 block">
+            <label v-if="hasAcceptance" class="block w-[240px]">
               <span class="mb-0.5 block text-[11px] text-slate-500">验收单号</span>
               <el-input
                 v-model="header.acceptanceNo"
@@ -1343,21 +1343,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
   outline-offset: 1px;
 }
 
-.purchase-dialog :deep(.el-dialog__body) {
-  overscroll-behavior: contain;
-}
-
-/* 台账里的输入框压扁一点：一行十几个控件，默认 32px 高会把表拉成两层楼 */
-.purchase-dialog :deep(.el-input--small .el-input__wrapper),
-.purchase-dialog :deep(.el-select--small .el-select__wrapper) {
-  padding-left: 6px;
-  padding-right: 6px;
-}
-
-.purchase-dialog :deep(.el-input--small .el-input__inner) {
-  font-size: 12px;
-}
-
 .drawer-enter.is-entering {
   animation: purchase-dialog-enter 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -1378,5 +1363,45 @@ defineExpose({ resetForNextEntry, afterLineAdded })
   .drawer-enter.is-entering {
     animation-duration: 1ms;
   }
+}
+</style>
+
+<style>
+/* el-dialog 的根节点是 Element Plus 渲染的，拿不到本组件的 scope 标记，
+   所以「弹窗内部」的覆盖只能写在非 scoped 样式里，否则一条都不生效。 */
+.purchase-dialog .el-date-editor.el-input,
+.purchase-dialog .el-date-editor .el-input__wrapper {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 全局 style.css 把单日期框钉成 150px !important（筛选条要窄），
+   表格里必须覆盖回来，否则它比列还宽、压住隔壁格子。 */
+.purchase-dialog .el-date-editor.el-input.el-date-editor--date {
+  width: 100% !important;
+}
+
+.purchase-dialog .el-autocomplete {
+  width: 100%;
+  min-width: 0;
+}
+
+.purchase-dialog .el-input__wrapper {
+  min-width: 0;
+}
+
+.purchase-dialog .el-dialog__body {
+  overscroll-behavior: contain;
+}
+
+/* 台账里的输入框压扁一点：一行十几个控件，默认 32px 高会把表拉成两层楼 */
+.purchase-dialog .el-input--small .el-input__wrapper,
+.purchase-dialog .el-select--small .el-select__wrapper {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.purchase-dialog .el-input--small .el-input__inner {
+  font-size: 12px;
 }
 </style>
