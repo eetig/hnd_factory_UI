@@ -1318,7 +1318,7 @@ watch(
               :style="{ backgroundColor: tint(sectionColor, 0.14), color: sectionColor }"
             >{{ displayNo(card) }}</text>
             <text class="mr__name">{{ card.meterName }}</text>
-            <text v-if="card.multiplier > 1" class="mr__mult">×{{ card.multiplier }}</text>
+            <text v-if="card.multiplier > 1" class="mr__mult">倍率 ×{{ card.multiplier }}</text>
             <text v-if="hasReading(card)" class="mr__done">已填</text>
           </view>
 
@@ -1327,6 +1327,7 @@ watch(
             <text v-if="card.prevDate">（{{ String(card.prevDate).slice(5) }}）</text>
           </text>
 
+          <view class="mr__entry">
           <view class="mr__input-row">
             <!--
               :key 绑当前表号（2026-11-11）：翻到下一张再翻回来时，
@@ -1351,13 +1352,14 @@ watch(
             <text class="mr__usage-label">用量</text>
             <text
               class="mr__usage"
-              :class="previewUsage === null ? '' : previewUsage < 0 ? 'is-bad' : 'is-ok'"
+              :class="previewUsage === null ? 'is-empty' : previewUsage < 0 ? 'is-bad' : 'is-ok'"
             >
-              {{ previewUsage === null ? '（填了读数才算）' : (previewUsage > 0 ? '+' : '') + Math.round(previewUsage) }}
+              {{ previewUsage === null ? '待填' : (previewUsage > 0 ? '+' : '') + Math.round(previewUsage) }}
             </text>
           </view>
 
           <text v-if="anomaly && !keyboardOpen" class="mr__anomaly">{{ anomaly }}</text>
+          </view>
 
           <!-- 照片（键盘弹出时隐藏，2026-11-06：给卡片腾空间） -->
         <!-- prettier-ignore -->
@@ -1578,7 +1580,7 @@ watch(
 
 .mr__section {
   font-size: 24rpx;
-  color: var(--ui-text-3);
+  color: var(--ui-text-2);
 }
 
 .mr__head-right {
@@ -1589,10 +1591,10 @@ watch(
 
 .mr__date {
   /* 表头上的日期入口（2026-11-06）：小胶囊，与已填/跳过同一行 */
-  padding: 6rpx 16rpx;
+  padding: 10rpx 18rpx;
   border-radius: 999rpx;
   background-color: var(--ui-raise-2);
-  font-size: 22rpx;
+  font-size: 24rpx;
   color: var(--ui-text-2);
   font-variant-numeric: tabular-nums;
 }
@@ -1622,7 +1624,8 @@ watch(
 .mr__names {
   /* 2026-11-06：给死高度并居中 —— 之前没定高，scroll-view 被 flex 拉满，胶囊变成竖长条 */
   flex: 0 0 auto;
-  height: 96rpx;
+  /* 2026-11-11：56rpx 的胶囊只有 29px 高，手指点不准；抬到 84rpx（≈44px 触控下限） */
+  height: 112rpx;
   width: 100%;
   /* 两侧留白放到 inner 上：这样 inner 的原点就是带子的左边缘，
      量出来的标签中心减去位移才对得齐（否则差一个 padding） */
@@ -1640,7 +1643,7 @@ watch(
 .mr__names-inner {
   display: inline-flex;
   align-items: center;
-  height: 96rpx;
+  height: 112rpx;
   gap: 14rpx;
   padding: 0 24rpx;
   /* 轨道的位移由 JS 写 transform，和下方卡片共用同一个手势进度 */
@@ -1649,16 +1652,16 @@ watch(
 }
 
 .mr__name {
-  /* 胶囊：定高 56rpx、横向排布、文字绝不换行 */
+  /* 胶囊：定高 84rpx（≈44px）、横向排布、文字绝不换行 */
   display: inline-flex;
   align-items: center;
   gap: 8rpx;
-  height: 56rpx;
-  padding: 0 22rpx;
+  height: 84rpx;
+  padding: 0 24rpx;
   border-radius: 999rpx;
   white-space: nowrap;
   background-color: var(--ui-raise-2);
-  font-size: 24rpx;
+  font-size: 26rpx;
   color: var(--ui-text-2);
   transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1), color 200ms ease;
 }
@@ -1670,7 +1673,7 @@ watch(
 }
 
 .mr__name-no {
-  font-size: 20rpx;
+  font-size: 22rpx;
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1735,12 +1738,24 @@ watch(
   box-sizing: border-box;
   display: flex;
   justify-content: center;
+  align-items: center;
 }
 
 .mr__page-fill .mr__card,
 .mr__page-fill .mr__peek {
   width: 100%;
   box-sizing: border-box;
+}
+
+/*
+ * 录入区（读数 + 用量）：先包一层，方便以后把"柜号/倍率/上次"做成信息格子时
+ * 还能保持内部间距一致；现在它只是把两行的 gap 收紧一点。
+ */
+.mr__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  margin-top: 2rpx;
 }
 
 /* 邻居卡：只给"这是哪块表、上次多少、填没填"，不提供输入，避免误触 */
@@ -1946,9 +1961,10 @@ watch(
 
 .mr__action-sub {
   margin-left: 6rpx;
-  font-size: 20rpx;
+  /* 2026-11-11：10.4px + 0.82 透明度放在蓝底上太糊了，抬到 12.5px 并提亮 */
+  font-size: 24rpx;
   font-weight: 500;
-  opacity: 0.82;
+  color: rgba(255, 255, 255, 0.92);
   white-space: nowrap;
 }
 
@@ -2224,6 +2240,7 @@ watch(
   font-size: 24rpx;
   font-weight: 700;
   color: #9a4a1e;
+  white-space: nowrap;
 }
 
 .mr__done {
@@ -2236,7 +2253,9 @@ watch(
 
 .mr__meta {
   font-size: 24rpx;
-  color: var(--ui-text-3);
+  /* 2026-11-11：--ui-text-3 在白底上只有 3.1:1，12.5px 正文达不到 AA；
+     改用 --ui-text-2（约 5.6:1），层级仍靠字号区分 */
+  color: var(--ui-text-2);
 }
 
 .mr__input-row {
@@ -2261,29 +2280,30 @@ watch(
 .mr__placeholder {
   font-size: 30rpx;
   font-weight: 400;
-  color: var(--ui-text-3);
+  color: var(--ui-text-2);
 }
 
 .mr__unit {
   font-size: 24rpx;
-  color: var(--ui-text-3);
+  color: var(--ui-text-2);
 }
 
 .mr__usage-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 4rpx;
 }
 
 .mr__usage-label {
   font-size: 24rpx;
-  color: var(--ui-text-3);
+  color: var(--ui-text-2);
 }
 
 .mr__usage {
   font-size: 30rpx;
   font-weight: 700;
-  color: var(--ui-text-3);
+  color: var(--ui-text-2);
   font-variant-numeric: tabular-nums;
 
   &.is-ok {
@@ -2292,6 +2312,13 @@ watch(
 
   &.is-bad {
     color: #9a4a1e;
+  }
+
+  /* 没填读数时这里只是占位：不要用粗体抢读数输入框的视觉重量 */
+  &.is-empty {
+    font-size: 26rpx;
+    font-weight: 400;
+    color: var(--ui-text-2);
   }
 }
 
@@ -2304,7 +2331,7 @@ watch(
 }
 
 .mr__photo-row {
-  margin-top: auto;
+  margin-top: 14rpx;
 }
 
 .mr__photo {
