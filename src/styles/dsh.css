@@ -23,9 +23,9 @@
   --ds-hairline-strong: rgba(16, 24, 40, 0.1);
 
   /* 半透明浮层：侧栏、页签条、卡片 */
-  --ds-veil: rgba(255, 255, 255, 0.5);
-  --ds-veil-strong: rgba(255, 255, 255, 0.68);
-  --ds-card: rgba(255, 255, 255, 0.74);
+  --ds-veil: rgba(255, 255, 255, 0.3);
+  --ds-veil-strong: rgba(255, 255, 255, 0.5);
+  --ds-card: rgba(255, 255, 255, 0.32);
 
   /* 极淡弥散阴影：只做"离开纸面一点点"，不做立体 */
   --ds-shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.04), 0 12px 32px -18px rgba(16, 24, 40, 0.16);
@@ -67,7 +67,7 @@ h1 {
 .el-select__wrapper,
 .el-textarea__inner {
   box-shadow: 0 0 0 1px var(--ds-hairline) inset;
-  background-color: rgba(255, 255, 255, 0.6);
+  background-color: rgba(255, 255, 255, 0.16);
   transition: box-shadow 140ms ease, background-color 140ms ease;
 }
 
@@ -75,7 +75,7 @@ h1 {
 .el-select__wrapper:hover,
 .el-textarea__inner:hover {
   box-shadow: 0 0 0 1px var(--ds-hairline-strong) inset;
-  background-color: rgba(255, 255, 255, 0.78);
+  background-color: rgba(255, 255, 255, 0.6);
 }
 
 .el-input__wrapper.is-focus,

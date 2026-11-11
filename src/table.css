@@ -39,7 +39,11 @@
    * 叠在一起（文字糊成一片）。所以给一层**几乎看不见的纸色**——与卡片同色，
    * 视觉上等于没有底，但能挡住滚动内容。
    */
-  background: color-mix(in srgb, theme(colors.canvas) 88%, transparent);
+  /*
+   * 半透明表头：贴着浮卡一起透。sticky 需要一点不透明度垫底，
+   * 55% 刚好让滚过去的行不成"糊字"，又不会在浮卡上切出一条实色白带。
+   */
+  background: rgba(255, 255, 255, 0.55);
   border-bottom: 1px solid rgba(16, 24, 40, 0.06);
   font-size: 12px;
   font-weight: 600;

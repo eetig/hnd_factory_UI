@@ -100,7 +100,7 @@ async function onPickWallpaper(event) {
   picking.value = true
   wallpaperError.value = ''
   try {
-    appearance.custom = await compressImage(file)
+    appearance.custom = await compressImage(file, 1920, 0.82, appearance.blur)
     appearance.enabled = true
   } catch (error) {
     wallpaperError.value = error?.message || '这张图用不了'

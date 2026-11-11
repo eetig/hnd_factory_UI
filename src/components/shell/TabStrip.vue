@@ -69,7 +69,7 @@ function handleWheel(event) {
         class="group flex shrink-0 items-center rounded-md border transition"
         :class="
           activeKey === tab.key
-            ? 'border-white/70 bg-white/80 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.05)]'
+            ? 'border-white/60 bg-white/62 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.05)]'
             : 'border-transparent text-slate-500 hover:bg-white/45 hover:text-slate-800'
         "
       >

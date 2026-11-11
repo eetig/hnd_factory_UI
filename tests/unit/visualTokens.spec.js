@@ -2065,13 +2065,13 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
     }
     // 选中行：墨色胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
     expect(
-      SHELL_TEXT.includes('bg-white/80 text-slate-900'),
-      '图标栏选中态不是「bg-white/80 + text-slate-900」那串了 —— ' +
+      SHELL_TEXT.includes('bg-white/62 text-slate-900'),
+      '图标栏选中态不是「bg-white/62 + text-slate-900」那串了 —— ' +
         'v6 的选中态是「透白块 + 墨字」，不再用强调色描边',
     ).toBe(true)
     expect(
-      tokens.includes('bg-white/80'),
-      '图标栏选中块不是透白（bg-white/80）了 —— 侧栏是半透明白，' +
+      tokens.includes('bg-white/62'),
+      '图标栏选中块不是透白（bg-white/62）了 —— 侧栏是半透明白，' +
         '实白块会刺眼（037 使用方诉状同一个理），层次靠透明度。',
     ).toBe(true)
     expect(
@@ -2131,7 +2131,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
         '橙被调浅、深字余量收窄，重新决定选中胶囊上的字色再拆这条',
     ).toBeGreaterThanOrEqual(4.5)
     // 版面上的锚：提示行那一串里得有「选中 → 深墨」的分支
-    const hi = SHELL_TEXT.indexOf('bg-white/80 text-slate-900')
+    const hi = SHELL_TEXT.indexOf('bg-white/62 text-slate-900')
     expect(hi, '没扫到图标栏选中态那一串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
       SHELL_TEXT.slice(Math.max(0, hi - 240), hi + 240),
@@ -3702,23 +3702,23 @@ describe('v6：半透明浮层 + 中性色 + 发丝线（变更-188）', () => {
     'src/components/shell/AppSidebar.vue', 'src/components/shell/TabStrip.vue',
     'src/components/shell/TitleBar.vue'].map(read)
 
-  it('侧栏是半透明浮层（bg-white/55 + border-white/55），不是不透明 veil 面', () => {
+  it('侧栏是半透明浮层（bg-white/28 + border-white/40），不是不透明 veil 面', () => {
     const aside = WORKBENCH_V6[0].slice(WORKBENCH_V6[0].indexOf('<aside'), WORKBENCH_V6[0].indexOf('</aside>'))
     expect(aside).toContain('ds-sidebar')
-    expect(aside).toContain('bg-white/55')
-    expect(aside).toContain('border-white/55')
+    expect(aside).toContain('bg-white/28')
+    expect(aside).toContain('border-white/40')
     expect(aside).toContain('rounded-card')
     expect(aside, 'v6 的侧栏不再是 bg-veil 的不透明面').not.toContain('bg-veil')
   })
 
-  it('内容卡是半透明白（bg-white/62）且内边距比 v5 更大（p-6）', () => {
-    expect(WORKBENCH_V6[0]).toContain('page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/55 bg-white/62 p-6')
+  it('内容卡是半透明白（bg-white/38）且内边距比 v5 更大（p-6）', () => {
+    expect(WORKBENCH_V6[0]).toContain('page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/40 bg-white/38 p-6')
   })
 
-  it('页签条不再画底线、页签是浮起来的白块（选中 bg-white/80）', () => {
+  it('页签条不再画底线、页签是浮起来的白块（选中 bg-white/62）', () => {
     const strip = WORKBENCH_V6[3]
     expect(strip, '页签条还画着一整条 border-b —— v6 的页签条只靠块本身分层').not.toContain('border-b border-line')
-    expect(strip).toContain('bg-white/80')
+    expect(strip).toContain('bg-white/62')
     expect(strip).toContain('role="tablist"')
   })
 
@@ -3742,7 +3742,8 @@ describe('v6：半透明浮层 + 中性色 + 发丝线（变更-188）', () => {
   it('表格：表头无实色底、行线 ≤ 5% 墨、斑马纹 ≤ 2%', () => {
     const css = read('src/table.css')
     expect(css, '表头又填了实色（region/brand 实底）').not.toMatch(/thead th[\s\S]{0,200}background:\s*(theme\(colors\.region\)|#[0-9a-f]{6})/i)
-    expect(css).toContain('color-mix(in srgb, theme(colors.canvas) 88%, transparent)')
+    // v7：表头也半透（0.55 白），否则浮卡上会切出一条实色白带
+    expect(css).toMatch(/thead th[\s\S]{0,900}background:\s*rgba\(255, 255, 255, 0\.55\)/)
     expect(css).toMatch(/border-bottom: 1px solid rgba\(16, 24, 40, 0\.045\)/)
     expect(css).toMatch(/nth-child\(even\)[\s\S]{0,60}rgba\(16, 24, 40, 0\.012\)/)
     expect(css, 'hover 又在给行加 box-shadow —— v6 只提亮').not.toMatch(/tr:hover[\s\S]{0,120}box-shadow/)

@@ -294,16 +294,15 @@ const isDesktop =
 const wallpaperStyle = computed(() => {
   const css = wallpaperCss(appearance)
   if (!css) return null
-  return {
-    background: css,
-    filter: `blur(${appearance.blur}px)`,
-    transform: 'scale(1.08)',
-  }
+  // 运行期不加 filter / transform：整屏大图每帧重算会明显发涩（见 appearance.js 顶部说明）
+  return { background: css }
 })
 
 /** 纸面不透明度：越小越通透，亚克力/壁纸透上来得越多。 */
 const paperStyle = computed(() => {
-  if (!isDesktop || !appearance.enabled) return null
+  // 网页版没有亚克力可透，退回不透明纸色（信息密度优先，不追求通透）
+  if (!isDesktop) return { backgroundColor: '#FAFBFC' }
+  if (!appearance.enabled) return null
   /*
    * 深色壁纸（夜 / 自定义图）压在地后面时，30% 的通明白纸会让深灰字掉到 4.5:1 以下。
    * 所以对深底抬一个下限：用户仍可往上调，但不会调到"字看不清"。
@@ -337,7 +336,7 @@ function toggleSidebar() {
         aria-hidden="true"
       ></div>
       <div
-        class="minimal-field flex h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-card border border-line bg-canvas"
+        class="minimal-field flex h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-card border border-white/30"
         :class="isDesktop ? 'shell-paper' : ''"
         :style="paperStyle"
         :data-palette="palette"
@@ -351,7 +350,7 @@ function toggleSidebar() {
         -->
         <aside
           id="app-sidebar"
-          class="ds-sidebar sticky top-0 z-20 flex shrink-0 overflow-hidden rounded-card border border-white/55 bg-white/55"
+          class="ds-sidebar sticky top-0 z-20 flex shrink-0 overflow-hidden rounded-card border border-white/40 bg-white/28"
           :class="collapsed ? 'w-[88px]' : 'w-72'"
         >
           <AppRail
@@ -452,7 +451,7 @@ function toggleSidebar() {
             页签已经从这张卡里搬走了（上面那条 TabStrip），所以这里只留标题与面包屑。
           -->
           <div
-            class="sticky top-0 z-30 shrink-0 rounded-card border border-white/55 bg-white/45 px-7 py-5"
+            class="sticky top-0 z-30 shrink-0 rounded-card border border-white/40 bg-white/24 px-7 py-5"
           >
             <h1 class="mb-1.5 text-[22px] font-semibold tracking-[-0.01em] text-slate-900">
               {{ pageTitle }}
@@ -465,7 +464,7 @@ function toggleSidebar() {
             </nav>
           </div>
 
-          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/55 bg-white/62 p-6">
+          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/40 bg-white/38 p-6">
             <!-- 断网提示（2026-11-11）：桌面版断网时页面能开、接口全失败，
                  让"点了没反应"变成一句人话。网页版同样生效，但只在真的 offline 时出现。 -->
             <OfflineBanner />

@@ -249,7 +249,7 @@ const weeklyTitle = computed(() => {
         <template v-else>
           <!-- ① KPI 条：三个大数字，滚动到达 -->
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div class="kpi-rise rounded-card border border-line bg-region/50 px-5 py-4">
+            <div class="kpi-rise rounded-card border border-white/30 bg-white/18 px-5 py-4">
               <p class="text-xs font-medium tracking-wide text-slate-500">150 产品入库</p>
               <p class="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-slate-900" aria-hidden="true">
                 {{ fmt(inboundDisplay) }}
@@ -259,7 +259,7 @@ const weeklyTitle = computed(() => {
               <span class="sr-only">{{ fmt(inboundRaw) }} kg</span>
             </div>
             <div
-              class="kpi-rise rounded-card border border-line bg-region/50 px-5 py-4"
+              class="kpi-rise rounded-card border border-white/40 bg-white/22 px-5 py-4"
               style="animation-delay: 60ms"
             >
               <p class="text-xs font-medium tracking-wide text-slate-500">原料领用合计</p>
@@ -270,7 +270,7 @@ const weeklyTitle = computed(() => {
               <span class="sr-only">{{ fmt(pickTotal) }} kg</span>
             </div>
             <div
-              class="kpi-rise rounded-card border border-line bg-region/50 px-5 py-4"
+              class="kpi-rise rounded-card border border-white/40 bg-white/22 px-5 py-4"
               style="animation-delay: 120ms"
             >
               <p class="text-xs font-medium tracking-wide text-slate-500">实际使用合计</p>
@@ -287,7 +287,7 @@ const weeklyTitle = computed(() => {
             <li
               v-for="(row, index) in weeklyRows"
               :key="row.name"
-              class="card-rise rounded-card border border-line bg-raised p-4"
+              class="card-rise rounded-card border border-white/30 bg-white/16 p-4"
               :style="{ animationDelay: `${140 + index * 60}ms` }"
             >
               <div class="flex items-baseline justify-between gap-2">
