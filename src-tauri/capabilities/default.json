@@ -1,7 +1,20 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "HND 桌面端默认权限：只开开机自启与进程重启，其余一律不开。",
+  "description": "HND 桌面端默认权限：开机自启、进程重启、自动更新、以及只对自家域名的 HTTP 直连。",
   "windows": ["main"],
-  "permissions": ["core:default", "autostart:default", "process:default", "updater:default"]
+  "permissions": [
+    "core:default",
+    "autostart:default",
+    "process:default",
+    "updater:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://hbhnd.cloud/**" },
+        { "url": "http://localhost:8084/**" },
+        { "url": "http://127.0.0.1:8084/**" }
+      ]
+    }
+  ]
 }

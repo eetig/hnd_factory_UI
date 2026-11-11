@@ -2,13 +2,13 @@
  * 接口与静态资源的基地址（2026-11-11，桌面版接入）。
  *
  * 同一份代码要在两个"房子"里跑，接口地址的写法必须分开：
- *   · 网页版：页面就在 hbbhnd.cloud 名下，`/api/...` 是同源请求，写空串即可（保持原样）；
+ *   · 网页版：页面就在 hbhnd.cloud 名下，`/api/...` 是同源请求，写空串即可（保持原样）；
  *   · 桌面版：页面来自 `tauri.localhost`（exe 里的本地文件），相对路径会打到本地，
  *     必须写绝对地址 —— 否则登录、列表全部 404，表现是"打开了但一片空白"。
  *
  * 构建时可以用 `VITE_API_BASE=https://xxx` 覆盖，方便以后换域名或连测试环境。
  */
-const DESKTOP_ORIGIN = 'https://hbbhnd.cloud'
+const DESKTOP_ORIGIN = 'https://hbhnd.cloud'
 
 export const IS_DESKTOP = import.meta.env.MODE === 'desktop'
 

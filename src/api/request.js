@@ -1,7 +1,8 @@
 import axios from 'axios'
 import router from '../router'
 import { clearAuth, getToken } from './auth'
-import { API_BASE } from './base'
+import { API_BASE, IS_DESKTOP } from './base'
+import { desktopAdapter } from './desktopHttp'
 
 /*
  * 「登录失效」的统一判定（2026-11-03）。
@@ -21,8 +22,11 @@ function redirectToLogin() {
 }
 
 const request = axios.create({
-  // 网页版为空串（同源），桌面版是 https://hbbhnd.cloud —— 见 api/base.js 的说明
+  // 网页版为空串（同源），桌面版是 https://hbhnd.cloud —— 见 api/base.js 的说明
   baseURL: API_BASE,
+  // 桌面版换成 Rust 侧发请求：网页版的 CORS 预检在 tauri.localhost 上必被 403，
+  // 见 api/desktopHttp.js 开头那段。网页版保持 axios 默认（浏览器 XHR）。
+  ...(IS_DESKTOP ? { adapter: desktopAdapter } : {}),
   // 超时放宽到 5 分钟：Excel 导入（解析/预览/保存）耗时较长，
   // 原 20s 会在解析大文件时误报 "timeout of 20000ms exceeded"。
   timeout: 300000,

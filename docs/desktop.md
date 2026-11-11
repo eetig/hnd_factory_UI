@@ -13,7 +13,7 @@
    软件本身没签名 —— 内部系统，签名证书一年几千块，不值当；内网分发时告诉对方"点更多信息→仍要运行"即可。
 4. 桌面版第一次启动会问要不要开机自启：勾上，以后开机自己就起来了。
 
-升级不用人管：每次启动会去 `https://hbbhnd.cloud/desktop/latest.json` 看一眼，有新版本会弹窗问。
+升级不用人管：每次启动会去 `https://hbhnd.cloud/desktop/latest.json` 看一眼，有新版本会弹窗问。
 点了「立即更新」会自动下载、装好、重启。
 
 ---
@@ -64,11 +64,11 @@ src-tauri/target/release/bundle/nsis/
 ## 四、MinIO 那边要准备什么（一次性）
 
 1. 1Panel 里建桶 `hnd-desktop`，**设为公开读**（客户端要能匿名下载 exe 和 latest.json）。
-2. 反代一条路径：`https://hbbhnd.cloud/desktop/` → `http://127.0.0.1:9000/hnd-desktop/`。
+2. 反代一条路径：`https://hbhnd.cloud/desktop/` → `http://127.0.0.1:9000/hnd-desktop/`。
 3. 本机装个 `mc`（MinIO 客户端），配好别名：
 
 ```bash
-mc alias set hnd https://hbbhnd.cloud <ACCESS_KEY> <SECRET_KEY>
+mc alias set hnd https://hbhnd.cloud <ACCESS_KEY> <SECRET_KEY>
 mc anonymous set download hnd/hnd-desktop
 ```
 
@@ -77,19 +77,32 @@ mc anonymous set download hnd/hnd-desktop
 
 ---
 
-## 五、排障
+## 五、关闭与托盘
+
+点右上角 ✕ 不会直接退出，而是先问一句：
+
+- **最小化到托盘** —— 窗口藏起来，任务栏右下角留一个图标；点图标（或右键菜单「打开主界面」）回到窗口，右键「退出」才真的结束进程。
+- **退出程序** —— 直接结束，托盘图标一起消失。
+
+为什么要问：车间电脑上这个程序是"挂机"用的，误点 ✕ 就退出的话，下一次想用又得去桌面找图标。藏起来更省事。
+
+实现分工：Rust 侧（`src-tauri/src/lib.rs`）拦下 `CloseRequested` 并发 `app://close-requested` 事件，只负责"别关"；弹框与选择在 `src/desktop/closeBehavior.js`，改文案不用重编 Rust。
+
+---
+
+## 六、排障
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | 打开是白屏 | 打包时 `dist` 不是 desktop 模式（`base` 没变 `./`） | 重新 `npm run build:desktop` 再 `tauri build` |
-| 登录一直失败 / 控制台跨域 | 后端没放行 `tauri.localhost` | 确认 `WebCorsConfig` 已部署（本仓后端仓的那个类） |
-| 点检查更新没反应 | `latest.json` 拿不到或格式不对 | 浏览器直接打开 `https://hbbhnd.cloud/desktop/latest.json` 看能不能看到 JSON |
+| 登录一直失败 / 控制台跨域 | **1.0.2 起不该再出现**：桌面版请求改由 Rust 发（`src/api/desktopHttp.js`），不经过浏览器的同源策略。若仍报错，先看错误文案里那个地址对不对 | 地址不对 → 查 `src/api/base.js`；地址对 → 查 `capabilities/default.json` 的 http 白名单有没有含这个域名 |
+| 点检查更新没反应 | `latest.json` 拿不到或格式不对 | 浏览器直接打开 `https://hbhnd.cloud/desktop/latest.json` 看能不能看到 JSON |
 | 提示"签名不匹配" | `latest.json` 里的 signature 和安装包不是同一次构建 | 重跑发布脚本，别手工拼 |
 | 送货单图片裂开 | 桌面版页面地址是 `tauri.localhost`，`/files/...` 相对路径指到了本地 | 用 `src/api/base.js` 的 `assetUrl()` 包一层（**尚未接入**，见待办） |
 
 ---
 
-## 六、还没做的
+## 七、还没做的
 
 - **代码签名证书**：现在没签名，首次运行必然被 SmartScreen 拦一次。
 - **图片地址**：`assetUrl()` 写好了但没接到采购送货单、识图上传这些地方。

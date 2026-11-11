@@ -47,7 +47,7 @@ export async function setAutostart(on) {
 }
 
 /**
- * 问一次更新服务器（https://hbbhnd.cloud/desktop/latest.json）。
+ * 问一次更新服务器（https://hbhnd.cloud/desktop/latest.json）。
  * 返回 null＝已是最新；返回对象＝有新版；返回 {error}＝连不上/签名对不上。
  *
  * 为什么把错误也当返回值而不是抛出：更新检查是"锦上添花"，

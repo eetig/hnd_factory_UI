@@ -11,7 +11,7 @@ import { autostartOn, checkUpdate, desktopVersion, installUpdate, setAutostart }
  * 把按钮藏掉的代价比在 AppShell 里到处写 v-if 小得多。
  *
  * 四件事：版本号 / 开机自启 / 检查更新 / 数据地址。
- * 更新走 https://hbbhnd.cloud/desktop/latest.json，见 src-tauri/tauri.conf.json。
+ * 更新走 https://hbhnd.cloud/desktop/latest.json，见 src-tauri/tauri.conf.json。
  */
 const open = ref(false)
 const version = ref('')
@@ -131,7 +131,7 @@ async function runInstall() {
 
         <div class="flex items-center justify-between border-t border-line pt-3">
           <span class="text-slate-500">数据地址</span>
-          <span class="text-xs text-slate-600">hbbhnd.cloud</span>
+          <span class="text-xs text-slate-600">hbhnd.cloud</span>
         </div>
       </div>
     </ElDialog>

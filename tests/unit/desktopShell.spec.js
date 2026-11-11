@@ -29,7 +29,7 @@ describe('桌面版外壳的硬约束', () => {
 
   it('axios 用的是 API_BASE，不是写死的斜杠', () => {
     const source = read('src/api/request.js')
-    expect(source).toContain("import { API_BASE } from './base'")
+    expect(source).toContain("from './base'")
     expect(source).toContain('baseURL: API_BASE')
     // 回归：曾经写死 baseURL: '/'，桌面版所有请求会打到 tauri.localhost
     expect(source).not.toMatch(/baseURL:\s*'\/'/)
@@ -91,5 +91,57 @@ describe('桌面能力在网页版里是安全的空实现', () => {
     expect(await mod.checkUpdate()).toBe(null)
     // 关键：网页里 IS_DESKTOP 为 false 时不能抛 "__TAURI_INTERNALS__ is not defined"
     expect(vi.isMockFunction(mod.desktopVersion)).toBe(false)
+  })
+})
+
+/*
+ * 2026-11-11 第二轮：线上 CORS 预检 403。
+ *
+ * 现场是"网络通、账号对，界面只有 Network Error"，而浏览器里网页版一切正常 ——
+ * 差别只在桌面版的页面来源是 tauri.localhost。两条路都留着：
+ *   ① 桌面版改走 Rust 发请求（不经过浏览器的同源策略），立刻能用；
+ *   ② 后端补 CORS 白名单（以后真要用 WebView 直连也踏实）。
+ */
+describe('桌面版绕开浏览器跨域', () => {
+  it('桌面版把 axios 的通道换成 Rust，网页版不动', () => {
+    const source = read('src/api/request.js')
+    expect(source).toContain("from './desktopHttp'")
+    expect(source).toContain('IS_DESKTOP ? { adapter: desktopAdapter } : {}')
+
+    const adapter = read('src/api/desktopHttp.js')
+    expect(adapter).toContain("from '@tauri-apps/plugin-http'")
+    // 连不上时必须带上地址，否则使用者只会看到 Network Error
+    expect(adapter).toContain('连不上服务器')
+  })
+
+  it('HTTP 白名单只放自家域名，不开通配', () => {
+    const caps = JSON.parse(read('src-tauri/capabilities/default.json'))
+    const http = caps.permissions.find((p) => typeof p === 'object' && p.identifier === 'http:default')
+    expect(http).toBeTruthy()
+    const urls = http.allow.map((a) => a.url)
+    expect(urls).toContain('https://hbhnd.cloud/**')
+    expect(urls.some((u) => u === '**' || u === 'https://**')).toBe(false)
+  })
+
+  it('Rust 侧装了 http 插件与托盘，并拦下关闭事件', () => {
+    expect(read('src-tauri/Cargo.toml')).toContain('tauri-plugin-http')
+    expect(read('src-tauri/Cargo.toml')).toContain('"tray-icon"')
+
+    const lib = read('src-tauri/src/lib.rs')
+    expect(lib).toContain('tauri_plugin_http::init()')
+    expect(lib).toContain('TrayIconBuilder')
+    expect(lib).toContain('app://close-requested')
+    expect(lib).toContain('prevent_close')
+  })
+
+  it('关闭时先问「退出 / 最小化到托盘」，网页版不注册', () => {
+    const source = read('src/desktop/closeBehavior.js')
+    expect(source).toContain("listen('app://close-requested'")
+    expect(source).toContain('最小化到托盘')
+    expect(source).toContain('distinguishCancelAndClose')
+    expect(source).toContain('if (!IS_DESKTOP) return')
+
+    // App.vue 负责挂载，但逻辑本身在 desktop/closeBehavior.js（可单测）
+    expect(read('src/App.vue')).toContain('installDesktopCloseBehavior')
   })
 })

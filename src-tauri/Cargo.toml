@@ -1,6 +1,6 @@
 [package]
 name = "hnd-factory-desktop"
-version = "1.0.0"
+version = "1.0.2"
 description = "HND 生产助手 桌面端"
 authors = ["HND"]
 edition = "2021"
@@ -22,8 +22,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# tray-icon：关闭后收进托盘（用户 2026-11-11 要求）
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-http = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }

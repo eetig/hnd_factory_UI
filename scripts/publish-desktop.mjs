@@ -15,7 +15,7 @@
  *        TAURI_SIGNING_PRIVATE_KEY=D:\keys\hnd-desktop.key
  *        TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<生成时的密码>
  *   3. MinIO 客户端 mc 配好别名（示例里叫 hnd），桶 hnd-desktop 公开读：
- *        mc alias set hnd https://hbbhnd.cloud <ACCESS_KEY> <SECRET_KEY>
+ *        mc alias set hnd https://hbhnd.cloud <ACCESS_KEY> <SECRET_KEY>
  *        mc anonymous set download hnd/hnd-desktop
  *
  * 为什么用 mc 而不是自己签 S3 请求：这个脚本只给一个人用，装个客户端比在仓库里
@@ -67,16 +67,18 @@ function build() {
   execFileSync('npx', ['tauri', 'build'], { cwd: ROOT, stdio: 'inherit', env, shell: true })
 }
 
-function artifacts() {
+function artifacts(version) {
   if (!fs.existsSync(BUNDLE)) {
     console.error(`没找到构建产物目录：${BUNDLE}`)
     process.exit(1)
   }
+  // 目录里会残留历史版本的安装包（1.0.0、1.0.1 …）。必须按当前版本挑，
+  // 否则第一次发版之后，每次都会把最老的那个包当成"这次要发的东西"。
   const files = fs.readdirSync(BUNDLE)
-  const installer = files.find((f) => /_x64-setup\.exe$/.test(f))
-  const sig = files.find((f) => /_x64-setup\.exe\.sig$/.test(f))
+  const installer = files.find((f) => f.includes(`_${version}_x64-setup.exe`) && !f.endsWith('.sig'))
+  const sig = files.find((f) => f.includes(`_${version}_x64-setup.exe.sig`))
   if (!installer || !sig) {
-    console.error(`产物不全：installer=${installer} sig=${sig}`)
+    console.error(`产物不全：installer=${installer} sig=${sig}（期望版本 ${version}）`)
     process.exit(1)
   }
   return [installer, sig].map((f) => path.join(BUNDLE, f))
@@ -100,7 +102,7 @@ function writeLatest(version, installerPath, sigPath) {
     platforms: {
       'windows-x86_64': {
         signature: fs.readFileSync(sigPath, 'utf8').trim(),
-        url: `https://hbbhnd.cloud/desktop/${encodeURIComponent(fileName)}`,
+        url: `https://hbhnd.cloud/desktop/${encodeURIComponent(fileName)}`,
       },
     },
   }
@@ -130,10 +132,10 @@ function upload(files) {
 
 bumpVersion(nextVersion)
 build()
-const files = artifacts()
+const version = JSON.parse(fs.readFileSync(CONF, 'utf8')).version
+const files = artifacts(version)
 const installer = files.find((f) => f.endsWith('.exe'))
 const sig = files.find((f) => f.endsWith('.sig'))
-const version = JSON.parse(fs.readFileSync(CONF, 'utf8')).version
 const latest = writeLatest(version, installer, sig)
 files.forEach((f) => log(`产物：${f}`))
 if (skipUpload) {

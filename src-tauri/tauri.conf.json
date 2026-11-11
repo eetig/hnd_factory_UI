@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "HND生产助手",
-  "version": "1.0.0",
-  "identifier": "cloud.hbbhnd.hnd-factory",
+  "version": "1.0.2",
+  "identifier": "cloud.hbhnd.hnd-factory",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:9091",
@@ -54,7 +54,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://hbbhnd.cloud/desktop/latest.json"
+        "https://hbhnd.cloud/desktop/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE4OTU0MjU4NUE1MEE5QzcKUldUSHFWQmFXRUtWcUh4TnYxOGkvU2ptZmJJYmR4NGVZQ2R2Sm5zOGVMM0VYaSt0dWFxRVVOOGYK"
     }
