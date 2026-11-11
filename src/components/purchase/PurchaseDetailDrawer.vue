@@ -711,14 +711,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
             <span v-else class="text-[11px] tracking-wide text-slate-500">单据类型未填</span>
             <span class="text-[11px] tabular-nums text-slate-500">{{ docketMeta }}</span>
           </div>
-          <div v-else class="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
-            <span class="tracking-wide">一张 OA 单 · 一条物料一行 · 底部一次存整单</span>
-            <span v-if="lines.length" class="tabular-nums">
-              {{ lines.length }} 行<template v-if="filledCount !== lines.length">
-                （{{ filledCount }} 行填了物料）
-              </template>
-            </span>
-          </div>
           <h2
             class="mt-1.5 truncate text-[22px] leading-tight font-semibold tracking-tight text-slate-900"
             :class="isDocket ? 'tabular-nums text-[26px]' : ''"
@@ -930,7 +922,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               <el-input
                 v-model="header.oaNo"
                 size="small"
-                placeholder="CG-CGSQ-… / F-ZCSG-…"
+                placeholder="CG-CGSQ-…"
                 aria-label="OA 单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
@@ -962,7 +954,6 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                   {{ typeLabelOf(effectiveType) }}
                 </span>
                 <span v-else class="text-slate-500">单号里没写类型</span>
-                <span class="ml-auto text-[11px] text-slate-500">按单号自动认</span>
               </div>
             </div>
 
@@ -971,7 +962,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               <el-input
                 v-model="header.acceptanceNo"
                 size="small"
-                placeholder="填了算已关联验收"
+                placeholder="YS-…"
                 aria-label="验收单号"
                 :disabled="!canEdit"
                 class="tabular-nums"
@@ -1248,8 +1239,8 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               {{ problemText.slice(0, 2).join('、') }}{{ problemText.length > 2 ? ` 等 ${problemText.length} 行` : '' }}
             </span>
           </div>
-          <p class="text-[11px] text-slate-500">
-            空行不会保存；已存在的行改了哪条就存哪条，一次提交整张单。
+          <p v-if="lines.length && filledCount < lines.length" class="text-[11px] text-slate-500">
+            空行不保存
           </p>
         </div>
       </div>
@@ -1270,7 +1261,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
         <div class="flex items-center gap-2">
           <el-button v-if="cameFromDocket" plain @click="backToDocket">← 返回单据</el-button>
           <span class="text-[11px] tabular-nums text-slate-500">
-            {{ lines.length }} 行 · 已填 {{ filledCount }} 行
+            已填 {{ filledCount }}/{{ lines.length }}
           </span>
         </div>
         <div class="flex items-center gap-2">
@@ -1281,7 +1272,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
             :loading="saving"
             @click="submit"
           >
-            保存整单（{{ lines.length }} 行）
+            保存整单
           </el-button>
         </div>
       </div>
