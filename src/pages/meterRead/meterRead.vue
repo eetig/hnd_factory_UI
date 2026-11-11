@@ -6,6 +6,7 @@ import { uploadFile } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
 import DateField from '../../components/DateField.vue'
+import { chooseImages } from '../../utils/chooseImages'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -477,13 +478,24 @@ async function takePhoto(from) {
   photoSheetOpen.value = false
   try {
     const chosen = await new Promise((resolve, reject) => {
-      uni.chooseImage({
+      const options = {
         count: 1,
         sizeType: ['compressed'],
         sourceType: [from === 'album' ? 'album' : 'camera'],
         success: resolve,
         fail: reject,
-      })
+      }
+      /*
+       * 「从相册选择」必须走 utils/chooseImages，不能直接 uni.chooseImage。
+       *
+       * 框架在 App 端把相册写死成它自己画的那套「选择图片 / 完成(n/m) / 所有图片 / 预览」，
+       * 也就是使用方截图里那张绿色按钮的界面（2026-11-11：「这个图片选择的 UI 和我预想的不一样」）。
+       * chooseImages 在安卓上是自己发 intent 起手机自带相册（小米上是「安全访问」那套），
+       * 参数、回调与 uni.chooseImage 完全一致，所以这里只换函数名。
+       * 拍照仍交给框架（它调的是系统相机，本来就没得换）。
+       */
+      if (from === 'album') chooseImages(options)
+      else uni.chooseImage(options)
     })
     const filePath = chosen?.tempFilePaths?.[0]
     if (!filePath) return
