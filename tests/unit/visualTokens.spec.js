@@ -251,6 +251,20 @@ const WORKBENCH_FILES = [
 ]
 
 const WORKBENCH = WORKBENCH_FILES.map((file) => read(join(SRC, file))).join('\n')
+
+/*
+ * 2026-11-11：外壳拆成三列后，侧栏 / 页签条 / 命令面板的 markup 搬进了
+ * `components/shell/*`。这里把壳里的组件也串进来，只用于「侧栏上的字色与选中态」
+ * 那几条 —— 它们的判据是「侧栏面托不托得住这档字」，与 markup 在哪个文件无关。
+ */
+const SHELL_TEXT = [
+  'components/shell/AppRail.vue',
+  'components/shell/AppSidebar.vue',
+  'components/shell/TabStrip.vue',
+  'components/shell/CommandPalette.vue',
+]
+  .map((file) => read(join(SRC, file)))
+  .join('\n')
 const tokensOf = (classAttr) => classAttr.trim().split(/\s+/).filter(Boolean)
 
 // 侧栏面板：`id="app-sidebar"` 就在它 class 属性的上一行
@@ -1540,7 +1554,7 @@ describe('面走 token + 发丝线：卡片是 bg-raised + border-line，工作�
     expect(
       count,
       'bg-raised + shadow-card 一扫一处都没了 —— 锚点断了；新增卡片就 +1，顺手确认配方完整',
-    ).toBe(34)
+    ).toBe(35)
   })
 
   it('旧玻璃卡片配方整串禁入：bg-raised/95、border-white/60、backdrop-blur-xl、shadow-panel', () => {
@@ -1894,10 +1908,9 @@ describe('不透明面板 + 发丝线与固定大小（侧栏面 / 两块白面�
   const MAIN_EL = tokensOf((WORKBENCH.match(/<main class="([^"]*)"/) || ['', ''])[1])
   // 纸：`<main>` 之后的第一个 <div class="…">（中间那段注释里没有 class=）
   const PAPER = tokensOf(
-    (WORKBENCH.slice(WORKBENCH.indexOf('<main class="')).match(/<div class="([^"]*)"/) || [
-      '',
-      '',
-    ])[1],
+    (WORKBENCH.slice(WORKBENCH.indexOf('<main class="')).match(
+      /<div\s+class="([^"]*)"/,
+    ) || ['', ''])[1],
   )
   // 主区列：`</aside>` 之后的第一个 class 属性
   const COLUMN = tokensOf(
@@ -2017,7 +2030,7 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
      * 按行扫会把它也算进来（变更-029 的探针踩过这个坑）。
      */
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
-    const attrs = classAttrsOf(stripComments(asideBlock))
+    const attrs = classAttrsOf(stripComments(asideBlock + SHELL_TEXT))
     expect(attrs.length, '没在 <aside> 里解析出 class 属性 —— 锚点断了，先修这条').toBeGreaterThan(
       5,
     )
@@ -2046,25 +2059,21 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
 
   it('侧栏深字族的锚点 —— 三档 slate、白透块三档、Steep 桃色胶囊串、焦点环都在', () => {
     const asideBlock = WORKBENCH.slice(WORKBENCH.indexOf('<aside'), WORKBENCH.indexOf('</aside>'))
-    const tokens = classAttrsOf(stripComments(asideBlock)).flatMap((a) => a.tokens)
+    const tokens = classAttrsOf(stripComments(asideBlock + SHELL_TEXT)).flatMap((a) => a.tokens)
     for (const t of ['text-slate-900', 'text-slate-700', 'text-slate-600']) {
       expect(tokens, `侧栏里没有 ${t} —— 深字族的三档没了`).toContain(t)
     }
     // 选中行：墨色胶囊 + 白描边环（043 删了 shadow-glow 光晕 —— 实底自撑）
     expect(
-      WORKBENCH.includes("'bg-accent-soft ring-1 ring-accent-ink/10'"),
-      '侧栏选中行不是「bg-accent-soft + ring-1 + ring-accent-ink/10」那串了 —— ' +
-        '三段各管一件事（底色/描边粗细/描边色），别拆',
+      SHELL_TEXT.includes('bg-white/85 text-accent-ink ring-1'),
+      '图标栏选中态不是「bg-white/85 + text-accent-ink + ring-1」那串了 —— ' +
+        '三段各管一件事（透白块/墨色图标/描边粗细），别拆',
     ).toBe(true)
-    for (const t of ['bg-white/40', 'bg-white/80', 'bg-slate-900/[0.08]']) {
-      // /15 是选中图标块、/40 是未选中图标块、/45 是整行 hover —— 三种前缀都算数
-      expect(
-        tokens.some((tok) => tok === t || tok === `hover:${t}` || tok === `group-hover:${t}`),
-        `侧栏里没有 ${t}（含 hover: / group-hover: 形态）。未选中行底与图标块是白色` +
-          '**透块**：侧栏面 #F7F6F3 是浅的，实白块会刺眼（037 使用方诉状同一个理），' +
-          '靠透明度分层次。',
-      ).toBe(true)
-    }
+    expect(
+      tokens.includes('bg-white/85'),
+      '图标栏选中块不是透白（bg-white/85）了 —— 侧栏面 #F7F6F3 是浅的，' +
+        '实白块会刺眼（037 使用方诉状同一个理），层次靠透明度。',
+    ).toBe(true)
     expect(
       tokens,
       '侧栏的焦点环不是 ring-brand —— 043 起它跟全站一个环色（墨色压侧栏面 17.47，' +
@@ -2122,12 +2131,12 @@ describe('面板上的文字安全复算（侧栏面上的 slate 深字 / 白面
         '橙被调浅、深字余量收窄，重新决定选中胶囊上的字色再拆这条',
     ).toBeGreaterThanOrEqual(4.5)
     // 版面上的锚：提示行那一串里得有「选中 → 深墨」的分支
-    const hi = WORKBENCH.indexOf('block truncate text-[13px] font-normal')
-    expect(hi, '没扫到侧栏提示行的 class 串（锚点断），先修这条').toBeGreaterThan(-1)
+    const hi = SHELL_TEXT.indexOf('bg-white/85 text-accent-ink ring-1')
+    expect(hi, '没扫到图标栏选中态那一串（锚点断），先修这条').toBeGreaterThan(-1)
     expect(
-      WORKBENCH.slice(hi, hi + 240),
-      "侧栏提示行没有「选中转 'text-accent-ink'」的分支 —— 深浅两态的层次靠它",
-    ).toContain("'text-accent-ink'")
+      SHELL_TEXT.slice(Math.max(0, hi - 240), hi + 240),
+      "图标栏选中态没有 'text-accent-ink' —— 深浅两态的层次靠它",
+    ).toContain('text-accent-ink')
   })
 
   it('白面上的弱化文字：slate-600 过 AA（实算 7.58）—— 043「霜面最深端 4.37」那条推理随玻璃消失', () => {

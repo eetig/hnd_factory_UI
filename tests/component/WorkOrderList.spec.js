@@ -63,19 +63,26 @@ const PUBLIC_TAB_LABELS = [
  * 用 [aria-label] 而不是 nav 选择器：横条是 div（不是 nav），只有 aria-label 是稳的。
  */
 async function allTabLabels(wrapper) {
+  /*
+   * 2026-11-11：两层导航之后，"全部分组的全部页面"不再靠一横条页签列出来，
+   * 而是"最左图标栏选组 → 第二列列该组的页"。所以这里点组、读第二列。
+   * 只读文字、不点页面：点页面会开全局页签，把环境搞脏。
+   */
   const labels = []
-  const groups = wrapper.findAll('aside nav button')
+  const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
-    labels.push(...wrapper.findAll('[aria-label="页面切换"] button').map((b) => b.text().trim()))
+    labels.push(
+      ...wrapper.findAll('nav[aria-label$="下的页面"] button').map((b) => b.text().trim()),
+    )
   }
   return labels
 }
 
 /** 当前激活的页（页签上带 aria-current="page"） */
 function activeTabKey(wrapper) {
-  const active = wrapper.find('[aria-label="页面切换"] button[aria-current="page"]')
+  const active = wrapper.find('[aria-label="已打开的页面"] button[aria-current="page"]')
   return active.exists() ? active.attributes('data-tab-key') : null
 }
 
@@ -131,20 +138,24 @@ async function mountPage(path = '/') {
  * 照用户的操作顺序来，而不是去读 nav 常量（那样测试就成了实现的白盒复述）。
  */
 async function switchToTab(wrapper, text) {
-  const groups = wrapper.findAll('aside nav button')
+  /*
+   * 2026-11-11：两层导航之后，"切到某页"= 点开它所在的组，再点第二列里的那一行。
+   * 全局页签只记"已经打开过的"，不能拿它当全量目录 —— 那样只能切到上一轮留下的页。
+   */
+  const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
-    const card = wrapper
-      .findAll('[aria-label="页面切换"] button')
+    const item = wrapper
+      .findAll('nav[aria-label$="下的页面"] button')
       .find((b) => b.text().trim() === text)
-    if (card) {
-      await card.trigger('click')
+    if (item) {
+      await item.trigger('click')
       await flushPromises()
       return
     }
   }
-  throw new Error(`找不到页签：${text}（各个大类里都没有）`)
+  throw new Error(`找不到页面：${text}（各个大类里都没有）`)
 }
 
 describe('工作台页面冒烟（壳 + 路由页）', () => {
@@ -163,9 +174,11 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   })
 
   it('侧栏列出全部大类与全部页面（分层访问后不再按权限隐藏；锁定与否由 aria-disabled 表达）', async () => {
+    // 2026-11-11 起大类是图标栏：文字在 aria-label 里（图标本身没有文本），
+    // 所以这里取 aria-label 而不是 text()
     const groupText = wrapper
-      .findAll('nav[aria-label="功能分类"] button')
-      .map((g) => g.text())
+      .findAll('[role="group"][aria-label="模块"] button')
+      .map((g) => g.attributes('aria-label') || '')
       .join('|')
 
     // 「工单」组那 4 页全是 admin 专属、「维护」组两页都要权限位、「采购」那页也是 admin：
@@ -654,7 +667,7 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   })
 
   it('页签卡片行：装不下时横向滚动，滚轮可左右滑动，滚到头放行给页面', () => {
-    const nav = wrapper.find('[aria-label="页面切换"]')
+    const nav = wrapper.find('[aria-label="已打开的页面"]')
     expect(nav.exists()).toBe(true)
     // 按钮不许折行（这就是「工单汇总」被压成两行的原因），装不下靠滚动解决
     expect(nav.classes()).toContain('overflow-x-auto')
@@ -681,7 +694,7 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   })
 
   it('页签卡片行：本来就装得下时不拦截滚轮', () => {
-    const el = wrapper.find('[aria-label="页面切换"]').element
+    const el = wrapper.find('[aria-label="已打开的页面"]').element
     Object.defineProperty(el, 'scrollWidth', { value: 300, configurable: true })
     Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true })
 
@@ -857,7 +870,7 @@ describe('侧栏收起 / 展开', () => {
 
     // 品牌区是**让位**（display:none），不是被浮层压住 —— 使用方选的就是「内容让位、不重叠」。
     // 三条都要断：收起态只剩图标，任何一条没让位都会在 40px 里挤成一团
-    const brand = ['Factory Operations', 'HND生产助手', '生产工单与物料数据查询助手'].map((text) =>
+    const brand = ['Factory Ops', 'HND生产助手', '工单与物料查询助手'].map((text) =>
       wrapper.findAll('p').find((p) => p.text() === text),
     )
     expect(brand.map((p) => p.element.style.display)).toEqual(['none', 'none', 'none'])
@@ -870,7 +883,7 @@ describe('侧栏收起 / 展开', () => {
   it('收起态点分组图标照样切组（不能只剩开关、把导航丢了）', async () => {
     await toggle().trigger('click')
 
-    const groups = wrapper.findAll('aside nav button')
+    const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
 
     // 图标条**只列有可见页的组**：匿名时「工单」「采购」「维护」整组不可见，
     // 列出来就是点了没反应的死按钮。
@@ -895,8 +908,8 @@ describe('侧栏收起 / 展开', () => {
     // 当前组的标记落在图标块上：白色透块（bg-white/15）+ 白图标。
     // 顺带确认选中的确**转移**了，而不是两块一起亮
     const tools = groups.find((b) => b.attributes('aria-label') === '物料')
-    expect(stats.find('span').classes()).toContain('bg-white/80')
-    expect(tools.find('span').classes()).not.toContain('bg-white/80')
+    expect(stats.classes()).toContain('bg-white/85')
+    expect(tools.classes()).not.toContain('bg-white/85')
   })
 
   it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记）', async () => {
@@ -909,14 +922,14 @@ describe('侧栏收起 / 展开', () => {
      *   ② 确定性：挂载后的默认路由在匿名态要靠一次异步重定向落地，
      *      「匿名态落在物料组」这个隐含前提已随路由改造失效。主动点一次，meta.group 必然写实。
      */
-    const groups = wrapper.findAll('aside nav button')
+    const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
     expect(groups.length, '侧栏没渲染出分组按钮').toBeGreaterThan(0)
     await groups[0].trigger('click')
     await flushPromises()
 
     const marked = groups.filter((b) => b.attributes('aria-current') === 'true')
     expect(marked, '同时有 0 个或 1 个以上分组被标成当前 —— 选中标记只能有一个').toHaveLength(1)
-    expect(marked[0].classes()).toContain('bg-accent-soft')
+    expect(marked[0].classes(), '当前组的标记是白色透块（bg-white/85），不是旧胶囊').toContain('bg-white/85')
   })
 
   it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {
