@@ -93,7 +93,8 @@ const keyboardOpen = computed(() => keyboardHeight.value > 0)
 /** 页面样式：键盘弹起时把内容整体抬到键盘上方（2026-11-06） */
 const pageStyle = computed(() => ({
   ...(themeVars.value || {}),
-  paddingBottom: keyboardOpen.value ? `${keyboardHeight.value}px` : '0px',
+  /* 底部操作栏是绝对定位，键盘弹起时它和页面内边距都要一起抬同样高度 */
+  '--mr-kb': keyboardOpen.value ? `${keyboardHeight.value}px` : '0px',
 }))
 
 function bindKeyboardWatcher() {
@@ -1730,8 +1731,16 @@ watch(
   display: flex;
   flex-direction: column;
   height: calc(100vh - var(--window-top, 0px));
-  padding: 16rpx 24rpx 0;
+  /*
+   * 底部操作栏（2026-11-11）：整页不滚动，操作栏绝对定位贴在页面底部（= 视口底部），
+   * 所以这一层要预留下"操作栏高度 + 安全区 + 键盘高度"的空间，
+   * 卡片区就只能用中间剩下的高度 —— 操作栏不会被卡片顶走，也不会滚出屏幕。
+   */
+  --mr-bar: 120rpx;
+  padding: 16rpx 24rpx calc(var(--mr-bar) + 16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
   box-sizing: border-box;
+  overflow: hidden;
+  position: relative;
 }
 
 .mr__deny {
@@ -1935,23 +1944,30 @@ watch(
 }
 
 .mr__stage {
-  /* 2026-11-06：真机上 transform 动画要提升为合成层才不会掉帧 */
-  will-change: transform;
   touch-action: pan-y;
   /*
-   * 2026-11-11（使用方选的 B 方案）：舞台不再撑满整屏，
-   * 高度由轨道（720rpx）+ 按钮条自己决定，按钮就贴着卡片；
-   * 剩下的空白落在按钮下面，不夹在卡片和按钮中间。
+   * 这里曾经有 will-change: transform（早期给整块舞台做位移加速用）。
+   * 它会让舞台成为"绝对定位子元素的包含块"，底部操作栏就只能贴到舞台底边，
+   * 卡片一矮操作栏就跟着往上跳 —— 所以去掉了。真正在动的是 .mr__track，它自己带 will-change。
    */
-  flex: none;
+  /*
+   * 2026-11-11：不再按内容定高，改成"吃掉标签栏和底部操作栏之间剩下的空间"。
+   * 这样卡片区永远夹在中间，操作栏绝对定位在页面底部，不会被顶走。
+   */
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 卡片贴着标签栏往下排，不再垂直居中 */
-  justify-content: flex-start;
+  /* 操作栏固定后，卡片区变成一整块"中间地带"，卡片在这里垂直居中更稳 */
+  justify-content: center;
   /* 2026-11-11：轨道左右两侧的邻居卡要裁掉，不能溢出屏幕 */
   overflow: hidden;
-  position: relative;
+  /*
+   * 注意：这里不能是 position: relative。
+   * 底部操作栏虽然写在舞台的 DOM 里，但要相对 .mr 定位（贴视口底部）；
+   * 舞台一旦成为包含块，操作栏就只贴到舞台底边，卡片一矮它就跟着往上跑。
+   */
+  position: static;
 }
 
 /* 一条连续横向轨道：38 张表排在同一条线上，只有 translate3d 在动 */
@@ -1969,7 +1985,9 @@ watch(
    * 现在由 measureTrack() 量真实卡片高度写进内联 style，这里只给个下限兜底。
    */
   flex: none;
-  min-height: 640rpx;
+  min-height: 480rpx;
+  /* 内联高度是"卡片实测高度"，但不能超过舞台给的空间，否则会顶到操作栏 */
+  max-height: 100%;
   width: 100%;
   will-change: transform;
   backface-visibility: hidden;
@@ -2212,11 +2230,20 @@ watch(
 }
 
 /* 底部动作条（2026-11-11 收小）：提交按钮不再是"半屏大砖头"，左右翻页各给一个 104rpx 的方块 */
+/*
+ * 2026-11-11：不再跟着卡片内容走。整页不滚动，所以用绝对定位钉在页面底部
+ * （= 视口底部，比 position:fixed 少一层"和键盘/安全区抢位置"的麻烦），
+ * 高度已由 .mr 的 padding-bottom 预留，卡片只能在上面剩下的区域里滑。
+ */
 .mr__actions {
+  position: absolute;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
+  z-index: 8;
   display: flex;
   align-items: center;
   gap: 16rpx;
-  margin-top: 24rpx;
 }
 
 /* 左右翻页：原来这个类没有样式，只有一个 ‹ 字符，手指根本按不到 */
