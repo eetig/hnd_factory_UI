@@ -1309,6 +1309,7 @@ watch(
       <view
         v-if="cards.length"
         class="mr__stage"
+        :class="{ 'is-keyboard': keyboardOpen }"
         @touchstart.stop="onTouchStart"
         @touchmove.stop.prevent="onTouchMove"
         @touchend.stop="onTouchEnd"
@@ -1765,12 +1766,17 @@ watch(
   /* 2026-11-06：真机上 transform 动画要提升为合成层才不会掉帧 */
   will-change: transform;
   touch-action: pan-y;
-  flex: 1;
+  /*
+   * 2026-11-11（使用方选的 B 方案）：舞台不再撑满整屏，
+   * 高度由轨道（720rpx）+ 按钮条自己决定，按钮就贴着卡片；
+   * 剩下的空白落在按钮下面，不夹在卡片和按钮中间。
+   */
+  flex: none;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 2026-11-04：卡片按内容收紧后下方会空一块，垂直居中让空白看起来是有意的留白 */
-  justify-content: center;
+  /* 卡片贴着标签栏往下排，不再垂直居中 */
+  justify-content: flex-start;
   /* 2026-11-11：轨道左右两侧的邻居卡要裁掉，不能溢出屏幕 */
   overflow: hidden;
   position: relative;
@@ -1784,11 +1790,25 @@ watch(
    * 这里让它作为一个会伸缩的普通块，撑满按钮之外的空间。
    */
   position: relative;
-  flex: 1;
+  /*
+   * 轨道高度写死 720rpx（2026-11-11，B 方案）：页是 absolute，轨道不给高度就塌成 0。
+   * 这样"卡片 + 下面那行"的高度是确定的，按钮条紧跟其后，
+   * 空白全部落到按钮下面 —— 舞台不再 flex:1 撑满整屏。
+   */
+  flex: none;
+  height: 720rpx;
   min-height: 0;
   width: 100%;
   will-change: transform;
   backface-visibility: hidden;
+}
+
+/*
+ * 键盘弹起时轨道收矮（2026-11-11）：卡片这时已经把"拍表存证"收起来了，
+ * 高度少 90px 左右；轨道跟着收到 520rpx，按钮就不会被键盘顶出屏幕。
+ */
+.mr__stage.is-keyboard .mr__track {
+  height: 520rpx;
 }
 
 /*
