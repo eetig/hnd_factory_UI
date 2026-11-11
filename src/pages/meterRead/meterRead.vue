@@ -186,7 +186,7 @@ const cards = computed(() =>
 
 /*
  * 只看没抄的（2026-11-05）
- * 开关只影响"翻卡列表"，不影响统计（filledCount / total 永远按全量算），
+ * 开关只影响"翻卡列表"，不影响统计（filledNow / total 永远按全量算），
  * 否则抄到最后会显示"已填 8/8"这种假象。
  */
 const onlyUnfilled = ref(false)
@@ -195,15 +195,14 @@ const onlyUnfilled = ref(false)
 const list = computed(() => {
   if (!onlyUnfilled.value) return cards.value
   return cards.value.filter(
-    (c) => c.reading === null || c.reading === undefined || c.meterId === card.value?.meterId,
+    (c) => !hasReading(c) || c.meterId === card.value?.meterId,
   )
 })
 
 const card = computed(() => cards.value[index.value] || null)
-const filledCount = computed(() => cards.value.filter((c) => c.reading !== null && c.reading !== undefined).length)
 /*
  * 顶部「已填」用这个（2026-11-11）。
- * 原来直接把 filledCount 摆上去，它只认服务端已入库的读数 ⇒
+ * 原来直接把只认服务端的计数摆上去，它只认服务端已入库的读数 ⇒
  * 现场填了三块还没提交，头上还是「已填 0」，跟底部「提交全部（3）」自相矛盾。
  * 现在把本地 entries 里刚填的也算进来。
  */
@@ -219,6 +218,22 @@ const filledNow = computed(
     ).length,
 )
 const total = computed(() => cards.value.length)
+
+/*
+ * 「全部 38 块表」列表里这张表该显示什么（2026-11-11）。
+ * 原来只认服务端 reading ⇒ 现场刚填、还没「提交全部」的表在列表里全写「未填」，
+ * 跟顶上的「已填 2」自相矛盾（用户就是这么发现的）。
+ * 现在：服务端已存 → 用它；否则用本地草稿。
+ */
+function shownReading(row) {
+  if (!row) return ''
+  if (row.reading !== null && row.reading !== undefined) return row.reading
+  return String(entries?.[row.meterId]?.reading ?? '').trim()
+}
+function hasReading(row) {
+  const v = shownReading(row)
+  return v !== '' && v !== null && v !== undefined
+}
 
 /** 用量预览：(本次 − 上次) × 倍率 */
 const previewUsage = computed(() => {
@@ -264,11 +279,25 @@ function commitDraft() {
   saveDraft()
 }
 
+/*
+ * 边打边记（2026-11-11）。
+ * 以前只有 blur / 换卡 / 提交才写 entries，用户敲完直接点顶上的「已填」看列表，
+ * 结果是：头上数字变了、列表里那张还是「未填」，看着像把数据弄丢了。
+ * 现在输入停 250ms 就把当前卡写进 entries（连带落本地草稿）。
+ */
+let draftTimer = 0
+watch(
+  () => draft.reading,
+  () => {
+    clearTimeout(draftTimer)
+    draftTimer = setTimeout(commitDraft, 250)
+  },
+)
+
 /**
  * 改抄表日期（2026-11-06）。
  * 补录历史数据用：选到那一天，之后提交的读数就记到那期上。
- */
-function onReadDateChange(event) {
+ */function onReadDateChange(event) {
   const value = event?.detail?.value
   if (!value) return
   readDate.value = value
@@ -1173,7 +1202,7 @@ watch(
                 {{ prevCard.meterCode || '无柜号' }} · 上次 {{ prevCard.prevReading ?? '—' }}
               </text>
               <text class="mr__peek-value">
-                {{ String(entries?.[prevCard.meterId]?.reading ?? '').trim() || '还没填' }}
+                {{ hasReading(prevCard) ? shownReading(prevCard) : '还没填' }}
               </text>
               <text class="mr__peek-hint">‹ 松手回到这张</text>
             </view>
@@ -1209,7 +1238,7 @@ watch(
             >{{ displayNo(card) }}</text>
             <text class="mr__name">{{ card.meterName }}</text>
             <text v-if="card.multiplier > 1" class="mr__mult">×{{ card.multiplier }}</text>
-            <text v-if="card.reading !== null && card.reading !== undefined" class="mr__done">已填</text>
+            <text v-if="hasReading(card)" class="mr__done">已填</text>
           </view>
 
           <text class="mr__meta">
@@ -1277,7 +1306,7 @@ watch(
                 {{ nextCard.meterCode || '无柜号' }} · 上次 {{ nextCard.prevReading ?? '—' }}
               </text>
               <text class="mr__peek-value">
-                {{ String(entries?.[nextCard.meterId]?.reading ?? '').trim() || '还没填' }}
+                {{ hasReading(nextCard) ? shownReading(nextCard) : '还没填' }}
               </text>
               <text class="mr__peek-hint">继续往左滑 ›</text>
             </view>
@@ -1319,9 +1348,9 @@ watch(
         进度环（已填比例）+ 两个数字 + 两个按钮（回到第一块没填的 / 重新拉数据）
       -->
       <view v-else class="mr__done-all">
-        <view class="mr__done-ring" :style="{ background: `conic-gradient(${sectionColor} ${(filledCount / Math.max(1, total)) * 360}deg, rgba(20,22,28,0.08) 0deg)` }">
+        <view class="mr__done-ring" :style="{ background: `conic-gradient(${sectionColor} ${(filledNow / Math.max(1, total)) * 360}deg, rgba(20,22,28,0.08) 0deg)` }">
           <view class="mr__done-ring-inner">
-            <text class="mr__done-pct">{{ Math.round((filledCount / Math.max(1, total)) * 100) }}%</text>
+            <text class="mr__done-pct">{{ Math.round((filledNow / Math.max(1, total)) * 100) }}%</text>
             <text class="mr__done-ring-label">已填</text>
           </view>
         </view>
@@ -1329,7 +1358,7 @@ watch(
         <text class="mr__done-title">今天的表都看完了</text>
         <view class="mr__done-stats">
           <view class="mr__done-stat">
-            <text class="mr__done-stat-value">{{ filledCount }}</text>
+            <text class="mr__done-stat-value">{{ filledNow }}</text>
             <text class="mr__done-stat-label">已填</text>
           </view>
           <view class="mr__done-stat">
@@ -1371,13 +1400,13 @@ watch(
               v-for="(item, i) in cards"
               :key="item.meterId"
               class="mr__sheet-item"
-              :class="{ 'is-filled': item.reading !== null && item.reading !== undefined }"
-              @click="showList = false; goTo(i)"
+              :class="{ 'is-filled': hasReading(item) }"
+              @click="showList = false; jumpTo(i)"
             >
               <text class="mr__sheet-no">{{ displayNo(item) }}</text>
               <text class="mr__sheet-name">{{ item.meterName }}</text>
               <text class="mr__sheet-val">
-                {{ item.reading ?? '未填' }}
+                {{ hasReading(item) ? shownReading(item) : '未填' }}
               </text>
             </view>
           </scroll-view>
