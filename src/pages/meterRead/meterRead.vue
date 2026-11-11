@@ -566,7 +566,7 @@ async function submitAll() {
 }
 
 async function submit(direction) {
-  if (!card.value || saving.value || pagerSnapping.value) return
+  if (!card.value || saving.value || pagerAnimating.value) return
   const reading = draft.reading === '' ? null : Number(draft.reading)
   if (reading !== null && !Number.isFinite(reading)) {
     uni.showToast({ title: '读数不是数字', icon: 'none' })
@@ -640,30 +640,43 @@ const gesture = reactive({
   flying: false,
 })
 
-/* ===== 卡片轨道 / ViewPager（2026-11-11） =====
+/* ===== 卡片轨道 / 自由滚动 + 惯性吸附（2026-11-11 v2） =====
  *
- * 使用方要求：「标签和下方卡片手势联动、连续跟手、松手吸附，像 ViewPager」。
+ * 手感目标是原生 ViewPager / 横向轮播那一类：
+ *   1) 手指按住时 1:1 跟手，没有阈值、没有"过 22% 才翻页"的判定；
+ *   2) 松手取最近 100ms 的速度，用「位移 + 速度 × 325ms」预测落点；
+ *   3) 预测落在哪一页就滚到哪一页（快滑可以一次跨好几页）；
+ *   4) 减速用 easeOutCubic，时长按距离和初速度算，不是固定 300ms；
+ *   5) 只有 transform: translate3d 在动，动画期间绝不改布局、不重建整张表单。
  *
- * 做法：轨道里并排三张（上一张 / 当前 / 下一张），手指按住时整条轨道
- * 实时跟着位移（transform 直接跟手，不加 transition）；松手按「位移过半
- * 或甩得够快」吸附到相邻一张，动画结束后换 index，再把轨道瞬时复位到中间。
- * 只有中间那张是可编辑的真实卡片，两侧是轻量预览，避免 38 张卡片全部渲染。
+ * 轨道里始终只有三张（上一张 / 当前 / 下一张）：位移越过一整页就把 index 挪一格、
+ * offset 折回页内（内容在屏幕外换），所以 38 张表也不会同时挂载。
  */
-const PAGER_MS = 260
-// 页面左右各有 24rpx 内边距，先用"窗口宽减去它"兜底，measureNames 里会量到精确值
-const stageW = ref(Math.max(1, (uni.getSystemInfoSync?.().windowWidth || 375) - 24))
-const pagerSnapping = ref(false)
+const PAGER_TAU = 325       // 预测时间常数 ms
+const PAGER_MS_MIN = 180    // 吸附动画最短时长
+const PAGER_MS_MAX = 900    // 吸附动画最长时长
+const EDGE_RESIST = 0.35    // 第一张往右 / 最后一张往左的橡皮筋
+const VELOCITY_WINDOW = 100 // 只取松手前 100ms 的速度
+
+// 页面左右各有内边距，先用"窗口宽"兜底，measureNames 会量到舞台精确宽度
+const stageW = ref(Math.max(1, uni.getSystemInfoSync?.().windowWidth || 375))
+const pagerAnimating = ref(false)
+const offset = ref(0) // 页内实时位移 px：负数 = 往左（看下一张）
 const prevCard = computed(() => cards.value[index.value - 1] || null)
 const nextCard = computed(() => cards.value[index.value + 1] || null)
 
-/** 第一张再往右 / 最后一张再往左时的橡皮筋阻尼 */
-const PAGER_RESIST = 0.35
+/** 浮点页号：index 是锚点，offset 是页内进度，标签带与高亮都从它推 */
+const progressF = computed(() => index.value - offset.value / Math.max(1, stageW.value))
+
+/** 高亮按进度走：滚过 60% 就切到下一张（不用等松手） */
+const highlightIndex = computed(() => {
+  const at = Math.floor(progressF.value + 0.4)
+  return Math.max(0, Math.min(cards.value.length - 1, at))
+})
+const highlightMeterId = computed(() => cards.value[highlightIndex.value]?.meterId || '')
 
 const trackStyle = computed(() => ({
-  transform: `translate3d(${(-stageW.value + gesture.dx).toFixed(1)}px, 0, 0)`,
-  transition: pagerSnapping.value
-    ? `transform ${PAGER_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-    : 'none',
+  transform: `translate3d(${(-stageW.value + offset.value).toFixed(2)}px, 0, 0)`,
 }))
 
 /* 标签带的测量结果：每个标签中心相对带子左边缘的 px */
@@ -715,22 +728,17 @@ function nameShiftAt(i) {
   return viewport / 2 - centers[at]
 }
 
-/** 标签带位移：拖动时在相邻两个标签之间按进度插值，松手停在中间那个 */
+/** 标签带位移：按浮点页号在两个标签中心之间插值，和卡片完全同一个进度 */
 const namesShift = computed(() => {
-  const base = nameShiftAt(index.value)
-  if (!gesture.dx) return base
-  const progress = Math.min(1, Math.abs(gesture.dx) / Math.max(1, stageW.value))
-  const away = gesture.dx < 0 ? index.value + 1 : index.value - 1
-  return base + (nameShiftAt(away) - base) * progress
+  const at = Math.floor(progressF.value)
+  const frac = progressF.value - at
+  const from = nameShiftAt(at)
+  return from + (nameShiftAt(at + 1) - from) * frac
 })
 
 const namesStyle = computed(() => ({
-  transform: `translate3d(${namesShift.value.toFixed(1)}px, 0, 0)`,
-  transition: pagerSnapping.value
-    ? `transform ${PAGER_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`
-    : 'none',
+  transform: `translate3d(${namesShift.value.toFixed(2)}px, 0, 0)`,
 }))
-
 
 /**
  * 拖动时的方向提示：翻页语义下不再提示"提交/跳过"，
@@ -788,133 +796,225 @@ function doSkip() {
 }
 
 /**
- * 失败回退（兼容老调用）：回到上一张，不做飞出动画 ——
- * 现在是轨道吸附模型，"飞回来"没有意义，直接复位即可。
+ * 失败回退（兼容老调用）：直接复位到当前页，不做飞出动画。
  */
 function restore() {
-  pagerSnapping.value = false
-  gesture.dx = 0
+  pagerAnimating.value = false
+  offset.value = 0
   gesture.dragging = false
   gesture.decided = false
 }
 
-/** 老的 fly 接口：现在翻页由轨道吸附完成，这里只保留"动画结束后做点什么" */
+/** 老的 fly 接口：翻页由滚动引擎负责，这里只保留"滚动结束后做点什么" */
 function fly(_direction, after) {
   if (after) after()
 }
 
-let touchStartedAt = 0
 /** 最后一次"真的拖动过"的时间戳：用来吞掉拖动结束后的那次 click */
 let lastDragAt = 0
+/** 松手速度采样（最近 100ms 的坐标） */
+let samples = []
+/** 动画代次：新的滚动接管时，旧的 rAF 回调直接退出，避免两个循环抢 offset */
+let flingToken = 0
+/** 上一次动画帧的时间：用来发现"卡住不动"的循环（后台标签页会暂停 rAF） */
+let lastTickAt = 0
+
+function nowMs() {
+  return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()
+}
+function rafTick(fn) {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn)
+  else setTimeout(fn, 16)
+}
+function pushSample(x) {
+  const t = nowMs()
+  samples.push({ t, x })
+  while (samples.length > 2 && t - samples[0].t > VELOCITY_WINDOW) samples.shift()
+}
+/** 松手速度 px/ms（往左为负） */
+function releaseVelocity() {
+  if (samples.length < 2) return 0
+  const first = samples[0]
+  const last = samples[samples.length - 1]
+  const dt = last.t - first.t
+  if (dt <= 0) return 0
+  return (last.x - first.x) / dt
+}
+
+/** 换页：先 commitDraft 再切 index，保证"滑走的那张"不丢读数 */
+function advancePage(delta) {
+  const next = index.value + delta
+  if (next < 0 || next >= cards.value.length) return false
+  commitDraft()
+  index.value = next
+  if (card.value) loadCard(card.value)
+  return true
+}
+
+/** 越过一整页就换页并把 offset 折回页内：轨道永远只有三张 */
+function recyclePages() {
+  const w = Math.max(1, stageW.value)
+  while (offset.value >= w) {
+    if (!advancePage(-1)) {
+      offset.value = 0
+      return
+    }
+    offset.value -= w
+  }
+  while (offset.value <= -w) {
+    if (!advancePage(1)) {
+      offset.value = 0
+      return
+    }
+    offset.value += w
+  }
+}
 
 function onTouchStart(e) {
-  if (pagerSnapping.value) return
-  // 第一次摸之前还没量到标签（比如极快的手势）：补量一次，别用估算值跑偏
+  /*
+   * 动画卡住的自愈：rAF 在后台标签页/系统省电时会停，
+   * 一旦超过 400ms 没有新帧，就认为这次滚动已经死了，别让页面永远划不动。
+   */
+  if (pagerAnimating.value && nowMs() - lastTickAt > 400) {
+    pagerAnimating.value = false
+    offset.value = 0
+  }
+  if (pagerAnimating.value) return
   if (!nameCenters.value.length) measureNames()
   const t = e.touches?.[0]
   if (!t) return
   gesture.startX = t.clientX
   gesture.startY = t.clientY
+  gesture.lastX = t.clientX
   // 左缘 24px 不接管：那里是系统"返回"手势区
   gesture.dragging = t.clientX > 24
   gesture.decided = false
-  gesture.dx = 0
   gesture.dy = 0
-  touchStartedAt = Date.now()
+  samples = []
+  pushSample(t.clientX)
 }
 
 function onTouchMove(e) {
-  if (!gesture.dragging || pagerSnapping.value) return
+  if (!gesture.dragging || pagerAnimating.value) return
   const t = e.touches?.[0]
   if (!t) return
   const dx = t.clientX - gesture.startX
   const dy = t.clientY - gesture.startY
   if (!gesture.decided) {
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return
-    // 竖向多于横向 ⇒ 判定为滚动，不再动卡片
+    // 竖向多于横向 ⇒ 判定为页面滚动，不再动卡片
     if (Math.abs(dy) > Math.abs(dx)) {
       gesture.dragging = false
       return
     }
     gesture.decided = true
   }
-  const w = stageW.value
-  const atStart = index.value === 0 && dx > 0
-  const atEnd = index.value >= cards.value.length - 1 && dx < 0
-  // 到头了给阻尼：还能拉动一点，但拉不远，手感上有"到底了"
-  gesture.dx = atStart || atEnd ? dx * PAGER_RESIST : Math.max(-w, Math.min(w, dx))
+  pushSample(t.clientX)
+  const w = Math.max(1, stageW.value)
+  let move = t.clientX - (gesture.lastX ?? gesture.startX)
+  gesture.lastX = t.clientX
+  const atStart = index.value === 0 && offset.value >= 0 && move > 0
+  const atEnd = index.value >= cards.value.length - 1 && offset.value <= 0 && move < 0
+  if (atStart || atEnd) move *= EDGE_RESIST
+  offset.value = Math.max(-w, Math.min(w, offset.value + move))
+  recyclePages()
   gesture.dy = dy
 }
 
 function onTouchEnd() {
-  if (!gesture.dragging || pagerSnapping.value) return
-  const dx = gesture.dx
-  const elapsed = Math.max(1, Date.now() - touchStartedAt || 1)
-  const velocity = Math.abs(dx) / elapsed
+  if (!gesture.dragging || pagerAnimating.value) return
   gesture.dragging = false
   gesture.decided = false
-  if (Math.abs(dx) > 8) lastDragAt = Date.now()
-
-  const w = stageW.value
-  // 位移过 22% 就算翻页；或者甩得够快（轻扫）
-  const far = Math.abs(dx) > w * 0.22
-  const fling = Math.abs(dx) > 40 && velocity > 0.5
-  if ((far || fling) && dx < 0) {
-    snap(1)
-    return
-  }
-  if ((far || fling) && dx > 0) {
-    snap(-1)
-    return
-  }
-  snap(0)
+  const v = releaseVelocity()
+  samples = []
+  if (Math.abs(offset.value) > 8) lastDragAt = Date.now()
+  const w = Math.max(1, stageW.value)
+  // 预测落点：当前位置 + 速度 × 325ms，再按页宽取整 ⇒ 快滑自然跨多页
+  const predicted = offset.value + v * PAGER_TAU
+  /*
+   * pages 是"轨道页坐标"，不是 index 增量：往左滑一页 = -1，
+   * 目标 index = index - pages，所以范围是 [index-(n-1), index]。
+   * 第一版把上下界写反（写成 [-index, n-1-index]），在第一张往左滑就被夹成 0，
+   * 表现是"怎么甩都弹回来"。
+   */
+  const pages = Math.max(
+    index.value - (cards.value.length - 1),
+    Math.min(index.value, Math.round(predicted / w)),
+  )
+  flingTo(pages, v)
 }
 
 /**
- * 吸附。
- * delta=0 回弹到当前张；±1 动画移到相邻张，动画结束后换 index，
- * 再在同一帧把轨道瞬时复位到"中间"（不设 transition，否则会看到回弹）。
+ * 惯性滚动到 pages（相对当前页，可多页）。
+ * 时长按「距离 / 初速度」推，easeOutCubic 先快后慢；
+ * 动画里越过整页就换页并折回坐标，最后精确对齐到页边界。
  */
-function snap(delta) {
-  const w = stageW.value
-  const target = index.value + delta
-  if (delta !== 0 && (target < 0 || target >= cards.value.length)) {
-    snap(0)
+function flingTo(pages, v = 0) {
+  const w = Math.max(1, stageW.value)
+  let from = offset.value / w
+  let to = pages
+  const dist = Math.abs(to - from) * w
+  if (dist < 0.6) {
+    offset.value = 0
     return
-  }
-  pagerSnapping.value = true
-  gesture.dx = delta === 0 ? 0 : delta > 0 ? -w : w
-  setTimeout(() => {
-    if (delta !== 0) {
-      commitDraft()
-      index.value = target
-      if (card.value) loadCard(card.value)
+  }  /*
+   * 时长：跟着手指甩出去的用「距离 / 初速度」推（快甩拉不住、慢拖慢慢归位）；
+   * 点标签这种没有速度的跳转，按跨了几页线性加一点，别让人等 900ms。
+   */
+  const speed = Math.max(0.9, Math.abs(v))
+  const ms = Math.abs(v) > 0.05
+    ? Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, (dist / speed) * 1.15))
+    : Math.min(PAGER_MS_MAX, Math.max(PAGER_MS_MIN, 300 + (dist / Math.max(1, w) - 1) * 80))
+  const t0 = nowMs()
+  const token = ++flingToken
+  lastTickAt = t0
+  pagerAnimating.value = true
+  const tick = () => {
+    if (token !== flingToken) return
+    lastTickAt = nowMs()
+    const t = Math.min(1, (nowMs() - t0) / ms)
+    const eased = 1 - Math.pow(1 - t, 3)
+    let pg = from + (to - from) * eased
+    while (pg <= -1) {
+      if (!advancePage(1)) {
+        pg = 0
+        from = 1
+        to = 1
+        break
+      }
+      from += 1
+      to += 1
+      pg += 1
     }
-    pagerSnapping.value = false
-    gesture.dx = 0
-  }, PAGER_MS)
+    while (pg >= 1) {
+      if (!advancePage(-1)) {
+        pg = 0
+        from = -1
+        to = -1
+        break
+      }
+      from -= 1
+      to -= 1
+      pg -= 1
+    }
+    offset.value = pg * w
+    if (t < 1) {
+      rafTick(tick)
+      return
+    }
+    offset.value = 0
+    pagerAnimating.value = false
+  }
+  rafTick(tick)
 }
 
-/** 直接跳到第 i 张（点标签、提交校验回跳）：有动画，不等同"硬切" */
+/** 直接跳到第 i 张（点标签、提交校验回跳）：走同一套惯性动画 */
 function jumpTo(target) {
-  if (pagerSnapping.value) return
-  const at = index.value
-  if (target === at) return
-  const delta = target > at ? 1 : -1
-  if (Math.abs(target - at) === 1) {
-    snap(delta)
-    return
-  }
-  // 隔了好几格：先按方向动画推一格，落位后立刻切到目标（避免长距离滚动 38 屏）
-  pagerSnapping.value = true
-  gesture.dx = delta > 0 ? -stageW.value : stageW.value
-  setTimeout(() => {
-    commitDraft()
-    index.value = target
-    if (card.value) loadCard(card.value)
-    pagerSnapping.value = false
-    gesture.dx = 0
-  }, PAGER_MS)
+  if (pagerAnimating.value) return
+  // 参数是"轨道页坐标"：往左一页是 -1，往右回到上一张是 +1
+  const pages = index.value - target
+  if (!pages) return
+  flingTo(pages, 0)
 }
 
 /* ===== 提交进度提示 ===== */
@@ -1040,7 +1140,7 @@ watch(
             :id="'mn' + row.meterId"
             :key="row.meterId"
             class="mr__name"
-            :class="{ 'is-active': card && row.meterId === card.meterId }"
+            :class="{ 'is-active': row.meterId === highlightMeterId }"
             @click="goToName(row)"
           >
             <text class="mr__name-no">{{ displayNo(row) }}</text>
