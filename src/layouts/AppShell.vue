@@ -342,7 +342,7 @@ const paperStyle = computed(() => {
         -->
         <div class="shell-glow" aria-hidden="true"></div>
 
-        <TitleBar v-if="isDesktop" />
+        <TitleBar v-if="isDesktop" :drawer-open="drawerOpen" @open-nav="openDrawer" />
 
         <!--
           导航条：汉堡 + 应用名 · 页签 · 头像。
@@ -410,23 +410,6 @@ const paperStyle = computed(() => {
             登录
           </button>
 
-          <!--
-            导航入口（2026-11-12 使用方口径）：「汉堡按钮在右上角」。
-            挪到最右侧，跟账号同一组视线；画成 1px 细边方块，
-            三条线只留「上、中、下」三段短线，安静一点（线条语言，不抢内容）。
-          -->
-          <button
-            type="button"
-            class="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] border border-slate-900/12 text-slate-600 transition hover:border-slate-900/30 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-            :aria-expanded="drawerOpen ? 'true' : 'false'"
-            aria-controls="app-drawer"
-            aria-label="打开导航"
-            @click="openDrawer"
-          >
-            <svg class="h-[15px] w-[15px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-              <path d="M4 7h16M4 12h16M4 17h16" />
-            </svg>
-          </button>
         </header>
 
         <!--

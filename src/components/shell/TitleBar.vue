@@ -11,6 +11,12 @@
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 
+defineProps({
+  /** 抽屉是否打开：只用来给汉堡按钮一个 aria-expanded 状态 */
+  drawerOpen: { type: Boolean, default: false },
+})
+const emit = defineEmits(['open-nav'])
+
 const win = ref(null)
 const maximized = ref(false)
 let unlisten = null
@@ -64,10 +70,29 @@ async function close() {
 
 <template>
   <header
-    class="titlebar flex h-9 shrink-0 select-none items-center gap-2 pl-3 pr-1"
+    class="titlebar flex h-9 shrink-0 select-none items-center gap-2 pl-2 pr-1"
     data-tauri-drag-region
     @dblclick.self="toggleMaximize"
   >
+    <!--
+      导航入口（2026-11-12 使用方口径）：「汉堡放在左上角」——
+      就放在窗口最左上角这一格，是整屏第一个可点的东西。
+      注意不能带 data-tauri-drag-region，否则点击会被拖拽区吃掉；双击也要 stop。
+    -->
+    <button
+      type="button"
+      class="titlebar-btn titlebar-btn-nav"
+      :aria-expanded="drawerOpen ? 'true' : 'false'"
+      aria-controls="app-drawer"
+      aria-label="打开导航"
+      @click.stop="emit('open-nav')"
+      @dblclick.stop
+    >
+      <svg viewBox="0 0 24 24" class="h-[15px] w-[15px]" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+        <path d="M4 7h16M4 12h16M4 17h16" />
+      </svg>
+    </button>
+
     <span
       class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-brand text-[11px] font-bold text-white"
       data-tauri-drag-region
@@ -138,6 +163,12 @@ async function close() {
   border-radius: 6px;
   color: var(--color-slate-700, #334155);
   transition: background-color 120ms ease, color 120ms ease;
+}
+/* 汉堡按钮比窗口控制钮瘦一点：它是「入口」，不是「操作」，不该跟最小化/关闭一样重 */
+.titlebar-btn-nav {
+  width: 26px;
+  margin-left: 2px;
+  border-radius: 4px;
 }
 .titlebar-btn:hover {
   background-color: color-mix(in srgb, var(--color-brand) 10%, transparent);
