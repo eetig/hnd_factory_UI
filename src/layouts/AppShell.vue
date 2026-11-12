@@ -222,6 +222,13 @@ function onGlobalKeydown(event) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
     event.preventDefault()
     paletteOpen.value = !paletteOpen.value
+    return
+  }
+  // Ctrl+B：跟「菜单」入口同一个动作（标题栏 hover 提示里就写着这个键）
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+    event.preventDefault()
+    drawerOpen.value = !drawerOpen.value
+    return
   }
   onDrawerKeydown(event)
 }
@@ -350,6 +357,23 @@ const paperStyle = computed(() => {
           内容画布能多出整整一行表格的高度。
         -->
         <header class="relative z-10 flex shrink-0 items-center gap-3 px-4 py-1.5">
+          <!--
+            网页版的导航入口：桌面版那个「菜单」在标题栏里（TitleBar.vue），
+            浏览器里没有标题栏，所以这里补一个同款文字入口，别让网页版没地方开导航。
+          -->
+          <button
+            v-if="!isDesktop"
+            type="button"
+            class="flex h-7 shrink-0 items-center rounded-[4px] px-1.5 text-[12px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            :aria-expanded="drawerOpen ? 'true' : 'false'"
+            aria-controls="app-drawer"
+            aria-label="打开导航"
+            data-tip="打开导航　Ctrl+B"
+            @click="openDrawer"
+          >
+            菜单
+          </button>
+
           <span class="flex shrink-0 items-center gap-2">
             <span
               class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90 text-[11px] font-semibold text-white"

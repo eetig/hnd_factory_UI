@@ -75,8 +75,9 @@ async function close() {
     @dblclick.self="toggleMaximize"
   >
     <!--
-      导航入口（2026-11-12 使用方口径）：「汉堡放在左上角」——
-      就放在窗口最左上角这一格，是整屏第一个可点的东西。
+      导航入口（2026-11-12 使用方口径）：「汉堡放在左上角」，图标换成**文字菜单**的样子
+      —— 跟系统应用那种「应用 / 编辑」的文字入口一致，而不是一个图形按钮；
+      悬停给提示（标题 + Ctrl+B 快捷键），点开是左侧抽屉。
       注意不能带 data-tauri-drag-region，否则点击会被拖拽区吃掉；双击也要 stop。
     -->
     <button
@@ -84,13 +85,12 @@ async function close() {
       class="titlebar-btn titlebar-btn-nav"
       :aria-expanded="drawerOpen ? 'true' : 'false'"
       aria-controls="app-drawer"
-      aria-label="打开导航"
+      aria-label="菜单：打开导航"
+      data-tip="打开导航　Ctrl+B"
       @click.stop="emit('open-nav')"
       @dblclick.stop
     >
-      <svg viewBox="0 0 24 24" class="h-[15px] w-[15px]" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-        <path d="M4 7h16M4 12h16M4 17h16" />
-      </svg>
+      菜单
     </button>
 
     <span
@@ -164,11 +164,49 @@ async function close() {
   color: var(--color-slate-700, #334155);
   transition: background-color 120ms ease, color 120ms ease;
 }
-/* 汉堡按钮比窗口控制钮瘦一点：它是「入口」，不是「操作」，不该跟最小化/关闭一样重 */
+/* 菜单入口：文字按钮（跟系统「应用/编辑」那种文字菜单同一个语气），比窗口控制钮轻 */
 .titlebar-btn-nav {
-  width: 26px;
-  margin-left: 2px;
+  position: relative;
+  width: auto;
+  height: 24px;
+  margin-left: 1px;
+  padding: 0 7px;
   border-radius: 4px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--color-slate-600, #475569);
+}
+.titlebar-btn-nav:hover {
+  background-color: color-mix(in srgb, var(--color-slate-900, #0f172a) 6%, transparent);
+  color: var(--color-slate-900, #0f172a);
+}
+/*
+ * hover 提示：自己做一层，不用系统 title（系统提示要等 1 秒、样式也不跟主题走）。
+ * 定位在按钮正下方 6px，深色底 + 白字，跟「收起侧边栏 Ctrl+B」那种提示同一种观感。
+ */
+.titlebar-btn-nav::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: -2px;
+  top: calc(100% + 6px);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background-color: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+  z-index: 40;
+}
+.titlebar-btn-nav:hover::after,
+.titlebar-btn-nav:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 .titlebar-btn:hover {
   background-color: color-mix(in srgb, var(--color-brand) 10%, transparent);
