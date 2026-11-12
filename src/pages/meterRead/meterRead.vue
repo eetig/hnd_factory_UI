@@ -543,7 +543,8 @@ function previewPhoto() {
  *
  * 规则（使用方按推荐确认）：
  *   · 只提交填了读数的；没填 = 跳过，不报错
- *   · 读数 ≤ 上次读数（负用量）⇒ 阻止，直接跳到那块表
+ *   · 读数 < 上次读数（负用量）⇒ 阻止，直接跳到那块表
+ *     （等于上次读数是正常的：停工期间表不转，用量就是 0，必须放行）
  *   · 用量超过上次 5 倍 ⇒ 只警告，允许提交
  *   · 提交成功清本地草稿；失败保留，可以再点一次
  */
@@ -569,7 +570,14 @@ async function submitAll() {
       return
     }
     const prev = item.row.prevReading
-    if (prev !== null && prev !== undefined && current <= Number(prev)) {
+    /*
+     * 只有「本次 < 上次」才拦。
+     *
+     * 2026-11-12 使用方报的 bug：工厂停工期间有些表不转，本次读数与上次完全相同，
+     * 于是用量是 0 —— 这是完全正常的读数，原来写成 `<=` 会把它当负用量拦下来，
+     * 38 块表全填完也提交不了。
+     */
+    if (prev !== null && prev !== undefined && current < Number(prev)) {
       uni.showModal({
         title: '读数比上次小',
         content: `${item.row.meterName}：本次 ${current}，上次 ${prev}。这会产生负用量，先确认是不是抄错。`,
