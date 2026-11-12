@@ -23,6 +23,7 @@ import TankLevelView from '../views/stats/TankLevelView.vue'
 import AttendanceView from '../views/stats/AttendanceView.vue'
 import ImportView from '../views/maintain/ImportView.vue'
 import ImageParseView from '../views/maintain/ImageParseView.vue'
+import PickParseView from '../views/maintain/PickParseView.vue'
 import ArchiveView from '../views/archive/ArchiveView.vue'
 
 /*
@@ -192,6 +193,12 @@ export const workbenchRoutes = [
     name: 'ImageParseView',
     component: ImageParseView,
     meta: { group: 'maintain', key: 'imageParse', title: '图片解析', perm: 'work_order:import' },
+  },
+  {
+    path: '/maintain/pick-parse',
+    name: 'PickParseView',
+    component: PickParseView,
+    meta: { group: 'maintain', key: 'pickParse', title: '领料解析', perm: 'work_order:import' },
   },
   {
     path: '/archive',

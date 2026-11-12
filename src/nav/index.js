@@ -148,6 +148,15 @@ export const NAV_ITEMS = [
     perm: 'work_order:import',
     group: 'maintain',
   },
+  // 领料解析（变更-190，2026-11-12）：把纸质《物资领料单》认出物料编码，按 SAP 模板导出 xlsx。
+  // 与图片解析同属录入入口，沿用同一权限位；真正的实现是数据是否认对，权限位只是「能进这页」。
+  {
+    key: 'pickParse',
+    label: '领料解析',
+    path: '/maintain/pick-parse',
+    perm: 'work_order:import',
+    group: 'maintain',
+  },
   // 资料归档（变更-126，2026-10-20）：**刻意不写 perm —— 全员可看**（Q5 的决策）。
   // 增/改/删由页面按 archive:edit 显隐按钮，后端另有一道「非 admin 的写方法一律 403」。
   { key: 'auditLog', label: '管控日志', path: '/admin/audit', perm: ADMIN_PERM, group: 'maintain' },
