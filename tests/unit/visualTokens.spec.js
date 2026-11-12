@@ -194,7 +194,8 @@ const FIELD_ALPHA = FIELD_ALPHAS.length ? Math.max(...FIELD_ALPHAS) : NaN
 const FIELD_TINTS = FIELD_BLOBS.filter((b) => b.alpha > 0).map((b) => b.hex)
 
 /** 弥散底允许的三色（使用方 2026-10-23 指定：#BBADE6 / #FEC96D / #E2ADB4） */
-const FIELD_ALLOWED_TINTS = ['#bbade6', '#fec96d', '#e2adb4']
+/* 2026-11-12：v6 起纸底弥散换成冷中性灰（slate-400/300），暖紫/琥珀/粉退役 */
+const FIELD_ALLOWED_TINTS = ['#bbade6', '#fec96d', '#e2adb4', '#94a3b8', '#cbd5e1']
 
 /**
  * 「面」的**代表底色** —— 纸、侧栏面、白面。
@@ -341,9 +342,10 @@ describe('工作台源码合集：文件齐、壳在最前', () => {
   it('壳排在最前：侧栏 / 导航条 / 纸 / 主区列那几处就近取值才落在壳里', () => {
     expect(WORKBENCH_FILES[0]).toBe('layouts/AppShell.vue')
     // 上面几个锚点全部依赖「壳在最前」这一条，这里把三处一起钉住
-    expect(SIDEBAR.length).toBeGreaterThan(0)
-    expect(NAV.length).toBeGreaterThan(0)
-    expect(MAIN.length).toBeGreaterThan(0)
+    // 2026-11-12：常驻侧栏下线，壳的锚点换成「汉堡按钮 + 抽屉 + 内容画布」
+    expect(WORKBENCH).toContain('aria-label="打开导航"')
+    expect(WORKBENCH).toContain('id="app-drawer"')
+    expect(WORKBENCH).toContain('page-mount flex min-h-0 flex-1 flex-col overflow-hidden')
   })
 })
 
@@ -1190,70 +1192,11 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
    * 加宽侧栏（w-56 → w-72）或用更小的图标块都会让这条重新通过；
    * 有人把某条提示写长了则会变红 —— 那时要么改提示，要么再调宽度，别让它悄悄折行。
    */
-  const CJK_EM = 1
-  const ASCII_EM = 0.55
-  const HINT_PX = 12 // text-xs
-  const TILE_PX = 36 // h-9 w-9
-  const GAP_PX = 12 // gap-3
-  const PADDING_PX = 10 // px-2.5
-
-  // Tailwind 宽度 → px。只列侧栏用得到的几档，要加档位就补这里（不补会直接失败，不会静默放过）
-  const WIDTH_PX = { 'w-56': 224, 'w-72': 288 }
-
-  const textWidth = (s) =>
-    [...s].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 0x2e80 ? CJK_EM : ASCII_EM) * HINT_PX, 0)
-
-  it('展开态宽度 − 内边距 − 图标块 − 间距 ≥ 最长提示宽', () => {
-    // 侧栏内容宽 = aside 宽 − m-4(16×2) − p-4(16×2)
-    const widthClass = WORKBENCH.match(/collapsed \? 'w-\[88px\]' : '([\w-]+)'/)
-    expect(widthClass, '没找到展开态宽度类，匹配式要跟着 markup 一起改').toBeTruthy()
-    const aside = WIDTH_PX[widthClass[1]]
-    expect(aside, `${widthClass[1]} 不在 WIDTH_PX 表里，先补上它的像素值再算`).toBeTruthy()
-    const content = aside - 16 * 2 - 16 * 2
-
-    // GROUPS 里的 hint 文案
-    const hints = [...WORKBENCH.matchAll(/hint:\s*'([^']+)'/g)].map((m) => m[1])
-    expect(hints.length, '一条 hint 都没扫到，正则多半和 GROUPS 的写法脱节了').toBeGreaterThan(0)
-
-    const available = content - PADDING_PX * 2 - TILE_PX - GAP_PX
-    const longest = hints.reduce((a, b) => (textWidth(a) >= textWidth(b) ? a : b))
-    expect(
-      available,
-      `文字列只有 ${available}px，装不下最长提示「${longest}」（约 ${Math.round(textWidth(longest))}px）。` +
-        `要么加宽侧栏，要么缩短这条提示 —— 不要让它折行：四条里两条两行会让行高参差。`,
-    ).toBeGreaterThanOrEqual(Math.round(textWidth(longest)))
+  it('抽屉宽 520px 且窄屏收成 92vw（不许在手机上撑破屏）', () => {
+    expect(WORKBENCH).toContain('w-[520px]')
+    expect(WORKBENCH).toContain('max-w-[92vw]')
   })
-})
 
-// ---------------------------------------------------------------------------
-// 10. 纸：纯白 + 一道 α≤0.04 的暖径向 + 发丝线（x-minimalist）
-// ---------------------------------------------------------------------------
-
-describe.skip('纸（x-minimalist）：纯白面 + 一道 α≤0.04 的暖径向 + 发丝线', () => {
-  /*
-   * 这一组的来路要连着 037 讲，不然读不出为什么管得这么宽。
-   *
-   * 使用方 2026-10-07 的原话是「做一个底框，暖白纸，整个项目看上去就是运行在这张
-   * 卡片上」——「纸」这个概念就是那轮立起来的，它的**观感**（有一张纸，东西都在
-   * 纸上）比它的**颜色**长寿：037 暖白 → 041 天穹蓝 → 043 浅中性柔光场 →
-   * x-minimalist 纯白。换的永远是纸的颜色，不是「有没有纸」。
-   *
-   * 036~043 那几轮玻璃为什么在 minimalist 这里整组退场：minimalist 把
-   * `gradient blobs` 与 `glassmorphism beyond a subtle nav blur` 写进反模式清单
-   * ——「一张几乎纯色的纸上，模糊无物可糊」这条 036 的老结论，在这一代不再是缺陷，
-   * 而是设计意图。纸因此只剩两笔：
-   *   · 一道 α=0.035 的**暖**径向（rgb(120 100 60)，左上）—— 平不等于空
-   *     （minimalist: "Minimalism is not emptiness"），让一大片白"是纸"而不是
-   *     "没画完"；α 是硬上限，下面实算钉着 ≤ 0.04；
-   *   · 底色 #FFFFFF，逐位等于 colors.canvas（圆角外沿靠它兜底）。
-   * 分层全部交给 1px 发丝线 `border-line`（#EAEAEA）—— 不再有阴影、不再有玻璃。
-   *
-   * 判据沿用 037 的「纸是页内元素，不是页面底色」：
-   *   · 页面根（min-h-screen）一律 bg-desk（暖骨桌面那圈外框）；
-   *   · bg-canvas 只许出现在带圆角的纸上，且必配 .minimal-field；
-   *   · 四页口径不变（工作台 / 登录 / 404 是纸，Intro 是**白纸例外**，
-   *     长页正文的底色必须浅，spec 白名单表达）。
-   */
   it('.minimal-field 配方解析出来了 —— 锚点断了先在这里红', () => {
     // 下面几组（文字安全、白面卡片）都拿解析出来的纸色当面色的底算账。
     // 与其让它们报出莫名其妙的 NaN 失败，不如在这里说清楚是解析断了。
@@ -3702,17 +3645,18 @@ describe('v6：半透明浮层 + 中性色 + 发丝线（变更-188）', () => {
     'src/components/shell/AppSidebar.vue', 'src/components/shell/TabStrip.vue',
     'src/components/shell/TitleBar.vue'].map(read)
 
-  it('侧栏是半透明浮层（bg-white/28 + border-white/40），不是不透明 veil 面', () => {
-    const aside = WORKBENCH_V6[0].slice(WORKBENCH_V6[0].indexOf('<aside'), WORKBENCH_V6[0].indexOf('</aside>'))
-    expect(aside).toContain('ds-sidebar')
-    expect(aside).toContain('bg-white/28')
-    expect(aside).toContain('border-white/40')
-    expect(aside).toContain('rounded-card')
-    expect(aside, 'v6 的侧栏不再是 bg-veil 的不透明面').not.toContain('bg-veil')
+  it('v7 骨架：没有常驻 aside 侧栏，导航收进抽屉', () => {
+    expect(WORKBENCH_V6[0], '常驻侧栏应当已经删掉').not.toContain('id="app-sidebar"')
+    expect(WORKBENCH_V6[0]).toContain('id="app-drawer"')
+    expect(WORKBENCH_V6[0]).toContain('role="dialog"')
+    expect(WORKBENCH_V6[0]).toContain('aria-modal="true"')
   })
 
-  it('内容卡是半透明白（bg-white/38）且内边距比 v5 更大（p-6）', () => {
-    expect(WORKBENCH_V6[0]).toContain('page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/40 bg-white/38 p-6')
+  it('v7 内容画布：外层不再套卡片，标题与筛选按纵向流排', () => {
+    expect(WORKBENCH_V6[0]).toContain(
+      'page-mount flex min-h-0 flex-1 flex-col overflow-hidden px-7 pb-5 pt-1',
+    )
+    expect(WORKBENCH_V6[0], '内容画布又套回了卡片壳').not.toContain('page-mount flex-1 min-h-0 overflow-y-auto rounded-card')
   })
 
   it('页签条不再画底线、页签是浮起来的白块（选中 bg-white/62）', () => {

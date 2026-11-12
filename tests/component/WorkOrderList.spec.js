@@ -62,21 +62,40 @@ const PUBLIC_TAB_LABELS = [
  *
  * 用 [aria-label] 而不是 nav 选择器：横条是 div（不是 nav），只有 aria-label 是稳的。
  */
+async function openNavDrawer(wrapper) {
+  if (wrapper.find('#app-drawer').exists()) return
+  const burger = wrapper.find('button[aria-label="打开导航"]')
+  expect(burger.exists(), '顶部导航条缺汉堡按钮（aria-label="打开导航"）').toBe(true)
+  await burger.trigger('click')
+  await flushPromises()
+}
+
+async function closeNavDrawer(wrapper) {
+  const close = wrapper.find('#app-drawer button[aria-label="关闭导航"]')
+  if (close.exists()) {
+    await close.trigger('click')
+    await flushPromises()
+  }
+}
+
+/**
+ * 遍历抽屉里的全部大类，收集它们各自的页面标签。
+ *
+ * 2026-11-12 起没有常驻侧栏：导航收进汉堡抽屉，左列模块、右列该模块的页。
+ * 所以这里先开抽屉，再逐个点模块、读右列。
+ */
 async function allTabLabels(wrapper) {
-  /*
-   * 2026-11-11：两层导航之后，"全部分组的全部页面"不再靠一横条页签列出来，
-   * 而是"最左图标栏选组 → 第二列列该组的页"。所以这里点组、读第二列。
-   * 只读文字、不点页面：点页面会开全局页签，把环境搞脏。
-   */
+  await openNavDrawer(wrapper)
   const labels = []
-  const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
+  const groups = wrapper.findAll('#app-drawer [aria-label="模块"] button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
     labels.push(
-      ...wrapper.findAll('nav[aria-label$="下的页面"] button').map((b) => b.text().trim()),
+      ...wrapper.findAll('#app-drawer nav[aria-label$="下的页面"] button').map((b) => b.text().trim()),
     )
   }
+  await closeNavDrawer(wrapper)
   return labels
 }
 
@@ -139,15 +158,16 @@ async function mountPage(path = '/') {
  */
 async function switchToTab(wrapper, text) {
   /*
-   * 2026-11-11：两层导航之后，"切到某页"= 点开它所在的组，再点第二列里的那一行。
-   * 全局页签只记"已经打开过的"，不能拿它当全量目录 —— 那样只能切到上一轮留下的页。
+   * 2026-11-12：切到某页 = 开抽屉 → 点它所在的模块 → 点那一行。
+   * 点完抽屉自己关掉（选择即离开），所以下一轮还要再开。
    */
-  const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
+  await openNavDrawer(wrapper)
+  const groups = wrapper.findAll('#app-drawer [aria-label="模块"] button')
   for (const group of groups) {
     await group.trigger('click')
     await flushPromises()
     const item = wrapper
-      .findAll('nav[aria-label$="下的页面"] button')
+      .findAll('#app-drawer nav[aria-label$="下的页面"] button')
       .find((b) => b.text().trim() === text)
     if (item) {
       await item.trigger('click')
@@ -176,9 +196,10 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
   it('侧栏列出全部大类与全部页面（分层访问后不再按权限隐藏；锁定与否由 aria-disabled 表达）', async () => {
     // 2026-11-11 起大类是图标栏：文字在 aria-label 里（图标本身没有文本），
     // 所以这里取 aria-label 而不是 text()
+    await openNavDrawer(wrapper)
     const groupText = wrapper
-      .findAll('[role="group"][aria-label="模块"] button')
-      .map((g) => g.attributes('aria-label') || '')
+      .findAll('#app-drawer [aria-label="模块"] button')
+      .map((g) => g.text().trim())
       .join('|')
 
     // 「工单」组那 4 页全是 admin 专属、「维护」组两页都要权限位、「采购」那页也是 admin：
@@ -813,7 +834,7 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
         expect(activeTabKey(wrapper)).toBe(key)
         // 主区里真的渲染出了这一页（不是一张空壳）
         expect(
-          wrapper.find('.flex-1.min-h-0.overflow-y-auto').element.textContent.trim().length,
+          wrapper.find('.page-mount').element.textContent.trim().length,
           '这一页渲染成了空白 —— 模板里多半引用了不存在的变量/组件',
         ).toBeGreaterThan(0)
       } finally {
@@ -837,111 +858,54 @@ describe('14 条路由逐个渲染（拆页后的白屏护栏）', () => {
  * 一开始就是收起态（一个测试污染一整份文件，且症状是别处的断言莫名其妙地红）。
  * 这里进出一律清掉。
  */
-describe('侧栏收起 / 展开', () => {
+describe('顶部导航抽屉（2026-11-12：常驻侧栏下线）', () => {
   let wrapper
 
-  const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
-  const toggle = () => wrapper.find('button[aria-controls="app-sidebar"]')
-
   beforeEach(async () => {
-    window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
+    authState.token = 'test-token'
+    authState.roleKey = 'admin'
     wrapper = await mountPage()
   })
 
-  afterEach(() => {
-    window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
+  afterEach(() => wrapper?.unmount())
+
+  it('默认没有常驻侧栏，只有一条 44px 导航条', () => {
+    expect(wrapper.find('aside#app-sidebar').exists(), '常驻侧栏应当已经删掉').toBe(false)
+    expect(wrapper.find('#app-drawer').exists(), '抽屉默认是关着的').toBe(false)
+    expect(wrapper.find('button[aria-label="打开导航"]').exists()).toBe(true)
   })
 
-  it('点收起：aside 收窄、品牌区让位（不是被盖住），再点一次复原', async () => {
-    const aside = wrapper.find('aside')
-    // 展开态宽度 2026-10-07 由 w-56(224px) 加到 w-72(288px)：
-    // 分组块加了 36px 图标后，224px 放不下最长的那条分组提示，四条提示折行不一致。
-    expect(aside.classes()).toContain('w-72')
-    expect(toggle().attributes('aria-expanded')).toBe('true')
-    expect(toggle().attributes('aria-label')).toBe('收起侧栏')
+  it('点汉堡开抽屉：左列模块、右列页面，Esc 关闭', async () => {
+    await openNavDrawer(wrapper)
+    expect(wrapper.find('#app-drawer').exists()).toBe(true)
+    expect(wrapper.find('#app-drawer [role="dialog"], #app-drawer').attributes('aria-modal')).toBe('true')
 
-    await toggle().trigger('click')
+    const groups = wrapper.findAll('#app-drawer [aria-label="模块"] button')
+    expect(groups.length).toBeGreaterThan(3)
+    expect(wrapper.findAll('#app-drawer nav[aria-label$="下的页面"] button').length).toBeGreaterThan(0)
 
-    // 收窄 = 把宽度让给主区。主区是 flex-1，自己会把那 200px 拿回去
-    expect(aside.classes()).toContain('w-[88px]')
-    expect(aside.classes()).not.toContain('w-72')
-    expect(toggle().attributes('aria-expanded')).toBe('false')
-    expect(toggle().attributes('aria-label')).toBe('展开侧栏')
-
-    // 品牌区是**让位**（display:none），不是被浮层压住 —— 使用方选的就是「内容让位、不重叠」。
-    // 三条都要断：收起态只剩图标，任何一条没让位都会在 40px 里挤成一团
-    const brand = ['Factory Ops', 'HND生产助手', '工单与物料查询助手'].map((text) =>
-      wrapper.findAll('p').find((p) => p.text() === text),
-    )
-    expect(brand.map((p) => p.element.style.display)).toEqual(['none', 'none', 'none'])
-
-    await toggle().trigger('click')
-    expect(aside.classes()).toContain('w-72')
-    expect(brand.map((p) => p.element.style.display)).toEqual(['', '', ''])
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(wrapper.find('#app-drawer').exists()).toBe(false)
   })
 
-  it('收起态点分组图标照样切组（不能只剩开关、把导航丢了）', async () => {
-    await toggle().trigger('click')
+  it('抽屉里点页：路由跟着变、抽屉自己关掉', async () => {
+    await switchToTab(wrapper, '物料查询')
+    expect(wrapper.vm.$route.path).toBe('/materials')
+    expect(wrapper.find('#app-drawer').exists()).toBe(false)
+    expect(wrapper.find('h1').text()).toBe('物料查询')
+  })
 
-    const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
-
-    // 图标条**只列有可见页的组**：匿名时「工单」「采购」「维护」整组不可见，
-    // 列出来就是点了没反应的死按钮。
-    // 收起后按钮没有可见文字，可访问名就是组名 —— 缺了它读屏只剩一个无名图标
-    // 变更-129 后导航不再隐藏：六个大类全在（收起态只有可见文字是组名，读屏靠 aria-label）
-    expect(groups).toHaveLength(6)
-    const groupNames = groups.map((b) => b.attributes('aria-label')).filter(Boolean)
-    for (const name of ['工单', '物料', '采购', '报表', '维护']) {
-      expect(groupNames).toContain(name)
-    }
-
-    // 匿名态当前在「物料」组（第一个可见项是物料查询），所以点「报表」才测得出「切」
-    expect(activeTabKey(wrapper)).toBe('workOrder')
-    const stats = groups.find((b) => b.attributes('aria-label') === '报表')
+  it('换模块只换右列，不急着跳页', async () => {
+    await openNavDrawer(wrapper)
+    const before = wrapper.vm.$route.path
+    const groups = wrapper.findAll('#app-drawer [aria-label="模块"] button')
+    const stats = groups.find((g) => g.text().trim() === '报表')
+    expect(stats, '抽屉里找不到「报表」模块').toBeTruthy()
     await stats.trigger('click')
     await flushPromises()
-
-    // 落到该组第一个可见页；侧栏高亮与主区页签都由路由推导，天然同步
-    expect(activeTabKey(wrapper)).toBe('weekly')
-
-    // 收起态**没有**「块底」—— 那层 bg-brand 胶囊 + 白描边环只在展开态有（40px 里套环会糊）。
-    // 当前组的标记落在图标块上：白色透块（bg-white/15）+ 白图标。
-    // 顺带确认选中的确**转移**了，而不是两块一起亮
-    const tools = groups.find((b) => b.attributes('aria-label') === '物料')
-    expect(stats.classes()).toContain('bg-white/80')
-    expect(tools.classes()).not.toContain('bg-white/80')
-  })
-
-  it('展开态只有当前组带胶囊（使用方 2026-10-07 提的选中标记）', async () => {
-    /*
-     * 选中标记是这轮的需求本身，所以要有护栏：几块一样亮就分不出当前在哪一组了。
-     *
-     * 2026-10-18 改成「先点一个组再断言」，两个原因：
-     *   ① 语义化：钉 aria-current 而不是某个 class 名 —— 选中态的颜色随设计系统换代
-     *      （石墨 → 橙 → Steep 桃），组件测试不该盯着颜色；颜色由视觉守卫读 token 单独算。
-     *   ② 确定性：挂载后的默认路由在匿名态要靠一次异步重定向落地，
-     *      「匿名态落在物料组」这个隐含前提已随路由改造失效。主动点一次，meta.group 必然写实。
-     */
-    const groups = wrapper.findAll('[role="group"][aria-label="模块"] button')
-    expect(groups.length, '侧栏没渲染出分组按钮').toBeGreaterThan(0)
-    await groups[0].trigger('click')
-    await flushPromises()
-
-    const marked = groups.filter((b) => b.attributes('aria-current') === 'true')
-    expect(marked, '同时有 0 个或 1 个以上分组被标成当前 —— 选中标记只能有一个').toHaveLength(1)
-    expect(marked[0].classes(), '当前组的标记是白色透块（bg-white/80），不是旧胶囊').toContain('bg-white/80')
-  })
-
-  it('收起状态写进 localStorage，重新挂载（≈刷新）还是收起的', async () => {
-    // 收起的动机是「把 224px 让回给表格」，刷新一次就自己弹回去，等于每次打开都要重收
-    await toggle().trigger('click')
-    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('1')
-
-    const reopened = await mountPage()
-    expect(reopened.find('aside').classes()).toContain('w-[88px]')
-    reopened.unmount()
-
-    await toggle().trigger('click')
-    expect(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe('0')
+    expect(wrapper.vm.$route.path, '点模块不该直接跳页（跳页由右列决定）').toBe(before)
+    const labels = wrapper.findAll('#app-drawer nav[aria-label$="下的页面"] button').map((b) => b.text().trim())
+    expect(labels).toContain('周统计')
   })
 })

@@ -4,13 +4,11 @@ import { useRoute, useRouter } from 'vue-router'
 import dayjs from 'dayjs'
 import request from '../api/request'
 import { authState, clearAuth, getDisplayName, getRoleName, isLoggedIn } from '../api/auth'
-import { lockNeedsAdmin, navItemState, useNav } from '../nav'
+import { GROUP_ICON_PATHS, lockNeedsAdmin, navItemState, useNav } from '../nav'
 import LockNotice from '../components/LockNotice.vue'
 import PaletteToggle from '../components/PaletteToggle.vue'
 import DesktopPanel from '../components/DesktopPanel.vue'
 import OfflineBanner from '../components/OfflineBanner.vue'
-import AppRail from '../components/shell/AppRail.vue'
-import AppSidebar from '../components/shell/AppSidebar.vue'
 import TabStrip from '../components/shell/TabStrip.vue'
 import CommandPalette from '../components/shell/CommandPalette.vue'
 import TitleBar from '../components/shell/TitleBar.vue'
@@ -19,23 +17,24 @@ import { appearance, wallpaperCss } from '../desktop/appearance'
 import { usePalette } from '../composables/usePalette'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { useWorkspaceTabs } from '../composables/useWorkspaceTabs.js'
-import { ElConfigProvider, ElDialog, ElTooltip } from 'element-plus'
+import { ElConfigProvider, ElDialog } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import 'dayjs/locale/zh-cn'
 import updateLocale from 'dayjs/plugin/updateLocale'
 
 /*
- * 工作台的**壳**（2026-11-11 第二次重构，照 DSH 客户端）。
+ * 工作台的**壳**（2026-11-12 第三次重构，用户口径「照搬 DSH 的无侧边栏骨架」）。
  *
- * 三层：最左图标栏选模块 → 第二列列该模块的页 → 主区上方一排全局页签。
- * 与上一版的差别只有「怎么找页面」这一件事：
- *   · 上一版把六个模块纵向摊在一条 288px 的侧栏里，切模块＝展开一组、
- *     把别的组挤下去，找一页要点两三次；
- *   · 这一版模块永远是六个等大的图标（位置不变、肌肉记忆），页清单只有一屏。
- * 页签也从「同组页签」升级成「全局页签」：打开过的页跨模块并排，可以来回跳。
+ * 结构上只剩三层：
+ *   1. 标题栏（仅桌面版：拖拽 + 最小化/最大化/关闭）
+ *   2. 一条横向导航条：汉堡菜单 + 应用名 · 全局页签 · 用户头像
+ *   3. 内容画布：页面标题、筛选、表格按纵向流依次排，**没有外层卡片壳**
  *
- * 仍然不变的两条：
- *   · 当前在哪一页**只由路由决定**，侧栏高亮、页签选中、面包屑全从 route 推导；
+ * 为什么砍掉常驻侧栏：侧栏占 288px，而切模块一天也就几次；
+ * 把模块收进汉堡抽屉后，表格多出三列宽度，视线也不再被一列常驻文字分走。
+ *
+ * 仍然不变的两条（上一版立的规矩）：
+ *   · 当前在哪一页**只由路由决定**，抽屉高亮、页签选中、面包屑全从 route 推导；
  *   · 权限显隐读 `authState`（响应式），登录/退出立即生效。
  */
 
@@ -99,19 +98,14 @@ const routeLocked = computed(() => {
   return item ? navItemState(item) === 'locked' : false
 })
 
-/** 当前页面所属的大类（面包屑前半段、图标栏高亮都读它） */
+/** 当前页面所属的大类（抽屉高亮、面包屑前半段都读它） */
 const currentGroup = computed(() => route.meta?.group ?? '')
-/** 当前大类本身（第二列的表头读它的 label/hint） */
-const currentGroupObj = computed(
-  () => visibleGroups.value.find((group) => group.key === currentGroup.value) ?? null,
-)
 /** 当前页面在 NAV_ITEMS 里的那一条 */
 const activeItem = computed(
   () =>
     visibleGroups.value.flatMap((group) => group.items).find((item) => item.path === route.path) ??
     null,
 )
-/** 当前页标题（主区顶部） */
 useOrderFilterUrl()
 
 const pageTitle = computed(() => activeItem.value?.label ?? route.meta?.title ?? '')
@@ -119,34 +113,51 @@ const pageTitle = computed(() => activeItem.value?.label ?? route.meta?.title ??
 const groupLabel = computed(
   () => visibleGroups.value.find((group) => group.key === currentGroup.value)?.label ?? '',
 )
-/** 当前组里**可见**的页 —— 第二列清单用它 */
-const groupItems = computed(
-  () => visibleGroups.value.find((group) => group.key === currentGroup.value)?.items ?? [],
-)
-
-/**
- * 切大类：落到该类第一个**可见**页。
- *
- * 不能盲取该类第一个页 —— 非 admin 时「工单」那四页都不可见（决策-004），
- * 那样一点「工单」就会落到一个打不开的地址上。`visibleGroups` 只含可见项，
- * 所以取它的第一项天然是能看的那一页。
- */
-function selectGroup(key) {
-  /*
-   * 变更-129：组内优先挑**马上能用**的那一页；整组都锁定（例如游客点"工单"）
-   * 就弹提示，而不是把人推到一个锁定页上 —— 那看起来像点了没反应。
-   */
-  const items = visibleGroups.value.find((group) => group.key === key)?.items ?? []
-  const usable = items.find((item) => navItemState(item) === 'available')
-  if (usable) {
-    router.push(usable.path)
-    return
-  }
-  if (items[0]) openLock(items[0])
-}
 
 function goToPage(path) {
   if (path !== route.path) router.push(path)
+}
+
+// ===== 导航抽屉（2026-11-12）=====
+/*
+ * 抽屉 = 左列模块 + 右列该模块的页。打开时默认停在当前模块，
+ * 这样"我只是想换一页"不用先找模块。
+ */
+const drawerOpen = ref(false)
+const drawerGroup = ref(currentGroup.value || visibleGroups.value[0]?.key || '')
+
+watch(
+  () => currentGroup.value,
+  (value) => {
+    if (value) drawerGroup.value = value
+  },
+)
+
+const drawerGroupObj = computed(
+  () => visibleGroups.value.find((group) => group.key === drawerGroup.value) ?? null,
+)
+const drawerItems = computed(() => drawerGroupObj.value?.items ?? [])
+
+function openDrawer() {
+  drawerGroup.value = currentGroup.value || visibleGroups.value[0]?.key || ''
+  drawerOpen.value = true
+}
+
+function pickFromDrawer(path) {
+  drawerOpen.value = false
+  goToPage(path)
+}
+
+function pickGroupInDrawer(key) {
+  drawerGroup.value = key
+}
+
+/** 抽屉开着时 Esc 关闭；抽屉没开就不抢键盘（Ctrl+K 有自己的处理） */
+function onDrawerKeydown(event) {
+  if (event.key === 'Escape' && drawerOpen.value) {
+    event.stopPropagation()
+    drawerOpen.value = false
+  }
 }
 
 // ===== 全局页签（2026-11-11）=====
@@ -211,12 +222,13 @@ function onGlobalKeydown(event) {
     event.preventDefault()
     paletteOpen.value = !paletteOpen.value
   }
+  onDrawerKeydown(event)
 }
 
 onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onGlobalKeydown))
 
-// ===== 账号块 =====
+// ===== 账号区 =====
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
@@ -254,25 +266,6 @@ async function handleLogout() {
   router.replace('/')
 }
 
-// ===== 第二列收起 / 展开（使用方 2026-10-07：把宽度让回给表格）=====
-
-const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed'
-
-/** 读写都兜一层：隐私模式下 localStorage 会直接抛（同 useVesselList 的缓存写法）。 */
-function readCollapsedFlag() {
-  try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
-/**
- * 收起状态**持久化**：收起的动机是「把 248px 让回给表格」，
- * 刷新一次就自己弹回去，等于每次打开都要重收一遍，那这个功能就白做了。
- */
-const collapsed = ref(readCollapsedFlag())
-
 /*
  * 配色（2026-10-23，变更-170）：纸上的 data-palette 由状态驱动，
  * 圆形揭露动画切的就是这个值 —— 值一变，minimal-field.css 里那块的
@@ -283,9 +276,8 @@ const { palette } = usePalette()
 /*
  * 桌面版外壳（2026-11-11）：无边框窗口 + 原生亚克力 + 自绘标题栏 + 壁纸层。
  *
- * 壁纸的模糊是**图层上的一次性 filter**，不是背景模糊滤镜：
- * 后者每滚一帧都要重新采样背景，抄表页那种长列表会明显掉帧（用户明确要求
- * "毛玻璃必须是 Tauri 原生材质，不能前端 CSS 模拟")。
+ * 壁纸的模糊是**选图时烤进图片**的，运行期图层上没有任何 filter：
+ * 整屏大图每帧重算会让窗口拖动、截图、长列表滚动都发涩。
  */
 const isDesktop =
   IS_DESKTOP ||
@@ -294,7 +286,6 @@ const isDesktop =
 const wallpaperStyle = computed(() => {
   const css = wallpaperCss(appearance)
   if (!css) return null
-  // 运行期不加 filter / transform：整屏大图每帧重算会明显发涩（见 appearance.js 顶部说明）
   return { background: css }
 })
 
@@ -304,192 +295,259 @@ const paperStyle = computed(() => {
   if (!isDesktop) return { backgroundColor: '#FAFBFC' }
   if (!appearance.enabled) return null
   /*
-   * 深色壁纸（夜 / 自定义图）压在地后面时，30% 的通明白纸会让深灰字掉到 4.5:1 以下。
+   * 深色壁纸（夜 / 自定义图）压在地后面时，34% 的通明白纸会让深灰字掉到 4.5:1 以下。
    * 所以对深底抬一个下限：用户仍可往上调，但不会调到"字看不清"。
    */
   const dark = appearance.custom ? true : appearance.wallpaper === 'night'
   const alpha = dark ? Math.max(appearance.veil, 0.78) : appearance.veil
   return { backgroundColor: `rgba(255, 255, 255, ${alpha})` }
 })
-
-watch(collapsed, (value) => {
-  try {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0')
-  } catch {
-    // 存不进去只是下次打开忘了收起，不影响本次使用
-  }
-})
-
-function toggleSidebar() {
-  collapsed.value = !collapsed.value
-}
 </script>
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-desk p-4" :class="isDesktop ? 'shell-desktop' : ''">
-      <!-- 壁纸层（仅桌面版）：静态图 + 一次性的 blur，不做背景模糊滤镜 -->
+    <main class="min-h-screen bg-desk p-3" :class="isDesktop ? 'shell-desktop' : ''">
+      <!-- 壁纸层（仅桌面版）：静态图，模糊在选图时就烤好了，运行期不加 filter -->
       <div
         v-if="isDesktop && wallpaperStyle"
         class="wallpaper-layer"
         :style="wallpaperStyle"
         aria-hidden="true"
       ></div>
+
       <div
-        class="minimal-field flex h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-card border border-white/30"
+        class="shell-paper minimal-field flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-card border border-white/30 bg-canvas"
         :class="isDesktop ? 'shell-paper' : ''"
         :style="paperStyle"
         :data-palette="palette"
       >
         <TitleBar v-if="isDesktop" />
-        <div class="flex min-h-0 flex-1 overflow-hidden">
-        <!--
-          侧栏 = 图标栏 + 页清单，合成**一个 aside**：
-          两块之间的分界靠 1px 竖线，不靠留缝 —— 留缝会把"一条侧栏"拆成两块浮物。
-          吸顶与圆角是视觉护栏钉住的（tests/unit/visualTokens.spec.js「侧栏是 veil 面」）。
-        -->
-        <aside
-          id="app-sidebar"
-          class="ds-sidebar sticky top-0 z-20 flex shrink-0 overflow-hidden rounded-card border border-white/40 bg-white/28"
-          :class="collapsed ? 'w-[88px]' : 'w-72'"
-        >
-          <AppRail
-            :groups="visibleGroups"
-            :current-group="currentGroup"
-            :compact="collapsed"
-            @select="selectGroup"
-          />
 
-          <AppSidebar
-            :group="currentGroupObj"
-            :items="groupItems"
-            :current-path="route.path"
-            :collapsed="collapsed"
-            @navigate="goToPage"
-            @lock="openLock"
-            @collapse="toggleSidebar"
+        <!--
+          导航条：汉堡 + 应用名 · 页签 · 头像。
+          页签搬到这里（而不是单独一行）之后，纵向只花掉一条 44px 的带子，
+          内容画布能多出整整一行表格的高度。
+        -->
+        <header class="flex shrink-0 items-center gap-3 px-3 py-1.5">
+          <button
+            type="button"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            :aria-expanded="drawerOpen ? 'true' : 'false'"
+            aria-controls="app-drawer"
+            aria-label="打开导航"
+            @click="openDrawer"
           >
-            <template #footer>
-              <!-- 账号块：登录态读 authState，退出后立刻变回「登录」入口 -->
-              <template v-if="loggedIn">
-                <div class="flex items-center gap-2.5 rounded-md px-1 py-1.5">
-                  <el-tooltip :content="`${displayName} · ${roleName}`" placement="top" :show-after="200">
-                    <span
-                      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/55 text-base leading-none ring-1 ring-black/5"
-                      role="img"
-                      :aria-label="`当前登录：${displayName}（${roleName}）`"
-                    >
-                      {{ avatarAnimal }}
-                    </span>
-                  </el-tooltip>
-                  <div class="min-w-0 flex-1 leading-tight">
-                    <p class="truncate text-sm font-medium text-slate-900">{{ displayName }}</p>
-                    <p class="truncate text-xs text-slate-500">{{ roleName }}</p>
-                  </div>
-                  <el-tooltip content="退出登录" placement="top" :show-after="200">
-                    <button
-                      type="button"
-                      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.96]"
-                      aria-label="退出登录"
-                      @click="handleLogout"
-                    >
-                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                        <path d="M16 17l5-5-5-5" />
-                        <path d="M21 12H9" />
-                      </svg>
-                    </button>
-                  </el-tooltip>
-                </div>
-              </template>
-              <template v-else>
-                <button
-                  type="button"
-                  class="group flex w-full items-center gap-2.5 rounded-md px-1 py-1.5 text-left transition hover:bg-white/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink active:scale-[0.98]"
-                  @click="goLogin"
-                >
-                  <span
-                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-on-brand transition group-hover:bg-brand-hover"
-                  >
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-                      <path d="M10 17l5-5-5-5" />
-                      <path d="M15 12H3" />
-                    </svg>
-                  </span>
-                  <span class="text-sm font-medium text-slate-900">登录</span>
-                </button>
-              </template>
-            </template>
-          </AppSidebar>
-        </aside>
+            <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h10" />
+            </svg>
+          </button>
 
-        <!--
-          主区列 = **一个定高的纵向 flex**（使用方 2026-10-07：「红色框选区域固定大小」）。
-          高度分配交给 flex：纸定高 → 本列 flex-col → 页签条 / 标题卡 shrink-0
-          → 内容栏 flex-1 min-h-0 overflow-y-auto。缺一级，「固定」就退化成「跟着内容长」。
-        -->
-        <div class="flex min-w-0 flex-1 flex-col gap-3 py-4 pr-4">
+          <span class="flex shrink-0 items-center gap-2">
+            <span
+              class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90 text-[11px] font-semibold text-white"
+              aria-hidden="true"
+              >H</span
+            >
+            <span class="hidden text-sm font-semibold tracking-tight text-slate-900 sm:inline"
+              >HND生产助手</span
+            >
+          </span>
+
+          <span class="h-5 w-px shrink-0 bg-slate-900/8" aria-hidden="true"></span>
+
           <TabStrip
+            class="min-w-0 flex-1"
             :tabs="tabs"
             :active-key="activeKey"
-            :collapsed="collapsed"
             @select="selectTab"
             @close="closeTabAndGo"
-            @expand="toggleSidebar"
             @palette="paletteOpen = true"
-          >
-            <template #actions>
-              <PaletteToggle />
-              <DesktopPanel />
-            </template>
-          </TabStrip>
+          />
 
-          <!--
-            标题卡：这一条也包一张卡片（使用方 2026-10-07 追加）—— 纸是底，
-            抬起来的卡片才是内容。`bg-raised` + `border-line` 与内容栏同料，分层靠描边。
-            页签已经从这张卡里搬走了（上面那条 TabStrip），所以这里只留标题与面包屑。
-          -->
-          <div
-            class="sticky top-0 z-30 shrink-0 rounded-card border border-white/40 bg-white/24 px-7 py-5"
+          <div class="flex shrink-0 items-center gap-1">
+            <PaletteToggle />
+            <DesktopPanel />
+          </div>
+
+          <!-- 账号：登录后是头像 + 名字，点开是菜单；未登录是一个「登录」按钮 -->
+          <el-dropdown v-if="loggedIn" trigger="click" @command="(cmd) => cmd === 'logout' && handleLogout()">
+            <button
+              type="button"
+              class="flex h-9 shrink-0 items-center gap-2 rounded-full pl-1 pr-2 transition hover:bg-white/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              :aria-label="`账号菜单：${displayName}（${roleName}）`"
+            >
+              <span
+                class="flex h-7 w-7 items-center justify-center rounded-full bg-white/60 text-sm leading-none ring-1 ring-black/5"
+                role="img"
+                :aria-label="`当前登录：${displayName}`"
+                >{{ avatarAnimal }}</span
+              >
+              <span class="hidden max-w-[7rem] truncate text-[13px] text-slate-700 md:inline">{{
+                displayName
+              }}</span>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item disabled>{{ displayName }} · {{ roleName }}</el-dropdown-item>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <button
+            v-else
+            type="button"
+            class="ml-1 shrink-0 rounded-md bg-brand px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="goLogin"
           >
-            <h1 class="mb-1.5 text-[22px] font-semibold tracking-[-0.01em] text-slate-900">
+            登录
+          </button>
+        </header>
+
+        <!--
+          内容画布：一列纵向流。页面标题、筛选、表格自己排，外面**不再套卡片壳** ——
+          卡片只在「表格 / 提示块」这种独立组件上用。左右留白统一 px-7。
+        -->
+        <div class="page-mount flex min-h-0 flex-1 flex-col overflow-hidden px-7 pb-5 pt-1">
+          <div class="mb-3 flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 class="text-[22px] font-semibold tracking-[-0.01em] text-slate-900">
               {{ pageTitle }}
             </h1>
-            <!-- 面包屑（组名 › 页面名）：给深链接进来的人看的（侧栏高亮只说明在哪个组） -->
-            <nav aria-label="面包屑" class="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+            <!-- 面包屑（组名 › 页面名）：给深链接进来的人看的（抽屉高亮只说明在哪个组） -->
+            <nav aria-label="面包屑" class="flex min-w-0 items-center gap-1.5 text-xs text-slate-500">
               <span>{{ groupLabel }}</span>
               <span aria-hidden="true">›</span>
-              <span class="font-medium text-slate-700">{{ pageTitle }}</span>
+              <span class="font-medium text-slate-600">{{ pageTitle }}</span>
             </nav>
           </div>
 
-          <div class="page-mount flex-1 min-h-0 overflow-y-auto rounded-card border border-white/40 bg-white/38 p-6">
-            <!-- 断网提示（2026-11-11）：桌面版断网时页面能开、接口全失败，
-                 让"点了没反应"变成一句人话。网页版同样生效，但只在真的 offline 时出现。 -->
-            <OfflineBanner />
-            <!-- 锁定页（变更-129）：渲染提示卡而不是页面本体，避免一进来就打一串 401 -->
-            <LockNotice
-              v-if="routeLocked"
-              :page-key="route.meta?.key || ''"
-              :need-admin="lockNeedsAdmin(visibleGroups.flatMap((g) => g.items).find((i) => i.path === route.path))"
-            />
-            <router-view v-else v-slot="{ Component, route: viewRoute }">
-              <!-- 变更-105 的 <Transition mode="out-in"> 已在 2026-10-20 摘掉：
-                   切回某页会整块空白（老问题，非近期改动）。要淡入请用纯 CSS keyframe。 -->
-              <!--
-                页签缓存（2026-11-11）：单 WebView + <KeepAlive> 按路径缓存页面实例。
-                切页签不销毁组件，筛选条件/滚动位置/抄表页的当前块都还在，
-                回到这一页是"接着看"而不是"重新加载"。max=8 与页签上限 12 留了余量：
-                超过 8 个最久没看的会被丢掉，避免内存一路涨。
-              -->
-              <KeepAlive :max="8">
-                <component :is="Component" :key="viewRoute.path" />
-              </KeepAlive>
-            </router-view>
+          <!-- 断网提示（2026-11-11）：桌面版断网时页面能开、接口全失败，
+               让"点了没反应"变成一句人话。网页版同样生效，但只在真的 offline 时出现。 -->
+          <OfflineBanner />
+          <!-- 锁定页（变更-129）：渲染提示卡而不是页面本体，避免一进来就打一串 401 -->
+          <LockNotice
+            v-if="routeLocked"
+            :page-key="route.meta?.key || ''"
+            :need-admin="lockNeedsAdmin(visibleGroups.flatMap((g) => g.items).find((i) => i.path === route.path))"
+          />
+          <div v-else class="flex flex-1 flex-col min-h-0">
+          <router-view v-slot="{ Component, route: viewRoute }">
+            <!--
+              页签缓存（2026-11-11）：单 WebView + <KeepAlive> 按路径缓存页面实例。
+              切页签不销毁组件，筛选条件/滚动位置/抄表页的当前块都还在，
+              回到这一页是"接着看"而不是"重新加载"。max=8 与页签上限 12 留了余量：
+              超过 8 个最久没看的会被丢掉，避免内存一路涨。
+            -->
+            <KeepAlive :max="8">
+              <component :is="Component" :key="viewRoute.path" />
+            </KeepAlive>
+          </router-view>
           </div>
         </div>
       </div>
+
+      <!--
+        导航抽屉（2026-11-12）：左列模块、右列该模块的页。
+        遮罩是透明按钮而不是 div —— 键盘用户也能 Tab 到它按 Esc/回车关闭。
+      -->
+      <div v-if="drawerOpen" class="fixed inset-0 z-40">
+        <button
+          type="button"
+          class="absolute inset-0 cursor-default bg-slate-900/15"
+          aria-label="关闭导航"
+          @click="drawerOpen = false"
+        ></button>
+        <div
+          id="app-drawer"
+          class="absolute left-3 top-3 flex h-[calc(100%-1.5rem)] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-card border border-white/70 bg-white/95 shadow-[0_18px_48px_-24px_rgba(16,24,40,0.35)]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="导航"
+        >
+          <div class="flex items-center justify-between px-4 py-3">
+            <p class="text-[13px] font-semibold text-slate-900">导航</p>
+            <button
+              type="button"
+              class="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-900/5 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              aria-label="关闭导航"
+              @click="drawerOpen = false"
+            >
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="flex min-h-0 flex-1 gap-1 px-2 pb-3">
+            <!-- 模块列 -->
+            <div
+              class="flex w-[168px] shrink-0 flex-col gap-0.5 overflow-y-auto"
+              role="group"
+              aria-label="模块"
+            >
+              <button
+                v-for="group in visibleGroups"
+                :key="group.key"
+                type="button"
+                class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                :class="
+                  drawerGroup === group.key
+                    ? 'bg-white/90 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.06)]'
+                    : 'text-slate-600 hover:bg-white/55'
+                "
+                :data-group="group.key"
+                :aria-current="currentGroup === group.key ? 'true' : undefined"
+                @click="pickGroupInDrawer(group.key)"
+              >
+                <svg class="h-4 w-4 shrink-0 opacity-75" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path :d="GROUP_ICON_PATHS[group.key]" />
+                </svg>
+                <span class="truncate">{{ group.label }}</span>
+              </button>
+            </div>
+
+            <!-- 页面列 -->
+            <div class="flex min-w-0 flex-1 flex-col">
+              <p v-if="drawerGroupObj" class="px-2 pb-2 text-[11px] text-slate-500">
+                {{ drawerGroupObj.hint }}
+              </p>
+              <nav
+                class="min-h-0 flex-1 overflow-y-auto"
+                :aria-label="`${drawerGroupObj?.label || ''}下的页面`"
+              >
+                <button
+                  v-for="item in drawerItems"
+                  :key="item.key"
+                  type="button"
+                  class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                  :class="
+                    item.path === route.path
+                      ? 'bg-white/90 font-medium text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.06)]'
+                      : navItemState(item) === 'locked'
+                        ? 'text-slate-500 opacity-70 hover:bg-white/45'
+                        : 'text-slate-700 hover:bg-white/55'
+                  "
+                  :aria-current="item.path === route.path ? 'page' : undefined"
+                  :aria-disabled="navItemState(item) === 'locked' ? 'true' : undefined"
+                  @click="navItemState(item) === 'locked' ? (drawerOpen = false, openLock(item)) : pickFromDrawer(item.path)"
+                >
+                  <span class="truncate">{{ item.label }}</span>
+                  <svg
+                    v-if="navItemState(item) === 'locked'"
+                    class="h-3.5 w-3.5 shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    aria-hidden="true"
+                  >
+                    <rect x="4" y="10" width="16" height="10" rx="2" />
+                    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                  </svg>
+                </button>
+              </nav>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   </el-config-provider>
@@ -535,7 +593,7 @@ function toggleSidebar() {
 
 /*
  * 桌面版：窗口是透明 + 原生亚克力的，页面不能再铺一层不透明的桌面底色，
- * 否则亚克力白做了。壁纸层是一张静态、已模糊的图层，压在内容和窗口之间。
+ * 否则亚克力白做了。壁纸层是一张静态图，压在内容和窗口之间。
  */
 .shell-desktop {
   background: transparent;

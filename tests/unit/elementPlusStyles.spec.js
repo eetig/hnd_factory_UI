@@ -36,6 +36,10 @@ const THEME_CSS = join(ROOT, 'src', 'theme.css')
 const REQUIRED = {
   'el-config-provider': [], // 只提供配置上下文，产物里没有自有类
   'el-button': ['el-button'],
+  'el-dropdown': ['el-dropdown'],
+  'el-dropdown-menu': ['el-dropdown-menu'],
+  // 菜单项没有自己的类名：EP 的项样式挂在 .el-dropdown-menu__item 下（属 el-dropdown-menu.css）
+  'el-dropdown-item': [],
   'el-input': ['el-input'],
   'el-select': ['el-select', 'el-select-dropdown'],
   'el-option': ['el-select-dropdown'], // 下拉面板的规则实际写在 el-option.css 里
