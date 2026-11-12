@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { ADMIN_PERM, firstVisiblePath } from '../nav'
 import { isLoggedIn } from '../api/auth'
+import { IS_DESKTOP } from '../api/base'
 import AppShell from '../layouts/AppShell.vue'
 import Login from '../views/Login.vue'
 import Register from '../views/RegisterView.vue'
@@ -207,6 +208,33 @@ export const workbenchRoutes = [
   },
 ]
 
+/** 网页端唯一对外入口 */
+const WEB_ENTRY = '/download'
+
+/**
+ * 现在跑的是不是桌面客户端？
+ *
+ * 两个判据缺一不可：
+ *   · `IS_DESKTOP` —— 用 `build:desktop` 打出来的包（mode=desktop），正常情况就是它；
+ *   · `__TAURI_INTERNALS__` —— Tauri 注入的运行时标记。万一以后让客户端直接加载
+ *     线上网页包（mode=production），光看 MODE 会把客户端也当成网页端拦掉。
+ */
+function isDesktopRuntime() {
+  if (IS_DESKTOP) return true
+  return typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
+}
+
+/**
+ * 这一份包要不要装成「只放下载页」的网页端？
+ *
+ * 只在 **正式构建的网页包** 里拦：
+ *   · 开发（`npm run dev`）与单测（mode=test）照旧能进工作台，否则没法开发；
+ *   · 桌面客户端照旧，否则一升级就锁死自己。
+ */
+function servesWebPortal() {
+  return import.meta.env.PROD && !isDesktopRuntime()
+}
+
 export const routes = [
   {
     path: '/login',
@@ -237,6 +265,19 @@ export const routes = [
   },
   {
     /*
+     * 下载引导页（2026-11-12，使用方要求）。
+     *
+     * 网页端**只**留这一页：原来的业务地址全部拦到这儿，讲清楚「系统已搬到
+     * Windows 客户端」。它和 /intro 一样在 AppShell 之外 —— 单画布整页排版，
+     * 套上侧栏就不再是落地页了。
+     */
+    path: '/download',
+    name: 'Download',
+    component: () => import('../views/Download.vue'),
+    meta: { title: '下载客户端' },
+  },
+  {
+    /*
      * 工作台 = **壳 + 子路由**。
      *
      * 壳（AppShell）持有侧栏、顶栏与主区；`<router-view />` 在主区里，14 个页面
@@ -255,8 +296,11 @@ export const routes = [
      *
      * 默认不需要登录：只读浏览对所有人开放。「写入数据库」的功能（文件导入、
      * 图片解析、工单图片上传/删除）由页面内按权限显隐控制，不在路由上拦。
+     *
+     * 2026-11-12 起：**网页端**的根地址直接落下载页；桌面客户端（Tauri）与开发
+     * 环境行为不变，仍是第一个可见页。
      */
-    redirect: () => firstVisiblePath(),
+    redirect: () => (servesWebPortal() ? WEB_ENTRY : firstVisiblePath()),
     children: workbenchRoutes,
   },
   {
@@ -279,9 +323,20 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+  /*
+   * 网页端只留下载页（2026-11-12，使用方要求「拦截所有工单、采购看板等业务路由」）。
+   *
+   * 拦在这里而不是删路由：业务路由与页面一行没动，客户端与开发环境照常使用；
+   * 网页包只是进不去 —— 将来要放回来，删掉这一段就行。
+   */
+  if (servesWebPortal() && to.path !== WEB_ENTRY) {
+    next({ path: WEB_ENTRY, replace: true })
+    return
+  }
+
   // 已登录时不再停留在登录页
   if (to.path === '/login' && isLoggedIn()) {
-    next({ path: '/' })
+    next({ path: servesWebPortal() ? WEB_ENTRY : '/' })
     return
   }
 
