@@ -117,9 +117,20 @@ function removeItem(index) {
 async function loadTemplates() {
   templateLoading.value = true
   try {
-    templates.value = await listPickTemplates(doc.value.department || '')
-    if (!templates.value.some((t) => t.id === templateId.value)) {
-      templateId.value = templates.value[0]?.id ?? null
+    const dept = doc.value.department || ''
+    templates.value = await listPickTemplates(dept)
+    /*
+     * 选模板的优先级：**本部门专属的 > 当前这张（如果它还在列表里）> 列表第一个**。
+     *
+     * 为什么不能只写「当前不在列表里才换」：通用模板（P7）永远在列表里，
+     * 于是从「行政部」切到「生产部」时会一直停在 P7 —— 使用方以为选好了 E5，
+     * 实际导出的是 P7 的列，粘贴就错位。
+     */
+    const own = dept ? templates.value.find((t) => t.dept && t.dept === dept) : null
+    if (own) {
+      templateId.value = own.id
+    } else if (!templates.value.some((t) => t.id === templateId.value)) {
+      templateId.value = templates.value.find((t) => t.dept)?.id ?? templates.value[0]?.id ?? null
     }
   } catch (error) {
     templates.value = []
