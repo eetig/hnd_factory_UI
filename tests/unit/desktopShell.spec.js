@@ -255,16 +255,18 @@ describe('原生窗口材质与自绘标题栏', () => {
   it('前端不用 backdrop-filter 模拟磨砂（会把长列表滚动拖慢）', () => {
     for (const file of [
       'src/layouts/AppShell.vue',
-      'src/components/shell/TitleBar.vue',
+      'src/components/shell/WindowControls.vue',
       'src/desktop/appearance.js',
     ]) {
       expect(read(file)).not.toMatch(/backdrop-filter/)
     }
   })
 
-  it('标题栏三段动作齐全，且能拖窗口', () => {
-    const source = read('src/components/shell/TitleBar.vue')
-    expect(source).toContain('data-tauri-drag-region')
+  it('顶栏三段窗口动作齐全，且整条能拖窗口', () => {
+    // 2026-11-12：标题栏并进导航条之后，拖动区挂在 AppShell 的 header 上，
+    // 三个窗口按钮单独拆到 WindowControls.vue。
+    expect(read('src/layouts/AppShell.vue')).toContain('data-tauri-drag-region')
+    const source = read('src/components/shell/WindowControls.vue')
     expect(source).toContain("aria-label=\"最小化\"")
     expect(source).toContain('maximized ? \'向下还原\' : \'最大化\'')
     expect(source).toContain('aria-label="关闭"')

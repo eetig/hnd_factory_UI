@@ -43,7 +43,7 @@ function handleWheel(event) {
 </script>
 
 <template>
-  <div class="flex h-11 shrink-0 items-center gap-2 px-2">
+  <div class="flex h-8 shrink-0 items-center gap-1.5 px-1">
     <button
       v-if="collapsed"
       type="button"
@@ -79,7 +79,7 @@ function handleWheel(event) {
           :data-tab-key="tab.key"
           :aria-selected="activeKey === tab.key ? 'true' : 'false'"
           :aria-current="activeKey === tab.key ? 'page' : undefined"
-          class="flex shrink-0 items-center gap-1.5 whitespace-nowrap py-1.5 pl-2 text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+          class="flex shrink-0 items-center gap-1.5 whitespace-nowrap py-1 pl-2 text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
           :class="[activeKey === tab.key ? 'pr-1 font-medium' : 'pr-2.5']"
           @click="emit('select', tab.key)"
         >
@@ -113,7 +113,7 @@ function handleWheel(event) {
           </svg>
         </button>
       </div>
-      <span v-if="!tabs.length" class="px-1 text-[13px] text-slate-500">还没有打开的页面</span>
+      <span v-if="!tabs.length" class="px-1 text-[12px] text-slate-500">还没有打开的页面</span>
     </div>
 
     <button

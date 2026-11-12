@@ -3660,7 +3660,7 @@ describe('变更-124：动效与表格禁令', () => {
 describe('v6：半透明浮层 + 中性色 + 发丝线（变更-188）', () => {
   const WORKBENCH_V6 = ['src/layouts/AppShell.vue', 'src/components/shell/AppRail.vue',
     'src/components/shell/AppSidebar.vue', 'src/components/shell/TabStrip.vue',
-    'src/components/shell/TitleBar.vue'].map(read)
+    'src/components/shell/WindowControls.vue'].map(read)
 
   it('v7 骨架：没有常驻 aside 侧栏，导航收进抽屉', () => {
     expect(WORKBENCH_V6[0], '常驻侧栏应当已经删掉').not.toContain('id="app-sidebar"')

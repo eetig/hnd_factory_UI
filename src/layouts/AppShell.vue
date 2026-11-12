@@ -11,7 +11,7 @@ import DesktopPanel from '../components/DesktopPanel.vue'
 import OfflineBanner from '../components/OfflineBanner.vue'
 import TabStrip from '../components/shell/TabStrip.vue'
 import CommandPalette from '../components/shell/CommandPalette.vue'
-import TitleBar from '../components/shell/TitleBar.vue'
+import WindowControls from '../components/shell/WindowControls.vue'
 import { IS_DESKTOP } from '../api/base'
 import { appearance, wallpaperCss } from '../desktop/appearance'
 import { usePalette } from '../composables/usePalette'
@@ -349,20 +349,18 @@ const paperStyle = computed(() => {
         -->
         <div class="shell-glow" aria-hidden="true"></div>
 
-        <TitleBar v-if="isDesktop" :drawer-open="drawerOpen" @open-nav="openDrawer" />
-
         <!--
-          导航条：汉堡 + 应用名 · 页签 · 头像。
-          页签搬到这里（而不是单独一行）之后，纵向只花掉一条 44px 的带子，
-          内容画布能多出整整一行表格的高度。
+          唯一的一条顶栏：侧栏开关 · 品牌 · 页签 · 工具 · 账号 · 窗口按钮。
+          2026-11-12 使用方：「红色框选部分能不能挪到最上面去，而且字体太大了太显眼了」——
+          原来「标题栏 + 导航条」两条横带合并成这一条，桌面版整条带 `data-tauri-drag-region`
+          当拖动区（子元素没这个属性，所以按钮照常可点）。
         -->
-        <header class="relative z-10 flex shrink-0 items-center gap-3 px-4 py-1.5">
-          <!--
-            网页版的导航入口：桌面版那个「菜单」在标题栏里（TitleBar.vue），
-            浏览器里没有标题栏，所以这里补一个同款文字入口，别让网页版没地方开导航。
-          -->
+        <header
+          class="shell-topbar relative z-10 flex shrink-0 items-center gap-2.5 px-3 py-1"
+          data-tauri-drag-region
+        >
+          <!-- 导航入口：桌面版就是窗口左上角第一个可点元素；网页版同样需要它 -->
           <button
-            v-if="!isDesktop"
             type="button"
             class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             :aria-expanded="drawerOpen ? 'true' : 'false'"
@@ -377,18 +375,18 @@ const paperStyle = computed(() => {
             </svg>
           </button>
 
-          <span class="flex shrink-0 items-center gap-2">
+          <span class="flex shrink-0 items-center gap-1.5">
             <span
-              class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90 text-[11px] font-semibold text-white"
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-slate-900/90 text-[11px] font-semibold text-white"
               aria-hidden="true"
               >H</span
             >
-            <span class="hidden text-sm font-semibold tracking-tight text-slate-900 sm:inline"
+            <span class="hidden text-[12px] font-medium tracking-tight text-slate-800 sm:inline"
               >HND生产助手</span
             >
           </span>
 
-          <span class="h-5 w-px shrink-0 bg-slate-900/8" aria-hidden="true"></span>
+          <span class="h-4 w-px shrink-0 bg-slate-900/8" aria-hidden="true"></span>
 
           <TabStrip
             class="min-w-0 flex-1"
@@ -408,7 +406,7 @@ const paperStyle = computed(() => {
           <el-dropdown v-if="loggedIn" trigger="click" @command="(cmd) => cmd === 'logout' && handleLogout()">
             <button
               type="button"
-              class="flex h-9 shrink-0 items-center gap-2 rounded-full pl-1 pr-2 transition hover:bg-white/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              class="flex h-7 shrink-0 items-center gap-2 rounded-full pl-1 pr-2 transition hover:bg-white/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
               :aria-label="`账号菜单：${displayName}（${roleName}）`"
             >
               <span
@@ -431,12 +429,14 @@ const paperStyle = computed(() => {
           <button
             v-else
             type="button"
-            class="ml-1 shrink-0 rounded-md bg-brand px-3 py-1.5 text-[13px] font-medium text-white transition hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            class="ml-1 shrink-0 rounded-md bg-brand px-2.5 py-1 text-[12px] font-medium text-white transition hover:bg-brand-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             @click="goLogin"
           >
             登录
           </button>
 
+          <!-- 窗口按钮（桌面版）：最右端，紧贴窗口右上角 -->
+          <WindowControls v-if="isDesktop" class="-mr-1 ml-0.5" />
         </header>
 
         <!--
@@ -611,6 +611,11 @@ const paperStyle = computed(() => {
 </template>
 
 <style scoped>
+/* 顶栏：跟标题栏以前那层「半透明纱」同色，压住壁纸的顶部，字才清楚 */
+.shell-topbar {
+  background-color: color-mix(in srgb, var(--color-veil) 72%, transparent);
+}
+
 /* 切页淡入（变更-105 的替代品：纯 CSS keyframe，不用 <Transition>） */
 .page-mount > :first-child {
   animation: page-fade 160ms cubic-bezier(0.23, 1, 0.32, 1);
