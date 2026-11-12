@@ -116,7 +116,19 @@ onMounted(() => {
 })
 
 // ===== 长按复制（不弹详情）=====
+/**
+ * 长按复制与"点一下看详情"共存的办法。
+ *
+ * 原来名称 / 编码 / 规格都写了 `@click.stop`，只为了长按复制时别把弹窗点开 ——
+ * 结果是卡片上最大的一块地方（物料名称那一行）点上去毫无反应，使用方报
+ * 「点击卡片不能展开信息」就是这个。现在改成：
+ *   · 这些格子只拦长按（@longpress.stop），点击照常冒泡到卡片；
+ *   · 长按复制成功时记一个时间戳，紧接着冒上来的那次 click 直接忽略，
+ *     免得「刚复制完，弹窗自己开了」。
+ */
+let lastCopyAt = 0
 async function onLongPress(row, key) {
+  lastCopyAt = Date.now()
   await copyRowField(row, key)
 }
 
@@ -169,6 +181,8 @@ function openCreate() {
 }
 
 function openEdit(row) {
+  // 刚长按复制过就别开弹窗（长按之后浏览器还会补一次 click）
+  if (Date.now() - lastCopyAt < 600) return
   isCreate.value = false
   formError.value = ''
   savedCount.value = 0
@@ -310,8 +324,16 @@ function quantityText(row) {
   return qty === '' || qty === null ? '—' : `${qty}${unit}`
 }
 
+/*
+ * 面板给"确定高度"，不是只有 max-height。
+ *
+ * 只有 max-height 时，里层 `flex:1` 的滚动区拿不到可用高度，会按内容撑开 ——
+ * 于是整块面板比屏幕还高：表单滑不下去、底部按钮停在半空、还会压在最下面几行字上
+ * （使用方 2026-11-12 截图报的就是这个）。定成 86vh 之后：
+ *   头部 + 胶条 + 提示条（固定）→ 中间 scroll-view（吃掉剩余高度、内部滚动）→ 底部按钮栏（固定）
+ */
 const popupStyle =
-  'max-height: 88vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
+  'height: 86vh; max-height: 86vh; width: 100%; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain; overflow: hidden;'
 </script>
 
 <template>
@@ -354,8 +376,8 @@ const popupStyle =
         @click="openEdit(row)"
       >
         <view class="pd__card-head">
-          <!-- 行号：长按复制三样（Tab 分隔，可直接粘进 Excel） -->
-          <view class="pd__no" @click.stop @longpress.stop="onLongPress(row, 'index')">
+          <!-- 行号：长按复制三样（Tab 分隔，可直接粘进 Excel）；点一下照样开详情 -->
+          <view class="pd__no" @longpress.stop="onLongPress(row, 'index')">
             <text>{{ (pageNum - 1) * PAGE_SIZE + index + 1 }}</text>
           </view>
           <view class="pd__status" :class="statusTone(row)">
@@ -365,16 +387,16 @@ const popupStyle =
           <text class="pd__requester">{{ row.requester || '—' }}</text>
         </view>
 
-        <view class="pd__name" @click.stop @longpress.stop="onLongPress(row, 'materialName')">
+        <view class="pd__name" @longpress.stop="onLongPress(row, 'materialName')">
           <text>{{ row.materialName || '—' }}</text>
         </view>
 
         <view class="pd__meta">
-          <view class="pd__meta-item" @click.stop @longpress.stop="onLongPress(row, 'materialCode')">
+          <view class="pd__meta-item" @longpress.stop="onLongPress(row, 'materialCode')">
             <text class="pd__label">编码</text>
             <text class="pd__code">{{ row.materialCode || '—' }}</text>
           </view>
-          <view class="pd__meta-item pd__meta-item--grow" @click.stop @longpress.stop="onLongPress(row, 'spec')">
+          <view class="pd__meta-item pd__meta-item--grow" @longpress.stop="onLongPress(row, 'spec')">
             <text class="pd__label">规格</text>
             <text class="pd__spec">{{ row.spec || '—' }}</text>
           </view>
@@ -742,8 +764,12 @@ const popupStyle =
 .pf {
   display: flex;
   flex-direction: column;
+  /* 高度由 popupStyle 的 86vh 给定；这里只负责"填满并裁掉溢出" */
+  height: 100%;
+  max-height: 100%;
   min-height: 0;
-  max-height: 88vh;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .pf__grabber {
@@ -790,9 +816,17 @@ const popupStyle =
   background-color: rgba(245, 108, 108, 0.12);
 }
 
+/*
+ * 滚动区：`height:0` + `flex:1` 是让 scroll-view 真正拿到高度的那一手。
+ *
+ * uni 的 scroll-view 必须有确定高度才会内部滚动（这是老坑，抄表页也踩过）；
+ * 只写 `flex:1` 时它在 H5 上常常按内容高度算，滚不动。
+ */
 .pf__body {
-  flex: 1;
+  flex: 1 1 auto;
+  height: 0;
   min-height: 0;
+  box-sizing: border-box;
   padding: 0 28rpx;
 }
 
@@ -814,18 +848,28 @@ const popupStyle =
   align-items: center;
   gap: 16rpx;
   padding: 10rpx 0;
+  /* 行内子项一律不许撑破行宽 */
+  min-width: 0;
 }
 
 .pf__label {
   flex-shrink: 0;
-  width: 152rpx;
+  width: 148rpx;
   font-size: 26rpx;
   color: var(--ui-text-2);
 }
 
+/*
+ * 输入框必须 `box-sizing: border-box` + `width: auto`。
+ * uni 的 `input` 自带 `width:100%`，再用 content-box 加上左右 20rpx 内边距，
+ * 每个格子就比容器宽 40rpx —— 一行行叠起来直接从屏幕右侧探出去（使用方截图）。
+ */
 .pf__input {
-  flex: 1;
+  flex: 1 1 auto;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   height: 76rpx;
   padding: 0 20rpx;
   border-radius: 16rpx;
@@ -835,29 +879,33 @@ const popupStyle =
   border: 2rpx solid var(--ui-border);
 
   &--num {
-    flex: 0 0 180rpx;
+    flex: 0 0 168rpx;
+    width: 168rpx;
   }
 
   &--unit {
-    flex: 1;
+    flex: 1 1 auto;
+    width: auto;
   }
 }
 
 .pf__qty {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   gap: 12rpx;
   min-width: 0;
 }
 
+/* 底部按钮栏：不参与滚动，实心底色（不能透出下面的表单） */
 .pf__foot {
-  flex-shrink: 0;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 16rpx;
   padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
   border-top: 2rpx solid var(--ui-hairline);
-  background-color: var(--ui-sheet-fill);
+  background-color: var(--ui-surface);
+  box-shadow: 0 -8rpx 24rpx rgba(20, 22, 28, 0.06);
 }
 
 .pf__del {
@@ -881,14 +929,17 @@ const popupStyle =
   font-size: 28rpx;
   font-weight: 600;
 
+  /* 「先不填」是次要操作，但不是"透明的"：给实心底 + 描边，跟主按钮一眼分得开 */
   &--ghost {
     flex: 0 0 180rpx;
-    color: var(--ui-text-2);
-    background-color: var(--ui-raise-2);
+    color: var(--ui-text);
+    background-color: var(--ui-surface-2);
+    border: 2rpx solid var(--ui-border);
   }
 
   &--primary {
-    flex: 1;
+    flex: 1 1 auto;
+    min-width: 0;
     color: #fff;
     background-color: var(--ui-brand, #b4551f);
 
