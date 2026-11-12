@@ -302,16 +302,6 @@ const wallpaperStyle = computed(() => {
 })
 
 /** 纸面不透明度：越小越通透，亚克力/壁纸透上来得越多。 */
-/**
- * 桌面版窗口的底色（2026-11-12）。
- *
- * 实测这台机器上 `apply_acrylic` 返回成功但**没有真的磨砂**：窗口四周直接透出
- * 清晰的桌面图标，文字压在杂色上。与其赌每台车间的机器都支持，不如给窗口一层
- * 中性浅灰当底：壁纸层盖在上面，「浅色 + 弥散 + 彩色」的观感照样成立，
- * 只是不再透桌面。真正的系统材质以后可作为"通透模式"单独开。
- */
-const shellStyle = computed(() => (isDesktop ? { backgroundColor: '#eceff4' } : null))
-
 const paperStyle = computed(() => {
   // 网页版没有亚克力可透，退回不透明纸色（信息密度优先，不追求通透）
   if (!isDesktop) return { backgroundColor: '#FAFBFC' }
@@ -330,7 +320,7 @@ const paperStyle = computed(() => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-desk p-3" :class="isDesktop ? 'shell-desktop' : ''" :style="shellStyle">
+    <main class="min-h-screen p-3" :class="isDesktop ? (wallpaperStyle ? 'shell-desktop' : 'shell-desktop shell-desktop--plain') : ''">
       <!-- 壁纸层（仅桌面版）：静态图，模糊在选图时就烤好了，运行期不加 filter -->
       <div
         v-if="isDesktop && wallpaperStyle"
@@ -652,6 +642,10 @@ const paperStyle = computed(() => {
  */
 .shell-desktop {
   background: transparent;
+}
+/* 关掉壁纸时窗口不能真的空着（那会透出桌面），给一层中性浅灰兜底 */
+.shell-desktop--plain {
+  background: #eceff4;
 }
 .wallpaper-layer {
   position: fixed;

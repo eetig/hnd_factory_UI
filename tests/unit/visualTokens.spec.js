@@ -1276,14 +1276,18 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
     }
   })
 
-  it('四个页面根元素一律 bg-desk —— 纸是页内元素，桌面才是底', () => {
+  it('工作台根元素不许有自己的底色；其余页面根元素一律 bg-desk', () => {
     // 判据是 min-h-screen，全站只有四个页面根元素用（工作台 / 登录 / 404 / 落地页）。
     //
-    // 两个方向都要钉：
-    //   ① 漏了底色 —— 那一页没有底色，页脚外露或回弹时露出浏览器默认白；
+    // 2026-11-12 使用方第三次纠正层级：「root 根容器（底层底板）→ 渐变背景 view →
+    // 业务内容 view」，要求删掉最底下那层底板、只留渐变。所以工作台的根元素
+    // **不许**再自带底色 —— 底色与渐变都由壁纸层负责；多铺一层，边缘就会露出一圈
+    // 灰白板（前两版就是在这一层翻车）。
+    //
+    // 其余三个页面没有壁纸层，仍然要 bg-desk 当底：
+    //   ① 漏了底色 —— 页脚外露或回弹时露出浏览器默认白；
     //   ② 写成 bg-canvas —— 纸是**页内**那张，不是页面底色。
-    //      「整屏泛灰」和「有一张纸」只差一层嵌套 —— 037 的暖白吃过同一个亏
-    //      （使用方原话「不是把背景变成暖白，是添加一个暖白的底层卡片」）。
+    const SHELL = 'src/layouts/AppShell.vue'
     const offenders = []
     for (const file of SOURCE_FILES) {
       read(file)
@@ -1291,14 +1295,19 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
         .forEach((line, index) => {
           if (!lineHasToken(line, 'min-h-screen')) return
           const at = `${rel(file)}:${index + 1}`
+          if (rel(file) === SHELL) {
+            for (const token of ['bg-desk', 'bg-canvas', 'bg-raised', 'bg-white']) {
+              if (lineHasToken(line, token)) offenders.push(`${at} 工作台根元素不该有底色（${token}）`)
+            }
+            return
+          }
           if (lineHasToken(line, 'bg-canvas')) offenders.push(`${at} 把纸当成了页面底色`)
           else if (!lineHasToken(line, 'bg-desk')) offenders.push(`${at} 没有底色`)
         })
     }
     expect(
       offenders,
-      '页面根元素要用 bg-desk 当底色（暖骨桌面）；纸（bg-canvas）是**页内**那张，不是背景 —— ' +
-        '「整屏泛灰」和「有一张纸」只差一层嵌套，别把主意打到根元素上。',
+      '工作台根元素必须"无底色"（渐变由壁纸层给）；登录 / 404 / 落地页仍要 bg-desk。',
     ).toEqual([])
   })
 
