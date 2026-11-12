@@ -449,20 +449,22 @@ const paperStyle = computed(() => {
         导航抽屉（2026-11-12）：左列模块、右列该模块的页。
         遮罩是透明按钮而不是 div —— 键盘用户也能 Tab 到它按 Esc/回车关闭。
       -->
-      <div v-if="drawerOpen" class="fixed inset-0 z-40">
-        <button
-          type="button"
-          class="absolute inset-0 cursor-default bg-slate-900/15"
-          aria-label="关闭导航"
-          @click="drawerOpen = false"
-        ></button>
-        <div
-          id="app-drawer"
-          class="absolute left-3 top-3 flex h-[calc(100%-1.5rem)] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-card border border-white/70 bg-white shadow-[0_18px_48px_-24px_rgba(16,24,40,0.35)]"
-          role="dialog"
-          aria-modal="true"
-          aria-label="导航"
-        >
+      <Transition name="drawer-fade">
+        <div v-if="drawerOpen" class="fixed inset-0 z-40">
+          <button
+            type="button"
+            class="absolute inset-0 cursor-default bg-slate-900/20"
+            aria-label="关闭导航"
+            @click="drawerOpen = false"
+          ></button>
+          <Transition name="drawer-slide" appear>
+            <div
+              id="app-drawer"
+              class="absolute left-0 top-0 flex h-full w-[520px] max-w-[92vw] flex-col overflow-hidden border-r border-slate-900/10 bg-white shadow-[0_0_60px_-12px_rgba(16,24,40,0.35)]"
+              role="dialog"
+              aria-modal="true"
+              aria-label="导航"
+            >
           <div class="flex items-center justify-between px-4 py-3">
             <p class="text-[13px] font-semibold text-slate-900">导航</p>
             <button
@@ -547,8 +549,10 @@ const paperStyle = computed(() => {
               </nav>
             </div>
           </div>
+          </div>
+          </Transition>
         </div>
-      </div>
+      </Transition>
     </main>
   </el-config-provider>
 
@@ -589,6 +593,26 @@ const paperStyle = computed(() => {
   .page-mount > :first-child {
     animation: none;
   }
+}
+
+/* 抽屉：从左边滑出、默认隐藏（2026-11-12 使用方口径） */
+.drawer-fade-enter-active,
+.drawer-fade-leave-active {
+  transition: opacity 180ms ease;
+}
+.drawer-fade-enter-from,
+.drawer-fade-leave-to {
+  opacity: 0;
+}
+.drawer-slide-enter-active {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.drawer-slide-leave-active {
+  transition: transform 160ms ease-in;
+}
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(-100%);
 }
 
 /*
