@@ -756,7 +756,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
     :model-value="modelValue"
     :append-to-body="appendToBody"
     width="min(1560px, 98vw)"
-    top="5vh"
+    top="10vh"
     :close-on-press-escape="false"
     :close-on-click-modal="false"
     :before-close="beforeClose"
@@ -1437,6 +1437,41 @@ defineExpose({ resetForNextEntry, afterLineAdded })
 </style>
 
 <style>
+/*
+ * 详情不套白色底板（使用方 2026-11-12）。
+ *
+ * el-dialog 默认是「白卡 + 阴影 + 圆角」，压在页面彩色弥散上像一块贴纸。
+ * 这里只把"卡"拆掉：容器透明、无阴影、无圆角；遮罩改成薄白（让渐变透上来，
+ * 又保证字压得住彩色）。标题区留一条发丝线，其余靠留白与字号分层。
+ */
+.purchase-dialog.el-dialog {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+}
+
+.purchase-dialog .el-dialog__header {
+  margin-right: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(16, 24, 40, 0.08);
+}
+
+.purchase-dialog .el-dialog__body {
+  padding-top: 16px;
+  color: rgba(16, 24, 40, 0.82);
+}
+
+.purchase-dialog .el-dialog__headerbtn {
+  display: none;
+}
+
+/* 遮罩：薄白，让彩色壁纸透上来，正文不被花纹干扰 */
+.el-overlay:has(.purchase-dialog) {
+  background-color: rgba(250, 251, 253, 0.92);
+}
 /* el-dialog 的根节点是 Element Plus 渲染的，拿不到本组件的 scope 标记，
    所以「弹窗内部」的覆盖只能写在非 scoped 样式里，否则一条都不生效。 */
 .purchase-dialog .el-date-editor.el-input,
