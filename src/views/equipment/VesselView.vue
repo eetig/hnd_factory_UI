@@ -56,13 +56,18 @@ const {
 
 <template>
   <div>
-    <section class="rounded-card border border-line bg-raised shadow-card">
+    <!--
+      线条版（2026-11-12 使用方： 「简约明了，做出线条美」）：
+      整页不再是一张浮起的白卡 —— 没有底色、没有圆角、没有阴影，
+      分隔全靠 1px 发丝线，信息靠字重与留白分层。
+    -->
+    <section class="vessel-sheet">
       <!-- 容器清单来自设备台账（异步）。取不到时必须给出明确提示：
       这个页面是纯前端计算，清单空了就什么都算不了，而页面本身不会报错，
       只会静静地显示一台空白罐与 0.00 —— 看着像「算出来是 0」。 -->
       <div
         v-if="vesselsLoading && !vessels.length"
-        class="border-b border-line px-6 py-3 text-xs text-slate-500"
+        class="border-b border-slate-900/8 px-6 py-3 text-xs text-slate-500"
       >
         正在加载容器清单…
       </div>
@@ -85,7 +90,7 @@ const {
            把图往下压）。这个页面的图是「高度决定宽度」的（见 CANVAS_MAX_HEIGHT），
            顶部每让出一行、图就长高一行；而右栏加宽对图**零损失**。
            这里 py 也从 4 收到 2。 -->
-      <div class="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 border-b border-line px-6 py-2">
+      <div class="flex flex-wrap items-center justify-end gap-x-6 gap-y-2 border-b border-slate-900/8 px-5 py-2">
         <!-- 告警留在顶部：它们是需要立刻看见的红字，塞进窄右栏会折成一片 -->
         <p v-if="vesselReconcileWarning" class="mr-auto text-xs font-medium text-rose-600">
           {{ vesselReconcileWarning }}
@@ -120,7 +125,7 @@ const {
         <div
           :class="
             isVerticalVessel
-              ? 'flex min-w-[260px] max-w-[380px] flex-1 flex-col justify-center'
+              ? 'flex min-w-[260px] max-w-[380px] flex-1 flex-col justify-center border-l border-slate-900/8 pl-6'
               : 'w-full'
           "
         >
@@ -137,7 +142,7 @@ const {
           <!-- 横版：体积变化在左、液位控制列在右；竖版：体积变化居中在上 -->
           <div
             class="flex flex-wrap items-center justify-between gap-x-8 gap-y-5"
-            :class="isVerticalVessel ? 'flex-col' : 'border-t border-line px-6 pt-5'"
+            :class="isVerticalVessel ? 'flex-col' : 'border-t border-slate-900/8 px-5 pt-5'"
           >
             <!-- 体积变化：横版居中于左侧空区，竖版居中在上 -->
             <div class="flex justify-center" :class="isVerticalVessel ? 'w-full' : 'flex-1'">
@@ -146,21 +151,21 @@ const {
                 class="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1"
                 :class="
                   isVerticalVessel
-                    ? 'px-0 pb-4 pt-5'
-                    : 'rounded-card border border-line bg-region px-6 py-4'
+                    ? 'px-0 pb-4 pt-6'
+                    : 'border-y border-slate-900/10 px-5 py-5'
                 "
               >
-                <span class="text-sm text-slate-500">体积变化</span>
-                <!-- 24px 粗体属「大字号」，阈值 3:1，-600 已过 —— 与下面那处刻意不同，别对齐 -->
+                <span class="vessel-label">体积变化</span>
+                <!-- 24px 以上的大字号，阈值 3:1，-600 已过 —— 与下面那处刻意不同，别对齐 -->
                 <span
-                  class="text-2xl font-bold tracking-tight"
+                  class="vessel-delta-value"
                   :class="vesselVolumeDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'"
                   >{{ vesselVolumeDelta >= 0 ? '+' : '' }}{{ vesselVolumeDelta.toFixed(2) }}</span
                 >
-                <span class="text-sm text-slate-500">m³</span>
+                <span class="vessel-unit">m³</span>
                 <span
                   v-if="vesselMassDelta !== null"
-                  class="text-base font-semibold"
+                  class="vessel-delta-mass"
                   :class="vesselVolumeDelta >= 0 ? STATUS_TEXT.success : STATUS_TEXT.error"
                   >（{{ vesselMassDelta >= 0 ? '+' : '' }}{{ vesselMassDelta.toFixed(2) }} t）</span
                 >
@@ -224,7 +229,7 @@ const {
                   class="vessel-level-callout vessel-level-callout-start"
                   :style="vesselStartCalloutStyle"
                 >
-                  <div class="flex items-center gap-1.5 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-slate-700">
                     <span
                       class="inline-block h-0 w-5 border-t-2 border-dashed border-slate-800"
                       aria-hidden="true"
@@ -241,8 +246,8 @@ const {
                     />
                     <span class="text-slate-500">mm</span>
                   </div>
-                  <div class="mt-0.5 text-sm text-slate-500">
-                    体积：<span class="font-semibold text-brand-ink">{{
+                  <div class="mt-1 text-[11px] tracking-wide text-slate-500">
+                    体积：<span class="vessel-num">{{
                       vesselStartVolume.toFixed(2)
                     }}</span>
                     m³<template v-if="vesselStartMass !== null"
@@ -280,7 +285,7 @@ const {
                   class="vessel-level-callout vessel-level-callout-end"
                   :style="vesselEndCalloutStyle"
                 >
-                  <div class="flex items-center gap-1.5 whitespace-nowrap text-sm text-slate-700">
+                  <div class="flex items-center gap-1.5 whitespace-nowrap text-[13px] text-slate-700">
                     <span
                       class="inline-block h-0 w-5 border-t-2"
                       :style="{ borderColor: vesselGeometry.liquid.line }"
@@ -298,8 +303,8 @@ const {
                     />
                     <span class="text-slate-500">mm</span>
                   </div>
-                  <div class="mt-0.5 text-sm text-slate-500">
-                    体积：<span class="font-semibold text-brand-ink">{{
+                  <div class="mt-1 text-[11px] tracking-wide text-slate-500">
+                    体积：<span class="vessel-num">{{
                       vesselEndVolume.toFixed(2)
                     }}</span>
                     m³<template v-if="vesselEndMass !== null"
@@ -315,10 +320,10 @@ const {
         </div>
       </div>
 
-      <div class="border-t border-line bg-region/50 px-6 py-4">
+      <div class="border-t border-slate-900/8 px-6 py-6">
         <div class="mx-auto max-w-[900px] overflow-x-auto">
           <p
-            class="mb-3 text-center text-xs font-semibold uppercase tracking-[0.15em] text-slate-500"
+            class="mb-4 text-center text-[11px] font-medium tracking-[0.28em] text-slate-500"
           >
             液体体积计算公式
           </p>
@@ -381,6 +386,65 @@ const {
 </template>
 
 <style scoped>
+/* ─────────── 线条语言（2026-11-12） ───────────
+ * 使用方：「简约明了，做出线条美」。
+ * 这一页本质上是一张工程图 + 一组读数，所以不再借卡片的底/边/影来做层级：
+ * 纸面留白 → 1px 发丝线 → 数字的等宽字重，三样东西就够分层了。
+ */
+.vessel-sheet {
+  /* 不画框：作为一页纸直接铺在内容流里 */
+  background: transparent;
+}
+
+/* 小标签：字距拉开、字号压小，像图纸上的栏目名 */
+.vessel-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: var(--ds-ink-500, #667085);
+}
+
+/* 主读数：等宽数字 + 细字重，像量具读数而不是广告语 */
+.vessel-delta-value {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.vessel-unit {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: #667085;
+}
+
+.vessel-delta-mass {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 读数里的数字：等宽，右对齐时位数不跳 */
+.vessel-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--ds-ink-900, #101828);
+}
+
+/* 储罐选择器：去掉 EP 的实心框，只留一条底线（线条 > 色块） */
+.vessel-select :deep(.el-select__wrapper) {
+  background: transparent;
+  box-shadow: none !important;
+  border-bottom: 1px solid rgba(16, 24, 40, 0.14);
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 2px;
+  min-height: 30px;
+}
+.vessel-select :deep(.el-select__wrapper.is-focused) {
+  border-bottom-color: rgba(16, 24, 40, 0.4);
+}
+
 /* 储罐图：切换罐型时淡出淡入 + 高度平滑过渡 */
 .vessel-canvas {
   transition:

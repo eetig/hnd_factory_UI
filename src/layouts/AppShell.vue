@@ -320,7 +320,7 @@ const paperStyle = computed(() => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen p-3" :class="isDesktop ? (wallpaperStyle ? 'shell-desktop' : 'shell-desktop shell-desktop--plain') : ''">
+    <main class="min-h-screen" :class="isDesktop ? (wallpaperStyle ? 'shell-desktop' : 'shell-desktop shell-desktop--plain') : ''">
       <!-- 壁纸层（仅桌面版）：静态图，模糊在选图时就烤好了，运行期不加 filter -->
       <div
         v-if="isDesktop && wallpaperStyle"
@@ -330,7 +330,7 @@ const paperStyle = computed(() => {
       ></div>
 
       <div
-        class="shell-paper relative flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden"
+        class="shell-paper relative flex h-screen flex-col overflow-hidden"
         :class="isDesktop ? 'shell-paper' : ''"
         :style="paperStyle"
         :data-palette="palette"
@@ -349,20 +349,7 @@ const paperStyle = computed(() => {
           页签搬到这里（而不是单独一行）之后，纵向只花掉一条 44px 的带子，
           内容画布能多出整整一行表格的高度。
         -->
-        <header class="relative z-10 flex shrink-0 items-center gap-3 px-3 py-1.5">
-          <button
-            type="button"
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-            :aria-expanded="drawerOpen ? 'true' : 'false'"
-            aria-controls="app-drawer"
-            aria-label="打开导航"
-            @click="openDrawer"
-          >
-            <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-              <path d="M4 7h16M4 12h16M4 17h10" />
-            </svg>
-          </button>
-
+        <header class="relative z-10 flex shrink-0 items-center gap-3 px-4 py-1.5">
           <span class="flex shrink-0 items-center gap-2">
             <span
               class="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900/90 text-[11px] font-semibold text-white"
@@ -421,6 +408,24 @@ const paperStyle = computed(() => {
             @click="goLogin"
           >
             登录
+          </button>
+
+          <!--
+            导航入口（2026-11-12 使用方口径）：「汉堡按钮在右上角」。
+            挪到最右侧，跟账号同一组视线；画成 1px 细边方块，
+            三条线只留「上、中、下」三段短线，安静一点（线条语言，不抢内容）。
+          -->
+          <button
+            type="button"
+            class="ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[3px] border border-slate-900/12 text-slate-600 transition hover:border-slate-900/30 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            :aria-expanded="drawerOpen ? 'true' : 'false'"
+            aria-controls="app-drawer"
+            aria-label="打开导航"
+            @click="openDrawer"
+          >
+            <svg class="h-[15px] w-[15px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
           </button>
         </header>
 
@@ -487,17 +492,17 @@ const paperStyle = computed(() => {
               aria-label="导航"
             >
           <div class="flex items-center justify-between px-4 py-3">
-            <p class="text-[13px] font-semibold text-slate-900">导航</p>
             <button
               type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-900/5 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              class="flex h-7 w-7 items-center justify-center rounded-[3px] border border-slate-900/12 text-slate-500 transition hover:border-slate-900/30 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
               aria-label="关闭导航"
               @click="drawerOpen = false"
             >
-              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
+            <p class="text-[11px] font-medium tracking-[0.22em] text-slate-500">导航</p>
           </div>
 
           <div class="flex min-h-0 flex-1 gap-1 px-2 pb-3">
