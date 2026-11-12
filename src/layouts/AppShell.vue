@@ -316,7 +316,7 @@ const paperStyle = computed(() => {
       ></div>
 
       <div
-        class="shell-paper minimal-field flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden rounded-card border border-white/30 bg-canvas"
+        class="shell-paper flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden"
         :class="isDesktop ? 'shell-paper' : ''"
         :style="paperStyle"
         :data-palette="palette"
@@ -607,7 +607,6 @@ const paperStyle = computed(() => {
 .shell-desktop .shell-paper {
   position: relative;
   z-index: 1;
-  /* 纸面自己带 1px 亮边，浮在壁纸上时不至于"糊"进背景 */
-  box-shadow: 0 24px 60px -24px rgba(15, 23, 42, 0.35);
+  /* 2026-11-12：外壳那圈"白底板"去掉 —— 内容直接铺在窗口（亚克力）上，不再有浮起的纸卡 */
 }
 </style>

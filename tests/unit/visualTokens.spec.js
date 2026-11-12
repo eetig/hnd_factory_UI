@@ -1379,9 +1379,15 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
       fielded.has(INTRO),
       'Intro 出现了 minimal-field —— 它是白纸例外，暖径向只给工作台/登录/404',
     ).toBe(false)
+    /*
+     * 2026-11-12：工作台（AppShell）不再包纸 —— 使用方要求去掉那圈"白底板"，
+     * 内容直接铺在窗口（桌面版是亚克力）上，所以它是**文档化的例外**。
+     * 登录 / 404 两张浮卡仍必须有纸；新增根页面时仍要在这里表态。
+     */
+    const BARE_SHELL = join(SRC, 'layouts', 'AppShell.vue')
     expect(
-      [...roots].filter((f) => !fielded.has(f) && f !== INTRO).map(rel),
-      '这些页面里没有纸（只认 class 属性，写在注释里不算）。四页都要有纸，别漏',
+      [...roots].filter((f) => !fielded.has(f) && f !== INTRO && f !== BARE_SHELL).map(rel),
+      '这些页面里没有纸（只认 class 属性，写在注释里不算）。除工作台外都要有纸，别漏',
     ).toEqual([])
     // Intro 的白纸确实在：bg-white、发丝线与卡片圆角在同一处 class 属性里
     const hasWhitePaper = classAttrsOf(read(INTRO)).some(
