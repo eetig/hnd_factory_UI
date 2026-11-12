@@ -153,7 +153,16 @@ h1 {
 .rounded-card.bg-raised {
   background-color: var(--ds-card);
   box-shadow: var(--ds-shadow-soft);
-  border-color: rgba(16, 24, 40, 0.06);
+  border-color: transparent;
+}
+
+/*
+ * 2026-11-12（变更-198）：使用方要求"去掉硬边"——浅色渐变上那道 1px 描边
+ * 看着像框，比它区隔卡片的作用更碍眼。这里统一把卡片描边设透明：
+ * 布局里的 border 宽度保留（盒模型不变，页面不跳），只是不再画出来。
+ */
+.rounded-card {
+  border-color: transparent;
 }
 
 /* 卡片里的表头行、标题行：别再用实色底 */

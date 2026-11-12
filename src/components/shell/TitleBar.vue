@@ -64,7 +64,7 @@ async function close() {
 
 <template>
   <header
-    class="titlebar flex h-9 shrink-0 select-none items-center gap-2 border-b border-line/70 pl-3 pr-1"
+    class="titlebar flex h-9 shrink-0 select-none items-center gap-2 pl-3 pr-1"
     data-tauri-drag-region
     @dblclick.self="toggleMaximize"
   >
