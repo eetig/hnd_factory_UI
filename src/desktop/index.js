@@ -9,6 +9,7 @@ import { disable, enable, isEnabled } from '@tauri-apps/plugin-autostart'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
+import { invoke } from '@tauri-apps/api/core'
 import { IS_DESKTOP } from '../api/base'
 
 /** 当前 exe 的版本号（来自 tauri.conf.json 的 version），网页版返回空串 */
@@ -18,6 +19,21 @@ export async function desktopVersion() {
     return await getVersion()
   } catch {
     return ''
+  }
+}
+
+/**
+ * 窗口材质到底是什么：'acrylic' | 'mica' | 'none'（2026-11-12）。
+ *
+ * 亚克力在个别显卡/远程桌面上会申请失败，窗口就变成"透穿"，桌面图标清清楚楚
+ * 透上来压着文字。前端拿到 'none' 就把纸面改成实色，宁可少一点通透。
+ */
+export async function windowMaterial() {
+  if (!IS_DESKTOP) return 'none'
+  try {
+    return await invoke('window_material')
+  } catch {
+    return 'none'
   }
 }
 

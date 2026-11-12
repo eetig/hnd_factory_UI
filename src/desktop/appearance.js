@@ -15,39 +15,74 @@ import { reactive, watch } from 'vue'
 
 const STORAGE_KEY = 'hnd-desktop-appearance'
 
-/** 内置壁纸：都是低饱和的，白卡片压上去不会花。 */
+/**
+ * 内置壁纸（2026-11-12 使用方口径：「浅色、带弥散效果、彩色」）。
+ *
+ * 每张都由 2–3 层 radial-gradient 叠出来，颜色是柔和的彩色而不是单色渐变：
+ * 单层渐变在 24 寸屏上会看出一条明显的分界，多层错位才像"光斑弥散"。
+ * 全部走 CSS 渐变、没有位图，窗口拉伸也不会糊。
+ */
 export const WALLPAPERS = [
   {
-    id: 'mist',
-    label: '雾',
-    css: 'radial-gradient(120% 90% at 12% 8%, #eef1f6 0%, #dfe5ef 42%, #cfd8e6 100%)',
+    id: 'peach',
+    label: '桃霞',
+    css: [
+      'radial-gradient(58% 52% at 14% 4%, #ffe1ea 0%, rgba(255,225,234,0) 62%)',
+      'radial-gradient(52% 46% at 88% 2%, #fff0d6 0%, rgba(255,240,214,0) 58%)',
+      'radial-gradient(72% 62% at 62% 108%, #ffd9e4 0%, rgba(255,217,228,0) 66%)',
+      'radial-gradient(140% 130% at 50% -10%, #fff9fb 0%, #fdf2f6 55%, #fbe9ef 100%)',
+    ].join(', '),
   },
   {
-    id: 'dawn',
-    label: '晨',
-    css: 'radial-gradient(110% 80% at 85% 12%, #fdf1e4 0%, #f4e6dc 45%, #e6ded8 100%)',
+    id: 'mint',
+    label: '薄荷',
+    css: [
+      'radial-gradient(56% 50% at 10% 6%, #d9f6ec 0%, rgba(217,246,236,0) 62%)',
+      'radial-gradient(54% 48% at 92% 6%, #dcf0ff 0%, rgba(220,240,255,0) 58%)',
+      'radial-gradient(74% 64% at 58% 110%, #e8fbf3 0%, rgba(232,251,243,0) 66%)',
+      'radial-gradient(140% 130% at 50% -10%, #f8fffc 0%, #f1fbf8 55%, #ecf7f4 100%)',
+    ].join(', '),
   },
   {
-    id: 'moss',
-    label: '苔',
-    css: 'radial-gradient(120% 85% at 20% 90%, #e8efe9 0%, #dbe6df 45%, #ccdbd3 100%)',
+    id: 'sky',
+    label: '天青',
+    css: [
+      'radial-gradient(58% 50% at 16% 2%, #dceaff 0%, rgba(220,234,255,0) 60%)',
+      'radial-gradient(50% 44% at 90% 10%, #e6f3ff 0%, rgba(230,243,255,0) 56%)',
+      'radial-gradient(70% 60% at 60% 108%, #e3ecff 0%, rgba(227,236,255,0) 64%)',
+      'radial-gradient(140% 130% at 50% -10%, #f9fbff 0%, #f2f7fe 55%, #edf2fc 100%)',
+    ].join(', '),
+  },
+  {
+    id: 'lotus',
+    label: '藕荷',
+    css: [
+      'radial-gradient(58% 52% at 12% 4%, #efe2ff 0%, rgba(239,226,255,0) 62%)',
+      'radial-gradient(52% 46% at 90% 4%, #ffe2f3 0%, rgba(255,226,243,0) 58%)',
+      'radial-gradient(72% 60% at 64% 108%, #f7e9ff 0%, rgba(247,233,255,0) 66%)',
+      'radial-gradient(140% 130% at 50% -10%, #fdfaff 0%, #f8f2fd 55%, #f3edfb 100%)',
+    ].join(', '),
   },
   {
     id: 'night',
-    label: '夜',
-    css: 'radial-gradient(130% 90% at 18% 6%, #2b3242 0%, #202634 48%, #141821 100%)',
+    label: '暮夜',
+    css: [
+      'radial-gradient(60% 50% at 14% 6%, #2a3350 0%, rgba(42,51,80,0) 62%)',
+      'radial-gradient(50% 44% at 88% 8%, #3a2b45 0%, rgba(58,43,69,0) 58%)',
+      'radial-gradient(140% 130% at 50% -10%, #20263c 0%, #191d2c 55%, #12141c 100%)',
+    ].join(', '),
   },
 ]
 
 const DEFAULTS = {
   /** 内置壁纸 id；custom 有值时优先用它 */
-  wallpaper: 'mist',
+  wallpaper: 'peach',
   /** 自定义图片（压缩后的 dataURL），空串表示没选 */
   custom: '',
   /** 壁纸模糊半径 px：0–40 */
   blur: 18,
   /** 纸面不透明度 0.3–1：越小越"通透"，越大越像普通窗口 */
-  veil: 0.34,
+  veil: 0.58,
   /** 桌面版是否启用壁纸（关掉就退回纯亚克力） */
   enabled: true,
 }
@@ -57,7 +92,14 @@ function read() {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
     const saved = JSON.parse(raw)
-    return { ...DEFAULTS, ...(saved && typeof saved === 'object' ? saved : {}) }
+    const merged = { ...DEFAULTS, ...(saved && typeof saved === 'object' ? saved : {}) }
+    /*
+     * 迁移（2026-11-12，变更-195）：彩色壁纸上来了，旧的 0.34 通明白纸压不住字。
+     * 已经存过设置的老机器不会自动吃到新默认值，这里把"明显偏透"的旧值抬到 0.58。
+     * 只在低于 0.5 时动一次，用户自己调到 0.5 以上就不再覆盖。
+     */
+    if (typeof merged.veil === 'number' && merged.veil < 0.5) merged.veil = DEFAULTS.veil
+    return merged
   } catch {
     return { ...DEFAULTS }
   }

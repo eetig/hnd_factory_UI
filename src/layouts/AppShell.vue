@@ -15,6 +15,7 @@ import TitleBar from '../components/shell/TitleBar.vue'
 import { IS_DESKTOP } from '../api/base'
 import { appearance, wallpaperCss } from '../desktop/appearance'
 import { usePalette } from '../composables/usePalette'
+import { windowMaterial } from '../desktop'
 import { useOrderFilterUrl } from '../composables/useOrderFilterUrl.js'
 import { useWorkspaceTabs } from '../composables/useWorkspaceTabs.js'
 import { ElConfigProvider, ElDialog } from 'element-plus'
@@ -283,6 +284,17 @@ const isDesktop =
   IS_DESKTOP ||
   (import.meta.env.DEV && new URLSearchParams(window.location.search).has('desktop'))
 
+/*
+ * 窗口材质探测（2026-11-12）。亚克力申请失败时窗口是"透穿"而不是"磨砂"，
+ * 桌面图标会清清楚楚压在文字下面 —— 那种情况下把纸面转成实色更体面。
+ */
+const material = ref('unknown')
+if (isDesktop) {
+  windowMaterial().then((kind) => {
+    material.value = kind || 'none'
+  })
+}
+
 const wallpaperStyle = computed(() => {
   const css = wallpaperCss(appearance)
   if (!css) return null
@@ -290,10 +302,22 @@ const wallpaperStyle = computed(() => {
 })
 
 /** 纸面不透明度：越小越通透，亚克力/壁纸透上来得越多。 */
+/**
+ * 桌面版窗口的底色（2026-11-12）。
+ *
+ * 实测这台机器上 `apply_acrylic` 返回成功但**没有真的磨砂**：窗口四周直接透出
+ * 清晰的桌面图标，文字压在杂色上。与其赌每台车间的机器都支持，不如给窗口一层
+ * 中性浅灰当底：壁纸层盖在上面，「浅色 + 弥散 + 彩色」的观感照样成立，
+ * 只是不再透桌面。真正的系统材质以后可作为"通透模式"单独开。
+ */
+const shellStyle = computed(() => (isDesktop ? { backgroundColor: '#eceff4' } : null))
+
 const paperStyle = computed(() => {
   // 网页版没有亚克力可透，退回不透明纸色（信息密度优先，不追求通透）
   if (!isDesktop) return { backgroundColor: '#FAFBFC' }
   if (!appearance.enabled) return null
+  // 没有系统材质就别硬透：实色纸 + 桌面图标的对比度会打架
+  if (material.value === 'none') return { backgroundColor: '#FAFBFC' }
   /*
    * 深色壁纸（夜 / 自定义图）压在地后面时，34% 的通明白纸会让深灰字掉到 4.5:1 以下。
    * 所以对深底抬一个下限：用户仍可往上调，但不会调到"字看不清"。
@@ -306,7 +330,7 @@ const paperStyle = computed(() => {
 
 <template>
   <el-config-provider :locale="zhCn">
-    <main class="min-h-screen bg-desk p-3" :class="isDesktop ? 'shell-desktop' : ''">
+    <main class="min-h-screen bg-desk p-3" :class="isDesktop ? 'shell-desktop' : ''" :style="shellStyle">
       <!-- 壁纸层（仅桌面版）：静态图，模糊在选图时就烤好了，运行期不加 filter -->
       <div
         v-if="isDesktop && wallpaperStyle"
@@ -316,11 +340,18 @@ const paperStyle = computed(() => {
       ></div>
 
       <div
-        class="shell-paper flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden"
+        class="shell-paper relative flex h-[calc(100vh-1.5rem)] flex-col overflow-hidden"
         :class="isDesktop ? 'shell-paper' : ''"
         :style="paperStyle"
         :data-palette="palette"
       >
+        <!--
+          弥散光斑（2026-11-12）：用完就扔的一层彩色，压在纸面之上、内容之下。
+          纯 CSS 三团 radial，没有位图、没有 filter —— 滚动时合成器不用重算，
+          老机器也不掉帧；颜色跟着调色板走（data-palette 在纸容器上）。
+        -->
+        <div class="shell-glow" aria-hidden="true"></div>
+
         <TitleBar v-if="isDesktop" />
 
         <!--
@@ -328,7 +359,7 @@ const paperStyle = computed(() => {
           页签搬到这里（而不是单独一行）之后，纵向只花掉一条 44px 的带子，
           内容画布能多出整整一行表格的高度。
         -->
-        <header class="flex shrink-0 items-center gap-3 px-3 py-1.5">
+        <header class="relative z-10 flex shrink-0 items-center gap-3 px-3 py-1.5">
           <button
             type="button"
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white/45 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
@@ -407,7 +438,7 @@ const paperStyle = computed(() => {
           内容画布：一列纵向流。页面标题、筛选、表格自己排，外面**不再套卡片壳** ——
           卡片只在「表格 / 提示块」这种独立组件上用。左右留白统一 px-7。
         -->
-        <div class="page-mount flex min-h-0 flex-1 flex-col overflow-hidden px-7 pb-5 pt-1">
+        <div class="page-mount flex min-h-0 flex-1 flex-col overflow-hidden px-7 pb-5 pt-1 relative z-10">
           <div class="mb-3 flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
             <h1 class="text-[22px] font-semibold tracking-[-0.01em] text-slate-900">
               {{ pageTitle }}

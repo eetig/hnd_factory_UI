@@ -1,5 +1,6 @@
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use window_vibrancy::{apply_acrylic, apply_mica};
@@ -12,18 +13,35 @@ use window_vibrancy::{apply_acrylic, apply_mica};
 ///
 /// 顺序：先亚克力（Win10 1803+ 都支持，带色调），失败再云母（Win11 22H2+）。
 /// 两者都不支持时什么都不做 —— 前端有兜底底色，不会变白。
-fn paint_window_material(window: &tauri::WebviewWindow) {
+fn paint_window_material(window: &tauri::WebviewWindow) -> &'static str {
     #[cfg(target_os = "windows")]
     {
         // 参数是 RGBA 色调：微微偏冷的中性灰，让底层壁纸/桌面透上来但不脏。
-        if apply_acrylic(window, Some((24, 24, 28, 150))).is_err() {
-            let _ = apply_mica(window, Some(true));
+        if apply_acrylic(window, Some((24, 24, 28, 150))).is_ok() {
+            return "acrylic";
         }
+        if apply_mica(window, Some(true)).is_ok() {
+            return "mica";
+        }
+        "none"
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = window;
+        "none"
     }
+}
+
+/// 材质状态（2026-11-12）。
+///
+/// 为什么要把结果告诉前端：亚克力在个别机器/显卡上会申请失败，窗口就变成"透穿"——
+/// 桌面图标清清楚楚地透上来，文字压在杂色上，比不透明还难看。前端拿到 "none"
+/// 就把纸面转成实色，宁可少一点通透，也不能让字看不清。
+struct MaterialState(Mutex<String>);
+
+#[tauri::command]
+fn window_material(state: tauri::State<MaterialState>) -> String {
+    state.0.lock().map(|v| v.clone()).unwrap_or_else(|_| "none".into())
 }
 
 /// 把主窗口叫回前台（托盘左键、托盘菜单「打开主界面」都走这里）。
@@ -107,12 +125,15 @@ pub fn run() {
             builder.build(app)?;
 
             // 无边框窗口 + 原生亚克力：前端画标题栏与页面，窗口背景是系统材质。
-            if let Some(window) = app.get_webview_window("main") {
-                paint_window_material(&window);
-            }
+            let material = match app.get_webview_window("main") {
+                Some(window) => paint_window_material(&window).to_string(),
+                None => "none".to_string(),
+            };
+            app.manage(MaterialState(Mutex::new(material)));
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![window_material])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
