@@ -458,7 +458,7 @@ const paperStyle = computed(() => {
         ></button>
         <div
           id="app-drawer"
-          class="absolute left-3 top-3 flex h-[calc(100%-1.5rem)] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-card border border-white/70 bg-white/95 shadow-[0_18px_48px_-24px_rgba(16,24,40,0.35)]"
+          class="absolute left-3 top-3 flex h-[calc(100%-1.5rem)] w-[520px] max-w-[92vw] flex-col overflow-hidden rounded-card border border-white/70 bg-white shadow-[0_18px_48px_-24px_rgba(16,24,40,0.35)]"
           role="dialog"
           aria-modal="true"
           aria-label="导航"
@@ -491,8 +491,8 @@ const paperStyle = computed(() => {
                 class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                 :class="
                   drawerGroup === group.key
-                    ? 'bg-white/90 text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.06)]'
-                    : 'text-slate-600 hover:bg-white/55'
+                    ? 'bg-slate-900/[0.06] font-medium text-slate-900'
+                    : 'text-slate-600 hover:bg-slate-900/[0.04]'
                 "
                 :data-group="group.key"
                 :aria-current="currentGroup === group.key ? 'true' : undefined"
@@ -507,7 +507,7 @@ const paperStyle = computed(() => {
 
             <!-- 页面列 -->
             <div class="flex min-w-0 flex-1 flex-col">
-              <p v-if="drawerGroupObj" class="px-2 pb-2 text-[11px] text-slate-500">
+              <p v-if="drawerGroupObj" class="px-2.5 pb-1.5 pt-1 text-[11px] text-slate-500">
                 {{ drawerGroupObj.hint }}
               </p>
               <nav
@@ -521,7 +521,7 @@ const paperStyle = computed(() => {
                   class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                   :class="
                     item.path === route.path
-                      ? 'bg-white/90 font-medium text-slate-900 shadow-[0_1px_2px_rgba(16,24,40,0.06)]'
+                      ? 'bg-slate-900/[0.06] font-medium text-slate-900'
                       : navItemState(item) === 'locked'
                         ? 'text-slate-500 opacity-70 hover:bg-white/45'
                         : 'text-slate-700 hover:bg-white/55'
