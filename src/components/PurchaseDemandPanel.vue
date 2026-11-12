@@ -4,6 +4,9 @@ import { useToast } from 'wot-design-uni'
 import request from '../api/request'
 import { hasPerm } from '../api/auth'
 import { copyRowField } from '../utils/clipboard'
+import { uploadFile } from '../api/upload'
+import { resolveAssetUrl } from '../api/config'
+import { chooseImages } from '../utils/chooseImages'
 
 /*
  * 采购需求（手机端，2026-10-23，变更-164）
@@ -140,6 +143,20 @@ const isCreate = ref(true)
 const savedCount = ref(0)
 const lastSavedText = ref('')
 
+/*
+ * 送货单图片（变更-207，使用方 2026-11-12：「我记得有保存送货单的功能的，这里我没找到」）
+ *
+ * 与 PC 同一条口径（变更-094）：`delivery_note` 存的是 `/files/<fileName>` 这种相对路径，
+ * 不是裸文件名、也不是图片 URL。列本来就是 varchar(64)，装得下，不用改表。
+ *
+ * ⚠️ 保存时必须把这个值原样带上：后端 save 走的是
+ * `row.setDeliveryNote(blankIfNull(dto.getDeliveryNote()))`，
+ * 也就是「没传 = 空串 = 把已有图片抹掉」。第一次接这块时最容易漏的就是这里。
+ */
+const deliverySheetOpen = ref(false)
+const deliveryUploading = ref(false)
+const deliveryImage = computed(() => (form.deliveryNote ? resolveAssetUrl(form.deliveryNote) : ''))
+
 function blankDraft() {
   return {
     id: null,
@@ -156,6 +173,7 @@ function blankDraft() {
     actualArrivalQuantity: '',
     actualArrivalDate: '',
     oaNo: '',
+    deliveryNote: '',
     remark: '',
   }
 }
@@ -195,6 +213,69 @@ function closeForm() {
   formOpen.value = false
 }
 
+// ===== 送货单图片 =====
+
+function openDeliverySheet() {
+  if (deliveryUploading.value) return
+  deliverySheetOpen.value = true
+}
+
+/**
+ * 选一张图并上传。
+ *
+ * 相册一定要走 chooseImages（手机自带相册），不能用 uni.chooseImage 的 album 分支 ——
+ * 那个分支是框架自绘的绿色选图页，与 App 完全不搭（2026-11-12 使用方明确要求换掉）。
+ * 拍照仍交给 uni.chooseImage，它调的就是系统相机。
+ */
+async function pickDeliverySource(source) {
+  deliverySheetOpen.value = false
+  const options = {
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: [source],
+    success: (res) => {
+      const path = (res.tempFilePaths || [])[0]
+      if (path) uploadDeliveryPhoto(path)
+    },
+    fail: () => {},
+  }
+  if (source === 'album') chooseImages(options)
+  else uni.chooseImage(options)
+}
+
+async function uploadDeliveryPhoto(filePath) {
+  if (deliveryUploading.value) return
+  deliveryUploading.value = true
+  try {
+    const res = await uploadFile({
+      url: '/api/purchase/upload-delivery-note',
+      filePath,
+      name: 'file',
+    })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '上传失败')
+    const fileName = body.data
+    if (!fileName) throw new Error('上传未返回文件名')
+
+    // ADR-0004：前端固定拼 `/files/<fileName>`，缩略图由显示端换 /thumbs/
+    form.deliveryNote = `/files/${fileName}`
+    toast.success('送货单已上传')
+  } catch (error) {
+    toast.error(error?.message || '送货单上传失败')
+  } finally {
+    deliveryUploading.value = false
+  }
+}
+
+function clearDeliveryNote() {
+  form.deliveryNote = ''
+}
+
+function previewDeliveryNote() {
+  if (!deliveryImage.value) return
+  uni.previewImage({ urls: [deliveryImage.value], current: deliveryImage.value })
+}
+
 /** 与 PC 的 buildPurchasePayload 同口径：空串发 null，非数字不发 NaN */
 function buildPayload() {
   const text = (v) => {
@@ -223,6 +304,7 @@ function buildPayload() {
     actualArrivalQuantity: decimal(form.actualArrivalQuantity),
     actualArrivalDate: text(form.actualArrivalDate),
     oaNo: text(form.oaNo),
+    deliveryNote: text(form.deliveryNote),
     remark: text(form.remark),
   }
 }
@@ -511,6 +593,23 @@ const popupStyle =
               <text class="pf__label">备注</text>
               <input v-model="form.remark" class="pf__input" placeholder="选填" placeholder-style="color: var(--ui-text-3)" />
             </view>
+
+            <!-- 送货单：一张图。有图显示缩略图 + 更换/删除，没图显示一颗上传按钮 -->
+            <view class="pf__row pf__row--file">
+              <text class="pf__label">送货单</text>
+              <view class="pf__file">
+                <template v-if="deliveryImage">
+                  <image class="pf__file-thumb" :src="deliveryImage" mode="aspectFill" @click="previewDeliveryNote" />
+                  <view class="pf__file-acts">
+                    <text class="pf__file-act" @click="openDeliverySheet">更换</text>
+                    <text class="pf__file-act pf__file-act--danger" @click="clearDeliveryNote">删除</text>
+                  </view>
+                </template>
+                <view v-else class="pf__file-add" :class="{ 'is-busy': deliveryUploading }" @click="openDeliverySheet">
+                  <text>{{ deliveryUploading ? '上传中…' : '＋ 上传送货单' }}</text>
+                </view>
+              </view>
+            </view>
           </view>
         </scroll-view>
 
@@ -527,13 +626,41 @@ const popupStyle =
         </view>
       </view>
     </wd-popup>
+
+    <!-- 送货单来源：与「图片解析」「拍表存证」同一套底部弹层，选完再进系统相机/相册 -->
+    <wd-popup
+      v-model="deliverySheetOpen"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      custom-style="background-color: var(--ui-sheet-fill);"
+    >
+      <view class="pf-sheet">
+        <text class="pf-sheet__title">上传送货单</text>
+        <view class="pf-sheet__item" @click="pickDeliverySource('camera')">
+          <view class="pf-sheet__icon">
+            <wd-icon name="camera" size="20px" />
+          </view>
+          <text class="pf-sheet__text">拍摄</text>
+        </view>
+        <view class="pf-sheet__item" @click="pickDeliverySource('album')">
+          <view class="pf-sheet__icon">
+            <wd-icon name="picture" size="20px" />
+          </view>
+          <text class="pf-sheet__text">从相册选择</text>
+        </view>
+        <view class="pf-sheet__cancel" @click="deliverySheetOpen = false">
+          <text>取消</text>
+        </view>
+      </view>
+    </wd-popup>
   </view>
 </template>
 
 <style lang="scss" scoped>
-/* 自然流 + 整页滚动：与 EquipmentMaintenancePanel 一致。
-   不写 height:100% + 内层 scroll-view —— 小程序里父容器常常没有确定高度，
-   那样写会塌成 0 高（白屏），排查起来很费时间。 */
+/* 面板是「确定高度的三段式」：头部固定 / 中间 scroll-view 自己滚 / 底部按钮栏固定。
+   2026-11-12 使用方报「滑到底按钮和页面分离」，根因是原来只写 max-height，
+   flex 子项按内容撑开，滚动区拿不到高度。现在高度写死 86vh，滚动区 height:0 + flex:1。 */
 .pd {
   padding: 16rpx 20rpx 40rpx;
   box-sizing: border-box;
@@ -894,6 +1021,115 @@ const popupStyle =
   display: flex;
   gap: 12rpx;
   min-width: 0;
+}
+
+/* 送货单那行：标签顶对齐，右侧是缩略图或上传按钮 */
+.pf__row--file {
+  align-items: flex-start;
+}
+
+.pf__row--file .pf__label {
+  padding-top: 18rpx;
+}
+
+.pf__file {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  min-width: 0;
+}
+
+.pf__file-thumb {
+  flex-shrink: 0;
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 14rpx;
+  border: 2rpx solid var(--ui-border);
+  background-color: var(--ui-surface-2);
+}
+
+.pf__file-acts {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.pf__file-act {
+  font-size: 26rpx;
+  color: var(--ui-accent);
+}
+
+.pf__file-act--danger {
+  color: var(--ui-danger, #b4463c);
+}
+
+.pf__file-add {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 76rpx;
+  border-radius: 16rpx;
+  font-size: 26rpx;
+  color: var(--ui-text-2);
+  background-color: var(--ui-surface-2);
+  border: 2rpx dashed var(--ui-border-strong);
+
+  &.is-busy {
+    opacity: 0.6;
+  }
+}
+
+/* 送货单来源弹层：视觉与「图片解析」「拍表存证」一致 */
+.pf-sheet {
+  padding: 20rpx 28rpx 24rpx;
+}
+
+.pf-sheet__title {
+  display: block;
+  padding: 4rpx 4rpx 16rpx;
+  font-size: 26rpx;
+  color: var(--ui-text-3);
+}
+
+.pf-sheet__item {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  height: 108rpx;
+  margin-bottom: 16rpx;
+  padding: 0 26rpx;
+  border-radius: 24rpx;
+  background-color: var(--ui-surface-2);
+}
+
+.pf-sheet__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 18rpx;
+  color: var(--ui-accent);
+  background-color: var(--ui-accent-soft);
+}
+
+.pf-sheet__text {
+  font-size: 30rpx;
+  color: var(--ui-text);
+}
+
+.pf-sheet__cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 96rpx;
+  margin-top: 8rpx;
+  border-radius: 48rpx;
+  font-size: 30rpx;
+  color: var(--ui-text);
+  background-color: var(--ui-raise-2);
 }
 
 /* 底部按钮栏：不参与滚动，实心底色（不能透出下面的表单） */
