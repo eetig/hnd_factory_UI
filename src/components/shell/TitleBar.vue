@@ -70,7 +70,7 @@ async function close() {
 
 <template>
   <header
-    class="titlebar flex h-9 shrink-0 select-none items-center gap-2 pl-2 pr-1"
+    class="titlebar flex h-8 shrink-0 select-none items-center gap-2 pl-2 pr-1"
     data-tauri-drag-region
     @dblclick.self="toggleMaximize"
   >
@@ -96,19 +96,12 @@ async function close() {
       </svg>
     </button>
 
-    <span
-      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-brand text-[11px] font-bold text-white"
-      data-tauri-drag-region
-    >
-      H
-    </span>
-    <span class="text-[12px] font-medium tracking-tight text-slate-700" data-tauri-drag-region>
-      HND 生产助手
-    </span>
-    <span class="ml-2 truncate text-[11px] text-slate-500" data-tauri-drag-region>
-      工单 · 物料 · 采购 · 设备
-    </span>
-
+    <!--
+      标题栏只留两样东西：左边「侧栏开关」，右边窗口控制钮。
+      2026-11-12 使用方：「文字重复了，而且臃肿，多少无效信息，要简洁明了」——
+      应用名和「工单 · 物料 · 采购 · 设备」在这一条里都是重复的（下面导航条已经写着），
+      删掉之后这一条就退成一条纯粹的拖动带。
+    -->
     <div class="ml-auto flex items-center" data-tauri-drag-region>
       <div class="flex items-center" @dblclick.stop>
         <button
