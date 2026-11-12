@@ -1,6 +1,6 @@
 [package]
 name = "hnd-factory-desktop"
-version = "1.0.17"
+version = "1.0.18"
 description = "HND 生产助手 桌面端"
 authors = ["HND"]
 edition = "2021"

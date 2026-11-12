@@ -424,12 +424,19 @@ async function removeLine(index) {
   snapshot = JSON.stringify({ h: header.value, l: lines.value })
 }
 
-/** 必填：需求人 / 提出日期 / 物料名称 / 数量。其余可空 */
+/**
+ * 必填：需求人 / 提出日期 / 物料名称 / 数量。
+ *
+ * 数量只对**新加的行**强制：老数据里有一批（如资产申购）当初就没填数量，
+ * 编辑这类单子时若还逼着补数量，等于「改个备注都存不了」
+ * （2026-11-12 用户报的「编辑了后不能保存」就是这个）。
+ * 已有 id 的行照旧保存，空就存空。
+ */
 function problemOf(line) {
   if (!String(line.requester || '').trim()) return '需求人空着'
   if (!String(line.requestDate || '').trim()) return '提出日期空着'
   if (!String(line.materialName || '').trim()) return '物料名称空着'
-  if (!String(line.quantity || '').trim()) return '数量空着'
+  if (!line?.id && !String(line.quantity || '').trim()) return '数量空着'
   return ''
 }
 
@@ -474,16 +481,27 @@ function buildRows() {
 
 function submit() {
   if (!props.canEdit || props.saving) return
-  const rows = buildRows()
-  if (!rows.length) {
+  /*
+   * 判断顺序（变更-199）：
+   *   1) 一行都没填 → 才说「先填一条」；
+   *   2) 有行但没填全 → 直接说是哪一行哪个字段空着。
+   * 反过来写会踩坑：`buildRows()` 会把没填全的行过滤掉，于是
+   * 「数量空着」这种行会先触发「一行物料都没填」，把真正的原因藏起来
+   * （用户 2026-11-12 报的「编辑后保存不了」就是这个）。
+   */
+  if (!lines.value.some((l) => !isBlank(l))) {
     ElMessage.error('一行物料都没填，先填一条再保存')
     return
   }
-  if (problemText.value.length) {
+  const problems = problemText.value
+  if (problems.length) {
     lineErrors.value = lines.value.map((l) => problemOf(l))
-    ElMessage.error(`还有 ${problemText.value.length} 行没填全，先补齐再保存`)
+    ElMessage.error(
+      problems.length === 1 ? `${problems[0]}，补齐再保存` : `${problems[0]} 等 ${problems.length} 行没填全`,
+    )
     return
   }
+  const rows = buildRows()
   mergeCategories(rows.map((r) => r.category))
   emit('save', { header: { ...header.value }, rows })
 }
@@ -1305,7 +1323,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
             >
               首行全部到货
             </button>
-            <span v-if="problemText.length" class="text-[11px] text-rose-700">
+            <span v-if="problemText.length" data-testid="line-problems" class="text-[11px] text-rose-700">
               {{ problemText.slice(0, 2).join('、') }}{{ problemText.length > 2 ? ` 等 ${problemText.length} 行` : '' }}
             </span>
           </div>

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import ElementPlus, { ElMessageBox } from 'element-plus'
+import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 
 // 抽屉里有远程物料检索与图片上传，测试里不发真实请求
 vi.mock('../../src/api/request', () => ({
@@ -203,6 +203,51 @@ describe('新增：一张 OA 单 = 一张台账', () => {
     await clickButton('保存整单')
     expect(wrapper.emitted('save'), '必填没齐却把单存了').toBeFalsy()
     expect(wrapper.text()).toContain('第 1 行数量空着')
+  })
+
+  /**
+   * 变更-199（用户 2026-11-12「我这编辑了后，怎么不能保存」）：
+   *
+   * 行里物料名称有值、只差数量时，`buildRows()` 会把这一行过滤掉，
+   * 于是 `rows.length === 0` 先命中「一行物料都没填」——把真正的原因藏了。
+   * 现在必须直接说「第 1 行数量空着」。
+   */
+  it('只有数量空着时，提示说的是「第 1 行数量空着」而不是「一行物料都没填」', async () => {
+    const spy = vi.spyOn(ElMessage, 'error').mockImplementation(() => {})
+    try {
+      await open()
+      await fillLine(1, { requester: '洪旭', name: '立式长杆泥浆泵' })
+      await clickButton('保存整单')
+      expect(wrapper.emitted('save'), '必填没齐却把单存了').toBeFalsy()
+      const said = spy.mock.calls.map((c) => String(c[0])).join(' | ')
+      expect(said, `提示没点出真正原因：${said}`).toContain('第 1 行数量空着')
+      expect(said, `还在说误导文案：${said}`).not.toContain('一行物料都没填')
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  /**
+   * 变更-200：老数据里有一批行本来就没填数量（如资产申购）。
+   * 编辑这类单子时不能再拿「数量空着」拦住整单，否则改个备注都存不了。
+   */
+  it('编辑老数据（有 id）时，数量空着也能保存', async () => {
+    const legacy = { ...ROW, id: 99, quantity: null, unit: '' }
+    request.get.mockResolvedValueOnce({ data: { success: true, dataList: [legacy] } })
+    await open({ mode: 'edit', row: legacy })
+    await flushPromises()
+
+    // 进编辑台
+    const edit = footerEditButton()
+    expect(edit, '找不到「编辑」入口').toBeTruthy()
+    await edit.trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    await clickButton('保存整单')
+    const payload = wrapper.emitted('save')?.[0]?.[0]
+    expect(payload, '有 id 的行缺数量被拦住了（应当允许保存）').toBeTruthy()
+    expect(payload.rows[0].quantity).toBeNull()
   })
 
   it('链接不占表头：点单号右边的「链接」填一次，整单每行都带上', async () => {
