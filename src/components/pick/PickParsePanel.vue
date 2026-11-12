@@ -15,7 +15,7 @@ import { exportPickExcel, listPickTemplates, recognizePickDoc, uploadPickTemplat
  * 3) 模板不是写死的列号：上传时由后端按表头认列，这里只展示认出来的结果。
  */
 
-const DEPT_SUGGESTIONS = ['生产部', '办公室', '设备部', '安环部', '质量部', '仓储部']
+const DEPT_SUGGESTIONS = ['行政部', '生产部', '安环部', '设备部', '质量部', '仓储部']
 
 const photo = ref(null) // { file, url, name }
 const recognizing = ref(false)
@@ -381,6 +381,9 @@ onMounted(loadTemplates)
         <span v-if="currentTemplate.factory || currentTemplate.warehouse" class="pick__meta-dim">
           · 工厂 {{ currentTemplate.factory || '—' }} / 仓库 {{ currentTemplate.warehouse || '—' }}
         </span>
+      </p>
+      <p v-else-if="!templates.length" class="pick__meta pick__meta-dim">
+        还没有模板。点右上「上传新模板」，把 SAP 导出的空 Excel 传进来（表头里要有「物料」和「单据数量」）。
       </p>
 
       <div class="pick__foot">
