@@ -364,14 +364,17 @@ const paperStyle = computed(() => {
           <button
             v-if="!isDesktop"
             type="button"
-            class="flex h-7 shrink-0 items-center rounded-[4px] px-1.5 text-[12px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             :aria-expanded="drawerOpen ? 'true' : 'false'"
             aria-controls="app-drawer"
             aria-label="打开导航"
             data-tip="打开导航　Ctrl+B"
             @click="openDrawer"
           >
-            菜单
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2.5" />
+              <path d="M9 4v16" />
+            </svg>
           </button>
 
           <span class="flex shrink-0 items-center gap-2">

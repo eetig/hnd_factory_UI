@@ -75,9 +75,9 @@ async function close() {
     @dblclick.self="toggleMaximize"
   >
     <!--
-      导航入口（2026-11-12 使用方口径）：「汉堡放在左上角」，图标换成**文字菜单**的样子
-      —— 跟系统应用那种「应用 / 编辑」的文字入口一致，而不是一个图形按钮；
-      悬停给提示（标题 + Ctrl+B 快捷键），点开是左侧抽屉。
+      导航入口（2026-11-12 使用方口径，图标随后指定）：窗口左上角第一个可点元素。
+      图形是「侧栏开关」——一个圆角方框 + 左侧竖线，比汉堡三条线更像「打开/收起侧栏」；
+      悬停给提示（data-tip + ::after 自绘），点开是左侧抽屉。
       注意不能带 data-tauri-drag-region，否则点击会被拖拽区吃掉；双击也要 stop。
     -->
     <button
@@ -90,7 +90,10 @@ async function close() {
       @click.stop="emit('open-nav')"
       @dblclick.stop
     >
-      菜单
+      <svg viewBox="0 0 24 24" class="h-[16px] w-[16px]" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="2.5" />
+        <path d="M9 4v16" />
+      </svg>
     </button>
 
     <span
@@ -164,16 +167,14 @@ async function close() {
   color: var(--color-slate-700, #334155);
   transition: background-color 120ms ease, color 120ms ease;
 }
-/* 菜单入口：文字按钮（跟系统「应用/编辑」那种文字菜单同一个语气），比窗口控制钮轻 */
+/* 菜单入口：方形图标按钮（跟窗口控制钮同一档大小，但只有 28px，轻一档） */
 .titlebar-btn-nav {
   position: relative;
-  width: auto;
+  width: 28px;
   height: 24px;
   margin-left: 1px;
-  padding: 0 7px;
+  padding: 0;
   border-radius: 4px;
-  font-size: 12px;
-  letter-spacing: 0.01em;
   color: var(--color-slate-600, #475569);
 }
 .titlebar-btn-nav:hover {
