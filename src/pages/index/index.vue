@@ -404,6 +404,17 @@ function openAuditLog() {
   uni.navigateTo({ url: '/pages/auditLog/auditLog' })
 }
 
+/**
+ * 打开用户名单（2026-11-13，仅管理员、仅 App）
+ *
+ * 使用方要的是「有哪些注册用户、什么时候注册的」这种偶尔核对的信息，
+ * 所以只放在抽屉最底下的小字里，而且只对管理员出现；PC 与微信端都不加这个入口。
+ */
+function openUserAdmin() {
+  closeMenu()
+  uni.navigateTo({ url: '/pages/userAdmin/userAdmin' })
+}
+
 /** 打开隐私政策页（2026-11-02） */
 function openPrivacy() {
   closeMenu()
@@ -4830,6 +4841,7 @@ onPullDownRefresh(async () => {
             <text v-if="canReadMeter" class="drawer__privacy" @click="openMeterRead">电费抄表</text>
             <!-- 管控日志（2026-11-02）：只给管理员，入口是小字，不显眼、只主动点 -->
             <text v-if="isAdminUser" class="drawer__privacy" @click="openAuditLog">管控日志</text>
+            <text v-if="isAdminUser" class="drawer__privacy" @click="openUserAdmin">用户名单</text>
             <text class="drawer__privacy" @click="openPrivacy">隐私政策</text>
             <text class="drawer__env">{{ envTip }}</text>
           </view>

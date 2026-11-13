@@ -55,6 +55,12 @@
       "style": {
         "navigationBarTitleText": "领料解析"
       }
+    },
+    {
+      "path": "pages/userAdmin/userAdmin",
+      "style": {
+        "navigationBarTitleText": "用户名单"
+      }
     }
   ],
   "globalStyle": {
