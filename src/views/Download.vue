@@ -26,10 +26,10 @@
     </header>
 
     <main class="lp__main">
-      <p class="lp__eyebrow">内部系统 · Windows 客户端</p>
+      <p class="lp__eyebrow">内部系统 · Windows / Android 客户端</p>
       <h1 class="lp__title">HND 生产助手</h1>
       <p class="lp__lead">现在，开箱即用</p>
-      <p class="lp__desc">本系统已迁移至 Windows 客户端，所有业务操作请使用桌面端。</p>
+      <p class="lp__desc">电脑装 Windows 版，手机装 Android 版；业务操作请使用客户端。</p>
 
       <div class="lp__cta-wrap">
         <div class="lp__cta">
@@ -78,6 +78,24 @@
         </ul>
 
         <p class="lp__note">当前版本 {{ versionLabel }} · 已登录账号与数据照旧</p>
+
+        <a class="lp__cta-alt" :href="apkUrl">
+          <svg class="lp__cta-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <rect
+              x="5.5"
+              y="2.5"
+              width="9"
+              height="15"
+              rx="2"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+            />
+            <path d="M9 15.2h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          下载 Android 版
+          <span class="lp__cta-alt-note">手机端 · 15 MB</span>
+        </a>
       </div>
 
       <figure class="lp__shot">
@@ -144,6 +162,10 @@ import shot from '../assets/landing/purchase-board.webp'
  * 现在发布脚本每次都会在容器里覆盖一份 `HND生产助手_最新版_x64-setup.exe`，
  * 地址永远不变、内容永远最新 —— 兜底也兜得住。
  */
+/* Android 包：发布脚本 scripts/publish_app.sh 每次都在服务器上覆盖这个「最新版」别名 */
+const APK_URL =
+  'https://hbhnd.cloud/desktop/app/HND%E7%94%9F%E4%BA%A7%E5%8A%A9%E6%89%8B_App_%E6%9C%80%E6%96%B0%E7%89%88.apk'
+
 const FALLBACK_URL =
   'https://hbhnd.cloud/desktop/HND%E7%94%9F%E4%BA%A7%E5%8A%A9%E6%89%8B_%E6%9C%80%E6%96%B0%E7%89%88_x64-setup.exe'
 
@@ -151,6 +173,7 @@ const version = ref('')
 /* 「最新版」期间不硬编一个号码；拿到 latest.json 之后再显示 v1.0.xx */
 const versionLabel = computed(() => (version.value ? `v${version.value}` : '最新版'))
 const downloadUrl = ref(FALLBACK_URL)
+const apkUrl = APK_URL
 const drawerOpen = ref(false)
 const installOpen = ref(false)
 const menuOpen = ref(false)
@@ -473,6 +496,40 @@ onBeforeUnmount(() => {
 .lp__cta-main:hover,
 .lp__cta-pick:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* Android 版：次按钮，描边胶囊，别抢主按钮的视线 */
+.lp__cta-alt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  min-height: 42px;
+  padding: 0 20px;
+  border: 1px solid rgba(142, 43, 73, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--lp-rose-deep);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.lp__cta-alt:hover {
+  background: rgba(142, 43, 73, 0.07);
+  border-color: rgba(142, 43, 73, 0.45);
+}
+
+.lp__cta-alt:focus-visible {
+  outline: 2px solid var(--lp-rose);
+  outline-offset: 2px;
+}
+
+.lp__cta-alt-note {
+  color: var(--lp-ink-soft, rgba(23, 20, 26, 0.55));
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .lp__menu {
