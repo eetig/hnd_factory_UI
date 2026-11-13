@@ -92,6 +92,11 @@ P() { echo '$sudo' | sudo -S -p '' "`$@"; }
 TS=`$(date +%Y%m%d-%H%M%S)
 P rm -rf `$S/index.new
 P cp -a $StagingDir `$S/index.new && echo '  index.new ready'
+# 桌面版更新通道（2026-11-13，变更-211）：/desktop/ 是 index 的子目录，
+# 整目录切换会把它一起抹掉 —— 抹掉后 latest.json 会退化成 SPA 的 index.html，
+# 桌面端「检查更新」拿到 HTML 就报错。这里先把线上那份 desktop/ 搬进新目录，
+# 保证网页发版不会顺手掐断客户端的自动更新。
+P cp -a `$S/index/desktop `$S/index.new/desktop 2>/dev/null && echo '  desktop/ 已保留' || echo '  desktop/ 不存在，跳过'
 P chown -R root:root `$S/index.new
 P mv `$S/index `$S/index.prev.`$TS && echo "  旧的留作 index.prev.`$TS"
 P mv `$S/index.new `$S/index && echo '  atomic swap done'
@@ -102,6 +107,8 @@ grep -o 'assets/index-[A-Za-z0-9_-]*\.\(js\|css\)' /tmp/i.html | sort -u | sed '
 for f in `$(grep -o 'assets/index-[A-Za-z0-9_-]*\.\(js\|css\)' /tmp/i.html | sort -u); do
   curl -s -o /dev/null -w "  /`$f http=%{http_code} size=%{size_download}\n" "http://127.0.0.1:$SitePort/`$f"
 done
+echo '--- desktop channel ---'
+curl -s -o /dev/null -w '  /desktop/latest.json http=%{http_code} type=%{content_type}\\n' "http://127.0.0.1:$SitePort/desktop/latest.json"
 echo '--- md5 (site vs staging) ---'
 echo -n '  site: '; md5sum `$S/index/assets/index-*.js | awk '{print `$1}'
 echo -n '  staging: '; md5sum $StagingDir/assets/index-*.js | awk '{print `$1}'
