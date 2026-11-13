@@ -235,6 +235,76 @@ function groupRatio(row) {
   return sum > 0 ? (Number(row.estimateKwh || 0) / sum) * 100 : 0
 }
 
+/*
+ * 四组分摊为什么能点开：
+ * 负值只有一个来源 —— 「其它」是倒挤项（总电量 − 八项分表）。
+ * 所以页面必须让人一眼看到「哪块表把哪一列顶上去」，否则只能反推。
+ */
+const openGroup = ref('')
+
+function toggleGroup(section) {
+  openGroup.value = openGroup.value === section ? '' : section
+}
+
+/** 分表列 → 归属组（后端 groupColumns 原样返回） */
+function groupColumns(section) {
+  return bill.value?.groupColumns?.[section] || []
+}
+
+function hasOther(section) {
+  return groupColumns(section).includes('其它')
+}
+
+/** 本期各表的增量，按绝对值从大到小；跳变 = 单块表增量超过总电量 25% */
+function groupMeters(section) {
+  const cols = groupColumns(section)
+  const total = Number(bill.value?.doneTotal || 0)
+  const rows = (bill.value?.lastPeriodMeters || [])
+    .filter((m) => cols.includes(m.column))
+    .map((m) => {
+      const usage = Number(m.usageQty || 0)
+      return {
+        meterNo: m.meterNo,
+        meterName: m.meterName || '',
+        raw: usage,
+        usageText: `${usage > 0 ? '+' : ''}${fmt(usage)} 度`,
+        pairText: `${fmt2(m.prevReading)} → ${fmt2(m.reading)}　${m.readDate || ''}`,
+        jump: total > 0 && Math.abs(usage) >= total * 0.25,
+      }
+    })
+  return rows.sort((a, b) => Math.abs(b.raw) - Math.abs(a.raw))
+}
+
+/** 「其它」本期值（doneByColumn 里就是倒挤出来的那个数） */
+const otherValue = computed(() => Number(bill.value?.doneByColumn?.['其它'] ?? 0))
+
+/** 八项分表之和：总电量 − 其它 */
+const otherTermsSum = computed(() => Number(bill.value?.doneTotal || 0) - otherValue.value)
+
+const otherFormula = computed(
+  () => `总电量 ${fmt(bill.value?.doneTotal)} − 八项分表 ${fmt(otherTermsSum.value)} = ${fmt(otherValue.value)}`,
+)
+
+/** 跳得最猛的那块表，用来把负值指到具体表上 */
+const worstMeter = computed(() => {
+  const list = groupMeters('公用工程').concat(groupMeters('一车间'), groupMeters('二车间'), groupMeters('乙炔车间'))
+  const seen = new Set()
+  let worst = null
+  for (const m of list) {
+    if (seen.has(m.meterNo)) continue
+    seen.add(m.meterNo)
+    if (!worst || Math.abs(m.raw) > Math.abs(worst.raw)) worst = m
+  }
+  return worst
+})
+
+const negativeHint = computed(() => {
+  if (otherValue.value >= 0) return ''
+  const worst = worstMeter.value
+  const who = worst ? `${worst.meterNo} 号表（${worst.meterName}）本期 ${worst.usageText}` : ''
+  return `「其它」为负：八项分表加起来 ${fmt(otherTermsSum.value)} 度，比总表 ${fmt(bill.value?.doneTotal)} 度还多，差额只能记成负数。${who ? `先核 ${who} 的读数是否抄错。` : ''}`
+})
+
 /** 分类汇总：每期卡片，展示总电量 + 前四列，点开看全部 */
 const expandedPeriod = ref('')
 function togglePeriod(key) {
@@ -443,6 +513,9 @@ function goRead() {
             <text class="el-trace-name">月末补 {{ bill.tailDays }} 天</text>
             <text class="el-trace-value">{{ fmt(bill.tailTotal) }} 度</text>
           </view>
+          <view v-if="bill.tailDays > 0" class="el-trace-sub">
+            按最后一期日均 {{ fmt2(bill.lastDailyKwh) }} 度 × {{ bill.tailDays }} 天外推
+          </view>
           <view class="el-trace-row">
             <text class="el-trace-name">预估总电量</text>
             <text class="el-trace-value">{{ fmt(bill.estimateKwh) }} 度</text>
@@ -467,15 +540,42 @@ function goRead() {
 
         <view class="el-card">
           <view class="el-card-title">四组分摊</view>
-          <view v-for="row in groupRows" :key="row.section" class="el-share-row">
-            <text class="el-share-name">{{ row.section }}</text>
-            <text class="el-share-kwh">{{ fmt(row.estimateKwh) }} 度</text>
-            <text class="el-share-pct">{{ Math.round(Number(row.ratio) * 100) }}%</text>
-            <text v-if="showMoney" class="el-share-money">{{ fmt(row.amount) }} 元</text>
+          <view v-for="row in groupRows" :key="row.section">
+            <view class="el-share-row" @click="toggleGroup(row.section)">
+              <text class="el-share-name">
+                {{ row.section }}<text class="el-share-caret">{{ openGroup === row.section ? '▾' : '▸' }}</text>
+              </text>
+              <text class="el-share-kwh">{{ fmt(row.estimateKwh) }} 度</text>
+              <text class="el-share-pct">{{ Math.round(Number(row.ratio) * 100) }}%</text>
+              <text v-if="showMoney" class="el-share-money">{{ fmt(row.amount) }} 元</text>
+            </view>
+            <view v-if="openGroup === row.section" class="el-share-detail">
+              <view
+                v-for="m in groupMeters(row.section)"
+                :key="m.meterNo"
+                class="el-detail-row"
+                :class="{ 'el-detail-row--jump': m.jump }"
+              >
+                <view class="el-detail-main">
+                  <text class="el-detail-name">{{ m.meterNo }} {{ m.meterName }}</text>
+                  <text class="el-detail-usage">{{ m.usageText }}</text>
+                </view>
+                <view class="el-detail-sub">{{ m.pairText }}</view>
+                <view v-if="m.jump" class="el-detail-flag">读数跳变，先核这块</view>
+              </view>
+              <view v-if="hasOther(row.section)" class="el-detail-row el-detail-row--other">
+                <view class="el-detail-main">
+                  <text class="el-detail-name">其它（倒挤）</text>
+                  <text class="el-detail-usage">{{ fmt(otherValue) }} 度</text>
+                </view>
+                <view class="el-detail-sub">{{ otherFormula }}</view>
+              </view>
+            </view>
           </view>
           <view class="el-share-note">
             公用工程 = 公用工程 + 中控 + 污水 + 办公 + 其它；一车间 = 2# + 4#；二车间 = 1#；乙炔 = 乙炔
           </view>
+          <view v-if="negativeHint" class="el-share-warn">{{ negativeHint }}</view>
         </view>
 
         <view v-if="!showMoney" class="el-hint">
@@ -949,6 +1049,14 @@ function goRead() {
   border-bottom: 1px dashed var(--ui-border);
 }
 
+/* 一行注脚：把「这个数是怎么外推出来的」写在算式下面，少一次心算 */
+.el-trace-sub {
+  padding: 2px 0 6px;
+  font-size: 11px;
+  color: var(--ui-text-3);
+  border-bottom: 1px dashed var(--ui-border);
+}
+
 .el-trace-row:last-child {
   border-bottom: 0;
 }
@@ -980,6 +1088,79 @@ function goRead() {
 
 .el-share-row:last-of-type {
   border-bottom: 0;
+}
+
+/* 展开后这一组的分表清单：口径写在行内，不另开弹层 */
+.el-share-detail {
+  padding: 2px 0 8px;
+  border-bottom: 1px dashed var(--ui-border);
+}
+
+.el-share-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--ui-text-3);
+}
+
+.el-detail-row {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--ui-raise-2);
+}
+
+.el-detail-row + .el-detail-row {
+  margin-top: 4px;
+}
+
+.el-detail-row--other {
+  background: transparent;
+  border: 1px dashed var(--ui-border);
+}
+
+.el-detail-row--jump {
+  background: var(--ui-amber-50);
+}
+
+.el-detail-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.el-detail-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--ui-text);
+}
+
+.el-detail-usage {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+.el-detail-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ui-text-3);
+}
+
+.el-detail-flag {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ui-amber-800);
+}
+
+.el-share-warn {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ui-amber-800);
+  background: var(--ui-amber-50);
 }
 
 .el-share-name {
