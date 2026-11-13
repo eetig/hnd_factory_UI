@@ -780,8 +780,42 @@ const highlightIndex = computed(() => {
 const highlightMeterId = computed(() => cards.value[highlightIndex.value]?.meterId || '')
 
 const trackStyle = computed(() => ({
-  transform: `translate3d(${-r2(scrollX.value)}px, 0, 0)`,
+  transform: `translate3d(${-r2(scrollX.value)}px, ${r2(kbShift.value)}px, 0)`,
 }))
+
+/*
+ * 键盘弹起时把整条轨道往上顶一点（2026-11-13，使用方实测「用量被挡住」）。
+ *
+ * 为什么不用滚动容器：舞台是"吃掉剩余空间的 flex 块"，卡片在里头垂直居中；
+ * 键盘一占三四百像素，卡片下半截（用量、拍照入口）正好落在操作栏底下。
+ * 换成可滚动容器会牵动拖拽手势（横向手势与纵向滚动抢事件），风险太大。
+ * 所以只在键盘打开时把轨道整体上移一小段：移到"卡片底边刚好露出操作栏上沿"为止，
+ * 键盘收起立刻归零。位移最大给 -220px，避免小屏幕把卡片标题顶出可视区。
+ */
+const kbShift = ref(0)
+
+function nudgeForKeyboard() {
+  if (!keyboardOpen.value) {
+    kbShift.value = 0
+    return
+  }
+  const query = uni.createSelectorQuery()
+  // 只有当前页会渲染 .mr__page-fill，所以这个选择器天然指向"正在编辑的那张卡"
+  query.select('.mr__page-fill .mr__card').boundingClientRect()
+  query.select('.mr__actions').boundingClientRect()
+  query.exec((res) => {
+    const card = res && res[0]
+    const bar = res && res[1]
+    if (!card || !bar) return
+    const overlap = card.bottom + 12 - bar.top
+    kbShift.value = overlap > 0 ? -Math.min(220, overlap) : 0
+  })
+}
+
+watch(keyboardOpen, (open) => {
+  if (open) setTimeout(nudgeForKeyboard, 280)
+  else kbShift.value = 0
+})
 
 /*
  * 每张卡的位置、大小、透明度都在这里算，全部只写 transform / opacity：
