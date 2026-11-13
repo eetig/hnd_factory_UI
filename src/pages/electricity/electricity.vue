@@ -264,6 +264,11 @@ function groupMeters(section) {
     .map((m) => {
       const usage = Number(m.usageQty || 0)
       return {
+        // 带上 id 与读数：被标黄的那一行要能就地改（改的就是这条读数）
+        id: m.id,
+        reading: m.reading,
+        prevReading: m.prevReading,
+        readDate: m.readDate,
         meterNo: m.meterNo,
         meterName: m.meterName || '',
         raw: usage,
@@ -304,6 +309,60 @@ const negativeHint = computed(() => {
   const who = worst ? `${worst.meterNo} 号表（${worst.meterName}）本期 ${worst.usageText}` : ''
   return `「其它」为负：八项分表加起来 ${fmt(otherTermsSum.value)} 度，比总表 ${fmt(bill.value?.doneTotal)} 度还多，差额只能记成负数。${who ? `先核 ${who} 的读数是否抄错。` : ''}`
 })
+
+/**
+ * 改一条已抄的读数（2026-11-13）。
+ *
+ * 为什么要有：13 号表把 6080 抄成了实际 608，页面上就整片变负，
+ * 而当时 App 里没有任何地方能改 —— 只能看着错数据算下去。
+ * 现在在预提单下钻里直接改：改完后端会连带重算下一条的用量，这里重新拉一遍账单。
+ */
+const fixTarget = ref(null)
+const fixValue = ref('')
+const fixSaving = ref(false)
+
+function openFix(m) {
+  if (!m?.id) return
+  fixTarget.value = m
+  fixValue.value = String(m.reading ?? '')
+}
+
+function closeFix() {
+  fixTarget.value = null
+  fixValue.value = ''
+}
+
+/** 改完这一行会变成多少度：手感上的即时反馈，不参与计算 */
+const fixPreview = computed(() => {
+  const m = fixTarget.value
+  const next = Number(fixValue.value)
+  if (!m || !Number.isFinite(next) || next <= 0) return ''
+  const prev = Number(m.prevReading)
+  if (!Number.isFinite(prev)) return ''
+  const delta = next - prev
+  return `本期将记 ${delta >= 0 ? '+' : ''}${fmt2(delta)} 度（表盘差，乘倍率后才是用电量）`
+})
+
+async function saveFix() {
+  const m = fixTarget.value
+  const next = Number(fixValue.value)
+  if (!m || !Number.isFinite(next) || next <= 0) {
+    uni.showToast({ title: '填一个大于 0 的读数', icon: 'none' })
+    return
+  }
+  if (fixSaving.value) return
+  fixSaving.value = true
+  try {
+    await request.put(`/api/electricity/readings/${m.id}`, { reading: next })
+    uni.showToast({ title: '已改，正在重算', icon: 'none' })
+    closeFix()
+    await load()
+  } catch (e) {
+    uni.showToast({ title: e?.response?.data?.msg || '改不了，稍后再试', icon: 'none' })
+  } finally {
+    fixSaving.value = false
+  }
+}
 
 /** 分类汇总：每期卡片，展示总电量 + 前四列，点开看全部 */
 const expandedPeriod = ref('')
@@ -559,6 +618,7 @@ function goRead() {
                 <view class="el-detail-main">
                   <text class="el-detail-name">{{ m.meterNo }} {{ m.meterName }}</text>
                   <text class="el-detail-usage">{{ m.usageText }}</text>
+                  <text v-if="m.id" class="el-detail-fix" @click.stop="openFix(m)">改</text>
                 </view>
                 <view class="el-detail-sub">{{ m.pairText }}</view>
                 <view v-if="m.jump" class="el-detail-flag">读数跳变，先核这块</view>
@@ -583,6 +643,41 @@ function goRead() {
         </view>
       </view>
         </view>
+
+  <!--
+    改读数（2026-11-13）：抄错的那一条就地改，不用去电脑上找表格。
+    表单只有一格输入 —— 现场只需要把正确的表盘数填进来，其余由后端重算。
+  -->
+  <view v-if="fixTarget" class="el-fix-mask" @click="closeFix">
+    <view class="el-fix-sheet" @click.stop>
+      <view class="el-fix-head">
+        <text class="el-fix-title">改读数</text>
+        <text class="el-fix-close" @click="closeFix">关闭</text>
+      </view>
+      <view class="el-fix-meter">{{ fixTarget.meterNo }} {{ fixTarget.meterName }}</view>
+      <view class="el-fix-meta">
+        <text>上次 {{ fmt2(fixTarget.prevReading) }}</text>
+        <text class="el-fix-dot">·</text>
+        <text>{{ fixTarget.readDate || '' }}</text>
+        <text class="el-fix-dot">·</text>
+        <text>现在是 {{ fmt2(fixTarget.reading) }}</text>
+      </view>
+      <input
+        v-model="fixValue"
+        class="el-fix-input"
+        type="digit"
+        placeholder="填正确的表盘读数"
+        :focus="true"
+      />
+      <view v-if="fixPreview" class="el-fix-preview">{{ fixPreview }}</view>
+      <view class="el-fix-actions">
+        <view class="el-fix-btn el-fix-btn--ghost" @click="closeFix">取消</view>
+        <view class="el-fix-btn el-fix-btn--primary" :class="{ 'is-busy': fixSaving }" @click="saveFix">
+          {{ fixSaving ? '保存中…' : '保存' }}
+        </view>
+      </view>
+    </view>
+  </view>
   </view>
 </template>
 
@@ -1139,6 +1234,123 @@ function goRead() {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--ui-text);
+}
+
+/* 「改」：只在有读数 id 的行出现；手指可点的最小块 32px 高 */
+.el-detail-fix {
+  margin-left: 2px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--ui-raise);
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--ui-accent);
+}
+
+/*
+ * 改读数弹层（2026-11-13）
+ * 现场只有一只手：底部弹出、一格输入、两个按钮；不用居中对话框（键盘弹起会顶到看不见）。
+ */
+.el-fix-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(28, 26, 24, 0.38);
+}
+
+.el-fix-sheet {
+  width: 100%;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  border-radius: 18px 18px 0 0;
+  background: var(--ui-surface);
+}
+
+.el-fix-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.el-fix-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.el-fix-close {
+  padding: 4px 2px;
+  font-size: 13px;
+  color: var(--ui-text-3);
+}
+
+.el-fix-meter {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--ui-text);
+}
+
+.el-fix-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ui-text-3);
+}
+
+.el-fix-dot {
+  margin: 0 6px;
+}
+
+.el-fix-input {
+  margin-top: 12px;
+  height: 46px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 2rpx solid var(--ui-border);
+  background: var(--ui-raise-2);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-text);
+}
+
+.el-fix-preview {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ui-text-2);
+}
+
+.el-fix-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.el-fix-btn {
+  flex: 1;
+  height: 46px;
+  line-height: 46px;
+  text-align: center;
+  border-radius: 999px;
+  font-size: 15px;
+}
+
+.el-fix-btn--ghost {
+  color: var(--ui-text-2);
+  background: var(--ui-raise-2);
+}
+
+.el-fix-btn--primary {
+  font-weight: 600;
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+}
+
+.el-fix-btn--primary.is-busy {
+  opacity: 0.7;
 }
 
 .el-detail-sub {
