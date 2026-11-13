@@ -419,7 +419,7 @@ const paperStyle = computed(() => {
           <!-- 导航入口：桌面版就是窗口左上角第一个可点元素；网页版同样需要它 -->
           <button
             type="button"
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            class="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] text-slate-600 transition hover:bg-slate-900/6 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
             :aria-expanded="drawerOpen ? 'true' : 'false'"
             aria-controls="app-drawer"
             aria-label="打开导航"
@@ -430,6 +430,8 @@ const paperStyle = computed(() => {
               <rect x="3" y="4" width="18" height="16" rx="2.5" />
               <path d="M9 4v16" />
             </svg>
+            <!-- 抽屉关着时右上角一个点，提示「这里还能开」；打开就隐掉 -->
+            <span v-if="!drawerOpen" class="nav-dot" aria-hidden="true"></span>
           </button>
 
           <span class="flex shrink-0 items-center gap-1.5">
@@ -553,7 +555,7 @@ const paperStyle = computed(() => {
           <Transition name="drawer-slide" appear>
             <div
               id="app-drawer"
-              class="drawer-surface absolute left-0 top-0 flex h-full w-[320px] max-w-[86vw] flex-col overflow-hidden border-r border-slate-900/10 shadow-[0_0_60px_-12px_rgba(16,24,40,0.35)]"
+              class="drawer-wash absolute left-0 top-0 flex h-full w-[320px] max-w-[86vw] flex-col overflow-hidden border-r border-slate-900/10 shadow-[0_0_60px_-12px_rgba(16,24,40,0.35)]"
               :style="{ '--tone': toneOf(drawerGroup) }"
               role="dialog"
               aria-modal="true"
@@ -574,7 +576,7 @@ const paperStyle = computed(() => {
           </div>
 
           <div
-            class="drawer-pane relative flex min-h-0 flex-1 flex-col gap-2 px-2.5 pb-3"
+            class="relative flex min-h-0 flex-1 flex-col gap-2 px-2.5 pb-3"
             :style="{ '--tone': toneOf(drawerGroup) }"
           >
             <!-- 模块：一排彩色索引签（代替原来 168px 的模块列，也省掉一半白边） -->
@@ -677,9 +679,16 @@ const paperStyle = computed(() => {
  * 规则：色只出现在三处 —— 图标底、选中项底色、左侧竖条。
  * 其余保持纸面中性色，避免整块变成彩色面板。
  */
-.drawer-surface {
-  /* 整块纸面也染 3% 的模块色：光斑之外再兜一层，空白处才不会「白得发空」 */
-  background-color: color-mix(in srgb, var(--tone, #475569) 3%, #fff);
+/* 抽屉关闭时，顶栏图标右上角的小圆点（提示还能打开） */
+.nav-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #c0455f;
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.9);
 }
 
 .drawer-chip {

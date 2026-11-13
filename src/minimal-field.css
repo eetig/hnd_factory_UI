@@ -172,43 +172,19 @@
  * 做法：两层极低 α 的径向渐变，取当前模块的 --tone（AppShell 内联设）。
  * 纯渐变、无位图、无 filter，与 .shell-glow 同一套「纸面纹理」审批。
  */
-.drawer-pane {
-  isolation: isolate;
-}
-.drawer-pane::before {
-  content: '';
-  position: absolute;
-  inset: -12px -14px auto -14px;
-  height: 420px;
-  z-index: -1;
-  pointer-events: none;
+/*
+ * 整块抽屉 = 一张完整弥散纸：浅粉 / 浅橙 / 淡紫三团从顶到底铺满，
+ * 顶部导航行不再单独压一层底色，避免「两块背景」的断档。
+ * 渐变只允许写在这个文件里（守卫测试）；不用 filter，避免拖动/截图卡顿。
+ */
+.drawer-wash {
+  background-color: #fdfbfc;
   background-image:
-    radial-gradient(
-      62% 74% at 4% -6%,
-      color-mix(in srgb, var(--tone, #475569) 20%, transparent),
-      transparent 70%
-    ),
-    radial-gradient(
-      54% 66% at 94% 4%,
-      color-mix(in srgb, var(--tone, #475569) 11%, transparent),
-      transparent 74%
-    ),
-    radial-gradient(
-      70% 46% at 12% 62%,
-      color-mix(in srgb, var(--tone, #475569) 6%, transparent),
-      transparent 78%
-    );
+    radial-gradient(58% 42% at 6% -4%, rgba(247, 198, 214, 0.55), transparent 72%),
+    radial-gradient(52% 38% at 96% 2%, rgba(222, 211, 242, 0.5), transparent 70%),
+    radial-gradient(70% 46% at 14% 58%, rgba(248, 211, 184, 0.34), transparent 76%),
+    radial-gradient(64% 52% at 88% 92%, rgba(233, 213, 240, 0.4), transparent 78%),
+    radial-gradient(80% 40% at 50% 108%, rgba(248, 214, 196, 0.32), transparent 80%);
+  background-repeat: no-repeat;
 }
-.drawer-pane::after {
-  content: '';
-  position: absolute;
-  inset: auto -20px -40px -20px;
-  height: 220px;
-  z-index: -1;
-  pointer-events: none;
-  background-image: radial-gradient(
-    64% 78% at 22% 100%,
-    color-mix(in srgb, var(--tone, #475569) 9%, transparent),
-    transparent 72%
-  );
-}
+
