@@ -17,15 +17,23 @@ done
 echo "== 1/4 上传到跳板目录"
 scp -P "$PORT" -i "$KEY" "$DIR/$EXE" "$DIR/$EXE.sig" "$DIR/latest.json" "$HOST:/home/eetig/"
 
+# 稳定别名（2026-11-13）：每次发布都顺手覆盖一份「最新版」，
+# 这样落地页 / 二维码 / 邮件里只写这一个地址，永远指向当前安装包。
+ALIAS='HND生产助手_最新版_x64-setup.exe'
+
 echo "== 2/4 拷进容器的静态目录"
-ssh -p "$PORT" -i "$KEY" "$HOST" \
-  "docker exec myOpenresty mkdir -p /www/sites/hnd-ui/index/desktop && \
-   docker cp /home/eetig/latest.json myOpenresty:/www/sites/hnd-ui/index/desktop/latest.json && \
-   docker cp '/home/eetig/$EXE' 'myOpenresty:/www/sites/hnd-ui/index/desktop/$EXE'"
+# 第二次 docker cp 用的是新名字，等于在容器里留了一份「永远指向最新版」的稳定别名
+ssh -p "$PORT" -i "$KEY" "$HOST" "
+  docker exec myOpenresty mkdir -p /www/sites/hnd-ui/index/desktop &&
+  docker cp /home/eetig/latest.json myOpenresty:/www/sites/hnd-ui/index/desktop/latest.json &&
+  docker cp '/home/eetig/$EXE' 'myOpenresty:/www/sites/hnd-ui/index/desktop/$EXE' &&
+  docker cp '/home/eetig/$EXE' 'myOpenresty:/www/sites/hnd-ui/index/desktop/$ALIAS'
+"
 
 echo "== 3/4 自检"
 curl -s -o /dev/null -w "latest.json %{http_code} %{content_type}\n" https://hbhnd.cloud/desktop/latest.json
 curl -s -o /dev/null -w "setup.exe   %{http_code} %{size_download} bytes\n" "https://hbhnd.cloud/desktop/${EXE// /%20}"
+curl -s -o /dev/null -w "最新版别名  %{http_code} %{size_download} bytes\n" "https://hbhnd.cloud/desktop/${ALIAS// /%20}"
 curl -s https://hbhnd.cloud/desktop/latest.json | head -c 120; echo
 
 echo "== 4/4 完成"

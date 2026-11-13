@@ -77,7 +77,7 @@
           <li class="lp__menu-foot">64 位安装包 · Windows 10 及以上</li>
         </ul>
 
-        <p class="lp__note">当前版本 v{{ version }} · 已登录账号与数据照旧</p>
+        <p class="lp__note">当前版本 {{ versionLabel }} · 已登录账号与数据照旧</p>
       </div>
 
       <figure class="lp__shot">
@@ -113,7 +113,7 @@
         <nav class="lp__nav">
           <a class="lp__nav-item" :href="downloadUrl" @click="drawerOpen = false">
             <span>下载 Windows 版</span>
-            <span class="lp__nav-hint">v{{ version }}</span>
+            <span class="lp__nav-hint">{{ versionLabel }}</span>
           </a>
           <button type="button" class="lp__nav-item" @click="installOpen = !installOpen">
             <span>安装说明</span>
@@ -136,10 +136,20 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import shot from '../assets/landing/purchase-board.webp'
 
+/*
+ * 兜底地址用「最新版」这个稳定别名（2026-11-13，变更-210）。
+ *
+ * 以前这里写死 1.0.13 的具体文件名：一旦 latest.json 拉不到（网络抖、CDN 抽风、
+ * 或者发布时漏了），用户点下载拿到的是几个月前的包，还不一定能装上。
+ * 现在发布脚本每次都会在容器里覆盖一份 `HND生产助手_最新版_x64-setup.exe`，
+ * 地址永远不变、内容永远最新 —— 兜底也兜得住。
+ */
 const FALLBACK_URL =
-  'https://hbhnd.cloud/desktop/HND%E7%94%9F%E4%BA%A7%E5%8A%A9%E6%89%8B_1.0.13_x64-setup.exe'
+  'https://hbhnd.cloud/desktop/HND%E7%94%9F%E4%BA%A7%E5%8A%A9%E6%89%8B_%E6%9C%80%E6%96%B0%E7%89%88_x64-setup.exe'
 
-const version = ref('1.0.13')
+const version = ref('')
+/* 「最新版」期间不硬编一个号码；拿到 latest.json 之后再显示 v1.0.xx */
+const versionLabel = computed(() => (version.value ? `v${version.value}` : '最新版'))
 const downloadUrl = ref(FALLBACK_URL)
 const drawerOpen = ref(false)
 const installOpen = ref(false)
@@ -173,7 +183,7 @@ async function loadRelease() {
  * 将来 `latest.json` 加上 `history` 数组时，在这里 map 一遍即可。
  */
 const versions = computed(() => [
-  { id: 'latest', label: `v${version.value}`, note: '最新版 · 推荐', url: downloadUrl.value },
+  { id: 'latest', label: versionLabel.value, note: '最新版 · 推荐', url: downloadUrl.value },
 ])
 
 function onDownload() {
