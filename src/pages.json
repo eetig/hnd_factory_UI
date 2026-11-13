@@ -49,6 +49,12 @@
       "style": {
         "navigationBarTitleText": "隐私政策"
       }
+    },
+    {
+      "path": "pages/pickParse/pickParse",
+      "style": {
+        "navigationBarTitleText": "领料解析"
+      }
     }
   ],
   "globalStyle": {

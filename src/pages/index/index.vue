@@ -155,6 +155,9 @@ const tabs = [
   { key: 'stock', label: '物料查询', icon: 'goods', hint: '按工厂 / 存储地点查看物料库存', group: 'tools' },
   // 图片解析：单据图片识别辅助录入（变更-003）。权限位与文件导入相同（work_order:import）
   { key: 'imageParse', label: '图片解析', icon: 'image', hint: '拍照识别单据并确认入库', perm: 'work_order:import', group: 'maintain' },
+  // 领料解析（2026-11-13）：拍纸质《物资领料单》→ 核对 → 发到电脑，电脑端一键导出 SAP 能粘的表。
+  // 手机上没有 Excel 可粘，硬做导出反而多一步，所以这一项是独立页面（navigateTo），不是内嵌 Tab。
+  { key: 'pickParse', label: '领料解析', icon: 'file-add', hint: '拍照发到电脑，导出可粘进 SAP 的表', perm: 'work_order:import', group: 'maintain', page: '/pages/pickParse/pickParse' },
   { key: 'weekly', label: '周统计', icon: 'chart-bar', hint: '上周领料、入库与单耗汇总', group: 'stats' },
   { key: 'daily', label: '日报表记录', icon: 'clock', hint: '按日归集的生产报表记录', group: 'stats' },
   // 月底储罐液位记录：查询免登录（不带 perm），录入/删除按钮按 tank_level:edit 权限显隐
@@ -527,6 +530,13 @@ function selectTabFromMenu(key) {
 
   // 走 closeMenu（带收起动画），不是直接置 false —— 见 NavDrawer 里 close() 的说明
   closeMenu()
+
+  // 独立页面型入口（带 page 字段）：手机上没有可内嵌的面板，压栈打开自己的页面
+  if (tab?.page) {
+    uni.navigateTo({ url: tab.page })
+    return
+  }
+
   handleTabChange(key)
 }
 
