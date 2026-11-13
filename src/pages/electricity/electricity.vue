@@ -557,8 +557,7 @@ function goRead() {
             <template v-else>{{ fmt(bill.estimateKwh) }}<text class="el-hero-unit">度</text></template>
           </view>
           <view class="el-hero-sub">
-            区间 {{ bill.from }} → {{ bill.to }}
-            <text v-if="bill.tailDays > 0">（含月末补 {{ bill.tailDays }} 天）</text>
+            区间 {{ bill.from }} → {{ bill.to }}<text v-if="bill.headDays > 0 || bill.tailDays > 0">（含<text v-if="bill.headDays > 0">月初补 {{ bill.headDays }} 天</text><text v-if="bill.headDays > 0 && bill.tailDays > 0">、</text><text v-if="bill.tailDays > 0">月末补 {{ bill.tailDays }} 天</text>）</text>
           </view>
         </view>
 
@@ -567,6 +566,13 @@ function goRead() {
           <view class="el-trace-row">
             <text class="el-trace-name">已抄总电量</text>
             <text class="el-trace-value">{{ fmt(bill.doneTotal) }} 度</text>
+          </view>
+          <view v-if="bill.headDays > 0" class="el-trace-row">
+            <text class="el-trace-name">月初补 {{ bill.headDays }} 天</text>
+            <text class="el-trace-value">{{ fmt(bill.headTotal) }} 度</text>
+          </view>
+          <view v-if="bill.headDays > 0" class="el-trace-sub">
+            月初那几天没有抄表记录，按第一期日均补齐，不按更早的长周期
           </view>
           <view class="el-trace-row">
             <text class="el-trace-name">月末补 {{ bill.tailDays }} 天</text>
