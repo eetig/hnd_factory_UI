@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { exportPickExcel, listPickTemplates, recognizePickDoc, uploadPickTemplate } from '../../api/pickParse'
+import { discardPickOrder, markPickOrderUsed, pendingPickOrders, pickOrderDetail } from '../../api/pickOrder'
 
 /*
  * 领料解析（变更-190，2026-11-12）。
@@ -229,11 +230,110 @@ function reset() {
   itemsWarn.value = ''
 }
 
-onMounted(loadTemplates)
+/*
+ * 手机传来的单（2026-11-13）。
+ *
+ * 使用方的主战场在车间：手机拍、手机核对，回到电脑才粘进 SAP。手机上导出 xlsx 再传回电脑
+ * 要过微信/文件管理器好几步，比他重敲编码还慢，所以手机只负责「拍 + 核对 + 发」，
+ * 数据先落到后端队列，这里一键取用。
+ */
+const queue = ref([])
+const queueLoading = ref(false)
+
+async function loadQueue() {
+  queueLoading.value = true
+  try {
+    queue.value = await pendingPickOrders()
+  } catch (error) {
+    // 队列拉不到不该挡住主流程（拍照识别照样能用），只清空不弹错
+    queue.value = []
+  } finally {
+    queueLoading.value = false
+  }
+}
+
+function queueMeta(row) {
+  const bits = [`${row.itemCount || 0} 行`]
+  if (row.requester) bits.push(row.requester)
+  if (row.createdAt) bits.push(String(row.createdAt).slice(5, 16).replace('T', ' '))
+  return bits.join(' · ')
+}
+
+/** 取用：先拉明细填进核对界面，**填成功了才标记已用**，手滑点错不会把单弄丢 */
+async function takeFromQueue(row) {
+  try {
+    const detail = await pickOrderDetail(row.id)
+    if (!detail) return
+    reset()
+    doc.value = {
+      documentType: '',
+      documentNo: detail.docNo || '',
+      docDate: detail.docDate || '',
+      department: detail.dept || '',
+      requester: detail.requester || '',
+    }
+    items.value = (detail.items || []).map((item) => ({
+      materialCode: item.materialCode || '',
+      materialName: item.materialName || '',
+      quantity: item.quantity === null || item.quantity === undefined ? '' : String(item.quantity),
+      unit: item.unit || '',
+    }))
+    if (!items.value.length) items.value = [blankItem()]
+    await loadTemplates()
+    await markPickOrderUsed(row.id)
+    await loadQueue()
+    ElMessage.success(`已取用 ${detail.dept || '未写部门'}的单，${items.value.length} 行`)
+  } catch (error) {
+    ElMessage.error(error?.message || '取用失败')
+  }
+}
+
+async function dropFromQueue(row) {
+  try {
+    await discardPickOrder(row.id)
+    await loadQueue()
+  } catch (error) {
+    ElMessage.error(error?.message || '删除失败')
+  }
+}
+
+onMounted(async () => {
+  await loadTemplates()
+  await loadQueue()
+})
 </script>
 
 <template>
   <div class="pick">
+    <!-- 手机传来的单排在照片卡上面：这几张已经在等你了，比「再拍一张」优先 -->
+    <section v-if="queue.length" class="pick__card pick__card--queue">
+      <header class="pick__head">
+        <h2 class="pick__title">
+          手机传来 {{ queue.length }} 单
+          <span class="pick__tag">待取用</span>
+        </h2>
+        <div class="pick__acts">
+          <button type="button" class="pick__btn pick__btn--ghost" :disabled="queueLoading" @click="loadQueue">
+            {{ queueLoading ? '刷新中…' : '刷新' }}
+          </button>
+        </div>
+      </header>
+      <ul class="pick__queue">
+        <li v-for="row in queue" :key="row.id" class="pick__queue-row">
+          <div class="pick__queue-main">
+            <p class="pick__queue-title">
+              {{ row.dept || '未写部门' }}
+              <span v-if="row.docNo" class="pick__meta-dim">· {{ row.docNo }}</span>
+            </p>
+            <p class="pick__queue-meta">{{ queueMeta(row) }}</p>
+          </div>
+          <div class="pick__queue-acts">
+            <button type="button" class="pick__btn" @click="takeFromQueue(row)">取用</button>
+            <button type="button" class="pick__link" @click="dropFromQueue(row)">不要了</button>
+          </div>
+        </li>
+      </ul>
+    </section>
     <section class="pick__card pick__card--photo">
       <header class="pick__head">
         <h2 class="pick__title">领料单照片</h2>
@@ -514,6 +614,24 @@ onMounted(loadTemplates)
 }
 .pick__meta-dim {
   @apply text-slate-500;
+}
+.pick__queue {
+  @apply flex flex-col gap-2;
+}
+.pick__queue-row {
+  @apply flex items-center justify-between gap-3 rounded-lg border border-line bg-region px-3 py-2;
+}
+.pick__queue-main {
+  @apply min-w-0 flex-1;
+}
+.pick__queue-title {
+  @apply truncate text-[13px] font-medium text-slate-900;
+}
+.pick__queue-meta {
+  @apply mt-0.5 text-xs text-slate-500;
+}
+.pick__queue-acts {
+  @apply flex shrink-0 items-center gap-2.5;
 }
 .pick__foot {
   @apply mt-4 flex items-center justify-between gap-4 border-t border-line pt-3.5;
