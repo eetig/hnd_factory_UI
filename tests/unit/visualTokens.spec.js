@@ -1192,9 +1192,11 @@ describe('侧栏宽度必须装得下最长的那条分组提示', () => {
    * 加宽侧栏（w-56 → w-72）或用更小的图标块都会让这条重新通过；
    * 有人把某条提示写长了则会变红 —— 那时要么改提示，要么再调宽度，别让它悄悄折行。
    */
-  it('抽屉宽 520px 且窄屏收成 92vw（不许在手机上撑破屏）', () => {
-    expect(WORKBENCH).toContain('w-[520px]')
-    expect(WORKBENCH).toContain('max-w-[92vw]')
+  it('抽屉宽 320px 且窄屏收成 86vw（不许在手机上撑破屏）', () => {
+    // 2026-11-13 变更-209：使用方嫌 520px 太宽、留白太多 → 模块改成顶部一排彩色索引签，
+    // 页面列表独占一列，宽度收到 320px；窄屏仍按比例收，不许撑破屏。
+    expect(WORKBENCH).toContain('w-[320px]')
+    expect(WORKBENCH).toContain('max-w-[86vw]')
   })
 
   it('.minimal-field 配方解析出来了 —— 锚点断了先在这里红', () => {

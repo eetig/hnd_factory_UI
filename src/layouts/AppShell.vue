@@ -553,7 +553,8 @@ const paperStyle = computed(() => {
           <Transition name="drawer-slide" appear>
             <div
               id="app-drawer"
-              class="absolute left-0 top-0 flex h-full w-[520px] max-w-[92vw] flex-col overflow-hidden border-r border-slate-900/10 bg-white shadow-[0_0_60px_-12px_rgba(16,24,40,0.35)]"
+              class="drawer-surface absolute left-0 top-0 flex h-full w-[320px] max-w-[86vw] flex-col overflow-hidden border-r border-slate-900/10 shadow-[0_0_60px_-12px_rgba(16,24,40,0.35)]"
+              :style="{ '--tone': toneOf(drawerGroup) }"
               role="dialog"
               aria-modal="true"
               aria-label="导航"
@@ -572,82 +573,78 @@ const paperStyle = computed(() => {
             <p class="text-[11px] font-medium tracking-[0.22em] text-slate-500">导航</p>
           </div>
 
-          <div class="flex min-h-0 flex-1 gap-2 px-2 pb-3">
-            <!-- 模块列：一枚色片 + 名字，选中时色片填满、左侧起一条色条 -->
-            <div
-              class="flex w-[168px] shrink-0 flex-col gap-1 overflow-y-auto"
-              role="group"
-              aria-label="模块"
-            >
+          <div
+            class="drawer-pane relative flex min-h-0 flex-1 flex-col gap-2 px-2.5 pb-3"
+            :style="{ '--tone': toneOf(drawerGroup) }"
+          >
+            <!-- 模块：一排彩色索引签（代替原来 168px 的模块列，也省掉一半白边） -->
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="模块">
               <button
                 v-for="(group, gi) in visibleGroups"
                 :key="group.key"
                 type="button"
-                class="drawer-group flex items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                class="drawer-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
                 :class="drawerGroup === group.key ? 'is-active' : ''"
                 :style="{ '--tone': toneOf(group.key), '--i': gi }"
                 :data-group="group.key"
                 :aria-current="currentGroup === group.key ? 'true' : undefined"
                 @click="pickGroupInDrawer(group.key)"
               >
-                <span class="drawer-group-chip flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]">
-                  <svg
-                    class="h-[15px] w-[15px]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.9"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path :d="GROUP_ICON_PATHS[group.key]" />
-                  </svg>
-                </span>
+                <svg
+                  class="h-[13px] w-[13px] shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.9"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path :d="GROUP_ICON_PATHS[group.key]" />
+                </svg>
                 <span class="truncate">{{ group.label }}</span>
               </button>
             </div>
 
-            <!-- 页面列：跟随当前模块的色相，选中项是「浅色底 + 色条」 -->
-            <div class="flex min-w-0 flex-1 flex-col" :style="{ '--tone': toneOf(drawerGroup) }">
-              <p
-                v-if="drawerGroupObj"
-                class="drawer-hint flex items-center gap-1.5 px-2 pb-1.5 pt-1 text-[11px] text-slate-500"
+            <!-- 页面：跟随模块色相的彩色弥散底，选中项「浅色底 + 色条」 -->
+            <p
+              v-if="drawerGroupObj"
+              class="drawer-hint flex items-center gap-1.5 px-1 pt-0.5 text-[11px] text-slate-500"
+            >
+              <span class="drawer-hint-dot" aria-hidden="true"></span>
+              {{ drawerGroupObj.hint }}
+            </p>
+            <nav
+              class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
+              :aria-label="`${drawerGroupObj?.label || ''}下的页面`"
+            >
+              <button
+                v-for="(item, ii) in drawerItems"
+                :key="item.key"
+                type="button"
+                class="drawer-page flex w-full items-center justify-between gap-2 px-2.5 py-[7px] text-left text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                :class="navItemState(item) === 'locked' ? 'is-locked' : ''"
+                :style="{ '--i': ii }"
+                :aria-current="item.path === route.path ? 'page' : undefined"
+                :aria-disabled="navItemState(item) === 'locked' ? 'true' : undefined"
+                @click="navItemState(item) === 'locked' ? (drawerOpen = false, openLock(item)) : pickFromDrawer(item.path)"
               >
-                <span class="drawer-hint-dot" aria-hidden="true"></span>
-                {{ drawerGroupObj.hint }}
-              </p>
-              <nav
-                class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
-                :aria-label="`${drawerGroupObj?.label || ''}下的页面`"
-              >
-                <button
-                  v-for="(item, ii) in drawerItems"
-                  :key="item.key"
-                  type="button"
-                  class="drawer-page flex w-full items-center justify-between gap-2 px-2.5 py-[7px] text-left text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-                  :class="navItemState(item) === 'locked' ? 'is-locked' : ''"
-                  :style="{ '--i': ii }"
-                  :aria-current="item.path === route.path ? 'page' : undefined"
-                  :aria-disabled="navItemState(item) === 'locked' ? 'true' : undefined"
-                  @click="navItemState(item) === 'locked' ? (drawerOpen = false, openLock(item)) : pickFromDrawer(item.path)"
+                <span class="truncate">{{ item.label }}</span>
+                <svg
+                  v-if="navItemState(item) === 'locked'"
+                  class="h-3.5 w-3.5 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
                 >
-                  <span class="truncate">{{ item.label }}</span>
-                  <svg
-                    v-if="navItemState(item) === 'locked'"
-                    class="h-3.5 w-3.5 shrink-0"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    aria-hidden="true"
-                  >
-                    <rect x="4" y="10" width="16" height="10" rx="2" />
-                    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-                  </svg>
-                </button>
-              </nav>
-            </div>
+                  <rect x="4" y="10" width="16" height="10" rx="2" />
+                  <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+                </svg>
+              </button>
+            </nav>
+            <p class="drawer-foot px-1 pt-1 text-[11px] text-slate-500">Ctrl+B 开合</p>
           </div>
           </div>
           </Transition>
@@ -680,55 +677,39 @@ const paperStyle = computed(() => {
  * 规则：色只出现在三处 —— 图标底、选中项底色、左侧竖条。
  * 其余保持纸面中性色，避免整块变成彩色面板。
  */
-.drawer-group {
+.drawer-surface {
+  /* 整块纸面也染 3% 的模块色：光斑之外再兜一层，空白处才不会「白得发空」 */
+  background-color: color-mix(in srgb, var(--tone, #475569) 3%, #fff);
+}
+
+.drawer-chip {
   --tone: #475569;
   position: relative;
-  color: #475569;
+  color: color-mix(in srgb, var(--tone) 78%, #0f172a);
+  background-color: color-mix(in srgb, var(--tone) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tone) 16%, transparent);
   transition:
     background-color 150ms ease,
-    color 150ms ease;
+    color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
-.drawer-group::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 22%;
-  height: 56%;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--tone);
-  transform: scaleY(0);
-  transform-origin: center;
-  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.drawer-group:hover {
-  background-color: color-mix(in srgb, var(--tone) 6%, transparent);
-  color: #0f172a;
-}
-.drawer-group.is-active {
-  background-color: color-mix(in srgb, var(--tone) 9%, transparent);
-  color: #0f172a;
-  font-weight: 500;
-}
-.drawer-group.is-active::before {
-  transform: scaleY(1);
-}
-.drawer-group-chip {
-  background-color: color-mix(in srgb, var(--tone) 11%, transparent);
-  color: var(--tone);
-  transition:
-    background-color 160ms ease,
-    color 160ms ease,
-    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.drawer-group:hover .drawer-group-chip {
-  background-color: color-mix(in srgb, var(--tone) 18%, transparent);
+.drawer-chip:hover {
+  background-color: color-mix(in srgb, var(--tone) 13%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 28%, transparent);
   transform: translateY(-1px);
 }
-.drawer-group.is-active .drawer-group-chip {
+.drawer-chip.is-active {
   background-color: var(--tone);
+  border-color: var(--tone);
   color: #fff;
   transform: none;
+}
+.drawer-chip.is-active svg {
+  color: #fff;
+}
+.drawer-chip svg {
+  color: var(--tone);
 }
 
 .drawer-hint-dot {
@@ -789,7 +770,7 @@ const paperStyle = computed(() => {
  * 为什么值得做动画：抽屉是「整块滑进来」的，里面的字如果一帧到位，
  * 看上去像贴图；错开一点点，眼睛才会觉得这是一层真的面板。
  */
-.drawer-group,
+.drawer-chip,
 .drawer-page {
   animation: drawer-item-in 260ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
   animation-delay: calc(var(--i, 0) * 22ms + 40ms);
@@ -805,11 +786,9 @@ const paperStyle = computed(() => {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .drawer-group,
+  .drawer-chip,
   .drawer-page,
-  .drawer-group::before,
-  .drawer-page::before,
-  .drawer-group-chip {
+  .drawer-page::before {
     animation: none !important;
     transition: none !important;
   }

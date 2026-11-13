@@ -161,3 +161,54 @@
    以及玻璃时代为它写的三条降级路径。工程图现在是一张干净的真实截图
    + 1px 发丝线 + 图注。
    ========================================================================== */
+
+/* ==========================================================================
+   抽屉导航：跟随模块色相的彩色弥散（2026-11-13，变更-209）
+   ==========================================================================
+ *
+ * 使用方批「留白太多难看，做成彩色弥散」。抽屉只有四五条页面，下面一大片白，
+ * 要靠色彩把这块「空气」染住，又不能盖住字。
+ *
+ * 做法：两层极低 α 的径向渐变，取当前模块的 --tone（AppShell 内联设）。
+ * 纯渐变、无位图、无 filter，与 .shell-glow 同一套「纸面纹理」审批。
+ */
+.drawer-pane {
+  isolation: isolate;
+}
+.drawer-pane::before {
+  content: '';
+  position: absolute;
+  inset: -12px -14px auto -14px;
+  height: 420px;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      62% 74% at 4% -6%,
+      color-mix(in srgb, var(--tone, #475569) 20%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      54% 66% at 94% 4%,
+      color-mix(in srgb, var(--tone, #475569) 11%, transparent),
+      transparent 74%
+    ),
+    radial-gradient(
+      70% 46% at 12% 62%,
+      color-mix(in srgb, var(--tone, #475569) 6%, transparent),
+      transparent 78%
+    );
+}
+.drawer-pane::after {
+  content: '';
+  position: absolute;
+  inset: auto -20px -40px -20px;
+  height: 220px;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(
+    64% 78% at 22% 100%,
+    color-mix(in srgb, var(--tone, #475569) 9%, transparent),
+    transparent 72%
+  );
+}

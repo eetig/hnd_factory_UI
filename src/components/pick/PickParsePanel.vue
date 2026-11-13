@@ -244,7 +244,7 @@ async function loadQueue() {
   queueLoading.value = true
   try {
     queue.value = await pendingPickOrders()
-  } catch (error) {
+  } catch {
     // 队列拉不到不该挡住主流程（拍照识别照样能用），只清空不弹错
     queue.value = []
   } finally {
