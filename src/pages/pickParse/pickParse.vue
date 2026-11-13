@@ -145,7 +145,18 @@ import { chooseImages } from '../../utils/chooseImages'
 const DEPTS = ['生产部', '行政部', '安环部', '设备部']
 
 const photo = ref('')
-const photoSrc = computed(() => (photo.value ? resolveAssetUrl(photo.value) : ''))
+/*
+ * 本地临时路径不能过 resolveAssetUrl：那是给后端返回的 /files、/thumbs 相对路径补域名的，
+ * 把 _doc/uniapp_temp/xxx.jpg 当成相对路径会拼成 https://host/_doc/... ⇒ 缩略图空白
+ * （2026-11-13 使用方实测）。服务端地址才需要补。
+ */
+const photoSrc = computed(() => {
+  const path = photo.value
+  if (!path) return ''
+  if (/^(file|content|blob|data):/i.test(path)) return path
+  if (path.startsWith('_doc') || path.startsWith('_www') || path.startsWith('/storage')) return path
+  return resolveAssetUrl(path)
+})
 const recognizing = ref(false)
 const sending = ref(false)
 const sent = ref(false)
@@ -269,20 +280,33 @@ async function startRecognize(filePath) {
   }
 }
 
+/*
+ * myocr 每个字段都带置信度：{ value, confidence }。
+ * 直接把对象塞进 v-model 会显示成 [object Object]（2026-11-13 使用方实测），
+ * 所以统一在这里拆一层；将来后端改成扁平字符串也照样能用。
+ */
+function field(value) {
+  if (value && typeof value === 'object' && 'value' in value) return value.value
+  return value
+}
+
 function applyResult(result) {
-  const deptFromOcr = String(result.department || '').trim()
+  const deptFromOcr = text(field(result.department))
   if (deptFromOcr) dept.value = deptFromOcr
-  if (result.requester) requester.value = String(result.requester).trim()
-  if (result.documentNo) docNo.value = String(result.documentNo).trim()
-  if (result.docDate) docDate.value = normalizeDate(result.docDate)
+  const whoFromOcr = text(field(result.requester))
+  if (whoFromOcr) requester.value = whoFromOcr
+  const noFromOcr = text(field(result.documentNo))
+  if (noFromOcr) docNo.value = noFromOcr
+  const dateFromOcr = text(field(result.docDate))
+  if (dateFromOcr) docDate.value = normalizeDate(dateFromOcr)
 
   const items = Array.isArray(result.items) ? result.items : []
   rows.value = items.map((item) => ({
     key: ++uid,
-    materialName: text(item.materialName),
-    materialCode: text(item.materialCode),
-    quantity: text(item.quantity),
-    unit: text(item.unit),
+    materialName: text(field(item.materialName)),
+    materialCode: text(field(item.materialCode)),
+    quantity: text(field(item.quantity)),
+    unit: text(field(item.unit)),
   }))
   if (!rows.value.length) rows.value = [blankLine()]
   loadTemplates()
