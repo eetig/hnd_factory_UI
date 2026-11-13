@@ -139,9 +139,64 @@ const drawerGroupObj = computed(
 )
 const drawerItems = computed(() => drawerGroupObj.value?.items ?? [])
 
+/**
+ * 模块分色（2026-11-12 使用方：「导航栏要色彩没色彩，要样式没样式，要动画没动画」）。
+ *
+ * 概念：车间墙上的**彩色索引标签**——一本台账，六个模块各占一个色的书签。
+ * 所以每个模块只给一个色相，色只在「图标底、选中底色、左侧竖条」三处出现，
+ * 其余全是纸面中性色；不用渐变、不用阴影，避免又退回彩色大色块。
+ * 色相按语义挑：工单=琥珀（单据纸）、物料=青绿（库存/物料牌）、采购=玫红（跟品牌同族）、
+ * 设备=靛蓝（机电）、报表=紫（统计）、维护=石板灰（后台）。
+ */
+const GROUP_TONES = {
+  order: '#B45309',
+  materials: '#0F766E',
+  purchase: '#BE123C',
+  equipment: '#4338CA',
+  stats: '#7C3AED',
+  maintain: '#475569',
+}
+function toneOf(key) {
+  return GROUP_TONES[key] || '#475569'
+}
+
 function openDrawer() {
   drawerGroup.value = currentGroup.value || visibleGroups.value[0]?.key || ''
   drawerOpen.value = true
+}
+
+/**
+ * 拖动窗口（2026-11-12 使用方：「鼠标按住左键不能拖动客户端」）。
+ *
+ * 为什么不用 `data-tauri-drag-region`：顶栏并成一条之后，中间全是页签和按钮，
+ * 真正「空白可拖」的地方几乎为零，光靠属性等于没有拖动区。
+ * 这里改成：在顶栏按下左键 → 只要按到的不是控件，就交给系统开始拖动。
+ * 判据用 closest 把按钮/链接/输入框/页签排除掉，点这些照常触发点击。
+ */
+const NO_DRAG_SELECTOR = 'button, a, input, select, textarea, [role="tab"], [role="button"], [data-no-drag]'
+
+async function beginWindowDrag(event) {
+  if (!isDesktop || event.button !== 0) return
+  if (event.target?.closest?.(NO_DRAG_SELECTOR)) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().startDragging()
+  } catch {
+    /* 网页版，或窗口已经没了 */
+  }
+}
+
+/** 顶栏空白处双击 = 最大化 / 还原，跟 Windows 标题栏的习惯一致 */
+async function onTopbarDoubleClick(event) {
+  if (!isDesktop) return
+  if (event.target?.closest?.(NO_DRAG_SELECTOR)) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const win = getCurrentWindow()
+    await win.toggleMaximize()
+  } catch {
+    /* 同上 */
+  }
 }
 
 function pickFromDrawer(path) {
@@ -352,12 +407,14 @@ const paperStyle = computed(() => {
         <!--
           唯一的一条顶栏：侧栏开关 · 品牌 · 页签 · 工具 · 账号 · 窗口按钮。
           2026-11-12 使用方：「红色框选部分能不能挪到最上面去，而且字体太大了太显眼了」——
-          原来「标题栏 + 导航条」两条横带合并成这一条，桌面版整条带 `data-tauri-drag-region`
-          当拖动区（子元素没这个属性，所以按钮照常可点）。
+          原来「标题栏 + 导航条」两条横带合并成这一条；拖动不再靠 `data-tauri-drag-region`
+          （整条几乎全是控件，属性等于没有拖动区），改成按下左键时自己判断
+          「按到的是不是控件」，见 beginWindowDrag()。
         -->
         <header
           class="shell-topbar relative z-10 flex shrink-0 items-center gap-2.5 px-3 py-1"
-          data-tauri-drag-region
+          @mousedown="beginWindowDrag"
+          @dblclick="onTopbarDoubleClick"
         >
           <!-- 导航入口：桌面版就是窗口左上角第一个可点元素；网页版同样需要它 -->
           <button
@@ -501,10 +558,10 @@ const paperStyle = computed(() => {
               aria-modal="true"
               aria-label="导航"
             >
-          <div class="flex items-center justify-between px-4 py-3">
+          <div class="flex items-center justify-between px-4 pb-2 pt-3">
             <button
               type="button"
-              class="flex h-7 w-7 items-center justify-center rounded-[3px] border border-slate-900/12 text-slate-500 transition hover:border-slate-900/30 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              class="flex h-7 w-7 items-center justify-center rounded-[7px] border border-slate-900/12 text-slate-500 transition hover:border-slate-900/30 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
               aria-label="关闭导航"
               @click="drawerOpen = false"
             >
@@ -515,55 +572,62 @@ const paperStyle = computed(() => {
             <p class="text-[11px] font-medium tracking-[0.22em] text-slate-500">导航</p>
           </div>
 
-          <div class="flex min-h-0 flex-1 gap-1 px-2 pb-3">
-            <!-- 模块列 -->
+          <div class="flex min-h-0 flex-1 gap-2 px-2 pb-3">
+            <!-- 模块列：一枚色片 + 名字，选中时色片填满、左侧起一条色条 -->
             <div
-              class="flex w-[168px] shrink-0 flex-col gap-0.5 overflow-y-auto"
+              class="flex w-[168px] shrink-0 flex-col gap-1 overflow-y-auto"
               role="group"
               aria-label="模块"
             >
               <button
-                v-for="group in visibleGroups"
+                v-for="(group, gi) in visibleGroups"
                 :key="group.key"
                 type="button"
-                class="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-                :class="
-                  drawerGroup === group.key
-                    ? 'bg-slate-900/[0.06] font-medium text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-900/[0.04]'
-                "
+                class="drawer-group flex items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                :class="drawerGroup === group.key ? 'is-active' : ''"
+                :style="{ '--tone': toneOf(group.key), '--i': gi }"
                 :data-group="group.key"
                 :aria-current="currentGroup === group.key ? 'true' : undefined"
                 @click="pickGroupInDrawer(group.key)"
               >
-                <svg class="h-4 w-4 shrink-0 opacity-75" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path :d="GROUP_ICON_PATHS[group.key]" />
-                </svg>
+                <span class="drawer-group-chip flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]">
+                  <svg
+                    class="h-[15px] w-[15px]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path :d="GROUP_ICON_PATHS[group.key]" />
+                  </svg>
+                </span>
                 <span class="truncate">{{ group.label }}</span>
               </button>
             </div>
 
-            <!-- 页面列 -->
-            <div class="flex min-w-0 flex-1 flex-col">
-              <p v-if="drawerGroupObj" class="px-2.5 pb-1.5 pt-1 text-[11px] text-slate-500">
+            <!-- 页面列：跟随当前模块的色相，选中项是「浅色底 + 色条」 -->
+            <div class="flex min-w-0 flex-1 flex-col" :style="{ '--tone': toneOf(drawerGroup) }">
+              <p
+                v-if="drawerGroupObj"
+                class="drawer-hint flex items-center gap-1.5 px-2 pb-1.5 pt-1 text-[11px] text-slate-500"
+              >
+                <span class="drawer-hint-dot" aria-hidden="true"></span>
                 {{ drawerGroupObj.hint }}
               </p>
               <nav
-                class="min-h-0 flex-1 overflow-y-auto"
+                class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto"
                 :aria-label="`${drawerGroupObj?.label || ''}下的页面`"
               >
                 <button
-                  v-for="item in drawerItems"
+                  v-for="(item, ii) in drawerItems"
                   :key="item.key"
                   type="button"
-                  class="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
-                  :class="
-                    item.path === route.path
-                      ? 'bg-slate-900/[0.06] font-medium text-slate-900'
-                      : navItemState(item) === 'locked'
-                        ? 'text-slate-500 opacity-70 hover:bg-white/45'
-                        : 'text-slate-700 hover:bg-white/55'
-                  "
+                  class="drawer-page flex w-full items-center justify-between gap-2 px-2.5 py-[7px] text-left text-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                  :class="navItemState(item) === 'locked' ? 'is-locked' : ''"
+                  :style="{ '--i': ii }"
                   :aria-current="item.path === route.path ? 'page' : undefined"
                   :aria-disabled="navItemState(item) === 'locked' ? 'true' : undefined"
                   @click="navItemState(item) === 'locked' ? (drawerOpen = false, openLock(item)) : pickFromDrawer(item.path)"
@@ -611,6 +675,146 @@ const paperStyle = computed(() => {
 </template>
 
 <style scoped>
+/* ===== 抽屉导航（2026-11-12 重做：彩色索引标签 + 入场节奏） ===== */
+/*
+ * 规则：色只出现在三处 —— 图标底、选中项底色、左侧竖条。
+ * 其余保持纸面中性色，避免整块变成彩色面板。
+ */
+.drawer-group {
+  --tone: #475569;
+  position: relative;
+  color: #475569;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+.drawer-group::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  height: 56%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--tone);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.drawer-group:hover {
+  background-color: color-mix(in srgb, var(--tone) 6%, transparent);
+  color: #0f172a;
+}
+.drawer-group.is-active {
+  background-color: color-mix(in srgb, var(--tone) 9%, transparent);
+  color: #0f172a;
+  font-weight: 500;
+}
+.drawer-group.is-active::before {
+  transform: scaleY(1);
+}
+.drawer-group-chip {
+  background-color: color-mix(in srgb, var(--tone) 11%, transparent);
+  color: var(--tone);
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.drawer-group:hover .drawer-group-chip {
+  background-color: color-mix(in srgb, var(--tone) 18%, transparent);
+  transform: translateY(-1px);
+}
+.drawer-group.is-active .drawer-group-chip {
+  background-color: var(--tone);
+  color: #fff;
+  transform: none;
+}
+
+.drawer-hint-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--tone, #94a3b8);
+}
+.drawer-hint {
+  color: #64748b;
+}
+
+.drawer-page {
+  position: relative;
+  border-radius: 9px;
+  color: #475569;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease,
+    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.drawer-page::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 26%;
+  height: 48%;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--tone, #475569);
+  transform: scaleY(0);
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.drawer-page:hover {
+  background-color: color-mix(in srgb, var(--tone, #475569) 6%, transparent);
+  color: #0f172a;
+  transform: translateX(2px);
+}
+.drawer-page[aria-current='page'] {
+  background-color: color-mix(in srgb, var(--tone, #475569) 11%, transparent);
+  color: #0f172a;
+  font-weight: 500;
+  transform: none;
+}
+.drawer-page[aria-current='page']::before {
+  transform: scaleY(1);
+}
+.drawer-page.is-locked {
+  color: #94a3b8;
+}
+.drawer-page.is-locked:hover {
+  background-color: rgba(148, 163, 184, 0.1);
+}
+
+/*
+ * 入场：每项依次落位（22ms 一档），只动 transform / opacity。
+ * 为什么值得做动画：抽屉是「整块滑进来」的，里面的字如果一帧到位，
+ * 看上去像贴图；错开一点点，眼睛才会觉得这是一层真的面板。
+ */
+.drawer-group,
+.drawer-page {
+  animation: drawer-item-in 260ms cubic-bezier(0.23, 1, 0.32, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 22ms + 40ms);
+}
+@keyframes drawer-item-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-group,
+  .drawer-page,
+  .drawer-group::before,
+  .drawer-page::before,
+  .drawer-group-chip {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* 顶栏：跟标题栏以前那层「半透明纱」同色，压住壁纸的顶部，字才清楚 */
 .shell-topbar {
   background-color: color-mix(in srgb, var(--color-veil) 72%, transparent);

@@ -263,9 +263,12 @@ describe('原生窗口材质与自绘标题栏', () => {
   })
 
   it('顶栏三段窗口动作齐全，且整条能拖窗口', () => {
-    // 2026-11-12：标题栏并进导航条之后，拖动区挂在 AppShell 的 header 上，
-    // 三个窗口按钮单独拆到 WindowControls.vue。
-    expect(read('src/layouts/AppShell.vue')).toContain('data-tauri-drag-region')
+    // 2026-11-12：标题栏并进导航条之后，顶栏几乎全是控件，`data-tauri-drag-region`
+    // 等于没有拖动区（使用方报「按住左键拖不动」），改成 mousedown 时自己判断按到的是不是控件。
+    const shell = read('src/layouts/AppShell.vue')
+    expect(shell).toContain('@mousedown="beginWindowDrag"')
+    expect(shell).toContain('startDragging()')
+    expect(shell).toContain('NO_DRAG_SELECTOR')
     const source = read('src/components/shell/WindowControls.vue')
     expect(source).toContain("aria-label=\"最小化\"")
     expect(source).toContain('maximized ? \'向下还原\' : \'最大化\'')

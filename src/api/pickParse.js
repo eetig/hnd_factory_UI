@@ -52,7 +52,7 @@ export async function exportPickExcel(payload) {
   if (encoded) {
     try {
       name = decodeURIComponent(encoded)
-    } catch (error) {
+    } catch {
       name = encoded
     }
   } else if (plain) {
