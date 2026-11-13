@@ -67,7 +67,17 @@ function onTabTouchMove(event) {
     tabDx.value = 0
     return
   }
-  if (Math.abs(dx) > 8) tabLocked = true
+  if (Math.abs(dx) > 8) {
+    /*
+     * 横向确认之后才拦默认行为。
+     * 以前是模板上写 @touchmove.stop.prevent，等于整块内容区一碰就 preventDefault，
+     * 纵向滚动被一起吃掉 —— 页面比屏幕长也滑不动（2026-11-13 使用方报的就是这个）。
+     * 现在纵向留给浏览器（.el-swipe 上还有 touch-action: pan-y），
+     * 只有确实在横滑时才拦。
+     */
+    tabLocked = true
+    if (typeof event.preventDefault === 'function') event.preventDefault()
+  }
   const index = TABS.findIndex((t) => t.key === view.value)
   const atEdge = (index === 0 && dx > 0) || (index === TABS.length - 1 && dx < 0)
   tabDx.value = atEdge ? dx * 0.32 : dx
@@ -291,7 +301,7 @@ function goRead() {
       class="el-swipe"
       :style="swipeStyle"
       @touchstart.stop="onTabTouchStart"
-      @touchmove.stop.prevent="onTabTouchMove"
+      @touchmove.stop="onTabTouchMove"
       @touchend.stop="onTabTouchEnd"
     >
 
@@ -636,11 +646,15 @@ function goRead() {
   }
 
 
-/* 内容区手势容器：只让 transform 参与动画 */
-
+/* 内容区手势容器：只让 transform 参与动画
+ * touch-action: pan-y —— 纵向滚动交还浏览器，横向留给下面的翻页手势。
+ * 不写这条时，Android WebView 会把整块内容当"可拖动区域"，纵向滚动容易被手势吞掉。
+ */
 .el-swipe {
 
   will-change: transform;
+
+  touch-action: pan-y;
 
 }
 
