@@ -93,6 +93,18 @@ export const NAV_ITEMS = [
     perm: ADMIN_PERM,
     group: 'purchase',
   },
+  /*
+   * 历史记录（2026-11-16，变更-215）：看板与费用申请两个入口的合并台账。
+   * 它排在第三个，是因为看板/费用申请是「今天要做什么」，历史是「查当初怎么回事」——
+   * 日常进来先看前者，溯源时才点它。
+   */
+  {
+    key: 'purchaseHistory',
+    label: '历史记录',
+    path: '/purchase/history',
+    perm: ADMIN_PERM,
+    group: 'purchase',
+  },
   // 设备两页（变更-150）：看板在前 —— 进「设备」先看还缺什么。
   {
     key: 'equipmentBoard',

@@ -115,6 +115,18 @@ export const workbenchRoutes = [
   },
   {
     /*
+     * 历史记录（2026-11-16，变更-215）：采购看板 + 费用申请合并成一张可筛台账。
+     * 使用方的原话是「不论是采购看板，还是费用申请里的条目，都会在这个板块显示……
+     * 这个模块的目的是方便溯源」—— 所以它必须能同时看到两边，不能只挂某一页的页签。
+     * 与看板同组 ⇒ 顶部页签自动多一个 pill；侧栏点「采购」仍落看板。
+     */
+    path: '/purchase/history',
+    name: 'PurchaseHistoryView',
+    component: () => import('../views/purchase/PurchaseHistoryView.vue'),
+    meta: { group: 'purchase', key: 'purchaseHistory', title: '历史记录', perm: ADMIN_PERM },
+  },
+  {
+    /*
      * 设备也拆两页（变更-150）：看板看「还缺什么」，维护页负责填与细筛。
      * /equipment 保持指向维护页 —— 它已经在书签和文档里被引用过，改它没有收益。
      */
