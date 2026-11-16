@@ -135,7 +135,8 @@
       </view>
     </wd-popup>
 
-    <LoadingMask :visible="booting" />
+    <!-- LoadingMask 没有 visible 属性，挂载即显示；必须用 v-if 控制，否则遮罩永远盖在页面上 -->
+    <LoadingMask v-if="booting" />
   </view>
 </template>
 
