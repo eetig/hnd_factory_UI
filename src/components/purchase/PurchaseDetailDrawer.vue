@@ -779,7 +779,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
     :close-on-click-modal="false"
     :before-close="beforeClose"
     :show-close="false"
-    class="purchase-dialog"
+    :class="['purchase-dialog', isDocket ? 'purchase-dialog--sheet' : '']"
     @update:model-value="(v) => emit('update:modelValue', v)"
   >
     <template #header>
@@ -1462,6 +1462,15 @@ defineExpose({ resetForNextEntry, afterLineAdded })
  * 这里只把"卡"拆掉：容器透明、无阴影、无圆角；遮罩改成薄白（让渐变透上来，
  * 又保证字压得住彩色）。标题区留一条发丝线，其余靠留白与字号分层。
  */
+/* 只读单据（从历史记录/看板点开）是一张「纸」，给它实底；
+   编辑台仍保持透明，字段直接浮在壁纸上（用户 2026-11-12 的要求） */
+.purchase-dialog--sheet.purchase-dialog.el-dialog {
+  background: #fdfbfc;
+  border-radius: 16px;
+  box-shadow: 0 30px 70px -40px rgba(16, 24, 40, 0.42);
+  padding: 20px 24px 18px;
+}
+
 .purchase-dialog.el-dialog {
   background: transparent;
   box-shadow: none;

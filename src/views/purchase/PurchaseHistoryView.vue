@@ -385,19 +385,19 @@ function openDetail(row) {
 
         <template v-else>
           <div class="min-h-0 flex-1 overflow-auto">
-            <table class="ledger-table w-full text-[13px]">
+            <table class="ledger-table history-table w-full text-[13px]">
               <colgroup>
-                <col style="width: 76px" />
-                <col style="width: 92px" />
-                <col style="width: 96px" />
-                <col />
-                <col style="width: 112px" />
-                <col style="width: 220px" />
+                <col style="width: 72px" />
+                <col style="width: 90px" />
                 <col style="width: 104px" />
-                <col style="width: 84px" />
-                <col style="width: 100px" />
-                <col style="width: 88px" />
-                <col style="width: 152px" />
+                <col />
+                <col style="width: 108px" />
+                <col style="width: 232px" />
+                <col style="width: 110px" />
+                <col style="width: 62px" />
+                <col style="width: 96px" />
+                <col style="width: 76px" />
+                <col style="width: 162px" />
               </colgroup>
               <thead>
                 <tr>
@@ -429,8 +429,8 @@ function openDetail(row) {
                       {{ STATUS_TEXT[row._status] || '—' }}
                     </span>
                   </td>
-                  <td class="tabular-nums text-slate-600">{{ row._day || '—' }}</td>
-                  <td class="text-slate-600">{{ TYPE_TEXT[row._type] || '采购申请' }}</td>
+                  <td class="cell-nowrap tabular-nums text-slate-600">{{ row._day || '—' }}</td>
+                  <td class="cell-nowrap text-slate-600">{{ TYPE_TEXT[row._type] || '采购申请' }}</td>
                   <td class="cell-name" :title="row._material">{{ row._material || '—' }}</td>
                   <td class="tabular-nums text-slate-600">{{ row._code || '—' }}</td>
                   <td class="cell-spec" :title="row._spec">{{ row._spec || '—' }}</td>
@@ -439,13 +439,13 @@ function openDetail(row) {
                   </td>
                   <td class="tabular-nums text-right text-slate-700">{{ row._qty }}</td>
                   <td
-                    class="tabular-nums"
+                    class="cell-nowrap tabular-nums"
                     :class="row._status === 'OVERDUE' ? 'text-rose-600' : 'text-slate-600'"
                   >
                     {{ row.requiredArrivalDate || '—' }}
                   </td>
-                  <td class="text-slate-600">{{ row._requester || '—' }}</td>
-                  <td class="text-slate-600">
+                  <td class="cell-nowrap text-slate-600">{{ row._requester || '—' }}</td>
+                  <td class="cell-nowrap text-slate-600" :title="row.oaNo || '无 OA 单号'">
                     <span v-if="row.oaNo" class="tabular-nums">{{ row.oaNo }}</span>
                     <span v-else class="text-slate-500">无 OA 单号</span>
                   </td>
@@ -544,6 +544,14 @@ function openDetail(row) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cell-nowrap {
+  white-space: nowrap;
+}
+/* 默认 table-layout:auto 会让「规格型号」这种长句把列撑开，
+   整张表溢出到右侧看不见「数量/需求人」；固定列宽后才由 ellipsis 接管 */
+.history-table {
+  table-layout: fixed;
 }
 .cell-name {
   font-weight: 500;
