@@ -4839,28 +4839,35 @@ onPullDownRefresh(async () => {
           </view>
 
           <view class="drawer__foot">
+            <!-- 次要入口（2026-11-16 重排）：原来是一列下划线小字，像调试清单；
+                 改成可换行的浅底小胶囊，扫一眼就能点，也不抢主视觉。 -->
+            <view class="drawer__links">
+              <view class="drawer__link" @click="openElectricity">电费</view>
+              <!-- 手机抄表：只有管理员用（使用方：「只有我抄表」） -->
+              <view v-if="canReadMeter" class="drawer__link" @click="openMeterRead">电费抄表</view>
+              <!-- 管控日志：只给管理员，不显眼、只主动点 -->
+              <view v-if="isAdminUser" class="drawer__link" @click="openAuditLog">管控日志</view>
+              <view v-if="isAdminUser" class="drawer__link" @click="openUserAdmin">用户名单</view>
+              <view class="drawer__link" @click="openPrivacy">隐私政策</view>
+            </view>
+
+            <view class="drawer__foot-line"></view>
+
             <button
               v-if="loggedIn"
-              class="drawer__action pill-btn pill-btn--danger"
+              class="drawer__action drawer__logout"
               @click="logoutFromMenu"
             >
               退出登录
             </button>
             <button
               v-else
-              class="drawer__action pill-btn pill-btn--primary"
+              class="drawer__action drawer__login"
               @click="loginFromMenu"
             >
               登录
             </button>
-            <text class="drawer__tip">未登录也可以浏览物料、周统计等查询页</text>
-            <!-- 手机抄表（2026-11-03）：只有管理员用（使用方：「只有我抄表」） -->
-            <text class="drawer__privacy" @click="openElectricity">电费</text>
-            <text v-if="canReadMeter" class="drawer__privacy" @click="openMeterRead">电费抄表</text>
-            <!-- 管控日志（2026-11-02）：只给管理员，入口是小字，不显眼、只主动点 -->
-            <text v-if="isAdminUser" class="drawer__privacy" @click="openAuditLog">管控日志</text>
-            <text v-if="isAdminUser" class="drawer__privacy" @click="openUserAdmin">用户名单</text>
-            <text class="drawer__privacy" @click="openPrivacy">隐私政策</text>
+            <text class="drawer__tip">未登录也能查物料、周统计</text>
             <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>
@@ -5359,17 +5366,58 @@ onPullDownRefresh(async () => {
   color: var(--ui-text-2);
 }
 
-.drawer__privacy {
-  display: block;
-  margin-top: 10rpx;
-  font-size: 22rpx;
-  color: var(--ui-text-3);
-  text-decoration: underline;
+/* 次要入口（2026-11-16 重排）：一列下划线小字换成可换行的浅底胶囊 ——
+   竖排像调试清单，横排才像一组「顺便也能去」的入口。 */
+.drawer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.drawer__link {
+  padding: 14rpx 22rpx;
+  border-radius: 14rpx;
+  background: var(--ui-raise-2);
+  color: var(--ui-text-2);
+  font-size: 24rpx;
+}
+
+/* 分隔线把「去哪里」和「账号相关」分开，避免退出按钮和入口混在一起 */
+.drawer__foot-line {
+  height: 2rpx;
+  margin: 20rpx 0 18rpx;
+  background: var(--ui-hairline);
+}
+
+/* 退出登录不再是整行粉胶囊（抢视觉），改成描边按钮：
+   它是个低频、且不可逆的动作，安静一点更合适。 */
+.drawer__logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84rpx;
+  border: 2rpx solid var(--ui-border-strong);
+  border-radius: 42rpx;
+  background: transparent;
+  color: var(--ui-text-2);
+  font-size: 28rpx;
+}
+
+.drawer__login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84rpx;
+  border-radius: 42rpx;
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-size: 28rpx;
+  font-weight: 600;
 }
 
 .drawer__tip {
   display: block;
-  margin-top: 18rpx;
+  margin-top: 14rpx;
   color: $ui-text-3;
   font-size: 22rpx;
   text-align: center;
