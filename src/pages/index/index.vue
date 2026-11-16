@@ -415,6 +415,12 @@ function openUserAdmin() {
   uni.navigateTo({ url: '/pages/userAdmin/userAdmin' })
 }
 
+/** 手机待办（2026-11-16）：自己记事情，可带照片、可定截止日 */
+function openTodo() {
+  closeMenu()
+  uni.navigateTo({ url: '/pages/todo/todo' })
+}
+
 /** 打开隐私政策页（2026-11-02） */
 function openPrivacy() {
   closeMenu()
@@ -4820,6 +4826,18 @@ onPullDownRefresh(async () => {
             </template>
           </scroll-view>
 
+          <!-- 待办（2026-11-16）：所有登录用户都能用 —— 自己记事情，与采购/工单无关 -->
+          <view v-if="loggedIn" class="drawer__todo" @click="openTodo">
+            <view class="drawer__todo-icon">
+              <wd-icon name="calendar" size="18px" :color="FREQUENT_ACCENT" />
+            </view>
+            <view class="drawer__todo-text">
+              <text class="drawer__todo-label">待办</text>
+              <text class="drawer__todo-hint">记事情 · 定截止 · 可带照片</text>
+            </view>
+            <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
+          </view>
+
           <view class="drawer__foot">
             <button
               v-if="loggedIn"
@@ -5298,6 +5316,47 @@ onPullDownRefresh(async () => {
   height: 84rpx;
   align-items: center;
   justify-content: center;
+}
+
+/* 待办入口（2026-11-16）：卡片行而不是小字 —— 这是每天要用的东西，
+   放在抽屉底部固定区之上，一眼就能点到；min-height 保证手指点得准。 */
+.drawer__todo {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 0 0 16rpx;
+  padding: 18rpx 20rpx;
+  min-height: 92rpx;
+  border-radius: 16rpx;
+  background: var(--ui-raise-2);
+}
+
+.drawer__todo-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36rpx;
+  height: 36rpx;
+  flex: 0 0 auto;
+}
+
+.drawer__todo-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.drawer__todo-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.drawer__todo-hint {
+  font-size: 22rpx;
+  color: var(--ui-text-2);
 }
 
 .drawer__privacy {

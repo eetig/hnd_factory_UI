@@ -61,6 +61,12 @@
       "style": {
         "navigationBarTitleText": "用户名单"
       }
+    },
+    {
+      "path": "pages/todo/todo",
+      "style": {
+        "navigationBarTitleText": "待办"
+      }
     }
   ],
   "globalStyle": {
