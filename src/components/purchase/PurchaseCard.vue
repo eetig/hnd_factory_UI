@@ -206,7 +206,7 @@ function openRow(row, event) {
             rel="noopener noreferrer"
             class="tabular-nums font-medium text-brand-ink hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink"
             :title="`在 OA 里打开：${card.oaUrl}`"
-            @click.prevent.stop="openExternal(card.oaUrl)"
+            @click.stop.prevent="openExternal(card.oaUrl)"
             @keydown.stop
           >{{ card.oaNo }} ↗</a>
           <span
@@ -225,7 +225,7 @@ function openRow(row, event) {
             rel="noopener noreferrer"
             class="text-brand-ink hover:underline"
             :title="`在 OA 里打开采购单：${poLine.url}`"
-            @click.prevent.stop="openExternal(poLine.url)"
+            @click.stop.prevent="openExternal(poLine.url)"
             @keydown.stop
           >采购单 {{ poLine.text }} ↗</a>
           <span v-else>采购单 {{ poLine.text }}</span>

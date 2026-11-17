@@ -778,7 +778,7 @@ onMounted(loadPurchase)
                   rel="noopener noreferrer"
                   class="block truncate text-brand-ink hover:underline"
                   :title="`在 OA 里打开：${row.oaUrl}`"
-                  @click.prevent.stop="openExternal(row.oaUrl)"
+                  @click.stop.prevent="openExternal(row.oaUrl)"
                 >{{ row.oaNo || '打开 OA' }}</a>
                 <span
                   v-else-if="row.oaNo"

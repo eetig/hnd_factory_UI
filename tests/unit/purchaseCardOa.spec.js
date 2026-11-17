@@ -35,7 +35,9 @@ describe('采购看板卡片：OA 单号与跳转', () => {
 
   it('点 OA 链接不触发"开抽屉"（@click.stop），键盘也不冒泡', () => {
     const src = read(CARD)
-    expect(src).toMatch(/@click\.stop\s*\n?\s*@keydown\.stop/)
+    // 2026-11-17 变更-223：链接改由 openExternal 打开，所以多了 .prevent；
+    // 规则本身不变 —— 点到链接必须「停在这儿」，别把卡片的开抽屉/键盘也带起来
+    expect(src).toMatch(/@click\.stop(?:\.prevent)?(?:="[^"]*")?\s*\n?\s*@keydown\.stop/)
   })
 
   it('卡片根元素是 div[role=button]，不是 <button>（button 里不能嵌 <a>）', () => {

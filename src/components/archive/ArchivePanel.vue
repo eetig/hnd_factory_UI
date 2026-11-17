@@ -208,6 +208,68 @@ async function askAi(file) {
   }
 }
 
+/**
+ * 批量上传（2026-11-17，变更-225）：拖进来多个文件时，抽屉把文件交过来。
+ *
+ * <p>一个文件一组「上传 + AI 建议」，失败的只标记那一份，不打断其他份 ——
+ * 拖 5 个进去，其中 1 个后端拒了，另外 4 个照样能存。
+ */
+async function onUploadBatch(files, resolve) {
+  const results = []
+  for (const file of files) {
+    try {
+      const res = await upload(file)
+      let suggestion = null
+      if (isAdmin()) {
+        try {
+          const answer = await aiSuggestArchive(file)
+          const body = answer?.data || {}
+          if (body.success !== false) suggestion = body.data || null
+        } catch {
+          // 没配 key / 超时都不该让这一份归档失败
+          suggestion = null
+        }
+      }
+      results.push({
+        ok: true,
+        fileName: res?.fileName || '',
+        origName: res?.origName || file.name,
+        size: res?.size || file.size,
+        contentType: res?.contentType || file.type,
+        suggestion,
+      })
+    } catch (e) {
+      results.push({ ok: false, error: e?.response?.data?.msg || e?.message || '上传失败' })
+    }
+  }
+  resolve(results)
+}
+
+/**
+ * 批量落库（变更-225）：逐条保存，全部成功才关抽屉。
+ *
+ * <p>不并行：后端写分类计数，几份同时进去容易撞锁；20 份以内串行也就几秒。
+ */
+async function onSaveBatch(items) {
+  drawerMessage.value = ''
+  const failed = []
+  let done = 0
+  for (const item of items) {
+    try {
+      await save(item)
+      done += 1
+    } catch (e) {
+      failed.push(`${item.name}：${e?.response?.data?.msg || e?.message || '保存失败'}`)
+    }
+  }
+  if (done) ElMessage.success(done === items.length ? `已归档 ${done} 份` : `已归档 ${done} 份`)
+  if (failed.length) {
+    drawerMessage.value = `这几份没存上 —— ${failed.join('；')}`
+    return
+  }
+  drawerOpen.value = false
+}
+
 /** 复制文件名（2026-11-05）：点资料名称时用，复制的是原文件名 */
 async function copyFileName(row) {
   /*
@@ -828,5 +890,7 @@ onMounted(async () => {
     @save="onSave"
     @delete="onDelete"
     @upload="onUpload"
+    @upload-batch="onUploadBatch"
+    @save-batch="onSaveBatch"
   />
 </template>
