@@ -67,7 +67,7 @@ try {
   [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('HND 发布').Show($toast)
 } catch { }
 `
-  spawnSync('powershell.exe', ['-NoProfile', '-Command', ps], { stdio: 'ignore' })
+  spawnSync('powershell.exe', ['-NoProfile', '-Command', ps], { stdio: 'ignore', windowsHide: true })
 }
 
 function readManifest() {
@@ -229,6 +229,7 @@ async function publishAndVerify(apk, manifestName, manifestCode) {
     cwd: repo,
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
+    windowsHide: true, // 子进程不要再开一个控制台窗口
   })
   if (run.status !== 0) {
     log(`publish_app.sh 失败（exit ${run.status}）`)

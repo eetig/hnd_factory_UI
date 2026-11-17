@@ -8,10 +8,15 @@ $node = (Get-Command node).Source
 $script = 'D:\project\hnd_factory_UI\scripts\auto-publish-app.mjs'
 $work = 'D:\project\hnd_factory_UI'
 
-$action = New-ScheduledTaskAction -Execute $node -Argument ('"' + $script + '"') -WorkingDirectory $work
+# 关键：不要直接启动 node.exe —— 它是控制台程序，计划任务每分钟起一次，桌面上就会闪黑框。
+# 走 wscript + 隐藏模式启动（scripts/run-hidden-app-publish.vbs），全程无窗口。
+$wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+$vbs = 'D:\project\hnd_factory_UI\scripts\run-hidden-app-publish.vbs'
+
+$action = New-ScheduledTaskAction -Execute $wscript -Argument ('//B //Nologo "' + $vbs + '"') -WorkingDirectory $work
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
   -RepetitionInterval (New-TimeSpan -Minutes 1)
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+$settings = New-ScheduledTaskSettingsSet -Hidden -StartWhenAvailable `
   -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10) `
   -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
