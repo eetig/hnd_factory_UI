@@ -108,7 +108,7 @@ for f in `$(grep -o 'assets/index-[A-Za-z0-9_-]*\.\(js\|css\)' /tmp/i.html | sor
   curl -s -o /dev/null -w "  /`$f http=%{http_code} size=%{size_download}\n" "http://127.0.0.1:$SitePort/`$f"
 done
 echo '--- desktop channel ---'
-curl -s -o /dev/null -w '  /desktop/latest.json http=%{http_code} type=%{content_type}\\n' "http://127.0.0.1:$SitePort/desktop/latest.json"
+curl -s -o /dev/null -w '  /desktop/latest.json http=%{http_code} type=%{content_type}\n' "http://127.0.0.1:$SitePort/desktop/latest.json"
 echo '--- md5 (site vs staging) ---'
 echo -n '  site: '; md5sum `$S/index/assets/index-*.js | awk '{print `$1}'
 echo -n '  staging: '; md5sum $StagingDir/assets/index-*.js | awk '{print `$1}'
