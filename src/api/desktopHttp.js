@@ -55,6 +55,33 @@ export function serializeParams(params) {
   return parts.join('&')
 }
 
+/*
+ * 浏览器自己会算 Content-Type 的请求体（2026-11-17）。
+ *
+ * ⚠️ 这是 1.0.30 的真实事故：桌面端上传附件报 **415**，网页版却好的。
+ * 原因：axios 给 `post` 预置了 `Content-Type: application/x-www-form-urlencoded`，
+ * 而浏览器版 xhr adapter 遇到 FormData 会**删掉**这个头，让 Request 自己写上
+ * `multipart/form-data; boundary=...`；我们的自定义 adapter 却原样转发了。
+ * 于是后端收到"声明是表单、内容却不是表单"的请求 → 415 Unsupported Media Type。
+ * 这里照浏览器的做法：这类请求体一律不带 Content-Type，交给 `new Request()` 算。
+ */
+function browserSetsContentType(data) {
+  if (!data || typeof data !== 'object') return false
+  if (typeof FormData !== 'undefined' && data instanceof FormData) return true
+  if (typeof Blob !== 'undefined' && data instanceof Blob) return true
+  if (typeof URLSearchParams !== 'undefined' && data instanceof URLSearchParams) return true
+  if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) return true
+  return false
+}
+
+/** 不区分大小写地删掉某个请求头 */
+function dropHeader(headers, name) {
+  const target = name.toLowerCase()
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === target) delete headers[key]
+  }
+}
+
 function headerObject(config) {
   const raw = config.headers || {}
   // AxiosHeaders 有 toJSON()，普通对象直接用
@@ -109,6 +136,10 @@ export async function desktopAdapter(config) {
   const headers = headerObject(config)
   const withBody =
     method !== 'GET' && method !== 'HEAD' && config.data !== undefined && config.data !== null
+  // 见 browserSetsContentType 的注释：这类体子的 Content-Type 必须留给 Request 生成
+  if (withBody && browserSetsContentType(config.data)) {
+    dropHeader(headers, 'content-type')
+  }
 
   let raw
   try {
