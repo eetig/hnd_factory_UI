@@ -32,6 +32,8 @@
       <p class="lp__desc">电脑装 Windows 版，手机装 Android 版；业务操作请使用客户端。</p>
 
       <div class="lp__cta-wrap">
+        <div class="lp__cta-row">
+        <div class="lp__win">
         <div class="lp__cta">
           <a class="lp__cta-main" :href="downloadUrl" @click="onDownload">
             <svg class="lp__cta-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -76,8 +78,7 @@
           </li>
           <li class="lp__menu-foot">64 位安装包 · Windows 10 及以上</li>
         </ul>
-
-        <p class="lp__note">当前版本 {{ versionLabel }} · 已登录账号与数据照旧</p>
+        </div>
 
         <a class="lp__cta-alt" :href="apkUrl">
           <svg class="lp__cta-icon" viewBox="0 0 20 20" aria-hidden="true">
@@ -94,8 +95,14 @@
             <path d="M9 15.2h2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
           下载 Android 版
-          <span class="lp__cta-alt-note">手机端 · 15 MB</span>
         </a>
+        </div>
+
+        <p class="lp__note">
+          电脑端 {{ versionLabel }}<template v-if="apkVersion"> · 手机端 v{{ apkVersion }}</template>
+          <template v-if="apkSizeText"> · {{ apkSizeText }}</template>
+          · 已登录账号与数据照旧
+        </p>
       </div>
 
       <figure class="lp__shot">
@@ -174,6 +181,10 @@ const version = ref('')
 const versionLabel = computed(() => (version.value ? `v${version.value}` : '最新版'))
 const downloadUrl = ref(FALLBACK_URL)
 const apkUrl = APK_URL
+/* 手机版版本/体积来自 `desktop/app/latest.json`（publish_app.sh 每次发布时写），
+   页面不写死号码：换包后这里自动跟着变，取不到就只显示「手机端」。 */
+const apkVersion = ref('')
+const apkSizeText = ref('')
 const drawerOpen = ref(false)
 const installOpen = ref(false)
 const menuOpen = ref(false)
@@ -195,6 +206,22 @@ async function loadRelease() {
     if (url) downloadUrl.value = url
   } catch {
     /* 取不到就保持兜底，不打扰用户 */
+  }
+}
+
+/*
+ * 手机版的版本号与体积。与桌面端一样从服务端读，避免「页面写着 1.0.5、实际发的是 1.0.6」。
+ * 取不到就留空，页面上那两句 template 就不渲染，不显示假号码。
+ */
+async function loadAppRelease() {
+  try {
+    const res = await fetch('/desktop/app/latest.json', { cache: 'no-store' })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data?.version) apkVersion.value = data.version
+    if (data?.sizeText) apkSizeText.value = data.sizeText
+  } catch {
+    /* 忽略：手机端信息缺了不影响下载 */
   }
 }
 
@@ -230,6 +257,7 @@ function onPointerDown(event) {
 
 onMounted(() => {
   loadRelease()
+  loadAppRelease()
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('pointerdown', onPointerDown)
 })
@@ -448,6 +476,21 @@ onBeforeUnmount(() => {
   margin-top: 26px;
 }
 
+/* 两个平台的按钮同一行：主按钮（Windows）先说，次按钮（Android）跟在右边，
+   宽度和高度对齐，视觉上是一组「选平台」，而不是上下两件事 */
+.lp__cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.lp__win {
+  position: relative;
+  display: inline-flex;
+}
+
 .lp__cta {
   display: inline-flex;
   align-items: stretch;
@@ -503,8 +546,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
-  min-height: 42px;
+  min-height: 48px;
   padding: 0 20px;
   border: 1px solid rgba(142, 43, 73, 0.28);
   border-radius: 999px;
@@ -524,12 +566,6 @@ onBeforeUnmount(() => {
 .lp__cta-alt:focus-visible {
   outline: 2px solid var(--lp-rose);
   outline-offset: 2px;
-}
-
-.lp__cta-alt-note {
-  color: var(--lp-ink-soft, rgba(23, 20, 26, 0.55));
-  font-size: 12px;
-  font-weight: 400;
 }
 
 .lp__menu {
