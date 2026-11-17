@@ -2,8 +2,8 @@
     "name" : "HND生产助手",
     "appid" : "__UNI__BE0BD40",
     "description" : "工厂工单/领料/入库汇总、导入与图片识别辅助录入",
-    "versionName" : "1.0.5",
-    "versionCode" : "105",
+    "versionName" : "1.0.6",
+    "versionCode" : "106",
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -60,7 +60,8 @@
                     "<uses-permission android:name=\"android.permission.CAMERA\"/>",
                     "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
                     "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>",
-                    "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>"
+                    "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\"/>",
+                    "<uses-permission android:name=\"android.permission.REQUEST_INSTALL_PACKAGES\"/>"
                 ]
             },
             "ios" : {

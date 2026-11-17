@@ -49,6 +49,7 @@ import { REPORT_ORDER_TYPES, getReportOrderType } from '../../constants/orderTyp
 import { normalizeImageList } from '../../utils/image'
 import { chooseImages } from '../../utils/chooseImages'
 import { UTubeBundle, shellVolumeMm3 } from '../../utils/vesselVolume'
+import { checkAppUpdate, downloadAndInstall } from '../../utils/appUpdate'
 import {
   formatDate,
   getToday,
@@ -2986,7 +2987,94 @@ onMounted(() => {
   fetchAdminOnlyData()
   fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
+  // 版本号 + 安静查一次更新（只在 App 端有结果，H5/小程序里啥也不做）
+  initAppUpdate()
 })
+
+/*
+ * 版本与更新（2026-11-17，使用方要求「手机 App 也做一个更新的功能」）。
+ *
+ * 口径跟 PC 客户端一致：
+ *   开机安静问一句，有新版只把抽屉底部「版本 vX」点亮红点，不弹窗；
+ *   用户自己点那一行，才走「确认 → 下载（带进度）→ 拉起系统安装器」。
+ * 这样车间的人不会被更新拦住，但也不会永远停在老版本。
+ */
+const appVersion = ref('')
+const appUpdate = ref(null) // checkAppUpdate() 的结果：{ hasUpdate, current, latest }
+const appUpdating = ref(false)
+
+const appVersionTip = computed(() => {
+  if (!appVersion.value) return ''
+  if (appUpdate.value?.hasUpdate) {
+    return `发现新版本 ${appUpdate.value.latest?.version || ''} · 点这里更新`
+  }
+  return `版本 v${appVersion.value}`
+})
+
+async function initAppUpdate() {
+  const result = await checkAppUpdate()
+  if (!result) return
+  appVersion.value = result.current.version
+  appUpdate.value = result
+}
+
+/** 点抽屉底部那一行：有新版就确认后下载安装，没有就告诉一声「已是最新」 */
+async function tapAppUpdate() {
+  if (appUpdating.value) return
+  const found = appUpdate.value
+  if (!appVersion.value) {
+    // 还没查到版本（比如刚进 App 那几百毫秒）：现查一次
+    await initAppUpdate()
+  }
+  if (!appUpdate.value) {
+    uni.showToast({ title: '暂时查不到版本，稍后再试', icon: 'none' })
+    return
+  }
+  if (!appUpdate.value.hasUpdate) {
+    uni.showToast({ title: `已是最新版本 v${appVersion.value}`, icon: 'none' })
+    return
+  }
+  const latest = appUpdate.value.latest || {}
+  uni.showModal({
+    title: `发现新版本 ${latest.version || ''}`,
+    content: `${latest.sizeText ? `${latest.sizeText} · ` : ''}下载后会自动打开安装，装完原来的登录状态还在。`,
+    confirmText: '立即更新',
+    cancelText: '以后再说',
+    success: (res) => {
+      if (!res.confirm) return
+      runAppUpdate(latest.url)
+    },
+  })
+}
+
+async function runAppUpdate(url) {
+  appUpdating.value = true
+  let percent = 0
+  uni.showLoading({ title: '下载中 0%', mask: true })
+  try {
+    await downloadAndInstall(url, (ratio) => {
+      if (ratio === null) return
+      const next = Math.round(ratio * 100)
+      // 每 5% 刷一次，避免每帧都去动 UI
+      if (next >= percent + 5) {
+        percent = next
+        uni.showLoading({ title: `下载中 ${next}%`, mask: true })
+      }
+    })
+    // 走到这里说明系统安装器已被拉起（装完是新的进程，这里通常不会再回来）
+    uni.hideLoading()
+    appUpdate.value = null
+  } catch (error) {
+    uni.hideLoading()
+    uni.showModal({
+      title: '更新没成功',
+      content: `${error?.message || '下载失败'}。可以稍后再试，或者让管理员把新包发给你。`,
+      showCancel: false,
+    })
+  } finally {
+    appUpdating.value = false
+  }
+}
 
 // 补拉登录后的 admin 明细：登录页是 navigateTo 进去、saveAuth 后 navigateBack 回来的，
 // 首页不重建、onMounted 不再跑（挂载那一次被 fetchAdminOnlyData 里的 isAdmin() 挡掉了）。
@@ -4868,6 +4956,10 @@ onPullDownRefresh(async () => {
               登录
             </button>
             <text class="drawer__tip">未登录也能查物料、周统计</text>
+            <view v-if="appVersion" class="drawer__update" @click="tapAppUpdate">
+              <text class="drawer__env">{{ appVersionTip }}</text>
+              <view v-if="appUpdate?.hasUpdate" class="drawer__update-dot" />
+            </view>
             <text class="drawer__env">{{ envTip }}</text>
           </view>
         </view>
@@ -5432,6 +5524,30 @@ onPullDownRefresh(async () => {
   color: $ui-text-3;
   font-size: 20rpx;
   text-align: center;
+}
+
+/* 版本/更新（2026-11-17）：一行小字，右上一个红点。
+   不吃点击区域的红点用 absolute，整行都能点。 */
+.drawer__update {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin-top: 4rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+}
+
+.drawer__update-dot {
+  position: absolute;
+  top: 2rpx;
+  right: 2rpx;
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #e11d48;
+  box-shadow: 0 0 0 4rpx rgba(255, 255, 255, 0.9);
 }
 
 /* ===== 数据表格 =====
