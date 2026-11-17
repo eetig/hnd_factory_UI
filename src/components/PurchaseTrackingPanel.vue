@@ -15,6 +15,7 @@ import PurchaseDetailDrawer from './purchase/PurchaseDetailDrawer.vue'
 import PurchaseFilterBar from './purchase/PurchaseFilterBar.vue'
 import { columnsWidthPx, usePurchaseColumns } from './purchase/usePurchaseColumns.js'
 import { buildCopyText, copyText, isCopyColumn } from '../utils/clipboard.js'
+import { openExternal } from '../utils/openExternal'
 
 /**
  * 采购需求详情（变更-117，2026-10-18：交互模型重构）。
@@ -777,7 +778,7 @@ onMounted(loadPurchase)
                   rel="noopener noreferrer"
                   class="block truncate text-brand-ink hover:underline"
                   :title="`在 OA 里打开：${row.oaUrl}`"
-                  @click.stop
+                  @click.prevent.stop="openExternal(row.oaUrl)"
                 >{{ row.oaNo || '打开 OA' }}</a>
                 <span
                   v-else-if="row.oaNo"

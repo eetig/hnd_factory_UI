@@ -39,6 +39,31 @@ fn paint_window_material(window: &tauri::WebviewWindow) -> &'static str {
 /// 就把纸面转成实色，宁可少一点通透，也不能让字看不清。
 struct MaterialState(Mutex<String>);
 
+/// 用系统默认浏览器打开 http(s) 链接（2026-11-17）。
+///
+/// 为什么要这个命令：桌面版页面跑在 `tauri.localhost` 里，`<a target="_blank">`
+/// 会被 WebView2 拦掉 —— 点了**一点反应都没有**（用户反馈的「点击不能跳转」）。
+/// 为什么不用 opener 插件：本机拉 crates.io 经常卡死，系统自带的 rundll32
+/// 就是「交给默认程序打开」，而且它是 GUI 程序，不会闪黑框。
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    let raw = url.trim();
+    let lower = raw.to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err("只允许打开 http/https 链接".into());
+    }
+    // 交给系统前先挡掉空白和引号，别让参数串成第二个参数
+    if raw.is_empty() || raw.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'') {
+        return Err("链接里有非法字符".into());
+    }
+    std::process::Command::new("rundll32")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(raw)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开失败：{e}"))
+}
+
 #[tauri::command]
 fn window_material(state: tauri::State<MaterialState>) -> String {
     state.0.lock().map(|v| v.clone()).unwrap_or_else(|_| "none".into())
@@ -133,7 +158,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![window_material])
+        .invoke_handler(tauri::generate_handler![window_material, open_external])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { dueLabel, needsAcceptance, quantityText, requesterSummary } from './boardGroups.js'
+import { openExternal } from '../../utils/openExternal'
 
 /*
  * 采购看板的一张卡 = **一个 OA 单**（2026-10-23，变更-168）。
@@ -205,7 +206,7 @@ function openRow(row, event) {
             rel="noopener noreferrer"
             class="tabular-nums font-medium text-brand-ink hover:underline focus-visible:rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink"
             :title="`在 OA 里打开：${card.oaUrl}`"
-            @click.stop
+            @click.prevent.stop="openExternal(card.oaUrl)"
             @keydown.stop
           >{{ card.oaNo }} ↗</a>
           <span
@@ -224,7 +225,7 @@ function openRow(row, event) {
             rel="noopener noreferrer"
             class="text-brand-ink hover:underline"
             :title="`在 OA 里打开采购单：${poLine.url}`"
-            @click.stop
+            @click.prevent.stop="openExternal(poLine.url)"
             @keydown.stop
           >采购单 {{ poLine.text }} ↗</a>
           <span v-else>采购单 {{ poLine.text }}</span>

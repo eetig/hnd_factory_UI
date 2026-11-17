@@ -12,6 +12,7 @@ import {
   ElSelect,
 } from 'element-plus'
 import request from '../../api/request'
+import { isOpenableUrl, openExternal } from '../../utils/openExternal'
 import { STATUS_TONE } from '../../constants/statusTones'
 import { useMaterialLookup } from '../../composables/useMaterialLookup'
 import DeliveryNoteUpload from '../DeliveryNoteUpload.vue'
@@ -246,6 +247,16 @@ const header = ref({
  * 不占表头格子，也让表头能塞进一行四格。
  */
 const linkDialog = ref({ open: false, field: '', label: '', hint: '', draft: '' })
+
+/**
+ * 打开 OA 链接（2026-11-17）。
+ * 桌面版不能靠 <a target="_blank">（WebView2 拦新窗口），必须让 Rust 交给系统浏览器；
+ * 地址不合法时也说一句，别让人反复点。
+ */
+async function openOaLink(url) {
+  const ok = await openExternal(url)
+  if (!ok) ElMessage.error('这个链接打不开：地址不完整或不是 http/https')
+}
 
 function openLink(field, label, hint = '') {
   linkDialog.value = {
@@ -809,10 +820,18 @@ defineExpose({ resetForNextEntry, afterLineAdded })
             target="_blank"
             rel="noopener noreferrer"
             class="inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1.5 text-xs text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+            title="在系统浏览器里打开这张 OA 单"
+            @click.prevent="openOaLink(docket.oaUrl)"
           >
             在 OA 里打开
             <span aria-hidden="true">↗</span>
           </a>
+          <!-- 有单号但没链接：说清为什么点不动，别让用户以为是坏了 -->
+          <span
+            v-else-if="isDocket && docket.oaNo && !isOpenableUrl(docket.oaUrl)"
+            class="cursor-help rounded-md border border-dashed border-amber-300 px-2.5 py-1.5 text-xs text-amber-700"
+            title="这张单还没粘 OA 表单链接 —— 点右下「编辑」，在「OA 链接」那一格贴一次，之后这里就能直接点开"
+          >未存 OA 链接</span>
           <button
             type="button"
             class="shrink-0 rounded-full p-1.5 text-slate-500 transition-colors hover:bg-region hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
