@@ -47,10 +47,29 @@ const updateInfo = ref(null)
 const updateError = ref('')
 const progress = ref(null)
 
+/**
+ * 有新版本时，顶栏那颗「桌面版」按钮右上角点一个小红点（2026-11-17，用户要求）。
+ *
+ * 为什么不在页面刚起来就弹窗：车间那台机器早上开机只想记一笔采购，被更新弹窗拦住很烦。
+ * 所以只做一个「有红点 = 有新版本」的安静提示，用户自己决定什么时候点开装。
+ */
+const hasUpdate = ref(false)
+
 onMounted(async () => {
   if (!IS_DESKTOP) return
   version.value = await desktopVersion()
   autostart.value = await autostartOn()
+  // 静默查一次：只为了点亮红点，不打扰。查不到（断网）就当没有新版。
+  try {
+    const result = await checkUpdate()
+    if (result && !result.error) {
+      hasUpdate.value = true
+      updateState.value = 'found'
+      updateInfo.value = result
+    }
+  } catch {
+    /* 断网 / 更新通道挂掉：没有红点，也不报错 */
+  }
 })
 
 async function toggleAutostart(next) {
@@ -71,10 +90,12 @@ async function runCheck() {
   }
   if (!result) {
     updateState.value = 'latest'
+    hasUpdate.value = false
     return
   }
   updateState.value = 'found'
   updateInfo.value = result
+  hasUpdate.value = true
 }
 
 async function runInstall() {
@@ -125,11 +146,16 @@ function clearWallpaper() {
   <template v-if="visible">
     <button
       type="button"
-      class="rounded-full border border-line bg-raised px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
-      title="桌面版设置"
+      class="relative rounded-full border border-line bg-raised px-2 py-1 text-xs text-slate-500 hover:text-slate-900"
+      :title="hasUpdate ? '有新版本，点开更新' : '桌面版设置'"
       @click="open = true"
     >
       桌面版
+      <span
+        v-if="hasUpdate"
+        class="pointer-events-none absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full bg-rose-500 ring-2 ring-white/80"
+        aria-label="有新版本"
+      />
     </button>
 
     <ElDialog v-model="open" title="桌面版设置" width="400px" append-to-body>

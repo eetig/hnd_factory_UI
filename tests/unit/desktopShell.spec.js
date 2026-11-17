@@ -228,6 +228,19 @@ describe('关闭按钮默认直接收起，偏好可改', () => {
     const DesktopPanel = (await import('../../src/components/DesktopPanel.vue')).default
     expect(mount(DesktopPanel).text()).toBe('')
   })
+
+  /* 2026-11-17 使用方：「有更新的时候，再图标那加个点，提示有新版本」 */
+  it('有新版本时「桌面版」按钮右上角点红点，且是开机静默查的', () => {
+    const source = read('src/components/DesktopPanel.vue')
+    // 静默查：挂在 onMounted 里，失败静默（断网不能弹错）
+    expect(source).toContain('const hasUpdate = ref(false)')
+    expect(source).toMatch(/onMounted\(async \(\) => \{[\s\S]*checkUpdate\(\)[\s\S]*hasUpdate\.value = true/)
+    // 红点：绝对定位在按钮右上角，且不吃点击
+    expect(source).toContain('pointer-events-none absolute -right-0.5 -top-0.5')
+    expect(source).toContain('v-if="hasUpdate"')
+    // 查到「已是最新」要把红点收掉
+    expect(source).toMatch(/updateState\.value = 'latest'[\s\S]*?hasUpdate\.value = false/)
+  })
 })
 
 /*
