@@ -35,7 +35,7 @@ const loadError = ref('')
 const keyword = ref('')
 const statusFilter = ref('')
 const pageNum = ref(1)
-const PAGE_SIZE = 20
+const PAGE_SIZE = 200
 
 /** 与后端 PurchaseTrackingVO 的状态枚举一致（超期/临期/待提单/等货/已到货/部分到货） */
 const STATUS_FILTERS = [
@@ -112,6 +112,298 @@ async function loadMore() {
   if (!hasMore.value || loadingMore.value) return
   pageNum.value += 1
   await loadList({ append: true })
+}
+
+// ===== 2026-11-18 改成「一件事一张卡」 =====
+/*
+ * 使用方的四个真实用途（原话）：
+ *   1. 临时记录车间主任或领导口头交代的采购需求；
+ *   2. 看哪些还没提单；
+ *   3. 看哪些提了单还没到货，去催；
+ *   4. 看哪些还没验收。
+ *
+ * 所以列表不再一行一卡：先把同 OA 单号的行聚成一张卡（没有单号的口头记录按
+ * 「谁要的 + 提出日期」聚），再按 待提单 / 等货 / 待验收 三段排。
+ * 段内顺序：口头卡置顶（按记录时间近→远），其余按单号里的日期近→远
+ * —— 使用方的查看习惯是「显示单号，按单号后面的日期由近到远」。
+ */
+const SECTION_DEFS = [
+  { key: 'pending', title: '待提单', hint: '还没 OA 单号' },
+  { key: 'waiting', title: '等货', hint: '已提单，还没到货' },
+  { key: 'accept', title: '待验收', hint: '货到了，等确认' },
+]
+
+/** 哪一段展开着（默认全展开：三段加起来也就十来个数字，收起反而要多点一次） */
+const openSections = reactive({ pending: true, waiting: true, accept: true })
+
+/** 「已完成」默认收起（办完的事不该占屏幕，但要能翻回去看） */
+const doneOpen = ref(false)
+
+function cardKeyOf(row) {
+  const oa = String(row.oaNo || '').trim()
+  if (oa) return `oa:${oa}`
+  return `v:${row.requester || ''}|${row.requestDate || ''}`
+}
+
+/** 这张卡最早的要求到货日（多行时取最紧的那个） */
+function earliestDue(items) {
+  let best = ''
+  for (const row of items) {
+    const due = row.requiredArrivalDate || ''
+    if (due && (!best || due < best)) best = due
+  }
+  return best
+}
+
+function buildCards(list) {
+  const map = new Map()
+  for (const row of list) {
+    const key = cardKeyOf(row)
+    let card = map.get(key)
+    if (!card) {
+      card = {
+        key,
+        oaNo: String(row.oaNo || '').trim(),
+        requester: row.requester || '',
+        requestDate: row.requestDate || '',
+        sortDate: row.sortDate || row.requestDate || '',
+        items: [],
+        followCount: 0,
+        lastFollowAt: '',
+      }
+      map.set(key, card)
+    }
+    card.items.push(row)
+    // 催货按卡记（每行各写一条留痕），卡面只显示「催过几次」——
+    // 取最大值而不是求和，否则三行的卡点一次催会显示「催 3 次」。
+    card.followCount = Math.max(card.followCount, Number(row.followUpCount) || 0)
+    if (row.lastFollowUpAt && row.lastFollowUpAt > card.lastFollowAt) {
+      card.lastFollowAt = row.lastFollowUpAt
+    }
+    if ((row.sortDate || '') > card.sortDate) card.sortDate = row.sortDate
+    if (!card.requester && row.requester) card.requester = row.requester
+  }
+
+  const cards = []
+  for (const card of map.values()) {
+    const allArrived = card.items.every((row) => !!row.actualArrivalDate)
+    const allConfirmed = card.items.every((row) => !!row.acceptConfirmedAt)
+    const missingAcceptanceNo = card.items.some((row) => !row.acceptanceNo)
+    const overdue = card.items.some((row) => row.status === 'OVERDUE')
+
+    let section = 'waiting'
+    if (!card.oaNo) section = 'pending'
+    else if (allConfirmed) section = 'done'
+    else if (allArrived) section = 'accept'
+
+    const first = card.items[0]
+    card.section = section
+    card.allArrived = allArrived
+    card.allConfirmed = allConfirmed
+    card.missingAcceptanceNo = missingAcceptanceNo
+    card.overdue = overdue
+    card.nameText = first.materialName || '（没写物料名）'
+    card.extraNames = card.items.slice(1).map((row) => row.materialName).filter(Boolean)
+    // 数量只报第一条的量：条目数已经由名称后面的「另 N 项」说了，这里再说一遍是重复
+    card.qtyText = quantityText(first)
+    card.dueDate = earliestDue(card.items)
+    card.dueText = card.dueDate ? `要求 ${card.dueDate.slice(5)}` : '没定到货日'
+    card.followText = card.followCount
+      ? `催 ${card.followCount} 次 · ${String(card.lastFollowAt).slice(5, 10)}`
+      : ''
+    cards.push(card)
+  }
+  return cards
+}
+
+const cards = computed(() => buildCards(rows.value))
+
+const sectionCards = computed(() => {
+  const bucket = { pending: [], waiting: [], accept: [], done: [] }
+  for (const card of cards.value) bucket[card.section].push(card)
+  // 口头卡：记录日期近→远；有单号的：单号里的日期近→远
+  bucket.pending.sort((a, b) => String(b.requestDate).localeCompare(String(a.requestDate)))
+  for (const key of ['waiting', 'accept', 'done']) {
+    bucket[key].sort((a, b) => String(b.sortDate).localeCompare(String(a.sortDate)))
+  }
+  return bucket
+})
+
+/** 顶部三段数字（等货那格额外带「其中超期 N」） */
+const counts = computed(() => ({
+  pending: sectionCards.value.pending.length,
+  waiting: sectionCards.value.waiting.length,
+  waitingLate: sectionCards.value.waiting.filter((card) => card.overdue).length,
+  accept: sectionCards.value.accept.length,
+  done: sectionCards.value.done.length,
+}))
+
+function toggleSection(key) {
+  openSections[key] = !openSections[key]
+}
+
+/**
+ * 点顶部数字：只展开那一段。
+ *
+ * 不滚动定位 —— 手机里滚动定位要算 scroll-view 的 offsetTop，容易差半屏；
+ * 收起另外两段后目标段自然就顶到眼前了。
+ */
+function focusSection(key) {
+  const only = !openSections[key] || SECTION_DEFS.some((sec) => sec.key !== key && openSections[sec.key])
+  for (const sec of SECTION_DEFS) openSections[sec.key] = only ? sec.key === key : true
+}
+
+// ----- 记一句（极简新建）-----
+const quickOpen = ref(false)
+const quickText = ref('')
+const quickRequester = ref('')
+const quickSaving = ref(false)
+
+function openQuick() {
+  quickText.value = ''
+  quickRequester.value = ''
+  quickOpen.value = true
+}
+
+async function saveQuick() {
+  const text = quickText.value.trim()
+  if (!text) {
+    toast.show('先写一句话，比如「车间要 20 个密封圈」')
+    return
+  }
+  if (quickSaving.value) return
+  quickSaving.value = true
+  try {
+    const res = await request.post('/api/purchase/quick', {
+      text,
+      requester: quickRequester.value.trim(),
+    })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '没记上')
+    quickOpen.value = false
+    await loadList()
+    toast.show('记下了')
+  } catch (e) {
+    toast.show(e?.response?.data?.msg || e?.message || '没记上')
+  } finally {
+    quickSaving.value = false
+  }
+}
+
+// ----- 详情抽屉：物料全列 + 催痕全部 + 三个动作 -----
+const detailCard = ref(null)
+const detailFollowUps = ref([])
+const detailBusy = ref(false)
+const acceptNo = ref('')
+
+async function openDetail(card) {
+  detailCard.value = card
+  detailFollowUps.value = []
+  acceptNo.value = card.items.find((row) => row.acceptanceNo)?.acceptanceNo || ''
+  await loadFollowUps()
+}
+
+function closeDetail() {
+  detailCard.value = null
+  detailFollowUps.value = []
+}
+
+async function loadFollowUps() {
+  const card = detailCard.value
+  if (!card) return
+  const id = card.items[0]?.id
+  if (!id) return
+  try {
+    const res = await request.get('/api/purchase/follow-ups', { params: { id } })
+    const body = res.data || {}
+    detailFollowUps.value = Array.isArray(body.data) ? body.data : []
+  } catch (e) {
+    detailFollowUps.value = []
+  }
+}
+
+/** 催一下：给这张卡的每行各记一条留痕（卡可能是多行），再刷新列表与详情 */
+async function doFollowUp() {
+  const card = detailCard.value
+  if (!card || detailBusy.value) return
+  detailBusy.value = true
+  try {
+    for (const row of card.items) {
+      await request.post('/api/purchase/follow-up', undefined, { params: { id: row.id } })
+    }
+    toast.show('记下这次催货了')
+    await loadList()
+    const fresh = cards.value.find((item) => item.key === card.key)
+    detailCard.value = fresh || null
+    await loadFollowUps()
+  } catch (e) {
+    toast.show(e?.response?.data?.msg || e?.message || '没记上')
+  } finally {
+    detailBusy.value = false
+  }
+}
+
+async function doAccept() {
+  const card = detailCard.value
+  if (!card || detailBusy.value) return
+  const no = acceptNo.value.trim()
+  if (!no && card.missingAcceptanceNo) {
+    toast.show('先填验收单号，再点确认')
+    return
+  }
+  detailBusy.value = true
+  try {
+    for (const row of card.items) {
+      await request.post('/api/purchase/accept', undefined, {
+        params: { id: row.id, acceptanceNo: row.acceptanceNo || no },
+      })
+    }
+    toast.show('验收确认好了')
+    await loadList()
+    const fresh = cards.value.find((item) => item.key === card.key)
+    detailCard.value = fresh || null
+  } catch (e) {
+    toast.show(e?.response?.data?.msg || e?.message || '没确认上')
+  } finally {
+    detailBusy.value = false
+  }
+}
+
+async function doVoid() {
+  const card = detailCard.value
+  if (!card || detailBusy.value) return
+  const res = await new Promise((resolve) => {
+    uni.showModal({
+      title: '作废这张卡？',
+      content: '记错了或者重复的才作废。作废后不在列表显示，库里留着。',
+      confirmText: '作废',
+      success: (r) => resolve(!!r.confirm),
+      fail: () => resolve(false),
+    })
+  })
+  if (!res) return
+  detailBusy.value = true
+  try {
+    for (const row of card.items) {
+      await request.post('/api/purchase/void', undefined, { params: { id: row.id } })
+    }
+    closeDetail()
+    await loadList()
+    toast.show('作废了')
+  } catch (e) {
+    toast.show(e?.response?.data?.msg || e?.message || '没作废成')
+  } finally {
+    detailBusy.value = false
+  }
+}
+
+/** 详情里的「编辑」：交给原有的整行表单（规格、编码、编码这些长字段在那边补） */
+function editFromDetail() {
+  const card = detailCard.value
+  if (!card) return
+  const row = card.items[0]
+  closeDetail()
+  openEdit(row)
 }
 
 onMounted(() => {
@@ -416,6 +708,19 @@ function quantityText(row) {
  */
 const popupStyle =
   'height: 86vh; max-height: 86vh; width: 100%; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain; overflow: hidden;'
+
+/*
+ * 「记一句」只有两行字，不该占满 86vh —— 高度交给内容，
+ * 否则手机上一打开就是半屏空白，像加载失败。
+ * 底色用实白（--ui-surface）而不是 sheet 玻璃膜：这几个弹层里没有图层可透，
+ * 半透明白压在遮罩上会发灰，字也跟着糊。
+ */
+const quickStyle =
+  'width: 100%; display: flex; flex-direction: column; background-color: var(--ui-surface); border-radius: 28rpx 28rpx 0 0; overflow: hidden;'
+
+/* 详情比表单矮一点：一条需求撑不满 86vh，太高下半屏是空的，像没加载出来 */
+const detailStyle =
+  'height: 72vh; max-height: 72vh; width: 100%; display: flex; flex-direction: column; background-color: var(--ui-surface); border-radius: 28rpx 28rpx 0 0; overflow: hidden;'
 </script>
 
 <template>
@@ -429,80 +734,233 @@ const popupStyle =
         confirm-type="search"
         @confirm="applyFilters"
       />
-      <view v-if="canEdit" class="pd__add" @click="openCreate">
-        <text>＋ 新增</text>
+      <view v-if="canEdit" class="pd__add" @click="openQuick">
+        <text>＋ 记一句</text>
       </view>
     </view>
 
-    <scroll-view class="pd__chips" scroll-x enable-flex>
+    <!-- 三段数字：点一下只展开那一段（再点一下全展开） -->
+    <view class="pd__hero">
       <view
-        v-for="item in STATUS_FILTERS"
-        :key="item.value"
-        class="pd__chip"
-        :class="{ 'is-on': statusFilter === item.value }"
-        @click="pickStatus(item.value)"
+        v-for="stat in [
+          { key: 'pending', n: counts.pending, label: '待提单' },
+          { key: 'waiting', n: counts.waiting, label: '等货', sub: counts.waitingLate ? `超期 ${counts.waitingLate}` : '' },
+          { key: 'accept', n: counts.accept, label: '待验收' },
+        ]"
+        :key="stat.key"
+        class="pd__stat"
+        :class="{ 'is-zero': !stat.n }"
+        @click="focusSection(stat.key)"
       >
-        <text>{{ item.label }}</text>
+        <text class="pd__stat-n">{{ stat.n }}</text>
+        <view class="pd__stat-text">
+          <text class="pd__stat-l">{{ stat.label }}</text>
+          <text v-if="stat.sub" class="pd__stat-sub">{{ stat.sub }}</text>
+        </view>
       </view>
-    </scroll-view>
+    </view>
 
     <view v-if="loadError" class="pd__error" @click="loadList()">
       <text>{{ loadError }}（点一下重试）</text>
     </view>
 
     <view class="pd__list">
-      <view
-        v-for="(row, index) in rows"
-        :key="row.id"
-        class="pd__card"
-        @click="openEdit(row)"
-      >
-        <view class="pd__card-head">
-          <!-- 行号：长按复制三样（Tab 分隔，可直接粘进 Excel）；点一下照样开详情 -->
-          <view class="pd__no" @longpress.stop="onLongPress(row, 'index')">
-            <text>{{ (pageNum - 1) * PAGE_SIZE + index + 1 }}</text>
-          </view>
-          <view class="pd__status" :class="statusTone(row)">
-            <text>{{ STATUS_TEXT[row.status] || '等货' }}</text>
-          </view>
-          <text v-if="dayHint(row)" class="pd__days">{{ dayHint(row) }}</text>
-          <text class="pd__requester">{{ row.requester || '—' }}</text>
+      <view v-for="sec in SECTION_DEFS" :key="sec.key" class="pd__sect">
+        <view class="pd__sect-head" @click="toggleSection(sec.key)">
+          <text class="pd__sect-title">{{ sec.title }}</text>
+          <text class="pd__sect-count">{{ sectionCards[sec.key].length }}</text>
+          <text class="pd__sect-hint">{{ sec.hint }}</text>
+          <text class="pd__sect-arrow" :class="{ 'is-open': openSections[sec.key] }">›</text>
         </view>
 
-        <view class="pd__name" @longpress.stop="onLongPress(row, 'materialName')">
-          <text>{{ row.materialName || '—' }}</text>
-        </view>
-
-        <view class="pd__meta">
-          <view class="pd__meta-item" @longpress.stop="onLongPress(row, 'materialCode')">
-            <text class="pd__label">编码</text>
-            <text class="pd__code">{{ row.materialCode || '—' }}</text>
+        <view v-if="openSections[sec.key]" class="pd__sect-body">
+          <view v-if="!sectionCards[sec.key].length" class="pd__sect-empty">
+            <text>这一段是空的</text>
           </view>
-          <view class="pd__meta-item pd__meta-item--grow" @longpress.stop="onLongPress(row, 'spec')">
-            <text class="pd__label">规格</text>
-            <text class="pd__spec">{{ row.spec || '—' }}</text>
+          <view
+            v-for="card in sectionCards[sec.key]"
+            :key="card.key"
+            class="pd__card"
+            @click="openDetail(card)"
+          >
+            <view class="pd__card-head">
+              <text v-if="card.oaNo" class="pd__no-text">{{ card.oaNo }}</text>
+              <text v-else class="pd__oral">口头</text>
+              <view
+                class="pd__status"
+                :class="card.overdue ? 'is-late' : card.section === 'accept' ? 'is-accept' : 'is-wait'"
+              >
+                <text>{{ card.section === 'pending' ? '待提单' : card.section === 'accept' ? '待验收' : '等货' }}</text>
+              </view>
+              <text v-if="card.overdue" class="pd__days">超期</text>
+              <text class="pd__requester">{{ card.requester || '—' }}</text>
+            </view>
+
+            <view class="pd__name">
+              <text>{{ card.nameText }}</text>
+              <text v-if="card.extraNames.length" class="pd__extra">另 {{ card.extraNames.length }} 项</text>
+            </view>
+
+            <view class="pd__foot">
+              <text class="pd__qty">{{ card.qtyText }}</text>
+              <text class="pd__date" :class="{ 'is-late': card.overdue }">{{ card.dueText }}</text>
+            </view>
+
+            <view v-if="card.followText || (card.section === 'accept' && card.missingAcceptanceNo)" class="pd__tags">
+              <text v-if="card.followText" class="pd__tag">{{ card.followText }}</text>
+              <text v-if="card.section === 'accept' && card.missingAcceptanceNo" class="pd__tag is-warn">缺验收单</text>
+            </view>
           </view>
         </view>
+      </view>
 
-        <view class="pd__foot">
-          <text class="pd__qty">{{ quantityText(row) }}</text>
-          <text class="pd__date">要求到货 {{ row.requiredArrivalDate || '—' }}</text>
+      <!-- 已完成的收在最后：办完的事不该占屏幕，但要能翻回去查 -->
+      <view v-if="counts.done" class="pd__sect pd__sect--done">
+        <view class="pd__sect-head" @click="doneOpen = !doneOpen">
+          <text class="pd__sect-title">已完成</text>
+          <text class="pd__sect-count">{{ counts.done }}</text>
+          <text class="pd__sect-hint">验收确认过的</text>
+          <text class="pd__sect-arrow" :class="{ 'is-open': doneOpen }">›</text>
+        </view>
+        <view v-if="doneOpen" class="pd__sect-body">
+          <view v-for="card in sectionCards.done" :key="card.key" class="pd__card is-done" @click="openDetail(card)">
+            <view class="pd__card-head">
+              <text v-if="card.oaNo" class="pd__no-text">{{ card.oaNo }}</text>
+              <text v-else class="pd__oral">口头</text>
+              <view class="pd__status is-done"><text>已验收</text></view>
+              <text class="pd__requester">{{ card.requester || '—' }}</text>
+            </view>
+            <view class="pd__name"><text>{{ card.nameText }}</text></view>
+            <view class="pd__foot">
+              <text class="pd__qty">{{ card.qtyText }}</text>
+              <text class="pd__date">{{ card.dueText }}</text>
+            </view>
+          </view>
         </view>
       </view>
 
       <view v-if="!rows.length && !loading" class="pd__empty">
-        <text>{{ loadError ? '加载失败' : '还没有采购需求 —— 点右上「新增」就能记一条' }}</text>
+        <text>{{ loadError ? '加载失败（点上面错误条重试）' : '还没有采购需求 —— 点右上「记一句」就能记一条' }}</text>
       </view>
-      <view v-else-if="hasMore" class="pd__more" @click="loadMore">
-        <text>{{ loadingMore ? '正在加载…' : `加载更多（已显示 ${rows.length} / ${total}）` }}</text>
+      <view v-if="rows.length && !cards.length" class="pd__empty">
+        <text>筛选后没有结果</text>
       </view>
-      <view v-else-if="rows.length" class="pd__more">
-        <text>共 {{ total }} 条，到底了</text>
-      </view>
+
       <view class="pd__hint">
-        <text>长按行号复制「名称 / 编码 / 规格」三样；长按名称、编码、规格各复制单项</text>
+        <text>点卡片进详情：催一下 / 填验收单 / 确认验收 / 作废</text>
       </view>
     </view>
+
+    <!-- 记一句：口头交代先落地，编码数量以后再补 -->
+    <wd-popup
+      v-model="quickOpen"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      :duration="260"
+      :custom-style="quickStyle"
+      @close="quickOpen = false"
+    >
+      <view class="qd">
+        <view class="qd__grabber"></view>
+        <view class="qd__head">
+          <text class="qd__title">记一句</text>
+          <text class="qd__close" @click="quickOpen = false">关闭</text>
+        </view>
+        <textarea
+          v-model="quickText"
+          class="qd__text"
+          auto-height
+          maxlength="120"
+          placeholder="车间要 20 个密封圈"
+          placeholder-style="color: var(--ui-text-3)"
+        />
+        <view class="qd__who">
+          <text class="qd__who-label">谁要的</text>
+          <input
+            v-model="quickRequester"
+            class="qd__who-input"
+            placeholder="不填就是我自己"
+            placeholder-style="color: var(--ui-text-3)"
+          />
+        </view>
+        <view class="qd__foot">
+          <view class="qd__btn qd__btn--ghost" @click="quickOpen = false"><text>取消</text></view>
+          <view class="qd__btn qd__btn--primary" :class="{ 'is-busy': quickSaving }" @click="saveQuick">
+            <text>{{ quickSaving ? '保存中…' : '记下' }}</text>
+          </view>
+        </view>
+      </view>
+    </wd-popup>
+
+    <!-- 详情：一张卡 = 一件事，物料全列 + 催痕 + 验收 -->
+    <wd-popup
+      :model-value="!!detailCard"
+      position="bottom"
+      round
+      safe-area-inset-bottom
+      :duration="260"
+      :custom-style="detailStyle"
+      @close="closeDetail"
+    >
+      <view v-if="detailCard" class="dd">
+        <view class="dd__grabber"></view>
+        <view class="dd__head">
+          <view class="dd__title-wrap">
+            <text class="dd__title">{{ detailCard.oaNo || '口头 · 待提单' }}</text>
+            <text class="dd__sub">
+              {{ detailCard.requester || '—' }} · {{ detailCard.requestDate || '—' }} · 共 {{ detailCard.items.length }} 项
+            </text>
+          </view>
+          <text class="dd__close" @click="closeDetail">关闭</text>
+        </view>
+
+        <scroll-view class="dd__body" scroll-y>
+          <view class="dd__items">
+            <view v-for="row in detailCard.items" :key="row.id" class="dd__item">
+              <view class="dd__item-top">
+                <text class="dd__item-name">{{ row.materialName || '—' }}</text>
+                <text class="dd__item-qty">{{ quantityText(row) }}</text>
+              </view>
+              <view class="dd__item-meta">
+                <text class="dd__item-code">{{ row.materialCode || '无编码' }}</text>
+                <text class="dd__item-spec">{{ row.spec || '无规格' }}</text>
+              </view>
+              <view class="dd__item-foot">
+                <text class="dd__item-date">要求到货 {{ row.requiredArrivalDate || '—' }}</text>
+                <text class="dd__item-status">{{ STATUS_TEXT[row.status] || '等货' }}</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="dd__block">
+            <text class="dd__block-title">催货记录</text>
+            <view v-if="!detailFollowUps.length" class="dd__empty"><text>还没催过</text></view>
+            <view v-for="(item, index) in detailFollowUps" :key="index" class="dd__follow">
+              <text class="dd__follow-at">{{ item.pushedAt }}</text>
+              <text class="dd__follow-by">{{ item.pushedBy || '—' }}</text>
+            </view>
+          </view>
+
+          <view class="dd__block">
+            <text class="dd__block-title">验收</text>
+            <input
+              v-model="acceptNo"
+              class="dd__accept"
+              placeholder="验收单号（先关联单据，再点确认）"
+              placeholder-style="color: var(--ui-text-3)"
+            />
+          </view>
+        </scroll-view>
+
+        <view class="dd__acts">
+          <view class="dd__act" :class="{ 'is-busy': detailBusy }" @click="doFollowUp"><text>催一下</text></view>
+          <view class="dd__act" :class="{ 'is-busy': detailBusy }" @click="doAccept"><text>确认验收</text></view>
+          <view class="dd__act" @click="editFromDetail"><text>编辑</text></view>
+          <view class="dd__act is-danger" :class="{ 'is-busy': detailBusy }" @click="doVoid"><text>作废</text></view>
+        </view>
+      </view>
+    </wd-popup>
 
     <wd-popup
       v-model="formOpen"
@@ -1183,5 +1641,461 @@ const popupStyle =
       opacity: 0.6;
     }
   }
+}
+/* ===== 采购需求：一件事一张卡（2026-11-18 改） ===== */
+
+/* 三段数字：待提单 / 等货 / 待验收 */
+.pd__hero {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 8rpx;
+}
+
+/*
+ * 一格一个数：数字大、标签小 —— 一眼看的是「有几件」，
+ * 具体是哪几件事在下面按段列着，不靠这一格说清。
+ */
+.pd__stat {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  padding: 18rpx 16rpx;
+  border-radius: 18rpx;
+  background-color: var(--ui-raise-2);
+}
+
+.pd__stat.is-zero {
+  opacity: 0.55;
+}
+
+.pd__stat-n {
+  font-size: 40rpx;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ui-text);
+}
+
+.pd__stat-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
+}
+
+.pd__stat-l {
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+}
+
+.pd__stat-sub {
+  font-size: 20rpx;
+  color: var(--ui-amber-800);
+}
+
+/* 分段标题：轻一点，别和三段数字抢 */
+.pd__sect {
+  margin-top: 18rpx;
+}
+
+.pd__sect-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  padding: 6rpx 4rpx 12rpx;
+}
+
+.pd__sect-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.pd__sect-count {
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.pd__sect-hint {
+  flex: 1 1 auto;
+  font-size: 21rpx;
+  text-align: right;
+  color: var(--ui-text-3);
+}
+
+.pd__sect-arrow {
+  font-size: 30rpx;
+  line-height: 1;
+  color: var(--ui-text-3);
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.pd__sect-arrow.is-open {
+  transform: rotate(90deg);
+}
+
+.pd__sect-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.pd__sect-empty {
+  padding: 18rpx 4rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.pd__sect--done {
+  opacity: 0.9;
+}
+
+/* 卡片里新加的五样 */
+.pd__no-text {
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+  letter-spacing: 0.4rpx;
+}
+
+.pd__oral {
+  padding: 2rpx 12rpx;
+  border: 2rpx dashed var(--ui-border-strong);
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  color: var(--ui-text-2);
+}
+
+.pd__extra {
+  margin-left: 10rpx;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.pd__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.pd__tag {
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 21rpx;
+  color: var(--ui-text-2);
+}
+
+.pd__tag.is-warn {
+  border: 2rpx solid var(--ui-amber-200);
+  color: var(--ui-amber-800);
+}
+
+.pd__card.is-done {
+  opacity: 0.75;
+}
+
+.pd__status.is-late {
+  color: var(--ui-amber-800);
+  background-color: var(--ui-amber-50);
+}
+
+.pd__status.is-accept {
+  color: var(--ui-accent);
+  background-color: var(--ui-raise-2);
+}
+
+.pd__status.is-wait {
+  color: var(--ui-text-2);
+  background-color: var(--ui-raise-2);
+}
+
+.pd__status.is-done {
+  color: var(--ui-text-3);
+  background-color: var(--ui-raise-2);
+}
+
+.pd__date.is-late {
+  color: var(--ui-amber-800);
+}
+
+/* ===== 记一句 ===== */
+.qd {
+  padding: 0 26rpx calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.qd__grabber {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 12rpx auto 0;
+  border-radius: 4rpx;
+  background-color: var(--ui-border-strong);
+}
+
+.qd__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 2rpx 16rpx;
+}
+
+.qd__title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+
+.qd__close {
+  font-size: 26rpx;
+  color: var(--ui-text-2);
+}
+
+.qd__text {
+  width: 100%;
+  min-height: 150rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: var(--ui-text);
+}
+
+.qd__who {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 16rpx;
+  padding: 0 20rpx;
+  height: 88rpx;
+  border-radius: 18rpx;
+  background-color: var(--ui-raise-2);
+}
+
+/* 竖线分隔：不然「谁要的」和占位文字连成一句，看起来像标签丢了 */
+.qd__who-label {
+  padding-right: 20rpx;
+  border-right: 2rpx solid var(--ui-hairline);
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+}
+
+.qd__who-input {
+  flex: 1 1 auto;
+  font-size: 27rpx;
+  color: var(--ui-text);
+}
+
+.qd__foot {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.qd__btn {
+  flex: 1 1 0;
+  height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: 28rpx;
+}
+
+.qd__btn--ghost {
+  border: 2rpx solid var(--ui-border-strong);
+  color: var(--ui-text-2);
+}
+
+.qd__btn--primary {
+  background-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-weight: 600;
+}
+
+.qd__btn.is-busy {
+  opacity: 0.6;
+}
+
+/* ===== 详情抽屉 ===== */
+.dd {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dd__grabber {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 12rpx auto 0;
+  border-radius: 4rpx;
+  background-color: var(--ui-border-strong);
+}
+
+.dd__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx 26rpx 14rpx;
+}
+
+.dd__title-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.dd__title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--ui-text);
+}
+
+.dd__sub {
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.dd__close {
+  padding-top: 6rpx;
+  font-size: 26rpx;
+  color: var(--ui-text-2);
+}
+
+/*
+ * 滚动区：`height:0` + `flex:1` 才让 scroll-view 真正拿到高度
+ * （uni scroll-view 必须有确定高度才内部滚动，抄表页踩过同一个坑）。
+ */
+/* 注意：uni 的 scroll-view 会给内层再套一层容器，直接在这个元素上写左右 padding 不生效，
+   内容会顶到屏幕边上（实测右侧溢出 17px）⇒ 左右留白写在里面的 .dd__items / .dd__block 上 */
+.dd__body {
+  flex: 1 1 auto;
+  height: 0;
+  min-height: 0;
+  padding: 0;
+}
+
+.dd__items {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  box-sizing: border-box;
+  padding: 0 26rpx;
+}
+
+.dd__item {
+  padding: 18rpx;
+  border-radius: 16rpx;
+  background-color: var(--ui-raise-2);
+}
+
+.dd__item-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+/* 规格可能很长（一长串参数），必须允许换行 + 收缩，否则会把右边的量挤出去 */
+.dd__item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
+  font-size: 27rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.dd__item-qty {
+  flex: 0 0 auto;
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+}
+
+.dd__item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 14rpx;
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: var(--ui-text-3);
+  word-break: break-all;
+}
+
+.dd__item-foot {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  color: var(--ui-text-2);
+}
+
+.dd__block {
+  margin-top: 22rpx;
+  padding: 0 26rpx;
+}
+
+.dd__block-title {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.dd__empty {
+  padding: 12rpx 0;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.dd__follow {
+  display: flex;
+  justify-content: space-between;
+  padding: 12rpx 0;
+  font-size: 22rpx;
+  color: var(--ui-text-2);
+  border-bottom: 2rpx solid var(--ui-hairline);
+}
+
+.dd__accept {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 12rpx;
+  padding: 0 18rpx;
+  height: 88rpx;
+  border-radius: 16rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 26rpx;
+  color: var(--ui-text);
+}
+
+.dd__acts {
+  display: flex;
+  gap: 12rpx;
+  padding: 18rpx 26rpx calc(18rpx + env(safe-area-inset-bottom));
+}
+
+.dd__act {
+  flex: 1 1 0;
+  height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background-color: var(--ui-raise-2);
+  font-size: 25rpx;
+  color: var(--ui-text);
+}
+
+.dd__act.is-danger {
+  color: var(--ui-amber-800);
+}
+
+.dd__act.is-busy {
+  opacity: 0.55;
 }
 </style>
