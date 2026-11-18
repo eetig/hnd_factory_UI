@@ -1089,6 +1089,7 @@ async function handleDelete() {
 <style scoped lang="scss">
 .tlf {
   display: flex;
+  height: 100%;
   max-height: 86vh;
   flex-direction: column;
   /* 弹层自己裁边：内容再长也不许把底部按钮顶出可视区（2026-11-18） */
@@ -1273,7 +1274,7 @@ async function handleDelete() {
     min-height: 0;
     // flex-basis 必须是 0：只写 flex-grow 时基准还是内容高度，内容一长就把
     // 底部的「删除/取消/保存」一起顶上去（2026-11-18 使用方反馈）
-    flex: 1 1 0;
+    flex: 1 1 auto;
     overscroll-behavior: contain;
     // uni 的 uni-scroll-view 自带 width: 100%，而 100% 不扣边框，会平白溢出 2px
     width: auto;
