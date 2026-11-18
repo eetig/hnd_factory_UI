@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import AppPopup from '../../components/AppPopup.vue'
+import PageTitle from '../../components/PageTitle.vue'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 import { onBackPress, onUnload, onPullDownRefresh } from '@dcloudio/uni-app'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
@@ -447,6 +449,9 @@ function closeMenu() {
   if (navDrawer.value) navDrawer.value.close()
   setDrawerOpen(false)
 }
+
+// 顶栏三横线取消后，抽屉入口改成左侧边缘右滑（使用方 2026-11-18 选的方案）
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(openMenu)
 
 /*
  * 返回键 / 系统「从两侧向内滑」的返回手势 = 抽屉的开关（使用方 2026-10-10 定的口径）：
@@ -3225,6 +3230,8 @@ onPullDownRefresh(async () => {
     class="page"
     :class="[themeClass, paletteClass]"
     :style="pageVars"
+    @touchstart="onEdgeStart"
+    @touchend="onEdgeEnd"
   >
     <!-- 主题统一交给 wot-design-uni 的 config-provider：
          日期选择器、弹层、Toast、MessageBox 这些组件不用逐个改色。
@@ -3236,24 +3243,7 @@ onPullDownRefresh(async () => {
       :theme-vars="themeVars"
       custom-class="page__shell mx-auto max-w-7xl"
     >
-      <!-- 顶部栏（豆包式）：左上角菜单按钮 → 左侧抽屉导航；
-           中间只显示"当前面板 + 一句话说明"；右侧主题切换 + 账户入口。
-           原来的横向胶囊 Tab 条已移除 —— 12 个标签在手机上横滑仍然局促，
-           导航全部收进抽屉后正文也能铺满整屏。 -->
-      <!-- 顶栏（2026-11-18 精简）：只留「菜单 + 标题」。
-           明暗 / 配色 / 身份按用户要求收进抽屉左下角 —— 它们都是低频设置，
-           却一直占着主视觉最上方的黄金位置；页面主体能多露一行卡片才是收益。 -->
-      <header class="topbar">
-        <button class="topbar__btn" aria-label="打开菜单" @click="openMenu">
-          <view class="burger">
-            <view class="burger__bar"></view>
-            <view class="burger__bar is-short"></view>
-            <view class="burger__bar"></view>
-          </view>
-        </button>
-
-        <text class="topbar__name">{{ activeTabMeta.label }}</text>
-      </header>
+      <PageTitle :title="activeTabMeta.label" />
 
       <!--
         首页 = 常用入口板（2026-11-02 重构）。
@@ -5097,7 +5087,7 @@ onPullDownRefresh(async () => {
   /* 底部补白 = 停靠栏高度 + 安全区 + 20px 呼吸 —— 两个都是变量，改底栏高度只需改
      App.vue 里的 --ui-dock-h，这里自动跟上。底栏是 fixed、不占文档流，
      不留这段补白，列表最后一行就会被它压住。 */
-  padding: calc(var(--status-bar-height, 0px) + 28px) 16px
+  padding: 28px 16px
     calc(var(--ui-dock-h) + var(--ui-safe-bottom, 0px) + 20px);
   // 场景先于玻璃：深墨蓝底 + 3 个大半径柔光光斑，纯 CSS、不引图片、不加 DOM。
   // 画法与 token 都在 uni.scss 的 @mixin scene-bg 里（两套主题各一套值）。

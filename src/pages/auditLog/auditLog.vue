@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { isAdmin } from '../../api/auth'
 import request from '../../api/request'
 import { useTheme } from '../../composables/useTheme'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 /*
  * 管控日志（App 版，2026-11-02）。
@@ -172,10 +175,15 @@ onMounted(() => {
   }
   load()
 })
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <template>
-  <view class="audit" :class="themeClass" :style="themeVars">
+  <view class="audit" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="管控日志" />
     <!-- 不是管理员：一句话说明，不放任何数据 -->
     <view v-if="!allowed" class="audit__deny">
       <text class="audit__deny-title">只有管理员能查看</text>
@@ -275,7 +283,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 20rpx 24rpx 0;
+  padding: 0 24rpx;
   box-sizing: border-box;
   background-color: var(--ui-bg);
 }

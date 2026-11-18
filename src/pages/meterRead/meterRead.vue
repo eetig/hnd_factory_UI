@@ -10,6 +10,9 @@ import DateField from '../../components/DateField.vue'
 import { chooseImages } from '../../utils/chooseImages'
 import { handleGlobalBack } from '../../utils/popupStack'
 import AppPopup from '../../components/AppPopup.vue'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -1392,10 +1395,15 @@ onBackPress(() => {
   // 统一走全局守卫（2026-11-18 全局化）：有弹窗先关弹窗，没弹窗就交回框架返回上一页
   return handleGlobalBack() !== 'root'
 })
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <template>
-  <view class="mr" :class="themeClass" :style="pageStyle">
+  <view class="mr" :class="themeClass" :style="[pageStyle, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="抄表" />
     <view v-if="!allowed" class="mr__deny">
       <template v-if="isLoggedIn()">
         <text class="mr__deny-title">{{ authState.roleName || '当前账号' }}没有抄表权限</text>
@@ -1822,7 +1830,7 @@ onBackPress(() => {
    * 卡片区就只能用中间剩下的高度 —— 操作栏不会被卡片顶走，也不会滚出屏幕。
    */
   --mr-bar: 120rpx;
-  padding: 16rpx 24rpx calc(var(--mr-bar) + 16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
+  padding: 0 24rpx calc(var(--mr-bar) + 16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
   box-sizing: border-box;
   overflow: hidden;
   position: relative;

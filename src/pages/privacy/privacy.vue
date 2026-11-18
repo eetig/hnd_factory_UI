@@ -1,5 +1,8 @@
 <script setup>
 import { useTheme } from '../../composables/useTheme'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 /*
  * 隐私政策（2026-11-02）。
@@ -88,12 +91,17 @@ const sections = [
     ],
   },
 ]
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <template>
-  <view class="privacy" :class="themeClass" :style="themeVars">
+  <view class="privacy" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="隐私政策" />
+    <!-- 标题已提到页面顶部（PageTitle），这里只留生效日期那行，避免同一句话出现两次 -->
     <view class="privacy__head">
-      <text class="privacy__title">隐私政策与数据说明</text>
       <text class="privacy__sub">生效日期 {{ EFFECTIVE_DATE }} · 内部系统 · 仅本公司员工使用</text>
     </view>
 
@@ -129,7 +137,7 @@ const sections = [
 
 <style lang="scss" scoped>
 .privacy {
-  padding: 32rpx 32rpx 96rpx;
+  padding: 0 32rpx 96rpx;
 }
 
 .privacy__head {

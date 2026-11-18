@@ -70,6 +70,7 @@
     }
   ],
   "globalStyle": {
+    "navigationStyle": "custom",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "HND生产助手",
     "navigationBarBackgroundColor": "#F2F3F7",

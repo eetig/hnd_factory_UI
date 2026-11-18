@@ -1,5 +1,6 @@
 <template>
-  <view class="td" :class="themeClass" :style="themeVars">
+  <view class="td" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="待办" />
     <!-- 顶部：一句话概况 + 两个页签 -->
     <view class="td__head">
       <view class="td__summary">
@@ -153,6 +154,9 @@ import { chooseImages } from '../../utils/chooseImages'
 import { useTheme } from '../../composables/useTheme'
 import DateField from '../../components/DateField.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 const { themeClass, themeVars } = useTheme()
 
@@ -435,6 +439,10 @@ onBackPress(() => {
   // 统一走全局守卫（2026-11-18 全局化）：本页没有抽屉，关掉弹窗就交回框架返回上一页
   return handleGlobalBack() !== 'root'
 })
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <style lang="scss" scoped>

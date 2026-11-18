@@ -1,5 +1,6 @@
 <template>
-  <view class="pp" :style="pageStyle">
+  <view class="pp" :style="[pageStyle, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="领料解析" />
     <view class="pp__body">
       <view class="pp__head">
         <text class="pp__sub">拍一张，认成电脑能直接粘进 SAP 的单</text>
@@ -140,6 +141,9 @@ import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
 import { chooseImages } from '../../utils/chooseImages'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 // 部门是「落哪个 sheet」的开关，所以给的是高频几个，不是全部组织架构
 const DEPTS = ['生产部', '行政部', '安环部', '设备部']
@@ -400,6 +404,10 @@ async function send() {
     sending.value = false
   }
 }
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <style lang="scss" scoped>

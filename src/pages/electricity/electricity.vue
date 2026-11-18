@@ -7,6 +7,9 @@ import { authState, isAdmin, isLoggedIn } from '../../api/auth'
 import { useTheme } from '../../composables/useTheme'
 import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
+import PageTitle from '../../components/PageTitle.vue'
+import { usePageFrame } from '../../composables/usePageFrame'
+import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 /*
  * 电费（手机端，2026-11-04）
@@ -399,10 +402,15 @@ onBackPress(() => {
   // 统一走全局守卫（2026-11-18 全局化）：有弹窗先关弹窗，没弹窗就交回框架返回上一页
   return handleGlobalBack() !== 'root'
 })
+// 极简标题（2026-11-18）：顶栏只剩一行居中文字，抽屉入口改为左侧边缘右滑
+const { frameStyle } = usePageFrame()
+const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
 </script>
 
 <template>
-  <view :class="['el-page', themeClass]" :style="themeVars">
+  <view :class="['el-page', themeClass]" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle title="电费" />
     <LoadingMask v-if="loading" />
 
     <!-- 顶部：月份切换 -->
