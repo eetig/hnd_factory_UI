@@ -1,6 +1,6 @@
 <script setup>
 import { computed, getCurrentInstance, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { authState, isAdmin } from '../../api/auth'
+import { authState, isAdmin, isLoggedIn } from '../../api/auth'
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
 import { resolveAssetUrl } from '../../api/config'
@@ -71,6 +71,11 @@ function tint(hex, alpha) {
 const canReadMeter = computed(() => isAdmin() || authState.roleKey === 'meter_clerk')
 
 const allowed = computed(() => isAdmin())
+
+/** 拒绝态里的出路：登录页（登录成功后返回原页面） */
+function goLogin() {
+  uni.navigateTo({ url: '/pages/login/login' })
+}
 
 const loading = ref(false)
 const saving = ref(false)
@@ -1357,11 +1362,9 @@ function backToSkipped() {
 
 onMounted(() => {
   bindKeyboardWatcher()
-  if (!allowed.value) {
-    uni.showToast({ title: '需要抄表权限', icon: 'none' })
-    setTimeout(() => uni.reLaunch({ url: '/pages/index/index' }), 900)
-    return
-  }
+  // 没权限时不再自动弹回首页（2026-11-18 使用方反馈：只看到一句「需要抄表权限」就被弹走，
+  // 分不清是没登录还是角色不对，也没地方登录）。改为留在页面上给出可点的出路。
+  if (!allowed.value) return
   loadSheet().then(() => {
     // 标签带是"轨道的进度条"，必须先量出每个标签的中心点才能对齐
     nextTick(() => setTimeout(measureNames, 80))
@@ -1393,7 +1396,16 @@ onBackPress(() => {
 <template>
   <view class="mr" :class="themeClass" :style="pageStyle">
     <view v-if="!allowed" class="mr__deny">
-      <text class="mr__deny-title">需要抄表权限（找管理员授权）</text>
+      <template v-if="isLoggedIn()">
+        <text class="mr__deny-title">{{ authState.roleName || '当前账号' }}没有抄表权限</text>
+        <text class="mr__deny-hint">抄表只能由管理员或抄表员操作。换管理员账号登录即可。</text>
+        <button class="mr__deny-btn" @click="goLogin">换管理员账号登录</button>
+      </template>
+      <template v-else>
+        <text class="mr__deny-title">还没登录</text>
+        <text class="mr__deny-hint">抄表要记录是谁抄的，登录后才能填写。</text>
+        <button class="mr__deny-btn" @click="goLogin">去登录</button>
+      </template>
     </view>
 
     <template v-else>
@@ -1827,6 +1839,25 @@ onBackPress(() => {
   font-size: 32rpx;
   font-weight: 700;
   color: var(--ui-text);
+}
+
+.mr__deny-hint {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: var(--ui-text-2);
+}
+
+.mr__deny-btn {
+  margin-top: 28rpx;
+  height: 84rpx;
+  border-radius: 999rpx;
+  background-color: var(--ui-accent);
+  color: var(--ui-on-accent);
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 84rpx;
 }
 
 /* 顶部 */

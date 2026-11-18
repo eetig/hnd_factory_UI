@@ -2,13 +2,16 @@
 import { onLaunch } from '@dcloudio/uni-app'
 import request from './api/request'
 import { getToken, saveAuth } from './api/auth'
-import { hasStoredRole } from './api/storage'
 import { ACTIVE_ENV, APP_ENV } from './api/env'
 
 // 启动后恢复角色与权限：token 在本地存储里，角色信息需重新拉取。
 // 沿用改造前的策略 —— 最多等 3 秒，避免后端不可用时阻塞启动。
+//
+// 2026-11-18 改动：以前只在「本地没有角色」时才拉，导致角色**过期**（例如换号后旧角色留在
+// 本地、或后端把账号提成管理员但手机端还是 member）永远自愈不了。现在只要 token 在就拉一次：
+// 一次轻量 GET，换来「服务端角色 = 手机端角色」，避免出现「明明是管理员却提示没权限」。
 function restoreAuth() {
-  if (!getToken() || hasStoredRole()) return Promise.resolve()
+  if (!getToken()) return Promise.resolve()
 
   return Promise.race([
     request.get('/api/user/info').then((res) => saveAuth(res.data || {})),
