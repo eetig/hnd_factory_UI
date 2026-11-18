@@ -1,5 +1,6 @@
 <script setup>
 import { computed, getCurrentInstance, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { onBackPress } from '@dcloudio/uni-app'
 import { authState, isAdmin, isLoggedIn } from '../../api/auth'
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
