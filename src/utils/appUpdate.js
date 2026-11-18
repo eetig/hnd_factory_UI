@@ -106,7 +106,10 @@ export async function checkAppUpdate() {
  *   ① manifest.json 里申请 REQUEST_INSTALL_PACKAGES（见 src/manifest.json）；
  *   ② 系统里允许本应用"安装未知应用"，否则系统会弹一次授权页让用户开。
  */
-export function downloadAndInstall(url, onProgress) {
+export function downloadAndInstall(url, options) {
+  // 兼容老调用：第二个参数直接给函数时当作 onProgress
+  const opts = typeof options === 'function' ? { onProgress: options } : options || {}
+  const { onProgress, onTask, onInstalling } = opts
   // #ifdef APP-PLUS
   return new Promise((resolve, reject) => {
     if (!url) {
@@ -118,6 +121,12 @@ export function downloadAndInstall(url, onProgress) {
       { filename: '_doc/update/hnd-app.apk' },
       (download, status) => {
         if (status === 200 && download?.filename) {
+          // 交给系统安装器之前告知调用方：界面从「下载中」切到「正在安装」
+          try {
+            onInstalling && onInstalling()
+          } catch {
+            /* 回调里的异常不能影响安装 */
+          }
           plus.runtime.install(
             download.filename,
             { force: false },
@@ -133,8 +142,16 @@ export function downloadAndInstall(url, onProgress) {
       if (!onProgress) return
       const total = download.totalSize || 0
       const done = download.downloadedSize || 0
-      onProgress(total > 0 ? done / total : null)
+      // 一次给全：比例可能拿不到（total 为 0），但已下载字节数总是有的，
+      // 界面可以据此显示「已下载 3.2 MB」之类，不至于只有一句「正在连接」。
+      onProgress({ ratio: total > 0 ? done / total : null, loaded: done, total })
     })
+    // 把 task 交出去：界面上的「取消」要能 abort 它
+    try {
+      onTask && onTask(task)
+    } catch {
+      /* 同上，回调异常不影响下载 */
+    }
     task.start()
   })
   // #endif

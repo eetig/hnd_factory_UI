@@ -20,6 +20,7 @@ import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
 import AttendancePanel from '../../components/AttendancePanel.vue'
 import { paletteClassOf, usePalette } from '../../composables/usePaletteReveal'
 import NavDrawer from '../../components/NavDrawer.vue'
+import UpdateDialog from '../../components/UpdateDialog.vue'
 import DropdownMenu from '../../components/DropdownMenu.vue'
 import ImageViewer from '../../components/ImageViewer.vue'
 import TankLevelFormDialog from '../../components/TankLevelFormDialog.vue'
@@ -3025,7 +3026,81 @@ onMounted(() => {
  */
 const appVersion = ref('')
 const appUpdate = ref(null) // checkAppUpdate() 的结果：{ hasUpdate, current, latest }
-const appUpdating = ref(false)
+
+/*
+ * 下载进度弹层（2026-11-19 重做）。
+ *
+ * 旧实现用 uni.showLoading：那是**系统原生**弹窗，样式改不了；
+ * 更糟的是每 5% 重新调一次 = 把原生窗口销毁再重建，于是每 5% 闪一下、卡一下。
+ * 现在换成自绘弹层：进度条宽度交给 CSS transition 补间，
+ * JS 只按时间节流地喂数值，任何一帧都不会重建原生窗口。
+ */
+const updVisible = ref(false)
+const updPhase = ref('downloading') // downloading | installing
+const updVersion = ref('')
+const updPercent = ref(0)
+const updLoaded = ref(0)
+const updTotal = ref(0)
+const updSpeed = ref(0) // 字节/秒，已做 EMA 平滑
+const updEta = ref(0) // 秒
+let updTask = null
+let updCancelled = false
+let updLastLoaded = 0
+let updLastAt = 0
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n <= 0) return ''
+  if (n < 1024) return `${Math.round(n)} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`
+}
+
+const updLoadedText = computed(() => formatBytes(updLoaded.value))
+const updTotalText = computed(() => formatBytes(updTotal.value))
+const updSpeedText = computed(() => (updSpeed.value > 0 ? `${formatBytes(updSpeed.value)}/s` : ''))
+const updEtaText = computed(() => {
+  const sec = Math.round(updEta.value)
+  if (!sec || sec <= 0) return ''
+  if (sec < 60) return `还剩 ${sec} 秒`
+  return `还剩 ${Math.round(sec / 60)} 分`
+})
+
+function resetUpdState() {
+  updPercent.value = 0
+  updLoaded.value = 0
+  updTotal.value = 0
+  updSpeed.value = 0
+  updEta.value = 0
+  updPhase.value = 'downloading'
+  updLastLoaded = 0
+  updLastAt = 0
+}
+
+/** plus.downloader 的进度回调：只往「更大」的方向走，弱网重试也不会倒吸 */
+function onUpdProgress({ ratio, loaded, total }) {
+  if (total > 0) updTotal.value = Math.max(updTotal.value, total)
+  if (loaded > updLoaded.value) updLoaded.value = loaded
+  if (ratio !== null && ratio !== undefined) {
+    const p = Math.min(100, ratio * 100)
+    if (p > updPercent.value) updPercent.value = p
+  }
+  const now = Date.now()
+  if (!updLastAt) {
+    updLastAt = now
+    updLastLoaded = loaded
+    return
+  }
+  const dt = now - updLastAt
+  if (dt < 400) return // 400ms 采样够算速度了，不必每个事件都算
+  const inst = ((loaded - updLastLoaded) * 1000) / dt
+  if (inst > 0) {
+    updSpeed.value = updSpeed.value ? updSpeed.value * 0.6 + inst * 0.4 : inst
+    if (updTotal.value > loaded) updEta.value = (updTotal.value - loaded) / updSpeed.value
+  }
+  updLastAt = now
+  updLastLoaded = loaded
+}
 
 const appVersionTip = computed(() => {
   if (!appVersion.value) return ''
@@ -3042,10 +3117,29 @@ async function initAppUpdate() {
   appUpdate.value = result
 }
 
+function cancelAppUpdate() {
+  if (updPhase.value === 'installing') return
+  uni.showModal({
+    title: '取消更新？',
+    content: '下载会中断，下次需要从头开始。',
+    confirmText: '取消下载',
+    cancelText: '继续下载',
+    success: (res) => {
+      if (!res.confirm) return
+      updCancelled = true
+      try {
+        updTask && updTask.abort()
+      } catch {
+        /* abort 失败也不该卡住界面 */
+      }
+      updVisible.value = false
+    },
+  })
+}
+
 /** 点抽屉底部那一行：有新版就确认后下载安装，没有就告诉一声「已是最新」 */
 async function tapAppUpdate() {
-  if (appUpdating.value) return
-  const found = appUpdate.value
+  if (updVisible.value) return
   if (!appVersion.value) {
     // 还没查到版本（比如刚进 App 那几百毫秒）：现查一次
     await initAppUpdate()
@@ -3061,45 +3155,52 @@ async function tapAppUpdate() {
   const latest = appUpdate.value.latest || {}
   uni.showModal({
     title: `发现新版本 ${latest.version || ''}`,
-    content: `${latest.sizeText ? `${latest.sizeText} · ` : ''}下载后会自动打开安装，装完原来的登录状态还在。`,
+    content: `${latest.sizeText ? `${latest.sizeText} · ` : ''}下载时会显示进度，装完原来的登录状态还在。`,
     confirmText: '立即更新',
     cancelText: '以后再说',
     success: (res) => {
       if (!res.confirm) return
-      runAppUpdate(latest.url)
+      runAppUpdate(latest)
     },
   })
 }
 
-async function runAppUpdate(url) {
-  appUpdating.value = true
-  let percent = 0
-  uni.showLoading({ title: '下载中 0%', mask: true })
+async function runAppUpdate(latest) {
+  if (!latest?.url) {
+    uni.showToast({ title: '没拿到更新地址，稍后再试', icon: 'none' })
+    return
+  }
+  updCancelled = false
+  updTask = null
+  resetUpdState()
+  updVersion.value = latest.version || ''
+  updVisible.value = true
   try {
-    await downloadAndInstall(url, (ratio) => {
-      if (ratio === null) return
-      const next = Math.round(ratio * 100)
-      // 每 5% 刷一次，避免每帧都去动 UI
-      if (next >= percent + 5) {
-        percent = next
-        uni.showLoading({ title: `下载中 ${next}%`, mask: true })
-      }
+    await downloadAndInstall(latest.url, {
+      onTask: (task) => {
+        updTask = task
+      },
+      onProgress: onUpdProgress,
+      onInstalling: () => {
+        updPhase.value = 'installing'
+        updPercent.value = 100
+      },
     })
-    // 走到这里说明系统安装器已被拉起（装完是新的进程，这里通常不会再回来）
-    uni.hideLoading()
+    // 走到这里说明系统安装器已被拉起（装完是新的进程，一般不会再回来）
+    updVisible.value = false
     appUpdate.value = null
   } catch (error) {
-    uni.hideLoading()
+    updVisible.value = false
+    if (updCancelled) return // 用户自己取消的，不弹错误
     uni.showModal({
       title: '更新没成功',
       content: `${error?.message || '下载失败'}。可以稍后再试，或者让管理员把新包发给你。`,
       showCancel: false,
     })
   } finally {
-    appUpdating.value = false
+    updTask = null
   }
 }
-
 // 补拉登录后的 admin 明细：登录页是 navigateTo 进去、saveAuth 后 navigateBack 回来的，
 // 首页不重建、onMounted 不再跑（挂载那一次被 fetchAdminOnlyData 里的 isAdmin() 挡掉了）。
 // 于是「未登录进首页 → 登录 → 工单/领料/入库/货物移动几页有权限却一直空着」。
@@ -4839,6 +4940,19 @@ onPullDownRefresh(async () => {
            元素自己的 box-shadow）。实测过：同样是 overflow: hidden，弹层右缘那条
            竖带 0.578→0.439 的亮度梯度确实存在。
       -->
+      <!-- 下载进度：自绘弹层，替代系统原生 showLoading（见 runAppUpdate 的注释） -->
+      <UpdateDialog
+        :visible="updVisible"
+        :version="updVersion"
+        :percent="updPercent"
+        :loaded-text="updLoadedText"
+        :total-text="updTotalText"
+        :speed-text="updSpeedText"
+        :eta-text="updEtaText"
+        :phase="updPhase"
+        @cancel="cancelAppUpdate"
+      />
+
       <NavDrawer ref="navDrawer">
         <view class="drawer">
           <view class="drawer__brand">
