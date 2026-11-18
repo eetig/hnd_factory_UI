@@ -23,7 +23,7 @@
  * 栈的顺序 = 打开的先后：同一次手势只关最后打开的那一层，
  * 关掉后如果下面还压着别的弹窗，下一次手势才轮到它。
  */
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, useAttrs, watch } from 'vue'
 import { pushPopup, removePopup } from '../utils/popupStack'
 import { lockPageScroll, unlockPageScroll } from '../utils/scrollLock'
 
@@ -34,6 +34,25 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'close'])
+
+/*
+ * 安全区不再交给 wd-popup 画（2026-11-18，用户 m10197）
+ *
+ * wd-popup 的 safe-area-inset-bottom 是拿 `padding-bottom` 画在**弹窗根节点**上的，
+ * 那块 padding 继承根节点自己的底色（我们传的 custom-style 里是 --ui-sheet-fill，纯白），
+ * 而内容区是一堆浅灰卡片 —— 于是每一处底部弹窗，按钮下面都多出一条更白的带子。
+ *
+ * 现在把这个属性拦下来不透传：安全区改成各弹窗自己的底栏用
+ * `padding-bottom: calc(x + env(safe-area-inset-bottom))` 处理（已经这么写的那些组件照旧），
+ * 底栏既然不吃底色，安全区那段也就是弹窗本体的一部分，不会再有异色条。
+ */
+const attrs = useAttrs()
+
+const popupAttrs = computed(() => {
+  const { safeAreaInsetBottom, 'safe-area-inset-bottom': dashed, ...rest } = attrs
+  return rest
+})
+
 
 /** 每个实例一个稳定 id：同一页里开三个弹窗也不会互相顶掉 */
 const stackId = `popup-${Math.random().toString(36).slice(2, 10)}`
@@ -111,7 +130,7 @@ onBeforeUnmount(() => syncScrollLock(false))
 <template>
   <wd-popup
     :model-value="shown"
-    v-bind="$attrs"
+    v-bind="popupAttrs"
     @update:model-value="onInnerUpdate"
   >
     <slot />
