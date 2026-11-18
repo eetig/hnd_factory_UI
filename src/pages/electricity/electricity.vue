@@ -1,6 +1,7 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { onPullDownRefresh } from '@dcloudio/uni-app'
+import { computed, onMounted, ref, watch } from 'vue'
+import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
+import { onBackPress, onPullDownRefresh } from '@dcloudio/uni-app'
 import request from '../../api/request'
 import { authState, isAdmin, isLoggedIn } from '../../api/auth'
 import { useTheme } from '../../composables/useTheme'
@@ -383,6 +384,21 @@ const allColumns = computed(() => (monthly.value?.rows || []).filter((r) => !r.v
 function goRead() {
   uni.navigateTo({ url: '/pages/meterRead/meterRead' })
 }
+
+/*
+ * 返回手势优先级（2026-11-18）：改读数浮层开着时，边缘内滑只关浮层，不退出页面。
+ */
+function registerPopup(id, open, close) {
+  if (open) pushPopup(id, close)
+  else removePopup(id)
+}
+
+watch(fixTarget, (target) => registerPopup('elec-fix', !!target, () => { fixTarget.value = null }))
+
+onBackPress(() => {
+  if (closeTopPopup()) return true
+  return false
+})
 </script>
 
 <template>
