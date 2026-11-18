@@ -30,7 +30,22 @@ let searchSeq = 0
 let searchTimer = null
 
 /**
- * 一条候选：`{ code, name, spec, label }`。
+ * 规格里存着「单据号」吗？（变更-228）
+ *
+ * 实际数据里确实有这种行：`materialCode 250000032 / materialName 劳务费 /
+ * spec "F-FWCGSQ-20261109003"` —— 当初登记物料的人把 OA 单号填进了规格型号。
+ * 这个值对采购需求没有意义，带出来只会让人以为填错了，所以单独认出来不照抄。
+ *
+ * 认法很保守：`字母-字母数字-8位以上数字`，也就是本项目 OA 单号的样子
+ * （`CG-CGSQ-20261022006`、`F-FWCGSQ-20261109003`、`F-ZCSG-2026100008`）。
+ * 真实的规格（`DN50`、`额定流量:50t/h`、`尺寸:100*55cm`）都撞不上。
+ */
+export function looksLikeDocNo(spec) {
+  return /^[A-Z]{1,3}-[A-Z0-9]{2,8}-\d{8,}$/i.test(String(spec ?? '').trim())
+}
+
+/**
+ * 一条候选：`{ code, name, spec, label, specIsDocNo }`。
  *
  * `name` 可能为空 —— `/api/stock/list` 的注释写明「两边都没有时为 null（不是空串）」。
  * 那时用编码当显示值，绝不显示空白项（点了个空白项等于什么都没选）。
@@ -39,7 +54,7 @@ function toOption(row) {
   const code = (row?.materialCode ?? '').toString().trim()
   const name = (row?.materialName ?? '').toString().trim()
   const spec = (row?.spec ?? '').toString().trim()
-  return { code, name, spec, label: name || code }
+  return { code, name, spec, label: name || code, specIsDocNo: looksLikeDocNo(spec) }
 }
 
 /**

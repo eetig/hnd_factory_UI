@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { h, nextTick, render } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import ElementPlus, { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -571,5 +571,68 @@ describe('单据视图只能从底部「编辑」进编辑态', () => {
     const rowButtons = row.findAll('button').map((b) => b.text().trim())
     expect(rowButtons, '行尾还留着编辑按钮').not.toContain('编辑')
     expect(rowButtons.length, '行里应当只剩名称/编码/规格三个复制块').toBe(3)
+  })
+})
+
+describe('物料下拉：名称 / 编码 / 规格都要看得到（变更-228）', () => {
+  /**
+   * 使用方原话（2026-11-18）：
+   *   「填完物料编码后，1.提示框只有物料名称，我需要能依次看到物料名称、物料编码、规格型号。
+   *     2.规格型号填充不对」
+   *
+   * 下拉原来只渲染 el-autocomplete 的 label（= 物料名称），编码和规格虽然查回来了却没地方显示；
+   * 而且个别物料的规格里存的就是 OA 单号（劳务费 250000032 → F-FWCGSQ-20261109003），
+   * 照抄过来就成了用户看到的「规格型号填充不对」。
+   */
+  const DIRTY = {
+    materialCode: '250000032',
+    materialName: '劳务费',
+    spec: 'F-FWCGSQ-20261109003',
+  }
+
+  it('下拉模板按「名称 / 编码 · 规格」两行渲染，脏规格标出来', async () => {
+    await open()
+    const auto = wrapper.findAllComponents({ name: 'ElAutocomplete' })[0]
+    expect(auto.props('popperClass'), '下拉没有放宽宽度的类名').toBe('mat-suggest')
+
+    // 下拉是 el-popper 挂到 body 上的，jsdom 里开不出浮层；
+    // 这里直接把组件手里那个 #default 插槽渲染出来，验的是「一行候选到底显示什么」。
+    const host = document.createElement('div')
+    render(
+      h('div', auto.vm.$slots.default({
+        item: {
+          code: '250000032',
+          name: '劳务费',
+          spec: 'F-FWCGSQ-20261109003',
+          label: '劳务费',
+          specIsDocNo: true,
+        },
+      })),
+      host,
+    )
+    const text = host.textContent.replace(/\s+/g, ' ')
+    expect(text, '没显示物料名称').toContain('劳务费')
+    expect(text, '没显示物料编码').toContain('250000032')
+    expect(text, '没显示规格型号').toContain('F-FWCGSQ-20261109003')
+    expect(text, '脏规格没标出来').toContain('规格像单据号')
+    expect(host.querySelector('.mat-opt__spec.is-docno'), '脏规格没有变色').toBeTruthy()
+  })
+
+  it('规格里存的是单据号时留空并提示，不照抄进采购单', async () => {
+    const warn = vi.spyOn(ElMessage, 'warning').mockImplementation(() => {})
+    await open()
+    const codeAuto = wrapper.findAllComponents({ name: 'ElAutocomplete' })[1]
+    codeAuto.vm.$emit('select', {
+      code: '250000032',
+      name: '劳务费',
+      spec: 'F-FWCGSQ-20261109003',
+      label: '劳务费',
+      specIsDocNo: true,
+    })
+    await nextTick()
+
+    expect(cell('物料名称').element.value).toBe('劳务费')
+    expect(cell('规格型号').element.value, '把单据号抄进规格了').toBe('')
+    expect(warn, '没告诉用户为什么留空').toHaveBeenCalled()
   })
 })

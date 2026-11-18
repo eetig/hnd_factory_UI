@@ -14,7 +14,7 @@ import {
 import request from '../../api/request'
 import { isOpenableUrl, openExternal } from '../../utils/openExternal'
 import { STATUS_TONE } from '../../constants/statusTones'
-import { useMaterialLookup } from '../../composables/useMaterialLookup'
+import { looksLikeDocNo, useMaterialLookup } from '../../composables/useMaterialLookup'
 import DeliveryNoteUpload from '../DeliveryNoteUpload.vue'
 import { CATEGORY_OPTIONS, UNIT_OPTIONS, blankDraft } from './fields.js'
 
@@ -590,7 +590,16 @@ function pickMaterial(option, index, source) {
     if (option.name) line.materialName = option.name
   }
   // 规格跟着物料走：换物料就得换规格，不能留着上一条的（只有物料本身没规格时才保留已填内容）
-  if (option.spec) line.spec = option.spec
+  const spec = String(option.spec ?? '').trim()
+  const specIsDocNo = option.specIsDocNo ?? looksLikeDocNo(spec)
+  if (spec && !specIsDocNo) {
+    line.spec = spec
+  } else if (specIsDocNo) {
+    // 物料表里这一行的「规格型号」存的是 OA 单号（历史录错），带出来只会让人以为填错了：
+    // 留空 + 说一句为什么，剩下的交给人补一句真规格。
+    line.spec = ''
+    ElMessage.warning(`这个物料的规格在物料表里存的是单据号（${spec}），像是录错了，先留空，麻烦补一句规格`)
+  }
 }
 
 function setNameRef(el, index) {
@@ -1170,9 +1179,24 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                     :aria-label="`第 ${index + 1} 行物料名称`"
                     :disabled="!canEdit"
                     value-key="label"
+                    popper-class="mat-suggest"
                     class="w-full"
                     @select="(opt) => pickMaterial(opt, index, 'name')"
-                  />
+                  >
+                    <template #default="{ item }">
+                      <div class="mat-opt">
+                        <span class="mat-opt__name">{{ item.name || item.code }}</span>
+                        <span class="mat-opt__meta">
+                          <span class="mat-opt__code">{{ item.code }}</span>
+                          <template v-if="item.spec">
+                            <span class="mat-opt__sep">·</span>
+                            <span class="mat-opt__spec" :class="{ 'is-docno': item.specIsDocNo }">{{ item.spec }}</span>
+                            <span v-if="item.specIsDocNo" class="mat-opt__warn">规格像单据号</span>
+                          </template>
+                        </span>
+                      </div>
+                    </template>
+                  </el-autocomplete>
                 </td>
                 <td class="px-1 py-1">
                   <el-autocomplete
@@ -1183,9 +1207,24 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                     :aria-label="`第 ${index + 1} 行物料编码`"
                     :disabled="!canEdit"
                     value-key="label"
+                    popper-class="mat-suggest"
                     class="w-full tabular-nums"
                     @select="(opt) => pickMaterial(opt, index, 'code')"
-                  />
+                  >
+                    <template #default="{ item }">
+                      <div class="mat-opt">
+                        <span class="mat-opt__name">{{ item.name || item.code }}</span>
+                        <span class="mat-opt__meta">
+                          <span class="mat-opt__code">{{ item.code }}</span>
+                          <template v-if="item.spec">
+                            <span class="mat-opt__sep">·</span>
+                            <span class="mat-opt__spec" :class="{ 'is-docno': item.specIsDocNo }">{{ item.spec }}</span>
+                            <span v-if="item.specIsDocNo" class="mat-opt__warn">规格像单据号</span>
+                          </template>
+                        </span>
+                      </div>
+                    </template>
+                  </el-autocomplete>
                 </td>
                 <td class="px-1 py-1">
                   <el-input
@@ -1554,5 +1593,53 @@ defineExpose({ resetForNextEntry, afterLineAdded })
 
 .purchase-dialog .el-input--small .el-input__inner {
   font-size: 12px;
+}
+
+/* 物料下拉（变更-228）：输入框只有 110px 宽，默认下拉跟输入框一样窄，
+   只塞得下物料名称 —— 现在改成两行：主行名称，次行「编码 · 规格」，并给个最小宽度。 */
+/* Element Plus 自带 `.el-tooltip{min-width:50px}`，同权重且排在后面，会把 min-width 压回去，
+   所以这里必须叠一个 `.el-popper` 提高权重（实测只写 .mat-suggest 时弹层仍只有 307px 宽）。 */
+.el-popper.mat-suggest {
+  min-width: 460px;
+  max-width: 620px;
+}
+
+.mat-suggest .el-autocomplete-suggestion__list li {
+  height: auto;
+  line-height: 1.35;
+  padding: 6px 10px;
+}
+
+.mat-opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mat-opt__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.mat-opt__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mat-opt__code {
+  font-variant-numeric: tabular-nums;
+}
+
+.mat-opt__spec.is-docno,
+.mat-opt__warn {
+  color: #be123c;
 }
 </style>

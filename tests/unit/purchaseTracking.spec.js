@@ -250,6 +250,7 @@ describe('物料检索（采购行的下拉）', () => {
       name: '硅粉',
       spec: '500kg/袋',
       label: '硅粉',
+      specIsDocNo: false,
     })
   })
 
