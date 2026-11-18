@@ -100,8 +100,14 @@ const {
 } = useKeyboardLift()
 
 const popupStyle = computed(() => {
+  /*
+   * height 必须是 86vh（不能只写 max-height）：弹层里中间那块 scroll-view 是 `flex: 1 1 0`，
+   * 它的 flex-basis 是 0，只有父级高度“确定”时才分得到空间；父级只有 max-height 时高度仍是
+   * auto，内容区会被算成 0 —— 2026-11-18 使用方截图里“只剩标题和底部按钮”就是这个。
+   * 键盘弹起那条分支已经用 top + bottom 钉出确定高度，所以它把 height 覆写成 auto。
+   */
   const base =
-    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
+    'height: 86vh; max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
   const kb = liftHeight.value
   if (!kb) return base
 
