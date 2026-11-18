@@ -181,8 +181,8 @@ async function onUpload(file, resolve) {
      */
     askAi(file)
   } catch (e) {
-    ElMessage.error(e?.response?.data?.msg || e?.message || '上传失败')
-    resolve(null)
+    // 失败原因交给抽屉就地显示（2026-11-18，使用方 m07956：转圈时没人知道发生了什么）
+    resolve({ __error: e?.response?.data?.msg || e?.message || '上传失败' })
   }
 }
 

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, nextTick, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { ElButton, ElDatePicker, ElDrawer, ElInput, ElMessage, ElMessageBox, ElSelect, ElOption } from 'element-plus'
 import { expireBadge, fileSizeText } from './useArchiveColumns'
 
@@ -54,6 +54,48 @@ let snapshot = ''
 /** 上传中（上传是独立的一步：先传文件拿对象名，再保存表单） */
 const uploading = ref(false)
 const fileInput = ref(null)
+
+/*
+ * 上传反馈（2026-11-18，使用方 m07956：「没有相关反馈，不知道是卡了，还是没上传成功。体验很差」）
+ *
+ * 桌面端上传走 Rust 通道，拿不到字节级进度 —— 所以给三样能让人安心的事，而不是一个转圈：
+ *   ① 正在传的是哪个文件、多大（文件名一出来就说明「它真的在动」）；
+ *   ② 秒表一直跳（数字在涨 = 没卡死；停住不动才是卡了）；
+ *   ③ 超过 UPLOAD_TIMEOUT 明确判失败，给出原因和「重试」，不让它无限转。
+ */
+const UPLOAD_TIMEOUT = 90 * 1000
+const uploadTarget = ref(null) // { name, size }
+const uploadError = ref('')
+const uploadElapsed = ref(0)
+let uploadTimer = null
+let lastUploadFile = null
+const batchElapsed = ref(0)
+let batchTimer = null
+
+function stopBatchTimer() {
+  if (batchTimer) {
+    clearInterval(batchTimer)
+    batchTimer = null
+  }
+  batchElapsed.value = 0
+}
+
+function secText(ms) {
+  return `${(ms / 1000).toFixed(1)} 秒`
+}
+
+function stopUploadTimer() {
+  if (uploadTimer) {
+    clearInterval(uploadTimer)
+    uploadTimer = null
+  }
+  uploadElapsed.value = 0
+}
+
+onBeforeUnmount(() => {
+  stopUploadTimer()
+  stopBatchTimer()
+})
 
 /*
  * 拖拽归档（2026-11-17，变更-225，使用方 m07610 的五个回答）
@@ -156,19 +198,54 @@ async function takeFiles(files) {
 }
 
 async function uploadSingle(file) {
+  if (!file) return
+  lastUploadFile = file
+  uploadTarget.value = { name: file.name, size: file.size }
+  uploadError.value = ''
   uploading.value = true
+  uploadElapsed.value = 0
+  stopUploadTimer()
+  uploadTimer = setInterval(() => {
+    uploadElapsed.value += 200
+  }, 200)
+  let timer = null
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ __timeout: true }), UPLOAD_TIMEOUT)
+  })
   try {
-    const res = await emitUpload(file)
+    const res = await Promise.race([emitUpload(file), timeout])
+    if (res && res.__timeout) {
+      uploadError.value = `等了 ${secText(UPLOAD_TIMEOUT)}还没传完，可能网络卡了 —— 重试一次看看`
+      return
+    }
+    if (res && res.__error) {
+      uploadError.value = res.__error
+      return
+    }
     if (res) {
       form.value.fileName = res.fileName
       form.value.origName = res.origName || file.name
       form.value.fileSize = res.size || file.size
       form.value.mimeType = res.contentType || file.type
       if (!form.value.name.trim()) form.value.name = nameFromFile(file.name)
+    } else {
+      uploadError.value = '没传上去 —— 服务器没接住这个文件，重试一次'
     }
+  } catch (error) {
+    uploadError.value = error?.message || error?.response?.data?.message || '没传上去，重试一次'
   } finally {
+    if (timer) clearTimeout(timer)
     uploading.value = false
+    stopUploadTimer()
   }
+}
+
+/** 失败后原地再传一次（不用重新选文件） */
+async function retryUpload() {
+  const file = lastUploadFile
+  uploadError.value = ''
+  if (file) await uploadSingle(file)
+  else pickFile()
 }
 
 async function addToBatch(files) {
@@ -187,8 +264,34 @@ async function addToBatch(files) {
       error: '',
     })
   })
+  // 批量也要有「在动」的证据：秒表 + 到点判超时，不能让整批无限转
+  batchElapsed.value = 0
+  stopBatchTimer()
+  batchTimer = setInterval(() => {
+    batchElapsed.value += 200
+  }, 200)
   const pending = files.map((file) => file)
-  const results = await new Promise((resolve) => emit('upload-batch', pending, resolve))
+  let watchdog = null
+  const timeout = new Promise((resolve) => {
+    watchdog = setTimeout(
+      () => resolve({ __timeout: true }),
+      UPLOAD_TIMEOUT + 30 * 1000,
+    )
+  })
+  const results = await Promise.race([
+    new Promise((resolve) => emit('upload-batch', pending, resolve)),
+    timeout,
+  ])
+  if (watchdog) clearTimeout(watchdog)
+  stopBatchTimer()
+  if (results && results.__timeout) {
+    batch.value.slice(start).forEach((item) => {
+      if (item.state !== 'uploading') return
+      item.state = 'failed'
+      item.error = `等了 ${secText(UPLOAD_TIMEOUT + 30 * 1000)}还没传完，重试一次`
+    })
+    return
+  }
   const list = Array.isArray(results) ? results : []
   list.forEach((result, offset) => {
     const item = batch.value[start + offset]
@@ -329,10 +432,17 @@ const sizeText = computed(() => fileSizeText(form.value.fileSize))
 watch(
   () => props.modelValue,
   async (open) => {
-    if (!open) return
+    if (!open) {
+      // 关掉就别让秒表继续跑（下次打开重新计时）
+      stopUploadTimer()
+      stopBatchTimer()
+      return
+    }
     form.value = props.mode === 'edit' && props.row ? { ...blank(), ...normalize(props.row) } : blank()
     // 每次打开都从干净的一批开始：上一次保存完就关抽屉了，残留的批量会串到下一次
     batch.value = []
+    uploadError.value = ''
+    uploadTarget.value = null
     snapshot = JSON.stringify(form.value)
     await nextTick()
     if (isCreate.value) {
@@ -544,7 +654,7 @@ function onDelete() {
             <span class="min-w-0 flex-1 truncate text-xs text-slate-500" :title="item.origName">
               {{ item.origName }} · {{ bytesText(item.fileSize) }}
             </span>
-            <span v-if="item.state === 'uploading'" class="shrink-0 text-[11px] text-slate-500">上传中…</span>
+            <span v-if="item.state === 'uploading'" class="shrink-0 text-[11px] tabular-nums text-slate-500">上传中 · {{ secText(batchElapsed) }}</span>
             <span v-else-if="item.state === 'failed'" class="shrink-0 text-[11px] text-rose-600">没传上去</span>
             <span v-else-if="item.confidence" class="shrink-0 text-[11px] text-slate-500">
               AI {{ confidenceText(item.confidence) }}
@@ -628,12 +738,36 @@ function onDelete() {
                       class="rounded-full border border-line px-2 py-0.5 text-xs text-slate-600 transition-colors hover:border-rose-300 hover:text-rose-600 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
                       @click="clearFile">清除</button>
             </div>
+            <!-- 正在传 / 传失败：把「传的是哪个、等了多久、为什么失败」摆出来，而不是一个转圈 -->
+            <div v-if="uploading || uploadError" class="adx-file" :class="{ 'is-failed': !!uploadError }">
+              <div class="flex items-start gap-2">
+                <span class="adx-file__dot" aria-hidden="true" />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm text-slate-900" :title="uploadTarget?.name">
+                    {{ uploadTarget?.name || '文件' }}
+                    <span v-if="uploadTarget?.size" class="ml-1 text-xs text-slate-500">{{ bytesText(uploadTarget.size) }}</span>
+                  </p>
+                  <p v-if="uploading" class="mt-0.5 text-xs text-slate-600">
+                    正在上传 · 已等 <span class="tabular-nums">{{ secText(uploadElapsed) }}</span>
+                    <span class="text-slate-500">（数字在涨就是没卡住；超过 {{ secText(UPLOAD_TIMEOUT) }} 会报失败）</span>
+                  </p>
+                  <p v-else class="mt-0.5 text-xs text-rose-600">{{ uploadError }}</p>
+                  <div v-if="uploading" class="adx-bar mt-1.5" aria-hidden="true"><i /></div>
+                  <div v-if="!uploading && canEdit" class="mt-1.5 flex items-center gap-2">
+                    <button type="button"
+                            class="rounded-full border border-rose-300 px-3 py-1 text-xs text-rose-600 transition-colors hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                            @click="retryUpload">重试</button>
+                    <button type="button"
+                            class="rounded-full border border-line px-3 py-1 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                            @click="uploadError = ''; pickFile()">换个文件</button>
+                  </div>
+                </div>
+              </div>
+            </div>
             <div v-else class="flex items-center gap-2 text-sm text-slate-500">
-              <button v-if="canEdit" type="button" :disabled="uploading"
-                      class="rounded-full border border-line px-3 py-1 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
-                      @click="pickFile">
-                {{ uploading ? '上传中…' : '选择文件' }}
-              </button>
+              <button v-if="canEdit" type="button"
+                      class="rounded-full border border-line px-3 py-1 text-xs text-slate-600 transition-colors hover:border-slate-400 hover:text-slate-900 focus-visible:ring-2 focus-visible:ring-brand-ink focus-visible:outline-none"
+                      @click="pickFile">选择文件</button>
               <span v-else class="text-xs">无</span>
               <span class="text-xs text-slate-500">PDF / Word / Excel / 图片 / ZIP，≤30MB · 可直接拖进来</span>
             </div>
@@ -746,6 +880,66 @@ function onDelete() {
 .adx-batch.is-bad {
   border-color: #fda4af;
   background: #fff5f6;
+}
+
+/* 上传中的那块牌子：文件名 + 秒表 + 一条「在动」的条（拿不到真实进度，用滑动条表示它还活着） */
+.adx-file {
+  border: 1px solid var(--ds-line, #e4e7ec);
+  border-radius: 8px;
+  background: var(--ds-region, #f8f9fb);
+  padding: 8px 10px;
+}
+
+.adx-file.is-failed {
+  border-color: #fda4af;
+  background: #fff5f6;
+}
+
+.adx-file__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--ds-brand, #be123c);
+  animation: adx-pulse 1.2s ease-in-out infinite;
+}
+
+.adx-file.is-failed .adx-file__dot {
+  background: #e11d48;
+  animation: none;
+}
+
+.adx-bar {
+  position: relative;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(16, 24, 40, 0.08);
+}
+
+.adx-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: 999px;
+  background: var(--ds-brand, #be123c);
+  animation: adx-slide 1.15s ease-in-out infinite;
+}
+
+@keyframes adx-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(280%); }
+}
+
+@keyframes adx-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adx-bar i { animation: none; width: 100%; opacity: 0.6; }
+  .adx-file__dot { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

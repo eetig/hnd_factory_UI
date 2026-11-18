@@ -150,6 +150,56 @@ describe('资料抽屉：拖拽归档', () => {
     expect(onUploadBatch.mock.calls[0][0].map((f) => f.name)).toEqual(['正常一.pdf', '正常二.pdf'])
   })
 
+
+  it('上传时给出「在传什么、等了多久」，而不是一个转圈', async () => {
+    let finish = null
+    const onUpload = vi.fn((file, resolve) => {
+      finish = () => resolve({ fileName: 'store/one.pdf', origName: file.name, size: 16 })
+    })
+    const wrapper = await mountDrawer({ onUpload })
+
+    await drop(wrapper, [fileOf('安全生产许可证_2026.pdf')])
+
+    const card = wrapper.find('.adx-file')
+    expect(card.exists()).toBe(true)
+    expect(card.classes()).not.toContain('is-failed')
+    expect(card.text()).toContain('安全生产许可证_2026.pdf')
+    expect(card.text()).toContain('正在上传')
+    expect(card.text()).toContain('已等')
+    expect(card.find('.adx-bar').exists()).toBe(true)
+    // 传完之前不许保存（否则存下的是没有文件的一条）
+    const saveBtn = wrapper.findAll('button').find((b) => b.text().trim() === '保存')
+    expect(saveBtn.attributes('disabled')).toBeDefined()
+
+    finish()
+    await flushPromises()
+    expect(wrapper.find('.adx-file').exists()).toBe(false)
+  })
+
+  it('传失败要说明原因并给「重试」，不是静静地转下去', async () => {
+    let attempt = 0
+    const onUpload = vi.fn((file, resolve) => {
+      attempt += 1
+      if (attempt === 1) throw new Error('服务器 500')
+      resolve({ fileName: 'store/again.pdf', origName: file.name, size: 16 })
+    })
+    const wrapper = await mountDrawer({ onUpload })
+
+    await drop(wrapper, [fileOf('消防验收意见书.pdf')])
+    await flushPromises()
+
+    const failed = wrapper.find('.adx-file.is-failed')
+    expect(failed.exists()).toBe(true)
+    expect(failed.text()).toContain('消防验收意见书.pdf')
+    expect(failed.text()).toMatch(/服务器 500|没传上去/)
+    const retry = wrapper.findAll('button').find((b) => b.text().trim() === '重试')
+    expect(retry).toBeTruthy()
+
+    await retry.trigger('click')
+    await flushPromises()
+    expect(onUpload).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.adx-file').exists()).toBe(false)
+  })
   it('关掉再打开时批量是空的（上一次存完的残留不能串到下一次）', async () => {
     const onUploadBatch = vi.fn((files, resolve) =>
       resolve(files.map((f) => ({ ok: true, fileName: `store/${f.name}`, origName: f.name, size: 16 }))),
