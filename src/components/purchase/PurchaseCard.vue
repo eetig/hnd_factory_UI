@@ -171,12 +171,26 @@ const poLine = computed(() => {
   return { text: String(hit.poNo).trim(), url: String(hit.poUrl || '').trim() }
 })
 
+/**
+ * 验收单号（2026-11-18，使用方原话「关联的验收单号没显示出来，而且要颜色有所不同，
+ * 能一眼区分」）：已关联验收的卡上必须看得到，而且不能跟 OA 单号混成一个颜色。
+ *
+ * 取组内第一个非空的验收单号 —— 同一张 OA 单只该有一个验收单，多了也是数据的问题，
+ * 详情里六格并排能看全，卡片不仲裁。
+ */
+const acceptanceLine = computed(() => {
+  const hit = (props.card?.rows || []).find((r) => String(r.acceptanceNo || '').trim())
+  if (!hit) return null
+  return { text: String(hit.acceptanceNo).trim(), url: String(hit.acceptanceUrl || '').trim() }
+})
+
 /** 卡片 aria-label：读屏要能听出"这单有几条料、最急的是哪条" */
 const cardLabel = computed(() => {
   const oa = props.card?.oaNo || '无 OA 单号'
   const count = rows.value.length
   const first = lead.value.materialName || '采购需求'
-  return `${oa}，${count} 条物料，最急：${first}，${due.value.text}`
+  const acc = acceptanceLine.value ? `，验收单 ${acceptanceLine.value.text}` : ''
+  return `${oa}，${count} 条物料，最急：${first}${acc}，${due.value.text}`
 })
 
 function openRow(row, event) {
@@ -229,6 +243,20 @@ function openRow(row, event) {
             @keydown.stop
           >采购单 {{ poLine.text }} ↗</a>
           <span v-else>采购单 {{ poLine.text }}</span>
+        </p>
+        <!-- 验收单号：绿系小药丸，跟上面玫红的 OA 单号、灰的采购单一眼能分开 -->
+        <p v-if="acceptanceLine" class="mt-1 truncate">
+          <a
+            v-if="acceptanceLine.url"
+            :href="acceptanceLine.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="acc-pill focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#5B6E4F]"
+            :title="`在 OA 里打开验收单：${acceptanceLine.url}`"
+            @click.stop.prevent="openExternal(acceptanceLine.url)"
+            @keydown.stop
+          >验收 {{ acceptanceLine.text }} ↗</a>
+          <span v-else class="acc-pill" title="验收单号">验收 {{ acceptanceLine.text }}</span>
         </p>
       </div>
 
@@ -327,6 +355,28 @@ function openRow(row, event) {
 
 .purchase-card:active {
   background-color: #faf7f0;
+}
+
+/* 验收单号：橄榄绿小药丸 —— 与 OA 的玫红、采购单的灰明确分色 */
+.acc-pill {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 16px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: #4a5a40;
+  background-color: #eef2e9;
+  box-shadow: inset 0 0 0 1px rgba(91, 110, 79, 0.22);
+}
+
+a.acc-pill:hover {
+  background-color: #e4ebdd;
+  text-decoration: underline;
 }
 
 @media (prefers-reduced-motion: reduce) {

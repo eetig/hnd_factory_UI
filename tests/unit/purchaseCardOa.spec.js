@@ -107,3 +107,33 @@ describe('采购看板列容器', () => {
     expect(line, '第一张卡贴着上边缘时，悬停阴影与上边框会被裁掉').toContain('pt-2')
   })
 })
+
+describe('已关联验收：卡上要看到验收单号（变更-231）', () => {
+  /*
+   * 2026-11-18 使用方原话：「关联的验收单号没显示出来，而且要颜色有所不同，能一眼区分。」
+   * 数据是有的（F-FWCGSQ-20250606001 的 acceptanceNo = F-FWCGYS-20260624002），
+   * 只是卡面从来没渲染过它 —— 所以这条钉「有就显示 + 与 OA 单号不同色」。
+   */
+  it('卡片渲染验收单号，可点开验收单，并且与 OA 单号不同色', () => {
+    const src = read(CARD)
+
+    // 取号：组内第一个非空的 acceptanceNo
+    expect(src).toContain('const acceptanceLine = computed')
+    expect(src).toContain(".find((r) => String(r.acceptanceNo || '').trim())")
+
+    // 有才渲染，且文案带「验收」字样，跟 OA 单号分得开
+    expect(src).toContain('v-if="acceptanceLine"')
+    expect(src).toContain('验收 {{ acceptanceLine.text }}')
+
+    // 有链接就走系统浏览器（桌面端 target=_blank 会被 WebView2 吞掉，见变更-223）
+    expect(src).toMatch(/@click\.stop\.prevent="openExternal\(acceptanceLine\.url\)"/)
+
+    // 颜色：橄榄绿药丸，不是 OA 那个玫红 brand 色
+    expect(src).toContain('class="acc-pill')
+    expect(src).toMatch(/\.acc-pill\s*\{[^}]*color: #4a5a40/)
+    expect(src).toContain('a.acc-pill:hover')
+
+    // 读屏也要念到验收单号
+    expect(src).toContain('验收单 ${acceptanceLine.value.text}')
+  })
+})
