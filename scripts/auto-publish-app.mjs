@@ -151,10 +151,22 @@ function releaseLock() {
   }
 }
 
-function block(reason, detail) {
+function block(reason, detail, file) {
   log(`⛔ 没发：${reason}${detail ? `（${detail}）` : ''}`)
-  notify('手机端没有自动发布', `${reason}${detail ? `：${detail}` : ''}`)
-  writeState({ ...readState(), lastBlocked: { at: Date.now(), reason } })
+  /*
+   * 同一件事只提醒一次（2026-11-18）。
+   *
+   * 任务 1 分钟一跑，被拦下的包会一直躺在打包目录里 —— 不记住"已经提醒过这个包"，
+   * 用户就每分钟收到一条一模一样的系统通知（真实案例：连打两个 1.0.7 的包，
+   * 第二个因版本号没涨被拒收，之后每分钟弹一次，桌面右下角堆了 7 条）。
+   *
+   * 记住包名而不是只记原因：换了新包（哪怕原因相同）说明用户又动手了，值得再提醒一次。
+   */
+  const prev = readState()
+  const already = prev.lastBlocked?.file === file && prev.lastBlocked?.reason === reason
+  if (already) log('（同一个包已经提醒过，这次只记日志）')
+  else notify('手机端没有自动发布', `${reason}${detail ? `：${detail}` : ''}`)
+  writeState({ ...prev, lastBlocked: { at: Date.now(), reason, file } })
   process.exit(0)
 }
 
@@ -173,7 +185,7 @@ async function main() {
   }
 
   // 守卫 2：体积像话（正常 14~16MB；几百 KB 说明是坏包/空包）
-  if (apk.size < 5 * 1024 * 1024) block('包太小，像坏包', `${apk.name} ${apk.size} 字节`)
+  if (apk.size < 5 * 1024 * 1024) block('包太小，像坏包', `${apk.name} ${apk.size} 字节`, apk.name)
 
   const manifest = readManifest()
   const manifestCode = parseInt(manifest.versionCode, 10) || 0
@@ -200,9 +212,10 @@ async function main() {
     block(
       '版本号没改',
       `线上 ${live.version}(${liveCode}) / manifest ${manifestName}(${manifestCode})，请先改 versionName/versionCode`,
+      apk.name,
     )
   }
-  if (!manifestName) block('manifest 里没有 versionName')
+  if (!manifestName) block('manifest 里没有 versionName', '', apk.name)
 
   log(
     `准备发布 ${apk.name}（${(apk.size / 1048576).toFixed(1)} MB）` +
