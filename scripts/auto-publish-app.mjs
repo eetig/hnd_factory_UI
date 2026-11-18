@@ -25,6 +25,7 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import zlib from 'node:zlib'
 
 const repo = path.resolve(import.meta.dirname, '..')
 const apkDir = path.resolve(repo, '../hnd_factory_UI_uni_APP/dist/release/apk')
@@ -80,6 +81,44 @@ function readManifest() {
 function stampOf(fileName) {
   const m = /__(\d{14})\.apk$/.exec(fileName || '')
   return m ? m[1] : ''
+}
+
+/**
+ * 读 APK 里**真正的** versionName。
+ *
+ * 为什么不能只信 src/manifest.json（2026-11-18 的坑）：
+ *   HBuilderX 是「先排队云端打包、几分钟后才出包」，而 manifest 是随代码改的。
+ *   19:45 那个包打出来时 manifest 还是 1.0.9，之后代码把 manifest 改成 1.0.10，
+ *   脚本照着**仓库里的** 1.0.10 写进 latest.json → 线上宣告 1.0.10、实物 1.0.9，
+ *   用户手机上就变成「检测到新版本 → 下载 → 装完还是旧版本」，永远循环。
+ *
+ * 取法：APK 里的 AndroidManifest.xml 是二进制 XML，字符串按 UTF-16 存，
+ *   所以解压出来用 utf16le 解成文本，抓第一个 x.y.z 就是 versionName。
+ */
+function apkVersionName(file) {
+  try {
+    const buf = fs.readFileSync(file)
+    const entry = Buffer.from('AndroidManifest.xml')
+    let idx = buf.indexOf(entry)
+    while (idx !== -1) {
+      const lh = idx - 30 // zip 本地文件头固定 30 字节，文件名紧跟其后
+      if (lh >= 0 && buf.readUInt32LE(lh) === 0x04034b50) {
+        const method = buf.readUInt16LE(lh + 8) // 0 = 存储，8 = deflate
+        const csize = buf.readUInt32LE(lh + 18)
+        const nameLen = buf.readUInt16LE(lh + 26)
+        const extraLen = buf.readUInt16LE(lh + 28)
+        const start = lh + 30 + nameLen + extraLen
+        const raw = buf.subarray(start, start + csize)
+        const data = method === 0 ? raw : zlib.inflateRawSync(raw)
+        const hit = data.toString('utf16le').match(/\b\d+\.\d+\.\d+\b/)
+        return hit ? hit[0] : ''
+      }
+      idx = buf.indexOf(entry, idx + 1)
+    }
+  } catch (error) {
+    log(`读包内版本号失败：${error.message}`)
+  }
+  return ''
 }
 
 async function fetchLive() {
@@ -190,6 +229,20 @@ async function main() {
   const manifest = readManifest()
   const manifestCode = parseInt(manifest.versionCode, 10) || 0
   const manifestName = String(manifest.versionName || '')
+
+  // 守卫 4：包里的版本号必须和仓库 manifest 一致，否则 latest.json 会宣告一个
+  // 包内并不存在的版本 —— 手机端就会「检测到更新 → 下载 → 装完还是旧版本」，死循环。
+  // 典型成因：云打包排队时 manifest 还是旧值，出包之后才把 manifest 改成新值。
+  const apkName = apkVersionName(apk.full)
+  if (!apkName) {
+    block('包读不出版本号', `${apk.name} 里没找到 versionName，请重新打包`, apk.name)
+  } else if (apkName !== manifestName) {
+    block(
+      '包和仓库版本不一致',
+      `包里 ${apkName} / manifest ${manifestName}(${manifestCode})，请按当前版本重新打包`,
+      apk.name,
+    )
+  }
 
   let live = null
   try {
