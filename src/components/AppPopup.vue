@@ -133,6 +133,24 @@ onBeforeUnmount(() => syncScrollLock(false))
     v-bind="popupAttrs"
     @update:model-value="onInnerUpdate"
   >
-    <slot />
+    <!--
+      安全区画在内容层（2026-11-18）
+      组件库把安全区做成弹窗根节点的 padding-bottom，而根节点写死了 background: #fff
+      （node_modules/wot-design-uni/components/wd-popup/index.scss:24），
+      业务传的 custom-style 只盖住内层内容 —— 于是按钮下方露出一条纯白带子，
+      和上面 80% 白的内容区之间多出一道颜色台阶，看着像 app 被切掉一块。
+      现在把这段 padding 挪进内容层并继承弹窗底色，带子和「线」一起消失。
+    -->
+    <view class="app-popup__inner">
+      <slot />
+    </view>
   </wd-popup>
 </template>
+
+<style scoped>
+.app-popup__inner {
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom);
+  background-color: inherit;
+}
+</style>

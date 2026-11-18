@@ -1304,7 +1304,7 @@ const popupStyle =
 
 /* ===== 默认时间弹层 ===== */
 .st {
-  padding: 26rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  padding: 26rpx 28rpx 20rpx;
 }
 
 .st__title {
@@ -1679,7 +1679,7 @@ const popupStyle =
   width: 100vw;
   max-width: 100vw;
   box-sizing: border-box;
-  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  padding: 16rpx 24rpx 16rpx;
   border-top: 2rpx solid var(--ui-hairline);
   /* 用 App 的"抬升面"而不是纯白：纯白压在粉色场景上像贴纸（使用方原话：跟 App 颜色不搭） */
   background-color: var(--ui-raise);

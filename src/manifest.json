@@ -2,8 +2,8 @@
     "name" : "HND鐢熶骇鍔╂墜",
     "appid" : "__UNI__BE0BD40",
     "description" : "宸ュ巶宸ュ崟/棰嗘枡/鍏ュ簱姹囨€汇€佸鍏ヤ笌鍥剧墖璇嗗埆杈呭姪褰曞叆",
-    "versionName" : "1.0.14",
-    "versionCode" : "114",
+    "versionName" : "1.0.15",
+    "versionCode" : "115",
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,

@@ -347,7 +347,7 @@ function handlePickDrawing(source) {
   gap: 14rpx;
   /* 同液位表单：不吃底色、不画分隔线，弹层是一整块（2026-11-18） */
   padding: 12rpx 28rpx;
-  padding-bottom: calc(12rpx + env(safe-area-inset-bottom));
+  padding-bottom: 12rpx;
 }
 
 /* 与液位表单同款按钮（TankLevelFormDialog.tlf__btn）：暖纸色系、不写死宽度 */

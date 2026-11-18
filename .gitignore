@@ -55,3 +55,4 @@ tmp-chrome-profile/
 
 # 工具产物：archify 技能（画架构图）在本机生成的输出目录，不入库
 .archify/
+logs-dev-h5.txt

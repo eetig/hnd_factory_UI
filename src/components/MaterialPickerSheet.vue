@@ -400,7 +400,7 @@ function statusText(status) {
     // uni.css 给 uni-scroll-view 写死 width:100%（不吃 padding）—— 不写 auto，卡片会比弹层宽出 24rpx
     width: auto;
     flex: 1;
-    padding: 8rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+    padding: 8rpx 24rpx 24rpx;
   }
 
   &__state {

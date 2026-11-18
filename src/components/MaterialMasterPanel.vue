@@ -532,7 +532,7 @@ const popupStyle =
 .md__body {
   flex: 1;
   min-height: 0;
-  padding: 8rpx 28rpx calc(28rpx + env(safe-area-inset-bottom));
+  padding: 8rpx 28rpx 28rpx;
 }
 
 .md__row {

@@ -3823,7 +3823,7 @@ function onTouchEnd() {
 
   gap: 16rpx;
 
-  padding: 18rpx 28rpx calc(18rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 28rpx 18rpx;
 
   border-top: 2rpx solid var(--ui-hairline);
 
@@ -4273,7 +4273,7 @@ function onTouchEnd() {
 
 .qd {
 
-  padding: 0 26rpx calc(24rpx + env(safe-area-inset-bottom));
+  padding: 0 26rpx 24rpx;
 
 }
 
@@ -4783,7 +4783,7 @@ function onTouchEnd() {
 
   gap: 12rpx;
 
-  padding: 18rpx 26rpx calc(18rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 26rpx 18rpx;
 
 }
 

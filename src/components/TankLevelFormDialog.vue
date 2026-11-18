@@ -1548,7 +1548,7 @@ async function handleDelete() {
     */
     padding: 12rpx 28rpx;
     /* 全面屏底部手势条让开 */
-    padding-bottom: calc(12rpx + env(safe-area-inset-bottom));
+    padding-bottom: 12rpx;
   }
 
   /*
