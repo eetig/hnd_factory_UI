@@ -1085,6 +1085,8 @@ async function handleDelete() {
   display: flex;
   max-height: 86vh;
   flex-direction: column;
+  /* 弹层自己裁边：内容再长也不许把底部按钮顶出可视区（2026-11-18） */
+  overflow: hidden;
 
   /* 水印画布：挪出可视区但不 display:none —— 隐藏的 canvas 在部分平台导不出像素 */
   &__watermark {
@@ -1263,7 +1265,9 @@ async function handleDelete() {
   &__body {
     // scroll-view 必须有确定高度才会滚动；键盘弹起时靠 flex 把剩余空间吃掉
     min-height: 0;
-    flex-grow: 1;
+    // flex-basis 必须是 0：只写 flex-grow 时基准还是内容高度，内容一长就把
+    // 底部的「删除/取消/保存」一起顶上去（2026-11-18 使用方反馈）
+    flex: 1 1 0;
     overscroll-behavior: contain;
     // uni 的 uni-scroll-view 自带 width: 100%，而 100% 不扣边框，会平白溢出 2px
     width: auto;
@@ -1283,7 +1287,13 @@ async function handleDelete() {
 
   &__suggest {
     margin: 0 0 14rpx;
-    overflow: hidden;
+    /* 一次只露 4 条（每条 76rpx），再多就在框里上下滑 —— 使用方 2026-11-18：
+       「选项太多了，只需要 4 个就行了，然后可以上下滑动」 */
+    max-height: 352rpx;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     border: 1px solid $ui-border;
     border-radius: $ui-radius-md;
     background-color: $ui-surface-2;
@@ -1291,6 +1301,8 @@ async function handleDelete() {
 
   &__suggest-item {
     display: flex;
+    /* 让 76rpx 就是整条的高度（含上下 padding），才能按「4 条 = 304rpx」算上限 */
+    box-sizing: border-box;
     min-height: 76rpx;
     align-items: center;
     justify-content: space-between;
@@ -1338,6 +1350,14 @@ async function handleDelete() {
     color: $ui-text-3;
     font-size: 22rpx;
     line-height: 1.5;
+  }
+
+  /* 「列表里没有的属地…」这句贴在候选框底部，滑动候选时它不会跟着跑掉 */
+  &__suggest-hint {
+    position: sticky;
+    bottom: 0;
+    border-top: 1px solid $ui-hairline;
+    background-color: $ui-surface-2;
   }
 
   &__field {
@@ -1444,6 +1464,9 @@ async function handleDelete() {
     display: flex;
     align-items: center;
     gap: 16rpx;
+    /* 不许被内容挤压、也不许透明：内容滑到底时按钮区下面不会露出文字（2026-11-18） */
+    flex-shrink: 0;
+    background-color: var(--ui-sheet-fill);
     border-top: 1px solid $ui-hairline;
     padding: 20rpx 32rpx;
   }
