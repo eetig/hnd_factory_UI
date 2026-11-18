@@ -906,7 +906,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 class="tabular-nums text-brand-ink hover:underline"
               >{{ docket.acceptanceNo }} ↗</a>
               <span v-else-if="docket.acceptanceNo" class="tabular-nums text-slate-700">{{ docket.acceptanceNo }}</span>
-              <span v-else class="text-slate-500">未关联</span>
+              <span v-else class="docket-note">未关联</span>
               <span v-if="docket.acceptanceExtra" class="ml-1 text-slate-500">（同单有多个单号）</span>
             </dd>
           </div>
@@ -1492,6 +1492,27 @@ defineExpose({ resetForNextEntry, afterLineAdded })
   background: #111;
   color: #fff;
 }
+/*
+ * 「未关联」这类空态（2026-11-18 变更-233）。
+ *
+ * 原来只是一行灰字，和右边的正文字号一样、颜色也一样弱，
+ * 看上去分不清「这里是值」还是「这里缺值」。
+ * 现在给它一块浅色说明条：一眼看得出是"待补"的说明，不是数据。
+ */
+.docket-note {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #7b7566;
+  background-color: #f3f0e8;
+  box-shadow: inset 0 0 0 1px rgba(123, 117, 102, 0.14);
+}
+
 .link-chip:focus-visible {
   outline: 2px solid #111;
   outline-offset: 1px;
@@ -1529,21 +1550,22 @@ defineExpose({ resetForNextEntry, afterLineAdded })
  * 又保证字压得住彩色）。标题区留一条发丝线，其余靠留白与字号分层。
  */
 /* 只读单据（从历史记录/看板点开）是一张「纸」，给它实底；
-   编辑台仍保持透明，字段直接浮在壁纸上（用户 2026-11-12 的要求） */
+   编辑台同样要实底：2026-11-18 使用方反馈「弹窗和背后页面糊在一起」，
+   半透明会让背后的单号/列表项像重影浮上来（变更-233）。 */
 .purchase-dialog--sheet.purchase-dialog.el-dialog {
-  background: #fdfbfc;
+  background: var(--ds-sheet, #fdfcfa);
   border-radius: 16px;
-  box-shadow: 0 30px 70px -40px rgba(16, 24, 40, 0.42);
+  box-shadow: var(--ds-sheet-shadow, 0 1px 2px rgba(16, 24, 40, 0.06), 0 28px 64px -28px rgba(16, 24, 40, 0.45));
   padding: 20px 24px 18px;
 }
 
 .purchase-dialog.el-dialog {
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
+  background: var(--ds-sheet, #fdfcfa);
+  box-shadow: var(--ds-sheet-shadow, 0 1px 2px rgba(16, 24, 40, 0.06), 0 28px 64px -28px rgba(16, 24, 40, 0.45));
+  border-radius: 16px;
   max-height: 92vh;
   overflow-y: auto;
-  padding: 4px 6px 8px;
+  padding: 20px 24px 18px;
 }
 
 .purchase-dialog .el-dialog__header {
@@ -1561,9 +1583,9 @@ defineExpose({ resetForNextEntry, afterLineAdded })
   display: none;
 }
 
-/* 遮罩：薄白，让彩色壁纸透上来，正文不被花纹干扰 */
+/* 遮罩：暖白近乎不透，把背后正文彻底挡住（原来是 0.92 薄白，正文会透上来） */
 .el-overlay:has(.purchase-dialog) {
-  background-color: rgba(250, 251, 253, 0.92);
+  background-color: var(--ds-scrim, rgba(246, 245, 241, 0.965));
 }
 /* el-dialog 的根节点是 Element Plus 渲染的，拿不到本组件的 scope 标记，
    所以「弹窗内部」的覆盖只能写在非 scoped 样式里，否则一条都不生效。 */

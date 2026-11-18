@@ -79,13 +79,13 @@ function onKeydown(event) {
   <Teleport to="body">
     <div
       v-if="modelValue"
-      class="fixed inset-0 z-[3000] flex items-start justify-center bg-slate-900/25 px-4 pt-[14vh]"
+      class="cmdk-scrim fixed inset-0 z-[3000] flex items-start justify-center px-4 pt-[14vh]"
       role="dialog"
       aria-modal="true"
       aria-label="搜索页面"
       @click.self="close"
     >
-      <div class="w-full max-w-[520px] overflow-hidden rounded-card border border-line bg-raised shadow-card">
+      <div class="cmdk-sheet w-full max-w-[520px] overflow-hidden rounded-card border border-line">
         <div class="flex items-center gap-2 border-b border-line px-3">
           <svg class="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />
@@ -109,8 +109,7 @@ function onKeydown(event) {
               type="button"
               role="option"
               :aria-selected="index === cursor ? 'true' : 'false'"
-              class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition"
-              :class="index === cursor ? 'bg-region text-slate-900' : 'text-slate-700'"
+              class="cmdk-item flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition"
               @mouseenter="cursor = index"
               @click="pick(item)"
             >
@@ -124,3 +123,32 @@ function onKeydown(event) {
     </div>
   </Teleport>
 </template>
+
+<style scoped>
+/*
+ * 浮层要"压得住"（2026-11-18 变更-233）。
+ *
+ * 原来用的是 bg-raised（0.32 半透明白）+ bg-slate-900/25 的遮罩：
+ * 半透明的卡片会把背后的单号、列表项透上来，看起来像重影；遮罩又太薄，
+ * 页面和浮层抢注意力。这里改成实心纸 + 更重的落影 + 近乎不透明的暖白遮罩。
+ */
+.cmdk-scrim {
+  background-color: var(--ds-scrim, rgba(246, 245, 241, 0.965));
+}
+
+.cmdk-sheet {
+  background-color: var(--ds-sheet, #fdfcfa);
+  box-shadow: var(--ds-sheet-shadow, 0 1px 2px rgba(16, 24, 40, 0.06), 0 28px 64px -28px rgba(16, 24, 40, 0.45));
+}
+
+/* 选中项不再只靠一层几乎看不见的浅灰：加左侧色条 + 更实的底 */
+.cmdk-item {
+  color: rgba(16, 24, 40, 0.72);
+}
+
+.cmdk-item[aria-selected='true'] {
+  color: rgba(16, 24, 40, 0.92);
+  background-color: #f2efe8;
+  box-shadow: inset 2px 0 0 #a39a86;
+}
+</style>
