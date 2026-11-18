@@ -56,7 +56,7 @@ const {
   tankLevelSuggestions,
   fetchLastLocationByTank,
 } = useTankLevelData()
-const { uploadImagesForRecord } = useTankLevelImages()
+const { uploadImagesForRecord, openImageDialog } = useTankLevelImages()
 const {
   equipmentOptions,
   equipmentSearching,
@@ -70,6 +70,19 @@ const canDelete = computed(() => hasPerm('tank_level:delete'))
 const readOnly = computed(() => !canEdit.value)
 
 const isNew = computed(() => !props.record)
+
+/*
+ * 编辑态的张数：列表接口把图据一起带下来了（useTankLevelData 里 normalizeImageList 过），
+ * 这里只读它的长度给「N 张」用；真正的看图 / 补拍交给页面级图据弹层，
+ * 免得把水印、上传、删除的逻辑在表单里再抄一遍。
+ */
+const imageCount = computed(() => props.record?.images?.length || 0)
+
+/** 编辑态进图据：这行本来就有 id，弹层直接用，不用等保存 */
+function openRecordImages() {
+  if (!props.record?.id) return
+  openImageDialog(props.record)
+}
 
 const draft = ref(buildTankLevelDraft(null))
 const saving = ref(false)
@@ -1032,7 +1045,13 @@ async function handleDelete() {
             />
           </view>
 
-          <!-- 图据随数据一起存（仅新增）：编辑已有记录时图据在图据弹窗里维护，这里不重复 -->
+          <!--
+            新增：图据随数据一起存（照片只能先攥在手里，保存拿到 id 之后才传，见 :557 的说明）。
+
+            编辑：同样要看图 / 补图（使用方 2026-11-18 指出「少了些功能」）。
+            这行本来就有 id，所以不需要先选后传，直接复用页面级的图据弹层：
+            看大图、补拍、删除都在那里，水印逻辑也只有一份。
+          -->
           <view v-if="isNew" class="tlf__media">
             <view class="tlf__media-head">
               <text class="tlf__label">图据</text>
@@ -1056,6 +1075,21 @@ async function handleDelete() {
                 <wd-icon name="picture" size="14px" />
                 <text class="tlf__photo-text">从相册</text>
               </view>
+            </view>
+          </view>
+
+          <!-- 编辑态：已经有 id，点一下直接进图据弹层（看大图 / 补拍 / 删除）。 -->
+          <view v-else class="tlf__media">
+            <view class="tlf__media-head">
+              <text class="tlf__label">图据</text>
+              <text class="tlf__media-hint">{{ imageCount ? `${imageCount} 张` : '还没有' }}</text>
+            </view>
+
+            <view class="tlf__images" @click="openRecordImages">
+              <text class="tlf__images-text">
+                {{ imageCount ? '看大图 / 补拍 / 删除' : '点这里拍照或从相册补一张' }}
+              </text>
+              <text class="tlf__images-arrow">›</text>
             </view>
           </view>
 
@@ -1437,6 +1471,31 @@ async function handleDelete() {
       background-color: $ui-raise-3;
       color: $ui-text;
     }
+  }
+
+  // 编辑态的图据入口：整行可点，一行字 + 一个箭头（比放一堆缩略图省地方）
+  &__images {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12rpx;
+    padding: 22rpx 24rpx;
+    border-radius: 12rpx;
+    background-color: $ui-raise-2;
+
+    &:active {
+      background-color: $ui-raise-3;
+    }
+  }
+
+  &__images-text {
+    color: $ui-text-2;
+    font-size: 27rpx;
+  }
+
+  &__images-arrow {
+    color: $ui-text-3;
+    font-size: 32rpx;
   }
 
   &__tip {

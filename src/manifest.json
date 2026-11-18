@@ -1,9 +1,9 @@
-{
-    "name" : "HND生产助手",
+﻿{
+    "name" : "HND鐢熶骇鍔╂墜",
     "appid" : "__UNI__BE0BD40",
-    "description" : "工厂工单/领料/入库汇总、导入与图片识别辅助录入",
-    "versionName" : "1.0.10",
-    "versionCode" : "110",
+    "description" : "宸ュ巶宸ュ崟/棰嗘枡/鍏ュ簱姹囨€汇€佸鍏ヤ笌鍥剧墖璇嗗埆杈呭姪褰曞叆",
+    "versionName" : "1.0.11",
+    "versionCode" : "111",
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
@@ -82,7 +82,7 @@
         "usingComponents" : true,
         "permission" : {
             "scope.userLocation" : {
-                "desc" : "本应用不使用定位"
+                "desc" : "鏈簲鐢ㄤ笉浣跨敤瀹氫綅"
             }
         },
         "requiredPrivateInfos" : []
@@ -91,7 +91,7 @@
         "router" : {
             "base" : "/"
         },
-        "title" : "HND生产助手"
+        "title" : "HND鐢熶骇鍔╂墜"
     },
     "vueVersion" : "3"
 }
