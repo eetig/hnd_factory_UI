@@ -2695,13 +2695,13 @@ function onTouchEnd() {
 
   position: absolute;
 
-  top: 10rpx;
+  top: 0;
 
   left: 0;
 
-  height: 56rpx;
+  height: 60rpx;
 
-  border-radius: 28rpx;
+  border-radius: 30rpx;
 
   background-color: var(--ui-brand, #b4551f);
 
@@ -2778,6 +2778,7 @@ function onTouchEnd() {
 .pd__chip {
 
   display: inline-flex;
+  flex: 0 0 auto;
 
   align-items: center;
 

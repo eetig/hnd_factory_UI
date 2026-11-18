@@ -15,8 +15,6 @@ import DateField from '../../components/DateField.vue'
 import LoadingMask from '../../components/LoadingMask.vue'
 import PanelState from '../../components/PanelState.vue'
 import FilterHeaderCell from '../../components/FilterHeaderCell.vue'
-import ThemeToggle from '../../components/ThemeToggle.vue'
-import PaletteToggleMp from '../../components/PaletteToggleMp.vue'
 import AttendancePanel from '../../components/AttendancePanel.vue'
 import { paletteClassOf, usePalette } from '../../composables/usePaletteReveal'
 import NavDrawer from '../../components/NavDrawer.vue'
@@ -86,12 +84,12 @@ const message = useMessage()
 // 主题：颜色本体是 App.vue 里的两组 CSS 变量，这里只拿「当前是哪套 + 切一下」。
 // 深色是默认值（写在 page 上），浅色靠给页面根 view 加 .theme-light。
 // isLight 在这里多担一件事：储罐底图深浅两版是两个资源，按主题挑 src（见 VESSELS.imageDark）。
-const { isLight, themeClass, wotTheme, themeVars } = useTheme()
+const { isLight, themeClass, wotTheme, themeVars, setTheme } = useTheme()
 /*
  * 配色（2026-10-23，变更-170）：与深浅色正交的第二维。
  * paletteClass 为空 = 粉橙（uni.scss 的默认套）；'palette-violet' = 粉紫。
  */
-const { palette, togglePalette: togglePaletteColor } = usePalette()
+const { palette, palettes, togglePalette: togglePaletteColor } = usePalette()
 const paletteClass = computed(() => paletteClassOf(palette.value))
 
 /* 底部安全区（Home Indicator），喂给 App.vue 的 .pager-dock 与 .page 底部补白。
@@ -348,6 +346,15 @@ const visibleGroups = computed(() =>
 // 权限相关的显隐都读 authState（响应式），登录/退出后立即生效，无需整页刷新
 const loggedIn = computed(() => isLoggedIn())
 const roleName = computed(() => getRoleName() || '已登录')
+// 外观相关（2026-11-18）：从顶栏搬进抽屉左下角，取当前配色的名字与三色点
+const currentPalette = computed(
+  () => palettes.find((item) => item.key === palette.value) || palettes[0],
+)
+const paletteName = computed(() => currentPalette.value?.label || '')
+const paletteDots = computed(() => currentPalette.value?.dots || [])
+
+// 抽屉里的身份行：authState 里没有姓名，只有角色名，所以头像用角色首字
+const meInitial = computed(() => (roleName.value || '我').slice(0, 1))
 
 // ===== 导航（豆包式）=====
 // 页面主体不再放 Tab 条：全部导航收进左侧抽屉，正文直接铺满。
@@ -3233,6 +3240,9 @@ onPullDownRefresh(async () => {
            中间只显示"当前面板 + 一句话说明"；右侧主题切换 + 账户入口。
            原来的横向胶囊 Tab 条已移除 —— 12 个标签在手机上横滑仍然局促，
            导航全部收进抽屉后正文也能铺满整屏。 -->
+      <!-- 顶栏（2026-11-18 精简）：只留「菜单 + 标题」。
+           明暗 / 配色 / 身份按用户要求收进抽屉左下角 —— 它们都是低频设置，
+           却一直占着主视觉最上方的黄金位置；页面主体能多露一行卡片才是收益。 -->
       <header class="topbar">
         <button class="topbar__btn" aria-label="打开菜单" @click="openMenu">
           <view class="burger">
@@ -3242,21 +3252,7 @@ onPullDownRefresh(async () => {
           </view>
         </button>
 
-        <view class="topbar__meta">
-          <text class="topbar__name">{{ activeTabMeta.label }}</text>
-          <text class="topbar__hint">{{ activeTabMeta.hint }}</text>
-        </view>
-
-        <!-- 深色 / 浅色切换：按钮与图标见 components/ThemeToggle.vue -->
-        <ThemeToggle />
-
-        <!-- 配色切换（2026-10-23，变更-170）：点它做圆形揭露换弥散三色。
-             与深浅色正交 —— 浅粉橙 / 浅粉紫 / 深粉橙 / 深粉紫 四种组合都成立。 -->
-        <PaletteToggleMp />
-
-        <button class="topbar__btn" aria-label="账户与功能菜单" @click="openMenu">
-          <wd-icon name="user" size="20px" />
-        </button>
+        <text class="topbar__name">{{ activeTabMeta.label }}</text>
       </header>
 
       <!--
@@ -4944,6 +4940,46 @@ onPullDownRefresh(async () => {
           </view>
 
           <view class="drawer__foot">
+            <!-- 外观与身份（2026-11-18）：原来平铺在顶栏右上角的三个控件，
+                 按用户要求收进抽屉左下角。明暗、配色、身份都还在，只是不再打扰主视觉。 -->
+            <view class="drawer__look">
+              <view class="drawer__look-head">
+                <text class="drawer__look-title">外观</text>
+                <text class="drawer__look-note">{{ isLight ? '浅色' : '深色' }} · {{ paletteName }}</text>
+              </view>
+
+              <view class="drawer__seg">
+                <view
+                  class="drawer__seg-item"
+                  :class="{ 'is-on': isLight }"
+                  @click="setTheme('light')"
+                >浅色</view>
+                <view
+                  class="drawer__seg-item"
+                  :class="{ 'is-on': !isLight }"
+                  @click="setTheme('dark')"
+                >深色</view>
+              </view>
+
+              <view class="drawer__look-row" @click="togglePaletteColor">
+                <text class="drawer__look-label">配色</text>
+                <view class="drawer__dots">
+                  <view
+                    v-for="dot in paletteDots"
+                    :key="dot"
+                    class="drawer__dot"
+                    :style="{ backgroundColor: dot }"
+                  ></view>
+                </view>
+                <text class="drawer__look-next">换一个 ›</text>
+              </view>
+
+              <view class="drawer__me">
+                <view class="drawer__me-avatar">{{ meInitial }}</view>
+                <text class="drawer__me-name">{{ loggedIn ? roleName : '未登录' }}</text>
+                <text class="drawer__me-state">{{ loggedIn ? '已登录' : '只读浏览' }}</text>
+              </view>
+            </view>
             <!-- 次要入口（2026-11-16 重排）：原来是一列下划线小字，像调试清单；
                  改成可换行的浅底小胶囊，扫一眼就能点，也不抢主视觉。 -->
             <view class="drawer__links">
@@ -5104,25 +5140,24 @@ onPullDownRefresh(async () => {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14rpx;
-  /* 浮层玻璃：顶栏正好压在场景最亮的一处光斑上，"借光"在它身上最明显。
-     属于玻璃预算里"浮在内容之上"那一档，每页只有这一个，不计入重复行。
-     内边距与 gap 刻意收紧：整条栏比原来多占了左右各 24rpx，
-     按原来的值副标题会被挤成省略号（实测过）。 */
+  gap: 16rpx;
+  /* 玻璃预算里「浮在内容之上」那一档，每页只有这一个。
+     2026-11-18 精简：原来右侧挂明暗、配色、头像三个按钮，整条 84rpx 高、
+     副标题还占一行；现在只留菜单 + 标题，内边距收到 10rpx，整条约 44px。 */
   @include glass($radius: $ui-radius-lg);
-  padding: 16rpx 18rpx;
-  margin-bottom: 24rpx;
+  padding: 10rpx 16rpx 10rpx 10rpx;
+  margin-bottom: 18rpx;
 }
 
 .topbar__btn {
   display: flex;
-  width: 84rpx;
-  height: 84rpx;
+  width: 64rpx;
+  height: 64rpx;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
   border: 1px solid $ui-border;
-  border-radius: 26rpx;
+  border-radius: 20rpx;
   background-color: $ui-raise;
   color: $ui-text-2;
   transition: background-color $ui-dur $ui-ease, transform 160ms $ui-ease;
@@ -5144,7 +5179,7 @@ onPullDownRefresh(async () => {
 }
 
 .burger__bar {
-  width: 32rpx;
+  width: 28rpx;
   height: 3rpx;
   border-radius: $ui-radius-pill;
   background-color: $ui-text;
@@ -5154,25 +5189,15 @@ onPullDownRefresh(async () => {
   }
 }
 
-.topbar__meta {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-}
-
+/* 顶栏标题：只一行，独占剩余宽度；副标题那行 2026-11-18 已按用户要求删掉 */
 .topbar__name {
-  color: $ui-text;
-  font-size: 40rpx;
-  font-weight: 700;
-  line-height: 1.15;
-}
-
-.topbar__hint {
-  margin-top: 6rpx;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  color: $ui-text-3;
-  font-size: 24rpx;
+  color: $ui-text;
+  font-size: 32rpx;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -5496,6 +5521,126 @@ onPullDownRefresh(async () => {
   height: 2rpx;
   margin: 20rpx 0 18rpx;
   background: var(--ui-hairline);
+}
+/* 抽屉左下角的「外观 + 身份」（2026-11-18）：
+   顶栏原来右侧那三个控件（明暗 / 配色 / 头像）都搬到这里。
+   一个卡片三行：亮暗两段开关、配色三色点 + 换一个、身份一行。 */
+.drawer__look {
+  margin: 18rpx 0 6rpx;
+  padding: 18rpx 20rpx 16rpx;
+  border: 1px solid $ui-border;
+  border-radius: 22rpx;
+  background-color: $ui-raise-2;
+}
+
+.drawer__look-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.drawer__look-title {
+  color: $ui-text-2;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.drawer__look-note {
+  overflow: hidden;
+  color: $ui-text-3;
+  font-size: 22rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer__seg {
+  display: flex;
+  margin-top: 14rpx;
+  padding: 4rpx;
+  border-radius: $ui-radius-pill;
+  background-color: $ui-surface-3;
+}
+
+.drawer__seg-item {
+  flex: 1;
+  height: 56rpx;
+  border-radius: $ui-radius-pill;
+  color: $ui-text-2;
+  font-size: 24rpx;
+  line-height: 56rpx;
+  text-align: center;
+  transition: background-color $ui-dur $ui-ease, color $ui-dur $ui-ease;
+
+  &.is-on {
+    background-color: $ui-accent;
+    color: $ui-on-accent;
+    font-weight: 600;
+  }
+}
+
+.drawer__look-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.drawer__look-label {
+  color: $ui-text-2;
+  font-size: 24rpx;
+}
+
+.drawer__dots {
+  display: flex;
+  gap: 8rpx;
+}
+
+.drawer__dot {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px $ui-hairline;
+}
+
+.drawer__look-next {
+  margin-left: auto;
+  color: $ui-text-3;
+  font-size: 22rpx;
+}
+
+.drawer__me {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1px solid $ui-hairline;
+}
+
+.drawer__me-avatar {
+  display: flex;
+  width: 52rpx;
+  height: 52rpx;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: $ui-accent;
+  color: $ui-on-accent;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.drawer__me-name {
+  color: $ui-text;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.drawer__me-state {
+  margin-left: auto;
+  color: $ui-text-3;
+  font-size: 22rpx;
 }
 
 /* 退出登录不再是整行粉胶囊（抢视觉），改成描边按钮：
