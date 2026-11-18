@@ -7,7 +7,7 @@ import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
 import DateField from '../../components/DateField.vue'
 import { chooseImages } from '../../utils/chooseImages'
-import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
+import { handleGlobalBack, pushPopup, removePopup } from '../../utils/popupStack'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -1391,8 +1391,8 @@ function registerPopup(id, open, close) {
 watch(photoSheetOpen, (open) => registerPopup('meter-photo-sheet', open, () => { photoSheetOpen.value = false }))
 
 onBackPress(() => {
-  if (closeTopPopup()) return true
-  return false
+  // 统一走全局守卫（2026-11-18 全局化）：有弹窗先关弹窗，没弹窗就交回框架返回上一页
+  return handleGlobalBack() !== 'root'
 })
 </script>
 

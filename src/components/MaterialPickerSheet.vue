@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
 import {
   fetchMaterialDetail,
@@ -194,7 +195,7 @@ function statusText(status) {
 </script>
 
 <template>
-  <wd-popup
+  <AppPopup
     :model-value="modelValue"
     position="bottom"
     round
@@ -288,7 +289,7 @@ function statusText(status) {
         </template>
       </scroll-view>
     </view>
-  </wd-popup>
+  </AppPopup>
 </template>
 
 <style scoped lang="scss">

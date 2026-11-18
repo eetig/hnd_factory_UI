@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useToast } from 'wot-design-uni'
 import { hasPerm } from '../api/auth'
 import { resolveAssetUrl } from '../api/config'
@@ -136,7 +137,7 @@ function handlePickDrawing(source) {
 </script>
 
 <template>
-  <wd-popup
+  <AppPopup
     :model-value="modelValue"
     position="bottom"
     round
@@ -217,7 +218,7 @@ function handlePickDrawing(source) {
         <wd-button v-if="canEdit" type="primary" :loading="saving" @click="handleSave">保存</wd-button>
       </view>
     </view>
-  </wd-popup>
+  </AppPopup>
 </template>
 
 <style lang="scss" scoped>

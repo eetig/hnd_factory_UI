@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useToast } from 'wot-design-uni'
 import request from '../api/request'
 import { hasPerm, isGuest } from '../api/auth'
@@ -753,7 +754,7 @@ const popupStyle =
     </view>
 
     <!-- 默认时间（首次生成新月份时用这套值） -->
-    <wd-popup v-model="settingsOpen" position="center" round :lock-scroll="true" :duration="220" custom-style="width: 86%;">
+    <AppPopup v-model="settingsOpen" position="center" round :lock-scroll="true" :duration="220" custom-style="width: 86%;">
       <view class="st">
         <text class="st__title">默认上下班时间</text>
         <text class="st__hint">
@@ -787,10 +788,10 @@ const popupStyle =
           </view>
         </view>
       </view>
-    </wd-popup>
+    </AppPopup>
 
     <!-- 编辑弹层 -->
-    <wd-popup
+    <AppPopup
       v-model="editorOpen"
       position="bottom"
       round
@@ -937,7 +938,7 @@ const popupStyle =
           <view v-else class="ed__btn ed__btn--disabled"><text>无编辑权限</text></view>
         </view>
       </view>
-    </wd-popup>
+    </AppPopup>
     </template>
   </view>
 </template>

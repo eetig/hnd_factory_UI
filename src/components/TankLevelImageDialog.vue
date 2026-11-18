@@ -1,5 +1,6 @@
 <script setup>
 import { computed, getCurrentInstance, ref } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import PhotoGrid from './PhotoGrid.vue'
@@ -168,7 +169,7 @@ async function deleteSelected(chosen) {
 </script>
 
 <template>
-  <wd-popup
+  <AppPopup
     :model-value="dialogVisible"
     position="bottom"
     round
@@ -227,7 +228,7 @@ async function deleteSelected(chosen) {
         <wd-button type="primary" :loading="uploading" @click="pickImage('album')">从相册选择</wd-button>
       </view>
     </view>
-  </wd-popup>
+  </AppPopup>
 </template>
 
 <style scoped lang="scss">

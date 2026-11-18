@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 
 /**
  * 大图查看器：黑底全屏 + 手势缩放（fullscreen / inline 两种形态）
@@ -481,7 +482,7 @@ onUnmounted(() => {
          translate3d，fixed 子元素会以它为包含块（说明 4.2），不脱离组件树遮罩就只盖住卡片。
          弹出时机：按住 450ms 就弹（不再是「抬手才弹」），兜底见 handleTouchEnd。 -->
     <!-- #ifndef H5 -->
-    <wd-popup
+    <AppPopup
       v-model="sheetVisible"
       position="bottom"
       root-portal
@@ -511,7 +512,7 @@ onUnmounted(() => {
 
         <view class="iv-sheet__cancel" @click="sheetVisible = false">取消</view>
       </view>
-    </wd-popup>
+    </AppPopup>
     <!-- #endif -->
   </view>
 </template>

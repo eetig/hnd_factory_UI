@@ -1,5 +1,6 @@
 <script setup>
 import { computed, getCurrentInstance, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import DateField from './DateField.vue'
@@ -791,7 +792,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <wd-popup
+  <AppPopup
     :model-value="modelValue"
     position="bottom"
     round
@@ -1076,7 +1077,7 @@ async function handleDelete() {
         <wd-button v-else type="primary" @click="close">关闭</wd-button>
       </view>
     </view>
-  </wd-popup>
+  </AppPopup>
 </template>
 
 <style scoped lang="scss">

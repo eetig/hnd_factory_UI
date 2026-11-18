@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import { setDrawerOpen } from '../utils/popupStack'
 
 /*
  * 左侧抽屉的**外壳**：弹层、跟手拖拽、开合吸附、底层锁滚动。
@@ -214,6 +215,8 @@ function endDrag(e) {
 }
 
 function open() {
+  // 抽屉也算浮层：上报给全局守卫，返回手势才知道它开着（不进弹窗栈）
+  setDrawerOpen(true)
   // ⚠️ 这里**不能**写成 `if (visible.value) return`。
   //    收起动画那 260ms 里 visible 仍是 true（只是在等卸载），那样写会把这次点击
   //    整个丢掉 —— 真机上的表现就是"有时候点汉堡没反应"，正好是刚关完再点的那一下。
@@ -239,6 +242,7 @@ function open() {
 // 收起统一走这里：点遮罩、菜单项、登录/退出都会走它。
 // ⚠️ 不能直接把 visible 置 false —— 那样弹层立刻卸载、没有收起动画。
 function close() {
+  setDrawerOpen(false)
   /*
    * ⚠️ 展开动画还没走完就先**不受理关闭**。
    * 那 260ms 里用户点到的其实是遮罩（它盖在顶栏上），不拦的话刚拉开的抽屉

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
+import { handleGlobalBack, pushPopup, removePopup } from '../../utils/popupStack'
 import { onBackPress, onPullDownRefresh } from '@dcloudio/uni-app'
 import request from '../../api/request'
 import { authState, isAdmin, isLoggedIn } from '../../api/auth'
@@ -396,8 +396,8 @@ function registerPopup(id, open, close) {
 watch(fixTarget, (target) => registerPopup('elec-fix', !!target, () => { fixTarget.value = null }))
 
 onBackPress(() => {
-  if (closeTopPopup()) return true
-  return false
+  // 统一走全局守卫（2026-11-18 全局化）：有弹窗先关弹窗，没弹窗就交回框架返回上一页
+  return handleGlobalBack() !== 'root'
 })
 </script>
 

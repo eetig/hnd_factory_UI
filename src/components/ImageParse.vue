@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onUnmounted, ref } from 'vue'
+import AppPopup from './AppPopup.vue'
 import DateField from './DateField.vue'
 import PhotoGrid from './PhotoGrid.vue'
 import MaterialPickerSheet from './MaterialPickerSheet.vue'
@@ -1490,7 +1491,7 @@ onUnmounted(() => {
     <!-- 图片来源选择（App / 小程序）。
          替掉 uni.chooseImage 自带的那个系统 ActionSheet —— 它是系统 UI，样式不可控，
          深色主题下是一块突兀的白板。H5 端不会打开它（没有相机这一说），见 openFilePicker。 -->
-    <wd-popup
+    <AppPopup
       v-model="sourceSheetVisible"
       position="bottom"
       round
@@ -1517,7 +1518,7 @@ onUnmounted(() => {
 
         <view class="source-sheet__cancel" @click="sourceSheetVisible = false">取消</view>
       </view>
-    </wd-popup>
+    </AppPopup>
 
     <!-- 物料候选：识别出的名称查不到唯一主数据时，给人一个挑选的入口。
          用对话框而不是下拉，是因为表格单元格里放弹层容易被裁切、也不好定位。 -->

@@ -75,7 +75,7 @@
     </view>
 
     <!-- 编辑 / 新建 -->
-    <wd-popup v-model="sheetOpen" position="bottom" round safe-area-inset-bottom
+    <AppPopup v-model="sheetOpen" position="bottom" round safe-area-inset-bottom
       custom-style="background-color: var(--ui-surface);">
       <view class="td-sheet">
         <view class="td-sheet__head">
@@ -116,10 +116,10 @@
           </view>
         </view>
       </view>
-    </wd-popup>
+    </AppPopup>
 
     <!-- 附图来源 -->
-    <wd-popup v-model="photoOpen" position="bottom" round safe-area-inset-bottom
+    <AppPopup v-model="photoOpen" position="bottom" round safe-area-inset-bottom
       custom-style="background-color: var(--ui-sheet-fill);">
       <view class="photo-sheet">
         <text class="photo-sheet__title">附图</text>
@@ -133,7 +133,7 @@
         </view>
         <view class="photo-sheet__cancel" @click="photoOpen = false">取消</view>
       </view>
-    </wd-popup>
+    </AppPopup>
 
     <!-- LoadingMask 没有 visible 属性，挂载即显示；必须用 v-if 控制，否则遮罩永远盖在页面上 -->
     <LoadingMask v-if="booting" />
@@ -142,8 +142,9 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import AppPopup from '../../components/AppPopup.vue'
 import { onBackPress, onShow } from '@dcloudio/uni-app'
-import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
+import { handleGlobalBack } from '../../utils/popupStack'
 
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
@@ -428,21 +429,11 @@ onShow(() => {
   load(booting.value)
 })
 
-/*
- * 返回手势优先级（2026-11-18）：弹窗开着时，边缘内滑只关弹窗，不许顺手把页面也退掉。
- * 栈空时返回 false，交回框架的默认返回（这一页没有抽屉，直接退页面对）。
- */
-function registerPopup(id, open, close) {
-  if (open) pushPopup(id, close)
-  else removePopup(id)
-}
-
-watch(sheetOpen, (open) => registerPopup('todo-sheet', open, () => { sheetOpen.value = false }))
-watch(photoOpen, (open) => registerPopup('todo-photo', open, () => { photoOpen.value = false }))
+/* 弹窗入栈改由 AppPopup 组件内部负责（2026-11-18 全局化），本页不再手工登记。 */
 
 onBackPress(() => {
-  if (closeTopPopup()) return true
-  return false
+  // 统一走全局守卫（2026-11-18 全局化）：本页没有抽屉，关掉弹窗就交回框架返回上一页
+  return handleGlobalBack() !== 'root'
 })
 </script>
 

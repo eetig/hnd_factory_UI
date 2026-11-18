@@ -1,10 +1,11 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import AppPopup from '../../components/AppPopup.vue'
 import { onBackPress, onUnload, onPullDownRefresh } from '@dcloudio/uni-app'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import request from '../../api/request'
-import { hasPopup, closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
+import { bindDrawerClose, handleGlobalBack, setDrawerOpen } from '../../utils/popupStack'
 import { uploadFiles } from '../../api/upload'
 import { resolveAssetUrl, resolveVesselImage } from '../../api/config'
 import { authState, clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
@@ -431,10 +432,13 @@ function openPrivacy() {
 
 function openMenu() {
   if (navDrawer.value) navDrawer.value.open()
+  // 抽屉也算浮层：登记到全局，返回手势才知道它开着（抽屉不进弹窗栈，单独一个布尔）
+  setDrawerOpen(true)
 }
 
 function closeMenu() {
   if (navDrawer.value) navDrawer.value.close()
+  setDrawerOpen(false)
 }
 
 /*
@@ -457,17 +461,16 @@ function closeMenu() {
  *    ON_LAST_PAGE_BACK_PRESS 只在 uni.x.* 那几个运行时里用。
  */
 
-onBackPress(() => {
-  // 有弹窗：这一下只关最上面那层弹窗，抽屉一步都不动（2026-11-18 使用方实测踩坑）
-  if (hasPopup()) {
-    closeTopPopup()
-    return true
-  }
-  if (!navDrawer.value) return false // 抽屉还没挂上（理论上只在首帧之前）：交回框架默认行为
-  if (navDrawer.value.isOpen()) closeMenu()
-  else openMenu()
-  return true
-})
+ onBackPress(() => {
+   // 优先级统一交给 utils/popupStack 的 handleGlobalBack（2026-11-18 全局化）：
+   //   有弹窗 → 只关栈顶弹窗；没弹窗但抽屉开着 → 关抽屉；都没有 → 'root' 交回本页
+   const handled = handleGlobalBack()
+   if (handled !== 'root') return true
+   // 首页的 root 含义是「开抽屉」；其它页是返回上一页，所以那些页直接 return false
+   if (!navDrawer.value) return false // 抽屉还没挂上（理论上只在首帧之前）
+   openMenu()
+   return true
+ })
 
 // 导航列表的起手/松手：告诉 NavDrawer"这次手势在列表里"，它才不会把默认行为挡掉。
 // （列表在插槽里，组件自己够不着，所以由这边打标。）
@@ -1644,20 +1647,7 @@ const weeklyImageDeleting = ref(false)
 // 周统计原图给内嵌查看器用的地址数组（与上面的 weeklyImageList 同源）
 const weeklyViewerUrls = computed(() => weeklyImageList.value.map((item) => resolveAssetUrl(item.url)))
 const weeklyProductDialogVisible = ref(false)
-/*
- * 弹窗栈（2026-11-18）：本页自己的五个弹层也要登记，
- * 否则「返回手势先关弹窗」只对采购需求面板生效，图片查看器、拍表来源这些照样被抽屉抢走。
- */
-function registerPopup(id, open, close) {
-  if (open) pushPopup(id, close)
-  else removePopup(id)
-}
-
-watch(imageDialogVisible, (open) => registerPopup('home-image-dialog', open, () => { imageDialogVisible.value = false }))
-watch(weeklyImageDialogVisible, (open) => registerPopup('home-weekly-image', open, () => { weeklyImageDialogVisible.value = false }))
-watch(photoSheetOpen, (open) => registerPopup('home-photo-sheet', open, () => { photoSheetOpen.value = false }))
-watch(weeklyProductDialogVisible, (open) => registerPopup('home-weekly-product', open, () => { weeklyProductDialogVisible.value = false }))
-watch(imageViewerVisible, (open) => registerPopup('home-image-viewer', open, () => { imageViewerVisible.value = false }))
+/* 弹窗入栈改由 AppPopup 组件内部负责（2026-11-18 全局化），本页不再手工登记。 */
 const weeklyProductFilter = ref('')
 /** 产成品候选：同样改由接口给（分页之后前端不再持有全量工单） */
 const weeklyProductOptions = ref([])
@@ -3009,6 +2999,8 @@ function cleanupVessel() {
 }
 
 onMounted(() => {
+  // 抽屉的「关」动作绑给全局守卫，返回手势才能关掉它（守卫层不直接依赖本页）
+  bindDrawerClose(closeMenu)
   fetchAdminOnlyData()
   fetchStockRecords()
   // 罐体底图（约 645 KB）改为切到压力容器 Tab 时按需加载，不拖慢首屏
@@ -3427,7 +3419,7 @@ onPullDownRefresh(async () => {
            移动端看大图更适合近全屏，改成 wd-popup 居中弹层；
            原来的 #header / #footer 两个具名插槽在 wd-popup 里没有对应物，
            直接落成普通的头部/底部块。 -->
-      <wd-popup
+      <AppPopup
         v-model="imageDialogVisible"
         position="center"
         custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-glass-fill); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
@@ -3495,7 +3487,7 @@ onPullDownRefresh(async () => {
             添加图片
           </wd-button>
         </view>
-      </wd-popup>
+      </AppPopup>
 
       <ProductSelectDialog
         v-model="productDialogVisible"
@@ -4109,7 +4101,7 @@ onPullDownRefresh(async () => {
              沿用同一套 .viewer-* 样式。
              （这两块的重复是先前的既有写法，迁移时保持原样不做额外重构，
                以免在换平台的同时改变行为。） -->
-        <wd-popup
+        <AppPopup
           v-model="weeklyImageDialogVisible"
           position="center"
           custom-style="width: 92vw; max-height: 88vh; border-radius: 22px; background-color: var(--ui-glass-fill); border: 1px solid var(--ui-border); display: flex; flex-direction: column; overflow: hidden;"
@@ -4173,13 +4165,13 @@ onPullDownRefresh(async () => {
               添加图片
             </wd-button>
           </view>
-        </wd-popup>
+        </AppPopup>
 
         <!--
           上传来源选择：与「图片解析」「抄表」共用同一套视觉
           （奶白卡片行 + 40px 蓝色图标块 + 底部整宽胶囊取消）。
         -->
-        <wd-popup
+        <AppPopup
           v-model="photoSheetOpen"
           position="bottom"
           round
@@ -4202,7 +4194,7 @@ onPullDownRefresh(async () => {
             </view>
             <view class="photo-sheet__cancel" @click="photoSheetOpen = false">取消</view>
           </view>
-        </wd-popup>
+        </AppPopup>
 
         <ProductSelectDialog
           v-model="weeklyProductDialogVisible"

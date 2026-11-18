@@ -1,6 +1,7 @@
 <script setup>
 
 import { computed, getCurrentInstance, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 
 import { useToast } from 'wot-design-uni'
 
@@ -15,7 +16,7 @@ import { uploadFile } from '../api/upload'
 import { resolveAssetUrl } from '../api/config'
 
 import { chooseImages } from '../utils/chooseImages'
-import { closeTopPopup, pushPopup, removePopup } from '../utils/popupStack'
+// 浮层守卫（2026-11-18 全局化）：本组件不再直接操作弹窗栈，入栈由 AppPopup 负责
 
 
 
@@ -947,20 +948,7 @@ const lastSavedText = ref('')
 
 const deliverySheetOpen = ref(false)
 
-/*
- * 弹窗栈（2026-11-18）：四个弹层一开就把自己压栈，关掉就出栈。
- * 返回手势（屏幕边缘内滑）在页面那边先问栈：栈不空就只关最上面那层，
- * 不会一边关弹窗一边把左侧抽屉滑出来 —— 使用方实测踩过这个坑。
- */
-function registerPopup(id, open, close) {
-  if (open) pushPopup(id, close)
-  else removePopup(id)
-}
-
-watch(quickOpen, (open) => registerPopup('purchase-quick', open, () => { quickOpen.value = false }))
-watch(detailCard, (card) => registerPopup('purchase-detail', !!card, closeDetail))
-watch(formOpen, (open) => registerPopup('purchase-form', open, () => closeForm()))
-watch(deliverySheetOpen, (open) => registerPopup('purchase-delivery', open, () => { deliverySheetOpen.value = false }))
+/* 弹窗入栈改由 AppPopup 组件内部负责（2026-11-18 全局化），本组件不再手工登记。 */
 
 const deliveryUploading = ref(false)
 
@@ -2079,7 +2067,7 @@ function onTouchEnd() {
 
     <!-- 记一句：口头交代先落地，编码数量以后再补 -->
 
-    <wd-popup
+    <AppPopup
 
       v-model="quickOpen"
 
@@ -2157,13 +2145,13 @@ function onTouchEnd() {
 
       </view>
 
-    </wd-popup>
+    </AppPopup>
 
 
 
     <!-- 详情：一张卡 = 一件事，物料全列 + 催痕 + 验收 -->
 
-    <wd-popup
+    <AppPopup
 
       :model-value="!!detailCard"
 
@@ -2295,11 +2283,11 @@ function onTouchEnd() {
 
       </view>
 
-    </wd-popup>
+    </AppPopup>
 
 
 
-    <wd-popup
+    <AppPopup
 
       v-model="formOpen"
 
@@ -2541,13 +2529,13 @@ function onTouchEnd() {
 
       </view>
 
-    </wd-popup>
+    </AppPopup>
 
 
 
     <!-- 送货单来源：与「图片解析」「拍表存证」同一套底部弹层，选完再进系统相机/相册 -->
 
-    <wd-popup
+    <AppPopup
 
       v-model="deliverySheetOpen"
 
@@ -2597,7 +2585,7 @@ function onTouchEnd() {
 
       </view>
 
-    </wd-popup>
+    </AppPopup>
 
   </view>
 

@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { fetchMaterialDetail, fetchMaterialFacets, pageMaterials } from '../composables/useMaterialMaster'
 import { copyRowField } from '../utils/clipboard'
 
@@ -238,7 +239,7 @@ const popupStyle =
       </view>
     </view>
 
-    <wd-popup
+    <AppPopup
       v-model="detailOpen"
       position="bottom"
       round
@@ -302,7 +303,7 @@ const popupStyle =
           </view>
         </scroll-view>
       </view>
-    </wd-popup>
+    </AppPopup>
   </view>
 </template>
 

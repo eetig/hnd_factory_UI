@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import AppPopup from './AppPopup.vue'
 import { useKeyboardLift } from '../composables/useKeyboardLift'
 
 const props = defineProps({
@@ -71,7 +72,7 @@ function handleSelect(item) {
   <!-- 改造前是 el-dialog（居中弹窗）。移动端选项多、要滚动，
        用底部弹层 + scroll-view 更顺手；scroll-view 也是必须的 ——
        小程序的 <view> 上写 overflow-y: auto 不会滚动。 -->
-  <wd-popup
+  <AppPopup
     :model-value="modelValue"
     position="bottom"
     round
@@ -119,7 +120,7 @@ function handleSelect(item) {
         </view>
       </scroll-view>
     </view>
-  </wd-popup>
+  </AppPopup>
 </template>
 
 <style lang="scss" scoped>
