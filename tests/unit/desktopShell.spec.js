@@ -275,6 +275,14 @@ describe('原生窗口材质与自绘标题栏', () => {
     }
   })
 
+  it('窗口把系统拖拽让给网页，否则「拖文件进抽屉」在客户端里永远收不到 drop', () => {
+    // 2026-11-18：Tauri 默认 dragDropEnabled=true，会在窗口层截走 OS 的拖放，
+    // 网页里 dragover/drop 一次都不触发 —— 浏览器调好的拖拽到了客户端就「拖不进来」。
+    const conf = JSON.parse(read('src-tauri/tauri.conf.json'))
+    const win = conf.app.windows[0]
+    expect(win.dragDropEnabled).toBe(false)
+  })
+
   it('顶栏三段窗口动作齐全，且整条能拖窗口', () => {
     // 2026-11-12：标题栏并进导航条之后，顶栏几乎全是控件，`data-tauri-drag-region`
     // 等于没有拖动区（使用方报「按住左键拖不动」），改成 mousedown 时自己判断按到的是不是控件。
