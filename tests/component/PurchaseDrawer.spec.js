@@ -636,3 +636,45 @@ describe('物料下拉：名称 / 编码 / 规格都要看得到（变更-228）
     expect(warn, '没告诉用户为什么留空').toHaveBeenCalled()
   })
 })
+
+/**
+ * 变更-230（2026-11-18）使用方原话：
+ *
+ *   「新增采购需求名称改成新增费用需求。图二是需求明细，和采购需求是不同的，
+ *     所以新增的表格需要修改」——费用申请那两类单（资产申购、服务采购申请）按 OA
+ *     的「采购明细」口径：认需求简述与申请原因，不要类别，也不出现任何金额。
+ *
+ * 采购申请（CGSQ）和采购看板一个字都不动，所以这里两条要成对守。
+ */
+describe('费用申请用「费用需求」的说法（变更-230）', () => {
+  afterEach(() => {
+    if (wrapper) wrapper.unmount()
+    wrapper = null
+    document.body.innerHTML = ''
+  })
+
+  it('费用申请：标题是「新增费用需求」，认需求简述与申请原因，没有类别', async () => {
+    await open({ defaultOrderType: 'ZCSG' })
+
+    expect(wrapper.find('h2').text(), '标题没跟着单据类型改').toBe('新增费用需求')
+
+    const head = wrapper.find('thead').text()
+    expect(head, '没认「需求简述」').toContain('需求简述')
+    expect(head, '没认「申请原因」').toContain('申请原因')
+    expect(head, '费用需求里不该有类别列').not.toContain('类别')
+    expect(head, '不该出现金额').not.toContain('单价')
+    expect(head).not.toContain('金额')
+  })
+
+  it('采购申请：仍叫「新增采购需求」，类别 / 用途 / 备注原样', async () => {
+    await open({ defaultOrderType: 'CGSQ' })
+
+    expect(wrapper.find('h2').text()).toBe('新增采购需求')
+
+    const head = wrapper.find('thead').text()
+    expect(head).toContain('类别')
+    expect(head).toContain('用途')
+    expect(head).toContain('备注')
+    expect(head, '采购需求不该冒出来需求简述').not.toContain('需求简述')
+  })
+})

@@ -223,9 +223,9 @@ const isDocket = computed(() => view.value === 'docket')
 const isCreate = computed(() => props.mode === 'create' && !docket.value.oaNo)
 
 const title = computed(() => {
-  if (isDocket.value) return docket.value.oaNo || '采购需求'
-  if (isCreate.value) return '新增采购需求'
-  return docket.value.oaNo ? `编辑 ${docket.value.oaNo}` : '编辑采购需求'
+  if (isDocket.value) return docket.value.oaNo || noun.value
+  if (isCreate.value) return `新增${noun.value}`
+  return docket.value.oaNo ? `编辑 ${docket.value.oaNo}` : `编辑${noun.value}`
 })
 
 /* ─────────── 台账（编辑层） ─────────── */
@@ -348,6 +348,14 @@ const dirty = computed(() => JSON.stringify({ h: header.value, l: lines.value })
 const effectiveType = computed(
   () => inferOrderType(header.value.oaNo) || header.value.orderType || '',
 )
+
+/**
+ * 费用申请页那两类单（资产申购 / 服务采购申请）沿用 OA 的「费用需求」口径（2026-11-18）：
+ * 认「需求简述」和「申请原因」，不出现类别；使用方明确不要任何金额列。
+ * 采购申请（CGSQ）与采购看板仍是「采购需求」，一个字都不动。
+ */
+const isExpense = computed(() => ['ZCSG', 'FWCGSQ'].includes(effectiveType.value))
+const noun = computed(() => (isExpense.value ? '费用需求' : '采购需求'))
 
 /** 只读单据里要不要留「验收单」这一行：该类型会有，或者老数据已经填过 */
 const docketShowsAcceptance = computed(
@@ -924,7 +932,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 <th scope="col" class="px-2 py-1.5 font-normal">物料名称</th>
                 <th scope="col" class="px-2 py-1.5 font-normal">物料编码</th>
                 <th scope="col" class="px-2 py-1.5 font-normal">规格型号</th>
-                <th scope="col" class="px-2 py-1.5 font-normal">用途</th>
+                <th scope="col" class="px-2 py-1.5 font-normal">{{ isExpense ? '需求简述' : '用途' }}</th>
                 <th scope="col" class="px-2 py-1.5 font-normal">要求到货</th>
                 <th scope="col" class="px-2 py-1.5 font-normal">需求人</th>
                 <th scope="col" class="px-2 py-1.5 text-right font-normal">数量</th>
@@ -1109,7 +1117,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
               <col style="width: 150px" />
               <col style="width: 64px" />
               <col style="width: 72px" />
-              <col style="width: 88px" />
+              <col v-if="!isExpense" style="width: 88px" />
               <col style="width: 120px" />
               <col style="width: 112px" />
               <col style="width: 60px" />
@@ -1128,12 +1136,12 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 <th scope="col" class="px-1.5 py-1.5 font-normal">规格型号</th>
                 <th scope="col" class="px-1.5 py-1.5 font-normal">数量</th>
                 <th scope="col" class="px-1.5 py-1.5 font-normal">单位</th>
-                <th scope="col" class="px-1.5 py-1.5 font-normal">类别</th>
-                <th scope="col" class="px-1.5 py-1.5 font-normal">用途</th>
+                <th v-if="!isExpense" scope="col" class="px-1.5 py-1.5 font-normal">类别</th>
+                <th scope="col" class="px-1.5 py-1.5 font-normal">{{ isExpense ? '需求简述' : '用途' }}</th>
                 <th scope="col" class="px-1.5 py-1.5 font-normal">要求到货</th>
                 <th scope="col" class="px-1.5 py-1.5 text-right font-normal">实收</th>
                 <th scope="col" class="px-1.5 py-1.5 font-normal">实到日期</th>
-                <th scope="col" class="px-1.5 py-1.5 font-normal">备注</th>
+                <th scope="col" class="px-1.5 py-1.5 font-normal">{{ isExpense ? '申请原因' : '备注' }}</th>
                 <th scope="col" class="px-1.5 py-1.5 font-normal">送货单</th>
                 <th scope="col" class="px-1 py-1.5"><span class="sr-only">删除</span></th>
               </tr>
@@ -1260,7 +1268,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                     <el-option v-for="u in UNIT_OPTIONS" :key="u" :label="u" :value="u" />
                   </el-select>
                 </td>
-                <td class="px-1 py-1">
+                <td v-if="!isExpense" class="px-1 py-1">
                   <el-select
                     v-model="line.category"
                     size="small"
@@ -1280,8 +1288,8 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                   <el-input
                     v-model="line.purpose"
                     size="small"
-                    placeholder="用途"
-                    :aria-label="`第 ${index + 1} 行用途`"
+                    :placeholder="isExpense ? '需求简述' : '用途'"
+                    :aria-label="`第 ${index + 1} 行${isExpense ? '需求简述' : '用途'}`"
                     :disabled="!canEdit"
                   />
                 </td>
@@ -1324,8 +1332,8 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                   <el-input
                     v-model="line.remark"
                     size="small"
-                    placeholder="备注"
-                    :aria-label="`第 ${index + 1} 行备注`"
+                    :placeholder="isExpense ? '申请原因' : '备注'"
+                    :aria-label="`第 ${index + 1} 行${isExpense ? '申请原因' : '备注'}`"
                     :disabled="!canEdit"
                   />
                 </td>
