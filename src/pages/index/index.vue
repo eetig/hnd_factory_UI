@@ -485,14 +485,8 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(openMe
    return true
  })
 
-// 导航列表的起手/松手：告诉 NavDrawer"这次手势在列表里"，它才不会把默认行为挡掉。
-// （列表在插槽里，组件自己够不着，所以由这边打标。）
-function onListTouchStart() {
-  if (navDrawer.value) navDrawer.value.setListGesture(true)
-}
-function onListTouchEnd() {
-  if (navDrawer.value) navDrawer.value.setListGesture(false)
-}
+// 抽屉列表不再打标（2026-11-19）：滚动交给 NavDrawer 自己的单一容器，
+// 原先的 setListGesture 起手/松手标记已无意义，一并删掉。
 
 // 当前面板的元数据。顶部栏与抽屉菜单共用 tabs 这一份数据源，
 // 所以新增 Tab 只要往 tabs 里加一条，两处自动同步。
@@ -4873,7 +4867,7 @@ onPullDownRefresh(async () => {
           <!-- 按大类分组（2026-10-07）：分组标题放进 scroll-view 里，跟列表一起滚。
                只渲染**有可见页**的组 —— 小程序端没有「文件导入」，数据维护那组只剩两项，
                但也不该留一个空标题。 -->
-          <scroll-view class="drawer__list" scroll-y @touchstart="onListTouchStart" @touchend="onListTouchEnd" @touchcancel="onListTouchEnd">
+          <view class="drawer__list">
             <!-- 常用（2026-11-02）：用得最多的 4 个置顶；下面各组仍按人工顺序，位置稳定 -->
             <template v-if="frequentTabs.length">
               <text
@@ -4921,7 +4915,7 @@ onPullDownRefresh(async () => {
                 <wd-icon v-else-if="tabState(tab) === 'locked'" name="lock-on" size="14px" class="menu-item__lock" />
               </view>
             </template>
-          </scroll-view>
+          </view>
 
           <!-- 待办（2026-11-16）：所有登录用户都能用 —— 自己记事情，与采购/工单无关 -->
           <view v-if="loggedIn" class="drawer__todo" @click="openTodo">
@@ -5370,9 +5364,13 @@ onPullDownRefresh(async () => {
   letter-spacing: 0.16em;
 }
 
-/* 必须是确定高度，scroll-view 才会滚动（三端一致的做法） */
+/*
+ * 抽屉整体滚动（2026-11-19）：这里不再自己滚，也不再写死高度。
+ * 原来写 height: 52vh 是给 scroll-view 撑滚动条用的；现在是普通 view，
+ * 再写死高度就会把内容截在屏幕一半（使用方截图「内容被切掉」就是它）。
+ * 滚动交给 NavDrawer 的 .nav-drawer（overflow-y:auto + overscroll-behavior:contain）。
+ */
 .drawer__list {
-  height: 52vh;
   flex-shrink: 0;
 }
 

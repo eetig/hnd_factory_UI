@@ -271,24 +271,22 @@ function innerStart(e) {
 }
 function innerMove(e) {
   /*
-   * ⚠️ 这一行是"抽屉打开时，在它的空白处上下滑不能带动底层"的**唯一**手段。
-   * 抽屉里那块空白（导航列表下面的空档）不属于任何滚动容器，不挡默认行为的话，
-   * 浏览器会顺着滚动链一路找到页面本体、把底层滚走。
-   * 真机实测：在空白处上滑，底层 scrollingElement.scrollTop 从 0 变成 154；
-   * 在 `.nav-drawer` 上加 preventDefault 之后恒为 0。
+   * 这里**不再** e.preventDefault()（2026-11-19 修，使用方报「滑到底就卡住不能上下滑」）。
    *
-   * 但**不能无条件挡** —— 那样导航列表自己也滚不动了（实测列表 scrollTop 恒为 0）。
-   * 所以按"这次手势起手在哪"分：列表里的放行，其余（空白、品牌区、底部账户区）挡掉。
-   * 列表内部滚到头之后会不会把底层带起来，由 .drawer__list 里的
-   * overscroll-behavior: contain 负责（见 App.vue）。
+   * 原实现靠「起手在不在列表里」决定要不要挡默认行为，标记是一个跨组件的布尔量
+   * （setListGesture 由页面在 scroll-view 的 touchstart/touchend 上打标）。真机上滚到底、
+   * 或手势被判成横滑时浏览器会发 touchcancel —— 标记和真实手势归属一旦错位，
+   * 要么挡死列表自己的滚动，要么放行把底层页面带动。滚到底之后「往上往下都动不了」就是这么来的。
+   *
+   * 现在滚动只有 .nav-drawer 一个容器（CSS 里 overflow-y:auto + overscroll-behavior:contain），
+   * 原生滚动自己会处理边界，不需要脚本插手；这里只负责把横向拖动交给抽屉。
    */
-  if (visible.value && !gestureInList && e && e.preventDefault) e.preventDefault()
   if (drag) moveDrag(e)
 }
 
 // 给父组件用：列表起手/松手时打标
-function setListGesture(v) {
-  gestureInList = v
+function setListGesture() {
+  // 保留成空实现：滚动已完全交给 .nav-drawer，不再需要「这次手势在不在列表里」的标记。
 }
 
 /*
@@ -388,15 +386,16 @@ watch(visible, (open) => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  /* min-height: 0 是 flex 子项能正确收缩的前提，否则里面的 scroll-view 撑不出滚动条 */
+  /* flex 子项能正确收缩的前提 */
   min-height: 0;
   /*
-   * ⚠️ 别删。抽屉里是一个纵向 scroll-view，浏览器判定"这手势归谁滚"时会**取消**它不认的
-   * 触摸序列（touchcancel）—— 表现是横向拖到一半突然断掉、后面的位移全丢（真机实测：
-   * 十段位移只有前五段生效，后面直接 snap）。
-   * pan-y = 只允许纵向平移：内层列表照常上下滚，横向手势不会被判成"要滚页面"而取消，
-   * 稳稳交给我们自己的跟手逻辑。
+   * 抽屉自己就是滚动容器（2026-11-19）：内容再长也只在这里滚。
+   * overscroll-behavior: contain —— 滚到边界不透传到底层页面，这样就不用再靠
+   * preventDefault 挡默认行为了（那套做法会把手势状态和数据流搅在一起，滚到底会卡死）。
+   * touch-action: pan-y —— 只允许纵向平移，横向手势留给抽屉跟手拖动，不被浏览器判成滚页面而 cancel。
    */
+  overflow-y: auto;
+  overscroll-behavior: contain;
   touch-action: pan-y;
 }
 </style>

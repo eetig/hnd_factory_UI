@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import request from '../api/request'
 
 /**
@@ -69,6 +69,23 @@ async function load() {
   }
 }
 
+/**
+ * 复位（2026-11-19）：ticket 是一次性的，父组件提交失败后会把 modelValue 清空；
+ * 那时必须把滑块也复位并换一道新题，否则会出现「显示验证通过、但提示请先拖动滑块」的死锁。
+ */
+function reset() {
+  load()
+}
+
+watch(
+  () => props.modelValue,
+  (v) => {
+    if (!v && status.value === 'ok') reset()
+  }
+)
+
+defineExpose({ reset })
+
 load()
 
 function refreshMaxOffset() {
@@ -79,7 +96,7 @@ function refreshMaxOffset() {
 }
 
 function onTouchStart(event) {
-  if (status.value === 'ok' || loading.value) return
+  if (loading.value) return
   refreshMaxOffset()
   const touch = event.touches?.[0] || event.changedTouches?.[0]
   if (!touch) return

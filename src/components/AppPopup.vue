@@ -148,8 +148,23 @@ onBeforeUnmount(() => syncScrollLock(false))
 </template>
 
 <style scoped>
+/*
+  这一层必须"透明地"接住高度（2026-11-19）
+  弹层内容是 .wd-popup 的直接子节点时，`height: 100%` 解析的是根节点上
+  custom-style 给的确定高度（详情 72vh / 表单 86vh），滚动区靠 `flex:1` 分空间。
+  中间插一层 auto 高度、display:block 的 div 之后，`height:100%` 退化成 auto，
+  滚动区（`height:0` + `flex:1`）分不到空间 → 卡片明细、编辑表单正文整片空白。
+  所以这里声明成"列方向弹性容器"：定高弹层时 flex:1 + height:100% 撑满，
+  自动高度弹层（速记那种）仍旧按内容收紧。
+*/
 .app-popup__inner {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
   padding-bottom: env(safe-area-inset-bottom);
   background-color: inherit;
 }
