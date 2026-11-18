@@ -27,7 +27,10 @@
 //   ⚠️ 可见性（modelValue）也必须由调用方 v-model 绑上：遮罩与面板都是 v-if="modelValue"，
 //      漏绑时点击只会 emit 一个没人监听的事件 —— 表现就是「点了没反应」（本项目踩过一次）。
 
-defineProps({
+import { onBeforeUnmount, watch } from 'vue'
+import { lockPageScroll, unlockPageScroll } from '../utils/scrollLock'
+
+const props = defineProps({
   modelValue: { type: Boolean, default: false },
   // { value, label, hint?, icon?, dot?, dotLight? }
   //   icon     —— 走 wot 图标字体（写错会渲染成空白方块，取值见 wd-icon/index.scss）；
@@ -42,6 +45,24 @@ defineProps({
 })
 
 const emit = defineEmits(['update:modelValue', 'select'])
+
+/*
+ * 锁定底层滚动：浮层打开时手指在遮罩上滑动不能带动下面的页面（2026-11-18 用户报障）。
+ *
+ * 唯一入口统一在 AppPopup 组件里处理，这个浮层不是 AppPopup、但同样是"满屏遮罩"，
+ * 所以自己也调一次 —— 锁是引用计数的，跟弹窗叠在一起也不会互相解锁。
+ */
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open) lockPageScroll()
+    else unlockPageScroll()
+  },
+)
+
+onBeforeUnmount(() => {
+  if (props.modelValue) unlockPageScroll()
+})
 
 function open() {
   emit('update:modelValue', true)
@@ -66,7 +87,7 @@ function handleSelect(value) {
 
     <!-- 遮罩：点空白关闭。能铺满全屏的前提是「从页面根到这里没有 transform 祖先」（说明 4.2）；
          .stop 拦掉滑动 —— 浮层开着时不该带着页面一起滚（小程序端 .stop 编译成 catch 前缀）。 -->
-    <view v-if="modelValue" class="dd__mask" @click="close" @touchmove.stop></view>
+    <view v-if="modelValue" class="dd__mask" @click="close" @touchmove.stop.prevent></view>
 
     <view
       v-if="modelValue"

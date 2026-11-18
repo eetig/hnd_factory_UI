@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { setDrawerOpen } from '../utils/popupStack'
+import { lockPageScroll, unlockPageScroll } from '../utils/scrollLock'
 
 /*
  * 左侧抽屉的**外壳**：弹层、跟手拖拽、开合吸附、底层锁滚动。
@@ -344,19 +345,12 @@ const popupModalStyle = computed(() => {
 })
 
 // 抽屉展开时锁住底层滚动。
-// App 端：遮罩（wd-overlay）自带 `@touchmove.stop.prevent`，而它铺满整屏、
-//   压在页面之上，所以触摸滚动本来就被挡住了 —— 真机实测：抽屉展开后在右侧
-//   页面区域连续上滑，document.scrollingElement.scrollTop 一动不动。
-// H5 端：**滚轮**不受 touchmove 影响，遮罩挡不住，得单独把 body 的 overflow 关掉。
-//   （逻辑层在 App 端没有 document，所以这段只在 H5 编进去。）
+// 2026-11-18 起统一走 utils/scrollLock（body 定住），原因见那个文件开头的说明：
+// 原来的做法是 #ifdef H5 关 body.overflow，App 端则指望遮罩的 touchmove 挡住 ——
+// 实测挡不住（弹窗/抽屉开着，手指在遮罩上划，底下页面照样滚）。
 watch(visible, (open) => {
-  // #ifdef H5
-  try {
-    document.body.classList.toggle('is-drawer-open', open)
-  } catch {
-    // 拿不到 document 就只靠遮罩
-  }
-  // #endif
+  if (open) lockPageScroll()
+  else unlockPageScroll()
 })
 </script>
 

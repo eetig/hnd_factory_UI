@@ -25,6 +25,7 @@
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { pushPopup, removePopup } from '../utils/popupStack'
+import { lockPageScroll, unlockPageScroll } from '../utils/scrollLock'
 
 defineOptions({ inheritAttrs: false })
 
@@ -84,6 +85,27 @@ watch(
 
 // 弹窗被 v-if / 路由切换直接干掉时，栈里不能留一个永远关不掉的影子
 onBeforeUnmount(leaveStack)
+
+/*
+ * 锁底层滚动（2026-11-18）
+ *
+ * 用户报的是「弹窗开着，手指在遮罩上划，底下页面还在滚」，而且是所有弹窗都有。
+ * 根因在 wd-popup 的 lock-scroll 只锁了 body.overflow，挡不住 webview 里真正的滚动容器。
+ * 弹窗全都经过这里，于是统一在这一层加锁，业务组件一个都不用改；
+ * 计数在 scrollLock 里，弹窗套弹窗时不会互相解开。
+ */
+let scrollLocked = false
+
+function syncScrollLock(open) {
+  if (open === scrollLocked) return
+  scrollLocked = open
+  if (open) lockPageScroll()
+  else unlockPageScroll()
+}
+
+watch(shown, (open) => syncScrollLock(!!open))
+
+onBeforeUnmount(() => syncScrollLock(false))
 </script>
 
 <template>

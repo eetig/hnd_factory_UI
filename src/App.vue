@@ -191,14 +191,9 @@ uni-page-head .uni-page-head svg path {
   fill: currentColor;
 }
 
-/* 抽屉展开时锁住底层滚动。
-   触摸那一路由遮罩负责（wd-overlay 带 @touchmove.stop.prevent，且铺满整屏压在最上层，
-   真机实测抽屉展开后滑动页面区域，scrollTop 不动）；**滚轮不受 touchmove 约束**，
-   桌面浏览器上照样能把底层滚走，所以这里单独关掉 body 的滚动。
-   类名由 index.vue 的 watch(menuVisible) 挂/摘，仅 H5 端（App 逻辑层没有 document）。 */
-body.is-drawer-open {
-  overflow: hidden;
-}
+/* 抽屉 / 弹窗展开时锁底层滚动：2026-11-18 起改由 src/utils/scrollLock.js 处理
+   （body 定住 + html/body overflow），因为只关 body.overflow 挡不住 webview 里的滚动容器。
+   这里不再挂 body 类名，保留这段注释只是为了说明旧写法去了哪。 */
 /* #endif */
 
 // 主题切换按钮上的「半明半暗」圆点（两个页面共用，所以放全局）。
