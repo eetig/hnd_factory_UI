@@ -454,7 +454,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 }
 
 .td__head {
-  padding: 20rpx 28rpx 0;
+  padding: 8rpx 20rpx 0;
 }
 
 .td__summary {
@@ -523,7 +523,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 .td__list {
   flex: 1;
   height: 0;
-  padding: 0 28rpx;
+  padding: 0 20rpx;
 }
 
 .td__group {

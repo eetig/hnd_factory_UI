@@ -42,7 +42,7 @@ const wrapStyle = computed(() => ({
   width: 100%;
   box-sizing: border-box;
   /* 标题与下方内容的呼吸位放在这里，页面根节点就不用再留顶部内边距（否则会叠成两层空白） */
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   /* 不设背景：标题直接坐在页面的暖纸底上，这才是「无背景框」 */
 }
 

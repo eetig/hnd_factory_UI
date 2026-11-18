@@ -898,7 +898,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 .el-tabs {
     display: flex;
     gap: 0;
-    padding: 0 16px 10px;
+    padding: 0 10px 8px;
     position: relative;
     overflow: hidden;
   }
@@ -923,7 +923,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   }
 
 .el-body {
-  padding: 0 16px;
+  padding: 0 10px;
 }
 
 .el-hero {
@@ -1295,7 +1295,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 
 .el-fix-sheet {
   width: 100%;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 12px 10px calc(12px + env(safe-area-inset-bottom, 0px));
   border-radius: 18px 18px 0 0;
   background: var(--ui-surface);
 }

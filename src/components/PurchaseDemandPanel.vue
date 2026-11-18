@@ -2603,7 +2603,7 @@ function onTouchEnd() {
 
 .pd {
 
-  padding: 16rpx 20rpx 40rpx;
+  padding: 10rpx 0 24rpx;
 
   box-sizing: border-box;
 

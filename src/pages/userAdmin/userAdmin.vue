@@ -181,7 +181,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   box-sizing: border-box;
   background-color: var(--ui-bg);
 }
@@ -213,7 +213,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 /* ---------- 头部统计 ---------- */
 .ua__head {
   flex-shrink: 0;
-  padding: 20rpx 24rpx;
+  padding: 8rpx 20rpx;
   border-radius: 24rpx;
   background-color: var(--ui-surface);
 }
@@ -298,7 +298,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 
 .ua__card {
   margin-bottom: 14rpx;
-  padding: 22rpx 24rpx;
+  padding: 14rpx 20rpx;
   border-radius: 22rpx;
   background-color: var(--ui-surface);
 }

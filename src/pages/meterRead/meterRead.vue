@@ -1830,7 +1830,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
    * 卡片区就只能用中间剩下的高度 —— 操作栏不会被卡片顶走，也不会滚出屏幕。
    */
   --mr-bar: 120rpx;
-  padding: 0 24rpx calc(var(--mr-bar) + 16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
+  padding: 0 20rpx calc(var(--mr-bar) + 16rpx + env(safe-area-inset-bottom, 0px) + var(--mr-kb, 0px));
   box-sizing: border-box;
   overflow: hidden;
   position: relative;
@@ -1992,7 +1992,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   align-items: center;
   height: 112rpx;
   gap: 14rpx;
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   /* 轨道的位移由 JS 写 transform，和下方卡片共用同一个手势进度 */
   will-change: transform;
   backface-visibility: hidden;
@@ -2006,7 +2006,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   align-items: center;
   gap: 8rpx;
   height: 84rpx;
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   border-radius: 999rpx;
   white-space: nowrap;
   /*
@@ -2639,7 +2639,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   align-items: center;
   gap: 12rpx;
   margin-top: 8rpx;
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   height: 112rpx;
   border-radius: 20rpx;
   background-color: var(--ui-surface-2);
@@ -2742,7 +2742,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   display: inline-flex;
   align-items: center;
   gap: 10rpx;
-  padding: 18rpx 24rpx;
+  padding: 14rpx 20rpx;
   border-radius: 16rpx;
   border: 2rpx dashed var(--ui-border);
   font-size: 26rpx;

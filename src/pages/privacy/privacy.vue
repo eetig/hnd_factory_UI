@@ -137,7 +137,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 
 <style lang="scss" scoped>
 .privacy {
-  padding: 0 32rpx 96rpx;
+  padding: 0 20rpx 72rpx;
 }
 
 .privacy__head {

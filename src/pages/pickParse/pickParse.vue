@@ -439,7 +439,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   justify-content: space-between;
   gap: 16rpx;
   margin-bottom: 20rpx;
-  padding: 20rpx 24rpx;
+  padding: 12rpx 20rpx;
   border-radius: 20rpx;
   background: var(--ui-amber-50, #fdf6e7);
   border: 2rpx solid var(--ui-amber-200, #f0dcb0);
@@ -464,7 +464,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 72rpx 24rpx;
+  padding: 48rpx 20rpx;
   border-radius: 28rpx;
   border: 2rpx dashed var(--ui-border-strong, #d6d1c6);
   background: var(--ui-surface, #fff);

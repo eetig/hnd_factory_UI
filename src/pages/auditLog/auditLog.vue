@@ -283,7 +283,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   box-sizing: border-box;
   background-color: var(--ui-bg);
 }
@@ -340,7 +340,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 }
 
 .audit__search-btn {
-  padding: 0 24rpx;
+  padding: 0 20rpx;
   height: 72rpx;
   line-height: 72rpx;
   border-radius: 16rpx;
