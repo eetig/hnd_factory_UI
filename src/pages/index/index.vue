@@ -5087,7 +5087,7 @@ onPullDownRefresh(async () => {
   /* 底部补白 = 停靠栏高度 + 安全区 + 20px 呼吸 —— 两个都是变量，改底栏高度只需改
      App.vue 里的 --ui-dock-h，这里自动跟上。底栏是 fixed、不占文档流，
      不留这段补白，列表最后一行就会被它压住。 */
-  padding: 28px 16px
+  padding: 0 16px
     calc(var(--ui-dock-h) + var(--ui-safe-bottom, 0px) + 20px);
   // 场景先于玻璃：深墨蓝底 + 3 个大半径柔光光斑，纯 CSS、不引图片、不加 DOM。
   // 画法与 token 都在 uni.scss 的 @mixin scene-bg 里（两套主题各一套值）。
