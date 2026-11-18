@@ -7,7 +7,8 @@ import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
 import DateField from '../../components/DateField.vue'
 import { chooseImages } from '../../utils/chooseImages'
-import { handleGlobalBack, pushPopup, removePopup } from '../../utils/popupStack'
+import { handleGlobalBack } from '../../utils/popupStack'
+import AppPopup from '../../components/AppPopup.vue'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -1383,13 +1384,6 @@ watch(
  * 返回手势优先级（2026-11-18）：弹窗开着时，边缘内滑只关弹窗，不许顺手把页面也退掉。
  * 栈空时返回 false，交回框架的默认返回（这一页没有抽屉，直接退页面对）。
  */
-function registerPopup(id, open, close) {
-  if (open) pushPopup(id, close)
-  else removePopup(id)
-}
-
-watch(photoSheetOpen, (open) => registerPopup('meter-photo-sheet', open, () => { photoSheetOpen.value = false }))
-
 onBackPress(() => {
   // 统一走全局守卫（2026-11-18 全局化）：有弹窗先关弹窗，没弹窗就交回框架返回上一页
   return handleGlobalBack() !== 'root'
@@ -1764,7 +1758,7 @@ onBackPress(() => {
     </template>
 
       <!-- 拍表存证入口：跟「图片解析」的"添加单据图片"同一套弹层，选完才进系统相机/相册 -->
-      <wd-popup
+      <AppPopup
         v-model="photoSheetOpen"
         position="bottom"
         round
@@ -1791,7 +1785,7 @@ onBackPress(() => {
 
           <view class="photo-sheet__cancel" @click="photoSheetOpen = false">取消</view>
         </view>
-      </wd-popup>
+      </AppPopup>
   
 </view>
 </template>

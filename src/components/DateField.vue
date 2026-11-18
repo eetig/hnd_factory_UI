@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref } from 'vue'
 import { formatMonthDay, getToday } from '../utils/format'
+import AppPopup from './AppPopup.vue'
 
 // 日期选择字段（企业微信-会议同款的底部日历弹层）。
 //
@@ -299,7 +300,7 @@ function confirm() {
       <wd-icon name="calendar" size="16px" custom-class="date-field__icon" />
     </view>
 
-    <wd-popup
+    <AppPopup
       v-model="sheetVisible"
       position="bottom"
       safe-area-inset-bottom
@@ -392,7 +393,7 @@ function confirm() {
           </view>
         </view>
       </view>
-    </wd-popup>
+    </AppPopup>
   </view>
 </template>
 <style scoped lang="scss">
