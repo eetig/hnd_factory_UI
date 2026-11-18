@@ -141,8 +141,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { computed, ref, watch } from 'vue'
+import { onBackPress, onShow } from '@dcloudio/uni-app'
+import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
 
 import request from '../../api/request'
 import { uploadFile } from '../../api/upload'
@@ -425,6 +426,23 @@ function toast(title) {
 
 onShow(() => {
   load(booting.value)
+})
+
+/*
+ * 返回手势优先级（2026-11-18）：弹窗开着时，边缘内滑只关弹窗，不许顺手把页面也退掉。
+ * 栈空时返回 false，交回框架的默认返回（这一页没有抽屉，直接退页面对）。
+ */
+function registerPopup(id, open, close) {
+  if (open) pushPopup(id, close)
+  else removePopup(id)
+}
+
+watch(sheetOpen, (open) => registerPopup('todo-sheet', open, () => { sheetOpen.value = false }))
+watch(photoOpen, (open) => registerPopup('todo-photo', open, () => { photoOpen.value = false }))
+
+onBackPress(() => {
+  if (closeTopPopup()) return true
+  return false
 })
 </script>
 

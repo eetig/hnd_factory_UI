@@ -4,6 +4,7 @@ import { onBackPress, onUnload, onPullDownRefresh } from '@dcloudio/uni-app'
 import { useMessage, useToast } from 'wot-design-uni'
 import dayjs from 'dayjs'
 import request from '../../api/request'
+import { hasPopup, closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
 import { uploadFiles } from '../../api/upload'
 import { resolveAssetUrl, resolveVesselImage } from '../../api/config'
 import { authState, clearAuth, getRoleName, hasPerm, isAdmin, isLoggedIn } from '../../api/auth'
@@ -455,7 +456,13 @@ function closeMenu() {
  *    它只把 ON_BACK_PRESS 交给 invokeHook（安卓返回键 → backbutton → navigateBack），
  *    ON_LAST_PAGE_BACK_PRESS 只在 uni.x.* 那几个运行时里用。
  */
+
 onBackPress(() => {
+  // 有弹窗：这一下只关最上面那层弹窗，抽屉一步都不动（2026-11-18 使用方实测踩坑）
+  if (hasPopup()) {
+    closeTopPopup()
+    return true
+  }
   if (!navDrawer.value) return false // 抽屉还没挂上（理论上只在首帧之前）：交回框架默认行为
   if (navDrawer.value.isOpen()) closeMenu()
   else openMenu()
@@ -1637,6 +1644,20 @@ const weeklyImageDeleting = ref(false)
 // 周统计原图给内嵌查看器用的地址数组（与上面的 weeklyImageList 同源）
 const weeklyViewerUrls = computed(() => weeklyImageList.value.map((item) => resolveAssetUrl(item.url)))
 const weeklyProductDialogVisible = ref(false)
+/*
+ * 弹窗栈（2026-11-18）：本页自己的五个弹层也要登记，
+ * 否则「返回手势先关弹窗」只对采购需求面板生效，图片查看器、拍表来源这些照样被抽屉抢走。
+ */
+function registerPopup(id, open, close) {
+  if (open) pushPopup(id, close)
+  else removePopup(id)
+}
+
+watch(imageDialogVisible, (open) => registerPopup('home-image-dialog', open, () => { imageDialogVisible.value = false }))
+watch(weeklyImageDialogVisible, (open) => registerPopup('home-weekly-image', open, () => { weeklyImageDialogVisible.value = false }))
+watch(photoSheetOpen, (open) => registerPopup('home-photo-sheet', open, () => { photoSheetOpen.value = false }))
+watch(weeklyProductDialogVisible, (open) => registerPopup('home-weekly-product', open, () => { weeklyProductDialogVisible.value = false }))
+watch(imageViewerVisible, (open) => registerPopup('home-image-viewer', open, () => { imageViewerVisible.value = false }))
 const weeklyProductFilter = ref('')
 /** 产成品候选：同样改由接口给（分页之后前端不再持有全量工单） */
 const weeklyProductOptions = ref([])

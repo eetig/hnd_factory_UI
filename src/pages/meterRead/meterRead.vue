@@ -7,6 +7,7 @@ import { resolveAssetUrl } from '../../api/config'
 import { useTheme } from '../../composables/useTheme'
 import DateField from '../../components/DateField.vue'
 import { chooseImages } from '../../utils/chooseImages'
+import { closeTopPopup, pushPopup, removePopup } from '../../utils/popupStack'
 
 /*
  * 手机抄表（2026-11-03）。
@@ -1377,6 +1378,22 @@ watch(
     nextTick(() => setTimeout(measureNames, 80))
   },
 )
+
+/*
+ * 返回手势优先级（2026-11-18）：弹窗开着时，边缘内滑只关弹窗，不许顺手把页面也退掉。
+ * 栈空时返回 false，交回框架的默认返回（这一页没有抽屉，直接退页面对）。
+ */
+function registerPopup(id, open, close) {
+  if (open) pushPopup(id, close)
+  else removePopup(id)
+}
+
+watch(photoSheetOpen, (open) => registerPopup('meter-photo-sheet', open, () => { photoSheetOpen.value = false }))
+
+onBackPress(() => {
+  if (closeTopPopup()) return true
+  return false
+})
 </script>
 
 <template>
