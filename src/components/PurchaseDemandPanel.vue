@@ -52,6 +52,36 @@ import { chooseImages } from '../utils/chooseImages'
 
 const toast = useToast()
 
+/*
+ * 两种用法（2026-11-18）：
+ * - mode="purchase"：采购需求（CGSQ 为主），四胶囊 待提单/等货/已到货/全部；
+ * - mode="expense" ：费用申请（ZCSG 资产申购 + FWCGSQ 服务采购），三列 + 全部，照 PC 看板口径。
+ * 两者共用同一套卡片、详情、催一下、验收、作废，只在「筛哪些行 / 分哪几段 / 默认单据类型」上分叉 ——
+ * 界面结构一模一样，用户在两页之间不会重新学一遍。
+ */
+const props = defineProps({
+  mode: { type: String, default: 'purchase' },
+  /*
+   * 是否正显示在这一页上。
+   *
+   * 首页用 v-show 同时挂两个面板（采购 / 费用），隐藏的那个在挂载时宽高全是 0，
+   * SelectorQuery 量不到胶囊矩形 —— 果冻色块就会宽 0、看不见。所以切回来时
+   * 要重量一次。默认 true 是给「单独当一页用」的场景兜底。
+   */
+  active: { type: Boolean, default: true },
+})
+
+const isExpense = computed(() => props.mode === 'expense')
+
+// 记一句 / 新增时不用选类型：费用页默认资产申购，采购页默认采购申请
+const defaultOrderType = computed(() => (isExpense.value ? 'ZCSG' : 'CGSQ'))
+
+const ORDER_TYPE_OPTIONS = [
+  { key: 'CGSQ', label: '采购申请' },
+  { key: 'FWCGSQ', label: '服务采购' },
+  { key: 'ZCSG', label: '资产申购' },
+]
+
 const canEdit = computed(() => hasPerm('purchase:edit') || hasPerm('admin'))
 
 
@@ -135,6 +165,10 @@ function buildParams(page) {
   if (kw) params.keyword = kw
 
   if (statusFilter.value) params.statuses = statusFilter.value
+
+  // 费用页就让后端只回这两类单，省得把采购单也拉下来再在本地筛（页面里仍会按 isExpenseRow 再筛一次，
+  // 因为「有单号但 order_type 为空」的老数据要靠单号前缀推断，后端按列筛会漏掉它们）
+  if (isExpense.value) params.orderTypes = EXPENSE_ORDER_TYPES.join(',')
 
   return params
 
@@ -408,6 +442,24 @@ function buildCards(list) {
 
     card.overdue = overdue
 
+    // 费用申请的三列口径（照 PC 看板）：没 OA 单号→待提单；缺验收单号→待验收（到没到货都算）；齐全且 30 天内→已关联验收
+    const acceptDays = card.items
+      .map((row) => String(row.actualArrivalDate || row.updateTime || row.requestDate || '').slice(0, 10))
+      .filter(Boolean)
+      .sort()
+    const acceptDay = acceptDays.length ? acceptDays[acceptDays.length - 1] : ''
+    const acceptFresh = acceptDay
+      ? (Date.now() - new Date(`${acceptDay}T00:00:00`).getTime()) / 86400000 <= 30
+      : false
+    card.acceptDay = acceptDay
+    card.expenseSection = !card.oaNo
+      ? 'pendingOa'
+      : missingAcceptanceNo
+        ? 'toAccept'
+        : acceptFresh
+          ? 'accepted'
+          : 'acceptedOld'
+
     card.nameText = first.materialName || '（没写物料名）'
 
     card.extraNames = card.items.slice(1).map((row) => row.materialName).filter(Boolean)
@@ -463,7 +515,32 @@ function buildCards(list) {
 
 
 
-const cards = computed(() => buildCards(rows.value))
+/*
+ * 单据类型（2026-11-18）：
+ * 后端 order_type 只有三种（CGSQ 采购申请 / FWCGSQ 服务采购申请 / ZCSG 资产申购）。
+ * 老数据可能没填，就按 OA 单号里的关键字认；**认不出来算采购** —— 否则刚记下还没填单号的行
+ * 会同时从两个页面消失，用户以为丢了。
+ */
+const EXPENSE_ORDER_TYPES = ['ZCSG', 'FWCGSQ']
+
+function effectiveOrderType(row) {
+  const raw = String((row && row.orderType) || '').toUpperCase()
+  if (raw) return raw
+  const oa = String((row && row.oaNo) || '').toUpperCase()
+  if (oa.includes('FWCGSQ')) return 'FWCGSQ'
+  if (oa.includes('ZCSG')) return 'ZCSG'
+  if (oa.includes('CGSQ')) return 'CGSQ'
+  return ''
+}
+
+function isExpenseRow(row) {
+  return EXPENSE_ORDER_TYPES.includes(effectiveOrderType(row))
+}
+
+// 采购页收「不是费用的」，费用页只收费用 —— 两页加起来正好是全部，不重不漏
+const scopedRows = computed(() => rows.value.filter((row) => (isExpense.value ? isExpenseRow(row) : !isExpenseRow(row))))
+
+const cards = computed(() => buildCards(scopedRows.value))
 /*
  * 单号点开 OA 原单（2026-11-18 用户要求「单号可以点击跳转链接，用手机默认浏览器」）。
  *
@@ -603,6 +680,8 @@ async function saveQuick() {
       text,
 
       requester: quickRequester.value.trim(),
+
+      orderType: defaultOrderType.value,
 
     })
 
@@ -920,6 +999,12 @@ const formError = ref('')
 
 const isCreate = ref(true)
 
+// 标题跟着页面走：费用页不写「采购」两个字，否则用户以为点错了
+const formTitle = computed(() => {
+  const noun = isExpense.value ? '费用申请' : '采购需求'
+  return isCreate.value ? `新增${noun}` : `${noun}详情`
+})
+
 const savedCount = ref(0)
 
 const lastSavedText = ref('')
@@ -988,6 +1073,8 @@ function blankDraft() {
 
     oaNo: '',
 
+    orderType: '',
+
     deliveryNote: '',
 
     remark: '',
@@ -1030,7 +1117,7 @@ function openCreate() {
 
   lastSavedText.value = ''
 
-  resetForm()
+  resetForm({ orderType: defaultOrderType.value })
 
   formOpen.value = true
 
@@ -1249,6 +1336,9 @@ function buildPayload() {
     actualArrivalDate: text(form.actualArrivalDate),
 
     oaNo: text(form.oaNo),
+
+    // 没填就按 OA 单号认；还认不出就按当前页面默认（费用 ZCSG / 采购 CGSQ）
+    orderType: text(form.orderType) || effectiveOrderType({ orderType: '', oaNo: form.oaNo }) || defaultOrderType.value,
 
     deliveryNote: text(form.deliveryNote),
 
@@ -1571,6 +1661,18 @@ function measureChips() {
   })
 }
 
+// 从隐藏切回可见：重新量一次胶囊（隐藏时量到的是 0，果冻色块会消失）
+watch(
+  () => props.active,
+  (on) => {
+    if (!on) return
+    pageWidth.value = uni.getSystemInfoSync().windowWidth || pageWidth.value
+    nextTick(() => {
+      measureChips()
+    })
+  },
+)
+
 function onChipsScroll(event) {
   chipsScrollLeft.value = (event && event.detail && event.detail.scrollLeft) || 0
   syncPill()
@@ -1692,6 +1794,68 @@ const pageViews = computed(() => {
 })
 
 
+
+/*
+ * 费用申请页的四页（2026-11-18）：
+ * 三列照 PC 看板（待提单 / 待验收 / 已关联验收），第四页「全部」是手机上的习惯 ——
+ * 页宽写死 25%，所以这里必须也是 4 页，轨道数学不用动。
+ */
+const EXPENSE_TABS = [
+  { key: 'pendingOa', label: '待提单' },
+  { key: 'toAccept', label: '待验收' },
+  { key: 'accepted', label: '已关联验收' },
+  { key: 'all', label: '全部' },
+]
+
+const expenseTabCounts = computed(() => ({
+  pendingOa: cards.value.filter((c) => c.expenseSection === 'pendingOa').length,
+  toAccept: cards.value.filter((c) => c.expenseSection === 'toAccept').length,
+  accepted: cards.value.filter((c) => c.expenseSection === 'accepted').length,
+  all: cards.value.length,
+}))
+
+const expensePageViews = computed(() => {
+  const fresh = cards.value.filter((c) => c.expenseSection === 'accepted')
+  const old = cards.value.filter((c) => c.expenseSection === 'acceptedOld')
+  const all = [...cards.value].sort((a, b) => String(b.sortDate || '').localeCompare(String(a.sortDate || '')))
+  return [
+    {
+      key: 'pendingOa',
+      blocks: [{ key: 'p', cards: cards.value.filter((c) => c.expenseSection === 'pendingOa'), empty: '还没有口头记下的费用' }],
+    },
+    {
+      key: 'toAccept',
+      blocks: [{ key: 't', cards: cards.value.filter((c) => c.expenseSection === 'toAccept'), empty: '没有等着录验收单的' }],
+    },
+    {
+      key: 'accepted',
+      blocks: [
+        { key: 'n', title: '近 30 天', cards: fresh, empty: '近 30 天没有刚验收的' },
+        { key: 'o', title: '更早', cards: old, empty: '' },
+      ],
+    },
+    { key: 'all', blocks: [{ key: 'a', cards: all, empty: '还没有费用申请 —— 点右上「记一句」就能记一条' }] },
+  ]
+})
+
+const activeTabs = computed(() => (isExpense.value ? EXPENSE_TABS : TABS))
+
+const activeCounts = computed(() => (isExpense.value ? expenseTabCounts.value : tabCounts.value))
+
+// 计数一变，胶囊文字宽度就变（「待验收 10」比「待验收 0」宽一档）——重新量一次，
+// 否则果冻色块按旧宽度画，右边会缺一小截。只在可见时量，隐藏时量到的是 0。
+watch(
+  () => activeCounts.value,
+  () => {
+    if (!props.active) return
+    nextTick(() => {
+      measureChips()
+    })
+  },
+  { deep: true },
+)
+
+const activeViews = computed(() => (isExpense.value ? expensePageViews.value : pageViews.value))
 
 const trackStyle = computed(() => ({
 
@@ -1887,7 +2051,7 @@ function onTouchEnd() {
 
         <view
 
-          v-for="(tab, i) in TABS"
+          v-for="(tab, i) in activeTabs"
 
           :id="`chip-${tab.key}`"
 
@@ -1903,7 +2067,7 @@ function onTouchEnd() {
 
           <text class="pd__chip-label">{{ tab.label }}</text>
 
-          <text class="pd__chip-n">{{ tabCounts[tab.key] }}</text>
+          <text class="pd__chip-n">{{ activeCounts[tab.key] }}</text>
 
         </view>
 
@@ -1943,7 +2107,7 @@ function onTouchEnd() {
 
     >
 
-      <view v-for="page in pageViews" :key="page.key" class="pd__page">
+      <view v-for="page in activeViews" :key="page.key" class="pd__page">
 
         <view class="pd__scroll">
 
@@ -2311,7 +2475,7 @@ function onTouchEnd() {
 
         <view class="pf__head">
 
-          <text class="pf__title">{{ isCreate ? '新增采购需求' : '采购需求详情' }}</text>
+          <text class="pf__title">{{ formTitle }}</text>
 
           <text class="pf__close" @click="closeForm">关闭</text>
 
@@ -2338,6 +2502,17 @@ function onTouchEnd() {
           <view class="pf__group">
 
             <text class="pf__group-title">基本信息</text>
+
+            <!-- 单据类型：不选也能存（按页面默认），但费用页要能区分资产申购与服务采购 -->
+            <view class="pf__types">
+              <text
+                v-for="opt in ORDER_TYPE_OPTIONS"
+                :key="opt.key"
+                class="pf__type"
+                :class="{ 'is-on': effectiveOrderType({ orderType: form.orderType, oaNo: form.oaNo }) === opt.key }"
+                @click="form.orderType = opt.key"
+              >{{ opt.label }}</text>
+            </view>
 
             <view class="pf__row">
 
@@ -4943,5 +5118,27 @@ function onTouchEnd() {
   text-underline-offset: 4rpx;
 
 }
+.pf__types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin: 0 0 18rpx;
+}
+
+.pf__type {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+  background: var(--ui-raise-2);
+  border: 2rpx solid transparent;
+}
+
+.pf__type.is-on {
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+  font-weight: 600;
+}
+
 </style>
 

@@ -177,6 +177,7 @@ const tabs = [
   // 采购需求（2026-10-23，变更-164）：与 PC 的 变更-142/144 同一套行为 ——
   // 新增保存后不关表单、只清物料三样；长按行号复制三样、长按名称/编码/规格复制单项
   { key: 'purchaseDemand', label: '采购需求', icon: 'cart', hint: '登记采购需求与到货进度', adminOnly: true, group: 'purchase' },
+      { key: 'expense', label: '费用申请', icon: 'receipt', hint: '资产申购 / 服务采购申请', adminOnly: true, group: 'purchase' },
   // 个人考勤（2026-10-24，变更-171）：事后录入自己的打卡时间，和人事对账。
   // 不做迟到早退计算（使用方口径：迟了早了就按段标"忘打卡"）。
   // 任何登录用户都能看自己的；保存/清除按 attendance:edit 权限（面板内判断）。
@@ -199,7 +200,7 @@ const tabs = [
  *   locked：可见、灰化、点一下弹提示（未登录说"需要注册"，已登录非管理员说"需要管理员"）
  */
 const PUBLIC_TAB_KEYS = new Set(['stock', 'vessel'])
-const ADMIN_TAB_KEYS = new Set(['equipment', 'materialImport', 'purchaseDemand'])
+const ADMIN_TAB_KEYS = new Set(['equipment', 'materialImport', 'purchaseDemand', 'expense'])
 
 function tabState(tab) {
   if (!tab) return 'locked'
@@ -225,7 +226,7 @@ const availableTabs = computed(() => tabs.filter((tab) => tabState(tab) === 'ava
  * 每个 key 都要在 tabs 里存在才会渲染 —— 平台差异（小程序没有「文件导入」之类）
  * 与权限过滤都走同一条路，不会出现点了没反应的卡片。
  */
-const ENTRY_KEYS = ['imageParse', 'attendance', 'purchaseDemand', 'tankLevel', 'workOrder', 'stock']
+const ENTRY_KEYS = ['imageParse', 'attendance', 'purchaseDemand', 'expense', 'tankLevel', 'workOrder', 'stock']
 
 /*
  * 说用频次只存本机（localStorage / uni storage），不上报、不参与后端逻辑。
@@ -4220,7 +4221,12 @@ onPullDownRefresh(async () => {
 
       <!-- 采购需求（2026-10-23，变更-164） -->
       <div v-show="activeTab === 'purchaseDemand'">
-        <PurchaseDemandPanel />
+        <PurchaseDemandPanel :active="activeTab === 'purchaseDemand'" />
+      </div>
+
+      <!-- 费用申请（2026-11-18）：与采购需求同一套卡片，只筛 ZCSG / FWCGSQ 两类单 -->
+      <div v-show="activeTab === 'expense'">
+        <PurchaseDemandPanel mode="expense" :active="activeTab === 'expense'" />
       </div>
 
       <div v-show="activeTab === 'tankLevel'">
