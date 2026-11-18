@@ -9,6 +9,7 @@ import {
   effectiveOrderType,
   groupExpenseBoardByOa,
   inferOrderType,
+  oaNoDay,
 } from '../../src/components/purchase/boardGroups.js'
 
 /*
@@ -18,7 +19,8 @@ import {
  *   · 采购申请(CGSQ) 留采购看板；资产申购(ZCSG) + 服务采购申请(FWCGSQ) 归这一页
  *   · 三列 = 待提单(没 OA 单号) / 待验收(有单号、验收单号空) / 已关联验收(验收单号非空)
  *   · 已关联验收只展开最近 30 天，更早的折叠成一句提示（staleCount）
- *   · 没有"超期"这一列，也不按急慢排序（待提单按提出日、待验收按到货日、已关联验收按办完日倒序）
+ *   · 没有"超期"这一列，也不按急慢排序
+ *     （2026-11-18 变更-229 改：待验收 / 已关联验收按 **OA 单号里的日期由近到远**；待提单没单号，按提出日新的在上）
  *   · 单号带 CGSQ/FWCGSQ/ZCSG 而 order_type 空着的老数据，按单号推断，不能两边都不认
  */
 
@@ -142,18 +144,47 @@ describe('费用申请：单据类型归属', () => {
 })
 
 describe('费用申请：列内排序', () => {
-  it('待提单按提出日早的在上；待验收按要求到货日早的在上', () => {
+  /*
+   * 2026-11-18 变更-229：使用方拿截图圈住单号后面那串数字说
+   * 「每个单号的后面一串，是日期，按这个日期由近到远排序」。
+   * 于是待验收不是「哪个先到货谁在上」了，而是「哪个单子新谁在上」。
+   */
+  it('待提单按提出日新的在上；待验收按单号里的日期新的在上', () => {
     const { columns } = groupExpenseBoardByOa(
       [
         row({ id: 1, oaNo: '', orderType: '', requestDate: '2026-11-05' }),
         row({ id: 2, oaNo: '', orderType: '', requestDate: '2026-10-20' }),
-        row({ id: 3, oaNo: 'B-1', requiredArrivalDate: '2026-12-01' }),
-        row({ id: 4, oaNo: 'B-2', requiredArrivalDate: '2026-11-12' }),
+        // 单号日期 10-22 比 09-03 新 —— 即使 09-03 那张更早到货，也要排在下面
+        row({ id: 3, oaNo: 'F-FWCGSQ-20250903001', requiredArrivalDate: '2025-09-10' }),
+        row({ id: 4, oaNo: 'F-FWCGSQ-20261022006', requiredArrivalDate: '2026-12-01' }),
       ],
       TODAY,
     )
-    expect(columns[0].cards.map((c) => c.lead.id)).toEqual([2, 1])
+    expect(columns[0].cards.map((c) => c.lead.id)).toEqual([1, 2])
     expect(columns[1].cards.map((c) => c.lead.id)).toEqual([4, 3])
+  })
+
+  it('同一天的单号看序号；单号里认不出日期的垫底', () => {
+    const { columns } = groupExpenseBoardByOa(
+      [
+        row({ id: 1, oaNo: 'F-FWCGSQ-20261022003' }),
+        row({ id: 2, oaNo: 'F-FWCGSQ-20261022007' }),
+        row({ id: 3, oaNo: '无单号编号' }),
+      ],
+      TODAY,
+    )
+    expect(columns[1].cards.map((c) => c.lead.id)).toEqual([2, 1, 3])
+  })
+})
+
+describe('费用申请：从单号里读日期（oaNoDay）', () => {
+  it('认得 年月日+序号、年月+序号，认不出返回 null', () => {
+    expect(oaNoDay('F-FWCGSQ-20250606001')).toEqual({ key: 20250606, seq: 1 })
+    expect(oaNoDay('CG-CGSQ-20261022006')).toEqual({ key: 20261022, seq: 6 })
+    // F-ZCSG-2026100008 是"年月 + 4 位序号"，没有日
+    expect(oaNoDay('F-ZCSG-2026100008')).toEqual({ key: 20261000, seq: 8 })
+    expect(oaNoDay('F-ZCSG-1')).toBeNull()
+    expect(oaNoDay('')).toBeNull()
   })
 })
 

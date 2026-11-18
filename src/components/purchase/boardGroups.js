@@ -375,16 +375,67 @@ function idOf(row) {
   return Number(row?.id) || 0
 }
 
-/** 待提单列：提得越早越靠上（这批单等最久） */
-function byRequestDateAsc(a, b) {
+/*
+ * 从 OA 单号里读日期（2026-11-18，变更-229）。
+ *
+ * 使用方原话：「每个单号的后面一串，是日期，按这个日期由近到远排序」。
+ * OA 的单号是「类型-日期+序号」：
+ *   F-FWCGSQ-20250606001  → 2025-06-06，序号 001
+ *   CG-CGSQ-20261022006   → 2026-10-22，序号 006
+ *   F-ZCSG-2026100008     → 2026-10（年+月+4 位序号，没有"日"）
+ * 所以先按 8 位认年月日，认不出再退成 6 位（当年月，排在同月有日期的后面）。
+ * 认不出来返回 null —— 这类卡由调用方排到本列最后，而不是假装它是今天。
+ */
+export function oaNoDay(oaNo = '') {
+  const hit = String(oaNo || '').match(/\d{6,}/)
+  if (!hit) return null
+  const run = hit[0]
+
+  if (run.length >= 8) {
+    const y = Number(run.slice(0, 4))
+    const m = Number(run.slice(4, 6))
+    const d = Number(run.slice(6, 8))
+    const dt = new Date(y, m - 1, d)
+    if (y >= 2000 && m >= 1 && m <= 12 && d >= 1 && d <= 31 && dt.getMonth() === m - 1 && dt.getDate() === d) {
+      return { key: y * 10000 + m * 100 + d, seq: Number(run.slice(8)) || 0 }
+    }
+  }
+
+  const y = Number(run.slice(0, 4))
+  const m = Number(run.slice(4, 6))
+  if (y >= 2000 && y <= 2100 && m >= 1 && m <= 12) {
+    return { key: y * 10000 + m * 100, seq: Number(run.slice(6)) || 0 }
+  }
+  return null
+}
+
+/** 待提单列：刚提的靠上（没填提出日的垫底） */
+function byRequestDateDesc(a, b) {
   const da = isoDay(a.requestDate)
   const db = isoDay(b.requestDate)
   if (da !== db) {
     if (!da) return 1
     if (!db) return -1
-    return da < db ? -1 : 1
+    return da > db ? -1 : 1
   }
-  return idOf(a) - idOf(b)
+  return idOf(b) - idOf(a)
+}
+
+/**
+ * 费用申请列内排序（2026-11-18，变更-229）：**按 OA 单号里的日期由近到远**。
+ *
+ * 同一天看序号（`…06001` 比 `…06002` 早）；序号也相同再退到提出日。
+ * 单号里认不出日期的卡垫底 —— 宁可沉下去，也不要被当成最新的顶到最上面。
+ */
+function byOaNoDateDesc(a, b) {
+  const da = oaNoDay(a.oaNo)
+  const db = oaNoDay(b.oaNo)
+  if (!da && !db) return byRequestDateDesc(a, b)
+  if (!da) return 1
+  if (!db) return -1
+  if (da.key !== db.key) return db.key - da.key
+  if (da.seq !== db.seq) return db.seq - da.seq
+  return byRequestDateDesc(a, b)
 }
 
 /** 待验收列：要求到货日早的靠上（该来的先到），没填的排最后 */
@@ -445,19 +496,26 @@ export function groupExpenseBoardByOa(rows = [], today = new Date()) {
   }
 
   /** 先按 OA 合并，再按各列自己的口径排（行序与卡序都要重排） */
-  function cardsOf(list, rowCmp) {
+  function cardsOf(list, rowCmp, cardCmp = rowCmp) {
     return groupCardsByOa(list)
       .map((card) => {
         const sorted = card.rows.slice().sort(rowCmp)
         return { ...card, rows: sorted, lead: sorted[0] }
       })
-      .sort((a, b) => rowCmp(a.lead, b.lead))
+      .sort((a, b) => cardCmp(a.lead, b.lead))
   }
 
+  /*
+   * 卡序口径（2026-11-18，变更-229 改）：
+   *   待提单      没有单号可读 → 按提出日，**新的在上**（使用方确认的口径）
+   *   待验收      按单号里的日期由近到远（原来是"早到货的在上"，已按使用方要求翻转）
+   *   已关联验收  同样按单号日期由近到远（原来是按办完日）
+   * 行内顺序不动：待验收仍按到货日、已关联验收仍按办完日 —— 一张卡里对账看出货先后。
+   */
   const definitions = [
-    { ...EXPENSE_COLUMNS[0], cards: cardsOf(pending, byRequestDateAsc) },
-    { ...EXPENSE_COLUMNS[1], cards: cardsOf(toAccept, byArrivalAsc) },
-    { ...EXPENSE_COLUMNS[2], cards: cardsOf(accepted, byAcceptedDesc) },
+    { ...EXPENSE_COLUMNS[0], cards: cardsOf(pending, byRequestDateDesc) },
+    { ...EXPENSE_COLUMNS[1], cards: cardsOf(toAccept, byArrivalAsc, byOaNoDateDesc) },
+    { ...EXPENSE_COLUMNS[2], cards: cardsOf(accepted, byAcceptedDesc, byOaNoDateDesc) },
   ]
 
   return {
