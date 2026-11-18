@@ -1,6 +1,6 @@
 <script setup>
 
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, reactive, ref, watch } from 'vue'
 
 import { useToast } from 'wot-design-uni'
 
@@ -425,6 +425,27 @@ function buildCards(list) {
 
     card.dueText = card.dueDate ? `要求 ${card.dueDate.slice(5)}` : '没定到货日'
 
+    /*
+     * 每条物料都平铺（2026-11-18 用户要求）：
+     * 之前同一张 OA 单只显示第一条、其余收成「另 N 项」，他要翻旧采购记录时被折叠挡住找不到。
+     * 现在把整张单的每一行都摊在卡面上，一行一条：名称 + 数量、规格、要求到货 + 本行状态。
+     */
+    card.rows = card.items.map((row) => ({
+      id: row.id,
+      name: row.materialName || '（没写物料名）',
+      spec: String(row.spec || '').trim(),
+      qtyText: quantityText(row),
+      dueText: row.requiredArrivalDate ? `要求 ${row.requiredArrivalDate.slice(5)}` : '没定到货日',
+      stateText: row.acceptConfirmedAt
+        ? '已验收'
+        : row.actualArrivalDate
+          ? '已到货'
+          : row.status === 'OVERDUE'
+            ? '超期'
+            : '等货',
+      late: row.status === 'OVERDUE',
+    }))
+    card.oaUrl = card.items.map((row) => String(row.oaUrl || '').trim()).find(Boolean) || ''
     card.followText = card.followCount
 
       ? `催 ${card.followCount} 次 · ${String(card.lastFollowAt).slice(5, 10)}`
@@ -442,6 +463,25 @@ function buildCards(list) {
 
 
 const cards = computed(() => buildCards(rows.value))
+/*
+ * 单号点开 OA 原单（2026-11-18 用户要求「单号可以点击跳转链接，用手机默认浏览器」）。
+ *
+ * 链接直接取行上已经存好的 oaUrl —— 后端注释写得很清楚：存整条 URL 不存 favId，
+ * 零解析零猜测，用户当初粘的是什么就打开什么。
+ */
+function openOa(card) {
+  const url = String((card && card.oaUrl) || '').trim()
+  if (!url) {
+    uni.showToast({ title: '这条还没录 OA 链接', icon: 'none' })
+    return
+  }
+  // #ifdef APP-PLUS
+  plus.runtime.openURL(url)
+  // #endif
+  // #ifndef APP-PLUS
+  if (typeof window !== 'undefined') window.open(url, '_blank')
+  // #endif
+}
 
 
 
@@ -824,6 +864,12 @@ function editFromDetail() {
 onMounted(() => {
 
   loadList()
+
+  // 药丸要量真实胶囊宽度：等一帧布局，再等一次字体排版
+  nextTick(() => {
+    measureChips()
+    setTimeout(measureChips, 240)
+  })
 
 })
 
@@ -1494,6 +1540,68 @@ const TABS = [
 
 const tabIndex = ref(0)
 
+/*
+ * 胶囊切换的「液体果冻」动效（2026-11-18 用户要求）：
+ * 一个和胶囊同高同圆角的色块在胶囊条里滑过去，滑动过程中横着撑开、竖着压扁、
+ * 再回弹一下 —— 像一坨粘稠液体被挤着流过去，而不是瞬间换色。
+ *
+ * 位置与宽度靠 SelectorQuery 量真实胶囊矩形（文字长度不同，宽度不能猜），
+ * 胶囊条本身还能横向滚动，所以滚动时要重新对一次账（`chipsScrollLeft`）。
+ */
+const pillReady = ref(false)
+const pillFlowing = ref(false)
+const pillStyle = ref({ left: '0px', width: '0px' })
+const chipsScrollLeft = ref(0)
+let chipRects = []
+let flowTimer = 0
+const instance = getCurrentInstance()
+
+function syncPill() {
+  const rect = chipRects[tabIndex.value]
+  if (!rect) return
+  pillStyle.value = {
+    left: `${Math.round(rect.left - chipsScrollLeft.value)}px`,
+    width: `${Math.round(rect.width)}px`,
+  }
+  pillReady.value = true
+}
+
+function measureChips() {
+  const query = uni.createSelectorQuery().in(instance && instance.proxy)
+  query.select('.pd__chips').boundingClientRect()
+  query.selectAll('.pd__chip').boundingClientRect()
+  query.exec((res) => {
+    const box = res && res[0]
+    const list = (res && res[1]) || []
+    if (!box || !list.length) return
+    // 记的是「内容坐标」：加上当前滚动量，之后滚到哪都能换算回视口坐标
+    chipRects = list.map((rect) => ({
+      left: rect.left - box.left + chipsScrollLeft.value,
+      width: rect.width,
+    }))
+    syncPill()
+  })
+}
+
+function onChipsScroll(event) {
+  chipsScrollLeft.value = (event && event.detail && event.detail.scrollLeft) || 0
+  syncPill()
+}
+
+watch(tabIndex, () => {
+  syncPill()
+  pillFlowing.value = false
+  if (flowTimer) clearTimeout(flowTimer)
+  // 下一帧再加 is-flow，否则同一个类连加两次不重启动画
+  flowTimer = setTimeout(() => {
+    pillFlowing.value = true
+  }, 16)
+  setTimeout(() => {
+    pillFlowing.value = false
+  }, 520)
+})
+
+
 const chipAnchor = ref('chip-pending')
 
 const dragging = ref(false)
@@ -1759,31 +1867,61 @@ function onTouchEnd() {
 
     <!-- 四个胶囊：待提单 / 等货 / 已到货 / 全部（点一下切，左右划也能切） -->
 
-    <scroll-view class="pd__chips" scroll-x enable-flex :scroll-into-view="chipAnchor" scroll-with-animation>
+    <view class="pd__chips-wrap">
+
+      <!-- 果冻药丸：垫在文字下面，切胶囊时横撑竖压地流过去 -->
 
       <view
 
-        v-for="(tab, i) in TABS"
+        class="pd__pill"
 
-        :id="`chip-${tab.key}`"
+        :class="{ 'is-ready': pillReady, 'is-flow': pillFlowing }"
 
-        :key="tab.key"
+        :style="pillStyle"
 
-        class="pd__chip"
+      />
 
-        :class="{ 'is-on': tabIndex === i }"
+      <scroll-view
 
-        @click="goTab(i)"
+        class="pd__chips"
+
+        scroll-x
+
+        enable-flex
+
+        :scroll-into-view="chipAnchor"
+
+        scroll-with-animation
+
+        @scroll="onChipsScroll"
 
       >
 
-        <text class="pd__chip-label">{{ tab.label }}</text>
+        <view
 
-        <text class="pd__chip-n">{{ tabCounts[tab.key] }}</text>
+          v-for="(tab, i) in TABS"
 
-      </view>
+          :id="`chip-${tab.key}`"
 
-    </scroll-view>
+          :key="tab.key"
+
+          class="pd__chip"
+
+          :class="{ 'is-on': tabIndex === i }"
+
+          @click="goTab(i)"
+
+        >
+
+          <text class="pd__chip-label">{{ tab.label }}</text>
+
+          <text class="pd__chip-n">{{ tabCounts[tab.key] }}</text>
+
+        </view>
+
+      </scroll-view>
+
+    </view>
 
 
 
@@ -1855,7 +1993,7 @@ function onTouchEnd() {
 
                 <view class="pd__card-head">
 
-                  <text v-if="card.oaNo" class="pd__no-text">{{ card.oaNo }}</text>
+                  <text v-if="card.oaNo" class="pd__no-text is-link" @click.stop="openOa(card)">{{ card.oaNo }}</text>
 
                   <text v-else class="pd__oral">口头</text>
 
@@ -1879,23 +2017,31 @@ function onTouchEnd() {
 
 
 
-                <view class="pd__name">
+                <!-- 每条物料平铺（2026-11-18）：一张单有几行就摊几行，不再折叠成「另 N 项」 -->
 
-                  <text>{{ card.nameText }}</text>
+                <view class="pd__rows">
 
-                  <text v-if="card.extraNames.length" class="pd__extra">另 {{ card.extraNames.length }} 项</text>
+                  <view v-for="item in card.rows" :key="item.id" class="pd__row">
 
-                </view>
+                    <view class="pd__row-top">
 
-                <text v-if="card.specText" class="pd__spec-line">{{ card.specText }}</text>
+                      <text class="pd__row-name">{{ item.name }}</text>
 
+                      <text class="pd__row-qty">{{ item.qtyText }}</text>
 
+                    </view>
 
-                <view class="pd__foot">
+                    <text v-if="item.spec" class="pd__row-spec">{{ item.spec }}</text>
 
-                  <text class="pd__qty">{{ card.qtyText }}</text>
+                    <view class="pd__row-foot">
 
-                  <text class="pd__date" :class="{ 'is-late': card.overdue }">{{ card.dueText }}</text>
+                      <text class="pd__row-date" :class="{ 'is-late': item.late }">{{ item.dueText }}</text>
+
+                      <text class="pd__row-state" :class="{ 'is-late': item.late }">{{ item.stateText }}</text>
+
+                    </view>
+
+                  </view>
 
                 </view>
 
@@ -2539,13 +2685,103 @@ function onTouchEnd() {
 
 
 
+.pd__chips-wrap {
+
+  position: relative;
+
+  margin: 16rpx 0 8rpx;
+
+}
+
+/*
+
+ * 果冻药丸（2026-11-18）：一个和胶囊同高同圆角的色块垫在文字下面，
+
+ * 切胶囊时先滑过去（left/width 过渡），再用 scaleX 撑开、scaleY 压扁再回弹 ——
+
+ * 像一坨粘稠液体被挤着流过去。文字放在 z-index 更高的层里。
+
+ */
+
+.pd__pill {
+
+  position: absolute;
+
+  top: 10rpx;
+
+  left: 0;
+
+  height: 56rpx;
+
+  border-radius: 28rpx;
+
+  background-color: var(--ui-brand, #b4551f);
+
+  opacity: 0;
+
+  transition: left 380ms cubic-bezier(0.22, 1.2, 0.36, 1),
+
+    width 380ms cubic-bezier(0.22, 1.2, 0.36, 1);
+
+  &.is-ready {
+
+    opacity: 1;
+
+  }
+
+  &.is-flow {
+
+    animation: pd-pill-flow 460ms cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  }
+
+}
+
+@keyframes pd-pill-flow {
+
+  0% {
+
+    transform: scaleX(1) scaleY(1);
+
+  }
+
+  28% {
+
+    transform: scaleX(1.14) scaleY(0.78);
+
+  }
+
+  52% {
+
+    transform: scaleX(0.94) scaleY(1.08);
+
+  }
+
+  76% {
+
+    transform: scaleX(1.04) scaleY(0.97);
+
+  }
+
+  100% {
+
+    transform: scaleX(1) scaleY(1);
+
+  }
+
+}
+
+/* 高度要装得下 56rpx 胶囊 + 上下各 2rpx 边框，否则下沿被裁（用户 2026-11-18 反馈） */
+
 .pd__chips {
 
   white-space: nowrap;
 
-  margin: 16rpx 0 8rpx;
+  height: 76rpx;
 
-  height: 56rpx;
+  position: relative;
+
+  z-index: 1;
 
 }
 
@@ -2579,7 +2815,9 @@ function onTouchEnd() {
 
     color: #fff;
 
-    background-color: var(--ui-brand, #b4551f);
+    /* 背景交给药丸层画，胶囊自己透明，这样滑动时底色是连续的 */
+
+    background-color: transparent;
 
     border-color: transparent;
 
@@ -4603,5 +4841,118 @@ function onTouchEnd() {
 
 }
 
+/* 平铺的每一行物料（2026-11-18）：一行一条，挤着但不乱 */
+
+.pd__rows {
+
+  margin-top: 12rpx;
+
+  border-top: 2rpx solid var(--ui-hairline, rgba(20, 22, 28, 0.06));
+
+}
+
+.pd__row {
+
+  padding: 14rpx 0 10rpx;
+
+  border-bottom: 2rpx solid var(--ui-hairline, rgba(20, 22, 28, 0.06));
+
+  &:last-child {
+
+    border-bottom: none;
+
+    padding-bottom: 0;
+
+  }
+
+}
+
+.pd__row-top {
+
+  display: flex;
+
+  align-items: baseline;
+
+  justify-content: space-between;
+
+}
+
+.pd__row-name {
+
+  flex: 1;
+
+  min-width: 0;
+
+  font-size: 28rpx;
+
+  font-weight: 600;
+
+  color: var(--ui-text);
+
+  word-break: break-all;
+
+}
+
+.pd__row-qty {
+
+  flex-shrink: 0;
+
+  margin-left: 16rpx;
+
+  font-size: 26rpx;
+
+  font-weight: 600;
+
+  color: var(--ui-text);
+
+}
+
+.pd__row-spec {
+
+  display: block;
+
+  margin-top: 6rpx;
+
+  font-size: 22rpx;
+
+  line-height: 1.4;
+
+  color: var(--ui-text-2);
+
+  word-break: break-all;
+
+}
+
+.pd__row-foot {
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: space-between;
+
+  margin-top: 8rpx;
+
+  font-size: 22rpx;
+
+  color: var(--ui-text-3);
+
+}
+
+.pd__row-date.is-late,
+
+.pd__row-state.is-late {
+
+  color: var(--ui-amber-800, #8a4b12);
+
+}
+
+.pd__no-text.is-link {
+
+  text-decoration: underline;
+
+  text-underline-offset: 4rpx;
+
+}
 </style>
 
