@@ -214,8 +214,14 @@ function handlePickDrawing(source) {
       </scroll-view>
 
       <view class="eq-form__foot">
-        <wd-button plain @click="close">取消</wd-button>
-        <wd-button v-if="canEdit" type="primary" :loading="saving" @click="handleSave">保存</wd-button>
+        <view class="eq-form__btn eq-form__btn--ghost" @click="close">取消</view>
+        <view
+          v-if="canEdit"
+          class="eq-form__btn eq-form__btn--primary"
+          @click="handleSave"
+        >
+          {{ saving ? '保存中…' : '保存' }}
+        </view>
       </view>
     </view>
   </AppPopup>
@@ -337,8 +343,42 @@ function handlePickDrawing(source) {
 
 .eq-form__foot {
   display: flex;
-  gap: 20rpx;
-  padding: 16rpx 30rpx 24rpx;
-  border-top: 1rpx solid var(--ui-slate-200);
+  align-items: center;
+  gap: 14rpx;
+  padding: 18rpx 28rpx;
+  padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
+  border-top: 1px solid $ui-hairline;
+  background-color: var(--ui-sheet-fill);
+}
+
+/* 与液位表单同款按钮（TankLevelFormDialog.tlf__btn）：暖纸色系、不写死宽度 */
+.eq-form__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 84rpx;
+  padding: 0 34rpx;
+  border-radius: $ui-radius-pill;
+  font-size: 28rpx;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+.eq-form__btn:active {
+  opacity: 0.72;
+}
+.eq-form__btn--ghost {
+  border: 1px solid $ui-hairline;
+  background-color: transparent;
+  color: $ui-text-2;
+}
+.eq-form__btn--primary {
+  flex: 1;
+  min-width: 0;
+  background-color: $ui-accent;
+  color: $ui-on-light;
+  font-weight: 600;
 }
 </style>

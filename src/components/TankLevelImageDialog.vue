@@ -221,11 +221,13 @@ async function deleteSelected(chosen) {
 
       <!-- 只读用户不给上传入口：后端写接口要 tank_level:edit 权限，摆出来只会点出一串报错 -->
       <view v-if="canEdit" class="tli__footer">
-        <wd-button plain :loading="uploading" @click="pickImage('camera')">
+        <view class="tli__btn tli__btn--ghost" @click="pickImage('camera')">
           <wd-icon name="camera" size="16px" />
           <text class="tli__btn-text">拍照</text>
-        </wd-button>
-        <wd-button type="primary" :loading="uploading" @click="pickImage('album')">从相册选择</wd-button>
+        </view>
+        <view class="tli__btn tli__btn--primary" @click="pickImage('album')">
+          {{ uploading ? '处理中…' : '从相册选择' }}
+        </view>
       </view>
     </view>
   </AppPopup>
@@ -329,9 +331,44 @@ async function deleteSelected(chosen) {
   &__footer {
     display: flex;
     align-items: center;
-    gap: 16rpx;
+    gap: 14rpx;
     border-top: 1px solid $ui-hairline;
-    padding: 20rpx 32rpx;
+    padding: 18rpx 28rpx;
+    padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
+  }
+
+  /* 与液位表单同款按钮（见 TankLevelFormDialog.tlf__btn）：暖纸色系、不写死宽度 */
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    height: 84rpx;
+    padding: 0 34rpx;
+    border-radius: $ui-radius-pill;
+    font-size: 28rpx;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    box-sizing: border-box;
+
+    &:active {
+      opacity: 0.72;
+    }
+
+    &--ghost {
+      border: 1px solid $ui-hairline;
+      background-color: transparent;
+      color: $ui-text-2;
+    }
+
+    &--primary {
+      flex: 1;
+      min-width: 0;
+      background-color: $ui-accent;
+      color: $ui-on-light;
+      font-weight: 600;
+    }
   }
 
   &__btn-text {

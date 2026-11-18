@@ -1099,22 +1099,29 @@ async function handleDelete() {
         </template>
       </scroll-view>
 
+      <!--
+        底部操作条（2026-11-18 使用方：「最底部的颜色跟环境不搭，按钮也不好看，有的凸出到屏幕外」）
+        → 不再用 wd-button 的 error/primary（蓝色与红色都跟这套暖纸色系打架），
+        改成三种自己画的块：删除=淡红字底、取消=发丝线描边、保存=品牌色实心且吃掉剩余宽度。
+        任何一项都不再写死宽度，靠 flex + min-width:0 保证不出屏。
+      -->
       <view class="tlf__footer">
-        <wd-button
+        <view
           v-if="!readOnly && !isNew && canDelete"
-          type="error"
-          plain
-          :loading="deleting"
+          class="tlf__btn tlf__btn--danger"
           @click="handleDelete"
         >
-          删除
-        </wd-button>
-        <view class="tlf__footer-gap"></view>
-        <wd-button v-if="!readOnly" plain @click="close">取消</wd-button>
-        <wd-button v-if="!readOnly" type="primary" :loading="saving" @click="handleSave">
-          {{ isNew ? '保存并继续' : '保存' }}
-        </wd-button>
-        <wd-button v-else type="primary" @click="close">关闭</wd-button>
+          {{ deleting ? '删除中…' : '删除' }}
+        </view>
+        <view v-if="!readOnly" class="tlf__btn tlf__btn--ghost" @click="close">取消</view>
+        <view
+          v-if="!readOnly"
+          class="tlf__btn tlf__btn--primary"
+          @click="handleSave"
+        >
+          {{ saving ? '保存中…' : isNew ? '保存并继续' : '保存' }}
+        </view>
+        <view v-else class="tlf__btn tlf__btn--primary" @click="close">关闭</view>
       </view>
     </view>
   </AppPopup>
@@ -1529,17 +1536,60 @@ async function handleDelete() {
   &__footer {
     display: flex;
     align-items: center;
-    gap: 16rpx;
+    gap: 14rpx;
     /* 不许被内容挤压、也不许透明：内容滑到底时按钮区下面不会露出文字（2026-11-18） */
     flex-shrink: 0;
     background-color: var(--ui-sheet-fill);
     border-top: 1px solid $ui-hairline;
-    padding: 20rpx 32rpx;
+    padding: 18rpx 28rpx;
+    /* 全面屏底部手势条让开，别让按钮贴着白条（2026-11-18） */
+    padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
   }
 
-  // 把「删除」推到左边、其余按钮靠右
-  &__footer-gap {
-    flex: 1;
+  /*
+    三种按钮都自己画，不用 wd-button 的 error/primary：
+    蓝实心 + 红描边跟这套暖纸色系差得太远，而且写死宽度在窄屏上会顶出屏幕。
+  */
+  &__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    height: 84rpx;
+    padding: 0 34rpx;
+    border-radius: $ui-radius-pill;
+    font-size: 28rpx;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    box-sizing: border-box;
+
+    &:active {
+      opacity: 0.72;
+    }
+
+    /* 删除：淡红底、红字，退到最左，不抢保存的注意力 */
+    &--danger {
+      padding: 0 28rpx;
+      background-color: $ui-danger-soft;
+      color: $ui-danger;
+    }
+
+    /* 取消：只有一圈发丝线，和背景同色系 */
+    &--ghost {
+      border: 1px solid $ui-hairline;
+      background-color: transparent;
+      color: $ui-text-2;
+    }
+
+    /* 保存：品牌色实心，吃掉剩下的宽度；min-width:0 保证再长的文案也只占剩余空间 */
+    &--primary {
+      flex: 1;
+      min-width: 0;
+      background-color: $ui-accent;
+      color: $ui-on-light;
+      font-weight: 600;
+    }
   }
 }
 
