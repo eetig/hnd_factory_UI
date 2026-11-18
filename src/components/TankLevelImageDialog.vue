@@ -332,9 +332,9 @@ async function deleteSelected(chosen) {
     display: flex;
     align-items: center;
     gap: 14rpx;
-    border-top: 1px solid $ui-hairline;
-    padding: 18rpx 28rpx;
-    padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
+    /* 同液位表单：不吃底色、不画分隔线，弹层是一整块（2026-11-18） */
+    padding: 12rpx 28rpx;
+    padding-bottom: calc(12rpx + env(safe-area-inset-bottom));
   }
 
   /* 与液位表单同款按钮（见 TankLevelFormDialog.tlf__btn）：暖纸色系、不写死宽度 */
@@ -343,10 +343,10 @@ async function deleteSelected(chosen) {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    height: 84rpx;
-    padding: 0 34rpx;
+    height: 76rpx;
+    padding: 0 30rpx;
     border-radius: $ui-radius-pill;
-    font-size: 28rpx;
+    font-size: 27rpx;
     font-weight: 500;
     line-height: 1;
     white-space: nowrap;

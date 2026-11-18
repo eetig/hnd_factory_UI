@@ -345,10 +345,9 @@ function handlePickDrawing(source) {
   display: flex;
   align-items: center;
   gap: 14rpx;
-  padding: 18rpx 28rpx;
-  padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
-  border-top: 1px solid $ui-hairline;
-  background-color: var(--ui-sheet-fill);
+  /* 同液位表单：不吃底色、不画分隔线，弹层是一整块（2026-11-18） */
+  padding: 12rpx 28rpx;
+  padding-bottom: calc(12rpx + env(safe-area-inset-bottom));
 }
 
 /* 与液位表单同款按钮（TankLevelFormDialog.tlf__btn）：暖纸色系、不写死宽度 */
@@ -357,10 +356,10 @@ function handlePickDrawing(source) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  height: 84rpx;
-  padding: 0 34rpx;
+  height: 76rpx;
+  padding: 0 30rpx;
   border-radius: $ui-radius-pill;
-  font-size: 28rpx;
+  font-size: 27rpx;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;

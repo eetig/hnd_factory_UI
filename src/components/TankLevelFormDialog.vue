@@ -120,7 +120,7 @@ const popupStyle = computed(() => {
    * 键盘弹起那条分支已经用 top + bottom 钉出确定高度，所以它把 height 覆写成 auto。
    */
   const base =
-    'height: 86vh; max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
+    'max-height: 86vh; display: flex; flex-direction: column; background-color: var(--ui-sheet-fill); overscroll-behavior: contain;'
   const kb = liftHeight.value
   if (!kb) return base
 
@@ -1130,7 +1130,10 @@ async function handleDelete() {
 <style scoped lang="scss">
 .tlf {
   display: flex;
-  height: 100%;
+  /*
+    高度随内容：内容短时弹层就贴着内容收起来，图据下面不会留一大块空白；
+    内容长时由 max-height 封顶，内容区自己滚（使用方 2026-11-18 第三次反馈）
+  */
   max-height: 86vh;
   flex-direction: column;
   /* 弹层自己裁边：内容再长也不许把底部按钮顶出可视区（2026-11-18） */
@@ -1320,7 +1323,7 @@ async function handleDelete() {
     // uni 的 uni-scroll-view 自带 width: 100%，而 100% 不扣边框，会平白溢出 2px
     width: auto;
     border-top: 1px solid $ui-hairline;
-    padding: 8rpx 32rpx 16rpx;
+    padding: 8rpx 32rpx 8rpx;
   }
 
   // 带候选的字段：整块（字段行 + 候选）共用一条底分隔线，
@@ -1507,7 +1510,7 @@ async function handleDelete() {
 
   &__tip {
     display: block;
-    padding: 20rpx 0 8rpx;
+    padding: 16rpx 0 0;
     color: $ui-text-3;
     font-size: 24rpx;
     line-height: 1.6;
@@ -1537,13 +1540,15 @@ async function handleDelete() {
     display: flex;
     align-items: center;
     gap: 14rpx;
-    /* 不许被内容挤压、也不许透明：内容滑到底时按钮区下面不会露出文字（2026-11-18） */
+    /* 不许被内容挤压（2026-11-18） */
     flex-shrink: 0;
-    background-color: var(--ui-sheet-fill);
-    border-top: 1px solid $ui-hairline;
-    padding: 18rpx 28rpx;
-    /* 全面屏底部手势条让开，别让按钮贴着白条（2026-11-18） */
-    padding-bottom: calc(18rpx + env(safe-area-inset-bottom));
+    /*
+      底栏不吃自己的底色、也不画分隔线：弹层本体的底色已经统一，
+      再叠一层白 + 一条线就成了「上下两块拼起来」（使用方 2026-11-18 第二次反馈）
+    */
+    padding: 12rpx 28rpx;
+    /* 全面屏底部手势条让开 */
+    padding-bottom: calc(12rpx + env(safe-area-inset-bottom));
   }
 
   /*
@@ -1555,10 +1560,10 @@ async function handleDelete() {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    height: 84rpx;
-    padding: 0 34rpx;
+    height: 76rpx;
+    padding: 0 30rpx;
     border-radius: $ui-radius-pill;
-    font-size: 28rpx;
+    font-size: 27rpx;
     font-weight: 500;
     line-height: 1;
     white-space: nowrap;
@@ -1570,7 +1575,7 @@ async function handleDelete() {
 
     /* 删除：淡红底、红字，退到最左，不抢保存的注意力 */
     &--danger {
-      padding: 0 28rpx;
+      padding: 0 26rpx;
       background-color: $ui-danger-soft;
       color: $ui-danger;
     }
