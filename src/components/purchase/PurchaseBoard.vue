@@ -11,6 +11,7 @@ import {
   OPEN_STATUSES,
   groupBoardByOa,
   groupExpenseBoardByOa,
+  isExpenseRow,
 } from './boardGroups.js'
 import { savePurchase, deletePurchase, usePurchaseTracking } from '../../composables/usePurchaseTracking.js'
 
@@ -99,8 +100,22 @@ async function loadBoard() {
 
 // 按 **OA 单号** 合并成卡片（变更-168）：一个 OA 通常就是一批采购，含多条物料。
 // 卡片归哪一列由组内**最急**那条的状态决定，见 boardGroups.groupBoardByOa。
-/** 看板渲染用的行（2026-11-10 变更-183：去掉"只看待验收"过滤后就是原始行） */
-const boardRows = computed(() => rows.value)
+/**
+ * 看板渲染用的行（变更-232，2026-11-18）。
+ *
+ * 使用方原话：「这个是采购单的功能模块，和费用那边分开。所以超期中关于费用的
+ * 也不能在这边显示。」—— 以前这里直接把 `rows` 全量铺开，于是资产申购（ZCSG）、
+ * 服务采购申请（FWCGSQ）这些**费用类**单子也挤进了采购看板的「超期」和「等货」，
+ * 比如超期 530 天的 `F-FWCGSQ-20250606001`。费用有自己的页面（`/purchase/expense`）。
+ *
+ * 过滤放在前端而不是给后端加 `orderTypes` 参数，是为了保留「认不出来算采购」这条
+ * 既有口径（见 boardGroups.inferOrderType 注释）：无单据类型、单号也读不出类型的行
+ * （典型是「无 OA 单号」刚建的单）如果被服务端按 `orderTypes=CGSQ` 筛掉，
+ * 就会从两个看板同时消失 —— 那是数据静默丢失，比多显示一条严重得多。
+ */
+const boardRows = computed(() =>
+  isExpense.value ? rows.value : rows.value.filter((row) => !isExpenseRow(row)),
+)
 
 /** 费用申请的三列 + 30 天窗口外的条数（纯函数在 boardGroups 里，单测钉住口径） */
 const expenseGroups = computed(() => groupExpenseBoardByOa(rows.value))
@@ -116,7 +131,7 @@ const visibleColumns = computed(() => {
   if (isExpense.value) return columns.value
   return showArrived.value ? columns.value : columns.value.filter((c) => c.key !== 'arrived')
 })
-const totalShown = computed(() => rows.value.length)
+const totalShown = computed(() => (isExpense.value ? rows.value.length : boardRows.value.length))
 
 /** 费用申请：已关联验收里更早的条数（界面底部提示，别让人以为记录丢了） */
 const staleAccepted = computed(() => (isExpense.value ? expenseGroups.value.staleCount : 0))

@@ -9,6 +9,7 @@ import {
   effectiveOrderType,
   groupExpenseBoardByOa,
   inferOrderType,
+  isExpenseRow,
   oaNoDay,
 } from '../../src/components/purchase/boardGroups.js'
 
@@ -217,5 +218,39 @@ describe('费用申请：台账请求口径（页面边界不能被筛选条改�
     } finally {
       orderTypeFilter.value = ''
     }
+  })
+})
+
+/*
+ * 采购看板 vs 费用申请：一条记录只该出现在一页（2026-11-18，变更-232）。
+ *
+ * 使用方原话：「这个是采购单的功能模块，和费用那边分开。所以超期中关于费用的
+ * 也不能在这边显示。」—— 采购买板曾经是全量铺开，超期列里混进了
+ * `F-FWCGSQ-20250606001`（超期 530 天）这种费用单。
+ */
+describe('采购看板剔除费用单（变更-232）', () => {
+  it('资产申购、服务采购申请都算费用，不管类型是填的还是单号推的', () => {
+    expect(isExpenseRow({ orderType: 'ZCSG', oaNo: '' })).toBe(true)
+    expect(isExpenseRow({ orderType: 'fwcgsq' })).toBe(true) // 大小写不敏感
+    expect(isExpenseRow({ oaNo: 'F-FWCGSQ-20250606001' })).toBe(true)
+    expect(isExpenseRow({ oaNo: 'F-ZCSG-2026100008' })).toBe(true)
+  })
+
+  it('采购申请与「认不出类型」的行留在采购看板', () => {
+    expect(isExpenseRow({ orderType: 'CGSQ', oaNo: 'CG-CGSQ-20261110001' })).toBe(false)
+    expect(isExpenseRow({ oaNo: 'CG-CGSQ-20261110001' })).toBe(false)
+    // 刚建的单：没有 OA 单号、也没填类型 —— 必须先归采购，否则两页都看不到
+    expect(isExpenseRow({ oaNo: '', orderType: '' })).toBe(false)
+    expect(isExpenseRow({})).toBe(false)
+  })
+
+  it('采购看板只过滤费用单，不把认不出的行一起筛掉', () => {
+    const list = [
+      { id: 1, oaNo: 'CG-CGSQ-20261110001', orderType: 'CGSQ' },
+      { id: 2, oaNo: 'F-FWCGSQ-20250606001' },
+      { id: 3, oaNo: '', orderType: '' },
+      { id: 4, oaNo: 'F-ZCSG-2026100008', orderType: 'ZCSG' },
+    ]
+    expect(list.filter((r) => !isExpenseRow(r)).map((r) => r.id)).toEqual([1, 3])
   })
 })

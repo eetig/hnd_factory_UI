@@ -347,6 +347,20 @@ export function effectiveOrderType(row = {}) {
   return String(row.orderType || '').toUpperCase() || inferOrderType(row.oaNo)
 }
 
+/**
+ * 这条记录属不属于「费用」（变更-232，2026-11-18）。
+ *
+ * 使用方原话：「这个是采购单的功能模块，和费用那边分开。所以超期中关于费用的
+ * 也不能在这边显示。」——采购看板与费用申请是两页，一条记录只该出现在其中一页。
+ *
+ * 认不出类型（既没填 order_type，单号也读不出 CGSQ/ZCSG/FWCGSQ）时**算采购**，
+ * 沿用 inferOrderType 那条「认不出才归采购」的既有口径；若反过来当成费用，
+ * 刚建好、还没填 OA 单号的行会从两个看板同时消失。
+ */
+export function isExpenseRow(row = {}) {
+  return EXPENSE_ORDER_TYPES.includes(effectiveOrderType(row))
+}
+
 /** 把 `2026-10-19` / `2026-10-19T10:00:00` / `2026-10-19 10:00:00` 统一成日期串 */
 function isoDay(value) {
   const s = String(value || '').trim()
