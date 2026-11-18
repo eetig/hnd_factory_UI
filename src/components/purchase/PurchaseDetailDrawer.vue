@@ -13,7 +13,7 @@ import {
 } from 'element-plus'
 import request from '../../api/request'
 import { isOpenableUrl, openExternal } from '../../utils/openExternal'
-import { STATUS_TONE } from '../../constants/statusTones'
+import { statusChip } from '../../constants/statusTones'
 import { looksLikeDocNo, useMaterialLookup } from '../../composables/useMaterialLookup'
 import DeliveryNoteUpload from '../DeliveryNoteUpload.vue'
 import { CATEGORY_OPTIONS, UNIT_OPTIONS, blankDraft } from './fields.js'
@@ -87,18 +87,26 @@ const TYPE_TEXT = {
   ZCSG: '资产申购',
 }
 
+/*
+ * 状态列（2026-11-18，变更-234）：改用统一的「状态章」。
+ *
+ * 原来这里是 `rounded-full` 的胶囊 + 同一套 STATUS_TONE 底色。问题不在颜色，
+ * 而在形状 —— 看板卡片抬头的徽标是方角的，同一个状态在两个地方一个是胶囊、
+ * 一个是方块，眼睛会当成两种东西。现在两边都走 `.status-chip`（6px 方角 +
+ * 同色淡描边），颜色仍由 STATUS_TONE 提供，不再各写一套。
+ */
 function statusClass(key) {
   switch (key) {
     case 'OVERDUE':
-      return STATUS_TONE.error
+      return statusChip('error')
     case 'DUE_SOON':
-      return STATUS_TONE.warning
+      return statusChip('warning')
     case 'ARRIVED':
-      return STATUS_TONE.success
+      return statusChip('success')
     case 'PARTIAL':
-      return STATUS_TONE.info
+      return statusChip('info')
     default:
-      return STATUS_TONE.neutral
+      return statusChip('neutral')
   }
 }
 
@@ -945,7 +953,7 @@ defineExpose({ resetForNextEntry, afterLineAdded })
                 class="border-t border-line align-top"
               >
                 <td class="px-2.5 py-2">
-                  <span class="rounded-full px-1.5 py-0.5 text-[11px]" :class="statusClass(line.status)">
+                  <span :class="statusClass(line.status)">
                     {{ STATUS_TEXT[line.status] || '等货' }}
                   </span>
                 </td>

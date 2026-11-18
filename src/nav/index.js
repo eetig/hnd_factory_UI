@@ -242,8 +242,16 @@ const PUBLIC_KEYS = new Set(['stock', 'vessel'])
 // 普通用户点采购会从"需管理员"退回"需注册"，然后被后端 403（界面说去注册，实际要管理员）。
 const ADMIN_KEYS = new Set(['purchaseBoard', 'equipment'])
 
-/** `available` = 现在就能用；`locked` = 看得见，点一下提示（提示语按 needAdmin 区分） */
-export function navItemState(item) {
+/**
+ * 管理员打开客户端时的首页落点（2026-11-18，变更-234）。
+ *
+ * 使用方：「我的工作主要下采购需求单，所以进入客户的首页我要求是采购看板，
+ * 紧接着是费用申请。这是我时刻会关注的两个」。所以首页不再按导航顺序取第一个可用页。
+ * 换它只需改这一个常量；对应页不可用时 `firstVisiblePath()` 会自动退回。
+ */
+const HOME_KEY = 'purchaseBoard'
+
+/** `available` = 现在就能用；`locked` = 看得见，点一下提示（提示语按 needAdmin 区分） */export function navItemState(item) {
   if (!item) return 'locked'
   if (PUBLIC_KEYS.has(item.key)) return 'available'
   if (ADMIN_KEYS.has(item.key)) return isAdmin() ? 'available' : 'locked'
@@ -282,6 +290,21 @@ export function firstVisiblePath() {
    * 那一页对游客是锁定态，进来就是一张提示卡，看起来像坏了。改成优先挑 `available`，
    * 游客落到物料查询，注册用户落到工单汇总，各得其所。
    */
+  /*
+   * 2026-11-18（变更-234）：管理员首页固定落在「采购看板」。
+   *
+   * 使用方原话：「我的工作主要下采购需求单，所以进入客户的首页我要求是采购看板，
+   * 紧接着是费用申请。这是我时刻会关注的两个」。原来按导航顺序取第一个 available，
+   * 管理员落到的是一年只看两次的「工单汇总」，每天要办的事得自己点两下才到。
+   *
+   * 为什么会话级账号不受影响：这里只改"落点"，不改权限 —— 非 admin 的
+   * `navItemState(purchaseBoard)` 不是 available，仍按原逻辑取第一个能看的页。
+   * 采购看板自己被锁（比如以后加更细的权限）时同样自动退回，不会落到空壳上。
+   */
+  const preferred = NAV_ITEMS.find(
+    (item) => item.key === HOME_KEY && navItemState(item) === 'available',
+  )
+  if (preferred) return preferred.path
   const available = NAV_ITEMS.find((item) => navItemState(item) === 'available')
   return (available ?? NAV_ITEMS[0])?.path ?? '/login'
 }

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { dueLabel, needsAcceptance, quantityText, requesterSummary } from './boardGroups.js'
+import { statusChip } from '../../constants/statusTones'
 import { openExternal } from '../../utils/openExternal'
 
 /*
@@ -68,7 +69,19 @@ const due = computed(() => dueLabel(lead.value))
 const requestAge = computed(() => requestAgeLabelOf(lead.value))
 const requesterText = computed(() => requesterSummary(props.card?.requesters || []))
 
-const dueToneClass = computed(() => toneClass(due.value.tone))
+/**
+ * 底行「超期 / 今天到期 / 还剩 N 天」的状态章（2026-11-18，变更-234）。
+ *
+ * 原来只是 `:class="dueToneClass"` 的彩色小字。使用方说「颜色区分不明显」——
+ * 11px 的字、纸色又浅，红字和灰字几乎同重，扫一列分不出哪张最急。改成同色淡底的小章后，
+ * 红（超期）/ 琥珀（今天到期、还剩 ≤3 天）/ 中性（时间还早、没填日期）三档在余光里就分开了。
+ */
+const dueChipClass = computed(() => {
+  const tone = due.value.tone
+  if (tone === 'overdue') return statusChip('error')
+  if (tone === 'soon') return statusChip('warning')
+  return statusChip('neutral')
+})
 
 /**
  * 「提了多久」——抬头次行用。
@@ -152,10 +165,10 @@ const badge = computed(() => {
   const status = String(lead.value.status || '').toUpperCase()
   // 待验收优先展示（2026-11-10）：已到货但还没录验收单，是"下一步要办的事"
   if ((props.card?.rows || []).some((r) => needsAcceptance(r))) {
-    return { text: '待验收', cls: 'bg-amber-50 text-amber-800' }
+    return { text: '待验收', cls: statusChip('warning') }
   }
-  if (status === 'DUE_SOON') return { text: '临期', cls: 'bg-brand-50 text-brand-ink' }
-  if (status === 'PARTIAL') return { text: '部分到货', cls: 'bg-brand-50 text-brand-ink' }
+  if (status === 'DUE_SOON') return { text: '临期', cls: statusChip('info') }
+  if (status === 'PARTIAL') return { text: '部分到货', cls: statusChip('info') }
   return null
 })
 
@@ -260,12 +273,7 @@ function openRow(row, event) {
         </p>
       </div>
 
-      <span
-        v-if="badge"
-        class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium"
-        :class="badge.cls"
-        >{{ badge.text }}</span
-      >
+      <span v-if="badge" class="shrink-0" :class="badge.cls">{{ badge.text }}</span>
       <span
         v-else-if="card.count > 1"
         class="shrink-0 rounded bg-region px-1.5 py-0.5 text-[11px] tabular-nums text-slate-600"
@@ -334,7 +342,7 @@ function openRow(row, event) {
       class="flex items-center justify-between gap-2 border-t border-line px-3 py-1.5 text-[11px]"
     >
       <span class="tabular-nums text-slate-500">最早 {{ md(card.earliestArrival) }}</span>
-      <span class="shrink-0 font-medium" :class="dueToneClass">{{ due.text }}</span>
+      <span class="shrink-0" :class="dueChipClass">{{ due.text }}</span>
     </div>
   </div>
 </template>

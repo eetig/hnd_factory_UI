@@ -191,3 +191,51 @@ h1 {
 .ds-muted-strong {
   color: var(--ds-ink-2);
 }
+
+/*
+ * ---------- 状态章（2026-11-18，变更-234） ----------
+ *
+ * 使用方拿着看板截图说「颜色区分不明显」，并确认要把状态做成「有底色的小色块」。
+ * 原来「超期 23 天 / 还剩 6 天 / 今天到期」只是 11px 的彩色小字：纸底浅、字又细，
+ * 红字和灰字在那种字号下几乎同重，扫一列根本分不出哪张最急。
+ *
+ * 形状只在这里定义一次（6px 方角，不是胶囊 —— 卡片抬头本来就方方正正，
+ * 圆胶囊会显得像标签贴纸）。颜色走 `src/constants/statusTones.js` 的 STATUS_TONE
+ * （那几张表的对比度是实算过 AA 的），本文件只补一圈同色淡描边，
+ * 让色块在浅纸底上有边界、不至于"糊进纸里"。
+ */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(16, 24, 40, 0.06);
+}
+
+/* 描边比底色深半档：色块边缘清楚，但不形成"框" */
+.status-chip--error {
+  box-shadow: inset 0 0 0 1px rgba(190, 18, 60, 0.18);
+}
+
+.status-chip--warning {
+  box-shadow: inset 0 0 0 1px rgba(180, 83, 9, 0.2);
+}
+
+.status-chip--success {
+  box-shadow: inset 0 0 0 1px rgba(4, 120, 87, 0.18);
+}
+
+.status-chip--info {
+  box-shadow: inset 0 0 0 1px rgba(2, 132, 199, 0.18);
+}
+
+.status-chip--neutral {
+  box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.16);
+}

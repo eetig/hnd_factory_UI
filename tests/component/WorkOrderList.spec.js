@@ -222,12 +222,18 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     }
   })
 
-  it('首屏落在第一个可直接使用的页（admin 是工单汇总）', async () => {
-    // `/` 的 redirect 指向「第一个可见页」—— 匿名时「工单汇总」不可见，
-    // 停在那里就是一片空白。落地页因此是物料查询。
-    expect(activeTabKey(wrapper)).toBe('workOrder')
+  it('首屏落在采购看板（admin 的日常入口）', async () => {
+    /*
+     * 2026-11-18 使用方：「我的工作主要下采购需求单，所以进入客户的首页我要求是采购看板，
+     * 紧接着是费用申请。这是我时刻会关注的两个」。
+     *
+     * `/` 的 redirect 仍是 `firstVisiblePath()`，但里面先试 nav 的 HOME_KEY（= purchaseBoard），
+     * 不再"取导航第一项"——那样 admin 会落到一年只看两次的「工单汇总」。
+     * 非 admin 不受影响：采购看板对它不是 available，照旧退回第一个能看的页。
+     */
+    expect(activeTabKey(wrapper)).toBe('purchaseBoard')
     // 页面主标题现在是 h1（文档层级要有起点）；h2 留给面板内的空态/分区标题（PanelState 用的就是 h2）。
-    expect(wrapper.find('h1').text()).toBe('工单汇总')
+    expect(wrapper.find('h1').text()).toBe('采购看板')
   })
 
   it('admin 登录后那几张台账页才出现', async () => {
@@ -270,9 +276,11 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     await nextTick()
     try {
       /*
-       * 核算页 2026-11-02 下线 ⇒ 用默认页「工单汇总」验证空表文案。
+       * 核算页 2026-11-02 下线 ⇒ 用「工单汇总」验证空表文案。
        * （不去猜领料/入库页用不用 StatsTable —— 它们各有自己的表格实现。）
+       * 2026-11-18（变更-234）首屏改成采购看板后，这里要先切过去。
        */
+      await switchToTab(wrapper, '工单汇总')
       expect(wrapper.findComponent(StatsTable).text()).toContain('这段时间里没有匹配的工单')
     } finally {
       authState.roleKey = ''
@@ -608,14 +616,15 @@ describe('工作台页面冒烟（壳 + 路由页）', () => {
     await nextTick()
     try {
       /*
-       * 2026-11-02：工单汇总自己改成了聚合表（StatsTable），而路由默认落在它上面，
-       * 所以"还没进核算"时是 **1** 张表（工单汇总那张），不是 0。
-       * 这条断言的本意（一次只挂一页）不变：进核算后变 2、切去物料查询后归 0。
+       * 2026-11-02：工单汇总自己改成了聚合表（StatsTable）。
+       * 2026-11-18（变更-234）：首屏从「工单汇总」改成「采购看板」—— 采购看板是卡片墙，
+       * 一张 StatsTable 都没有，所以这里先断言 0，再切到工单汇总断言 1，
+       * 最后切去物料查询归 0。这条用例的本意（一次只挂一页）完全没变。
        */
-      expect(wrapper.findAllComponents(StatsTable)).toHaveLength(1)
+      expect(wrapper.findAllComponents(StatsTable), '采购看板不该有聚合表').toHaveLength(0)
 
-      // 默认页「工单汇总」现在自己就是一张聚合表
-      expect(wrapper.findAllComponents(StatsTable), '默认页应当有一张表').toHaveLength(1)
+      await switchToTab(wrapper, '工单汇总')
+      expect(wrapper.findAllComponents(StatsTable), '工单汇总应当有一张表').toHaveLength(1)
 
       await switchToTab(wrapper, '物料查询')
       // 物料查询页本身不是 StatsTable：领料汇总页已经卸载，所以是 0

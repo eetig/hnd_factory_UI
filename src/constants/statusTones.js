@@ -57,3 +57,19 @@ export const STATUS_ROW_TONE = {
 
 // 形状不归这里管：面板级状态圆是 h-12 w-12 rounded-full，横幅级是 h-8 w-8
 // rounded-full，内联胶囊又是另一套。色调与形状分开，换形状时不必动本文件。
+
+/*
+ * 状态章（2026-11-18，变更-234）
+ *
+ * 使用方原话：「颜色也区分不明显……状态色要改成有底色的小色块」。
+ * 背景是看板卡片底行那行「超期 23 天 / 还剩 6 天」只是彩色小字，扫一列看不出急慢 ——
+ * 纸色浅、字又细，红字和灰字在 11px 下几乎同重。
+ *
+ * 这里是「形状 + 底色」的组合器：形状在 `src/styles/dsh.css` 的 `.status-chip`
+ * （6px 方角、11px、内描边一层同色淡边），颜色沿用上面那张 AA 表，不另起配色。
+ * 传进来的 tone 不在表里时退成 neutral —— 宁可显示「中性」，也不要拼出一个没有样式的类名。
+ */
+export function statusChip(tone) {
+  const key = STATUS_TONE[tone] ? tone : 'neutral'
+  return `status-chip status-chip--${key} ${STATUS_TONE[key]}`
+}
