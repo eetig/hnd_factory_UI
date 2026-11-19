@@ -178,6 +178,17 @@ h1 {
   border-color: transparent;
 }
 
+/*
+ * 压在页面之上的浮面（2026-11-19 变更-250）：右侧详情抽屉这类「叠在列表上面」的面，
+ * 不能用卡片那档 0.32 的 --ds-card —— 底下的单号、名称会像重影一样透上来，看不清楚。
+ * 和对话框（变更-233）用同一张实心纸 --ds-sheet 与更重的落影，把前后彻底分开。
+ */
+.ds-sheet-surface {
+  background-color: var(--ds-sheet);
+  box-shadow: var(--ds-sheet-shadow);
+  border-color: transparent;
+}
+
 /* 卡片里的表头行、标题行：别再用实色底 */
 .rounded-card.bg-region {
   background-color: rgba(16, 24, 40, 0.035);

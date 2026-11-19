@@ -291,7 +291,7 @@ onMounted(async () => {
     <transition name="detail">
       <aside
         v-if="selectedCode"
-        class="absolute inset-y-0 right-0 z-20 flex w-[380px] flex-col overflow-y-auto rounded-card border border-line bg-raised shadow-card"
+        class="absolute inset-y-0 right-0 z-20 flex w-[380px] flex-col overflow-y-auto rounded-card border border-line ds-sheet-surface"
         aria-label="物料详情"
       >
       <div class="flex items-center justify-between border-b border-line px-4 py-3">
