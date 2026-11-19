@@ -178,7 +178,7 @@ const tabs = [
   // 采购需求（2026-10-23，变更-164）：与 PC 的 变更-142/144 同一套行为 ——
   // 新增保存后不关表单、只清物料三样；长按行号复制三样、长按名称/编码/规格复制单项
   { key: 'purchaseDemand', label: '采购需求', icon: 'cart', hint: '登记采购需求与到货进度', adminOnly: true, group: 'purchase' },
-      { key: 'expense', label: '费用申请', icon: 'receipt', hint: '资产申购 / 服务采购申请', adminOnly: true, group: 'purchase' },
+      { key: 'expense', label: '费用申请', icon: 'creditcard', hint: '资产申购 / 服务采购申请', adminOnly: true, group: 'purchase' },
   // 个人考勤（2026-10-24，变更-171）：事后录入自己的打卡时间，和人事对账。
   // 不做迟到早退计算（使用方口径：迟了早了就按段标"忘打卡"）。
   // 任何登录用户都能看自己的；保存/清除按 attendance:edit 权限（面板内判断）。
@@ -5368,7 +5368,12 @@ onPullDownRefresh(async () => {
    品牌区 → 状态胶囊 → 分组标题 → 功能列表 → 底部账户区（margin-top: auto 顶到底部）。 */
 .drawer {
   display: flex;
-  flex: 1;
+  /* 滚动容器是外面的 .nav-drawer（NavDrawer.vue）：这里必须让内容自己撑开。
+     写 flex: 1 会被压成「只有一屏高」，.nav-drawer 的 scrollHeight 就等于可视高度，
+     结果是抽屉停在原地、上下都滑不动（2026-11-19 使用方复现）。 */
+  flex: 0 0 auto;
+  /* 内容不满一屏时，底部账号区仍贴底（.drawer__foot 的 margin-top: auto 才有参照） */
+  min-height: 100%;
   box-sizing: border-box;
   flex-direction: column;
   padding: calc(var(--status-bar-height, 0px) + 36rpx) 28rpx 32rpx;

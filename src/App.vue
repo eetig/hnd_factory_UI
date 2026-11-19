@@ -281,16 +281,6 @@ uni-page-head .uni-page-head svg path {
 }
 /* #endif */
 
-/* 导航列表滚到头之后，不要把滚动链传给底层页面。
-   真机实测（抽屉展开、列表已滚到尽头再上滑）：不加这条时底层
-   scrollingElement.scrollTop 会跟着涨；加上之后恒为 0。
-   ⚠️ 目标是 uni-app 内部生成的滚动容器（`.drawer__list` 里那个
-      class="uni-scroll-view" 的 div，overflow-y 是 auto、内容 1085 > 可见 435），
-      所以选择器只能这么写、也只能放全局样式里 —— scoped 够不到别人家的内部类。 */
-.drawer__list .uni-scroll-view {
-  overscroll-behavior-y: contain;
-}
-
 /* ===== 导航抽屉的弹层（静态样式）=====
    跟手拖拽每帧都要把 custom-style 送过桥，所以静态部分挪到这里、由 custom-class 挂上，
    custom-style 里只剩 transform / transition。改抽屉宽度或投影时改这里。
