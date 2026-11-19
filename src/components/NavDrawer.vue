@@ -266,22 +266,39 @@ function close() {
 // 每帧的开销才被关在这个组件里 —— 这是这个组件存在的全部理由。
 // 触摸那几个（innerStart / innerMove / endDrag）只绑在下面的模板上，父组件用的是
 // open / close / isOpen / setListGesture（见末尾 defineExpose）。
+// 起手快照：滚动位置 + 手指 Y。只服务于下面 innerMove 的「顶部下滑」判定。
+const touchStart = { top: 0, y: 0 }
+
 function innerStart(e) {
+  // 起手快照：滚动位置 + 手指 Y。抽屉滚到顶再往下滑时，这串手势必须被挡住，
+  // 否则会冒泡给页面、触发首页的下拉刷新（2026-11-19 使用方报）。
+  const el = (e && (e.currentTarget || e.target)) || null
+  touchStart.top = el && typeof el.scrollTop === "number" ? el.scrollTop : 0
+  const t = e && e.touches && e.touches[0]
+  touchStart.y = t && typeof t.clientY === "number" ? t.clientY : 0
   beginDrag(e)
 }
 function innerMove(e) {
   /*
-   * 这里**不再** e.preventDefault()（2026-11-19 修，使用方报「滑到底就卡住不能上下滑」）。
-   *
-   * 原实现靠「起手在不在列表里」决定要不要挡默认行为，标记是一个跨组件的布尔量
-   * （setListGesture 由页面在 scroll-view 的 touchstart/touchend 上打标）。真机上滚到底、
-   * 或手势被判成横滑时浏览器会发 touchcancel —— 标记和真实手势归属一旦错位，
-   * 要么挡死列表自己的滚动，要么放行把底层页面带动。滚到底之后「往上往下都动不了」就是这么来的。
-   *
-   * 现在滚动只有 .nav-drawer 一个容器（CSS 里 overflow-y:auto + overscroll-behavior:contain），
-   * 原生滚动自己会处理边界，不需要脚本插手；这里只负责把横向拖动交给抽屉。
+   * 2026-11-19 第二次修（使用方报「半展开时下滑会触发页面下拉刷新」）：
+   * 滚动交给 .nav-drawer 之后不再无条件 preventDefault，但**滚到顶再往下滑**这一种手势
+   * 必须挡住 —— 此时列表已经没法再滚，原生 scroll 会冒泡给页面，页面正好在顶部，
+   * 于是触发首页的下拉刷新。判据：内部滚动位置 <= 0 且手指向下移动。
+   * 只挡这一种；上滑、横向拖抽屉一律放行，避免重犯「滑到底卡死」的老毛病。
    */
-  if (drag) moveDrag(e)
+  if (drag) {
+    moveDrag(e)
+    return
+  }
+  if (!visible.value) return
+  const el = (e && (e.currentTarget || e.target)) || null
+  const top = el && typeof el.scrollTop === "number" ? el.scrollTop : 0
+  if (top > 0) return
+  const t = e && e.touches && e.touches[0]
+  if (!t || typeof t.clientY !== "number") return
+  if (t.clientY - touchStart.y <= 0) return
+  if (typeof e.preventDefault === "function") e.preventDefault()
+  if (typeof e.stopPropagation === "function") e.stopPropagation()
 }
 
 // 给父组件用：列表起手/松手时打标
