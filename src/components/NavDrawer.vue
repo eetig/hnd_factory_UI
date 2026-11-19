@@ -382,11 +382,33 @@ const popupModalStyle = computed(() => {
 // 行为，拿的是滚动容器冒泡上去的 touch，JS 里挡不干净。所以按使用方要求：
 // 抽屉开着就全局关掉下拉刷新，抽屉收起再恢复。
 function setPullDownRefresh(enable) {
+  // App 端（含 App-Plus / 自定义基座）：下拉刷新是 webview 的原生能力，
+  // 由 pages.json 的 enablePullDownRefresh 初始化成 pullToRefresh 样式。
+  // uni.disablePullDownRefresh 只在微信小程序端有实现，App 端是空调用 ——
+  // 这就是上一版「调了但照样刷新」的原因。真正能关掉的只有 webview 自身的样式。
+  // #ifdef APP-PLUS
+  try {
+    const stack = getCurrentPages()
+    const page = stack && stack.length ? stack[stack.length - 1] : null
+    const webview = page && typeof page.$getAppWebview === 'function' ? page.$getAppWebview() : null
+    if (webview && typeof webview.setStyle === 'function') {
+      webview.setStyle({
+        pullToRefresh: enable
+          ? { support: true, style: 'circle', color: '#1f6feb', background: '#f8f6f1' }
+          : { support: false },
+      })
+      return
+    }
+  } catch (err) {
+    // 拿不到 webview（极少数时序）就落到下面的兜底
+  }
+  // #endif
+  // H5 / 小程序：这两个 API 才有意义
   try {
     if (enable) uni.enablePullDownRefresh && uni.enablePullDownRefresh({ fail: () => {} })
     else uni.disablePullDownRefresh && uni.disablePullDownRefresh({ fail: () => {} })
   } catch (err) {
-    // H5 等端没有这两个 API，忽略即可（那边下拉刷新本来就不是原生行为）
+    // 没有就忽略
   }
 }
 

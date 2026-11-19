@@ -3269,6 +3269,12 @@ watch(activeTab, (tab) => {
  * 每次下拉都会白打好几个与当前页面无关的接口（其中空调的还会报 403）。
  */
 onPullDownRefresh(async () => {
+  // 抽屉开着时一律不响应（2026-11-19）：NavDrawer 里已经把 webview 的 pullToRefresh
+  // 关掉，这里再兜一层 —— 万一某款机型还是先把转圈弹出来，也绝不重拉数据。
+  if (navDrawer.value && navDrawer.value.isOpen && navDrawer.value.isOpen()) {
+    uni.stopPullDownRefresh()
+    return
+  }
   try {
     switch (activeTab.value) {
       case 'workOrder':
