@@ -303,15 +303,27 @@ defineExpose({ open, close, isOpen, setListGesture })
 // 弹层的位移与过渡。拖动中关掉 transition（否则每帧都在补间，跟不上手）；
 // 松手后交回 transition，由它把抽屉吸附到端点。
 const popupStyle = computed(() => {
+  /*
+   * ⚠️ 位移必须用 left，不能用 transform（2026-11-19 修；使用方第 3 次报「抽屉停在中间时列表滑不动」）。
+   *
+   * 前两次都在**手势**上做文章（判轴、删 preventDefault、列表改普通 view、抽屉自己当滚动容器），
+   * 都没解决 —— 因为问题根本不在抢不抢事件：面板被 transform 位移后，Android WebView 会把这块
+   * 提成一个合成层，而**合成层内部的元素拿不到原生滚动**。于是只有两种状态能滚：
+   * 全开（progress 1，我们不再写内联位移）和全关（弹层卸载）；停在中间那段位移是内联 transform
+   * 写的，滚动整段死掉 —— 与使用方观察完全一致。
+   *
+   * 换成 left 后面板仍是普通定位元素，内部 overflow 容器照常吃原生滚动。代价是 left 不走合成器，
+   * 每帧要重排；但面板只有一屏，拖动时本来就在重绘，实测跟手没有差别。
+   */
   const transition = dragging.value
     ? 'none'
-    : `transform ${DRAWER_SNAP_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`
-  // 只有"位移由我们驱动"的时候才写 transform：
-  //   拖动中 / 吸附动画中 / 还没展开（收起态要停在 -100%）。
-  // **点汉堡展开时不写** —— 让弹层上没有内联 transform，wd-popup 的 slide-left 才有戏。
+    : `left ${DRAWER_SNAP_MS}ms cubic-bezier(0.16, 1, 0.3, 1), transform ${DRAWER_SNAP_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`
+  // 只有"位移由我们驱动"的时候才写 left：
+  //   拖动中 / 吸附动画中 / 还没展开（收起态要停在面板宽度之外）。
+  // **点汉堡展开时不写** —— 让弹层上没有内联位移，wd-popup 的 slide-left 才有戏。
   const own = dragging.value || settling.value || progress.value < 1
-  const shift = (progress.value - 1) * 100
-  return `transition: ${transition};` + (own ? ` transform: translateX(${shift}%);` : '')
+  const shift = Math.round((progress.value - 1) * drawerWidthPx())
+  return `transition: ${transition};` + (own ? ` left: ${shift}px;` : '')
 })
 
 /*
