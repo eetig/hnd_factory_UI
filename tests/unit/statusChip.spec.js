@@ -19,7 +19,6 @@ const root = resolve(__dirname, '../..')
 const read = (p) => readFileSync(resolve(root, p), 'utf8')
 
 const CSS = 'src/styles/dsh.css'
-const TONES = 'src/constants/statusTones.js'
 const CARD = 'src/components/purchase/PurchaseCard.vue'
 const DRAWER = 'src/components/purchase/PurchaseDetailDrawer.vue'
 const NAV = 'src/nav/index.js'
