@@ -434,6 +434,11 @@ function openTodo() {
   closeMenu()
   uni.navigateTo({ url: '/pages/todo/todo' })
 }
+/** 车间 / 泵房巡检（2026-11-19）：清单在 App 里自己维护，异常项要写说明并拍照 */
+function openInspect() {
+  closeMenu()
+  uni.navigateTo({ url: '/pages/inspect/list' })
+}
 
 /** 打开隐私政策页（2026-11-02） */
 function openPrivacy() {
@@ -5035,6 +5040,18 @@ onPullDownRefresh(async () => {
                 <wd-icon v-else-if="tabState(tab) === 'locked'" name="lock-on" size="14px" class="menu-item__lock" />
               </view>
             </template>
+          </view>
+
+          <!-- 巡检（2026-11-19）：车间与消防泵房的点检清单，手机照着逐项点 -->
+          <view v-if="loggedIn" class="drawer__todo" @click="openInspect">
+            <view class="drawer__todo-icon">
+              <wd-icon name="check-circle" size="18px" :color="FREQUENT_ACCENT" />
+            </view>
+            <view class="drawer__todo-text">
+              <text class="drawer__todo-label">巡检</text>
+              <text class="drawer__todo-hint">车间 / 泵房点检 · 离线也能记</text>
+            </view>
+            <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
           </view>
 
           <!-- 待办（2026-11-16）：所有登录用户都能用 —— 自己记事情，与采购/工单无关 -->

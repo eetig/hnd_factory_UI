@@ -67,6 +67,24 @@
       "style": {
         "navigationBarTitleText": "待办"
       }
+    },
+    {
+      "path": "pages/inspect/list",
+      "style": {
+        "navigationBarTitleText": "巡检"
+      }
+    },
+    {
+      "path": "pages/inspect/run",
+      "style": {
+        "navigationBarTitleText": "巡检执行"
+      }
+    },
+    {
+      "path": "pages/inspect/template",
+      "style": {
+        "navigationBarTitleText": "巡检清单"
+      }
     }
   ],
   "globalStyle": {
