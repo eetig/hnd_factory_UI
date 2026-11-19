@@ -375,9 +375,29 @@ const popupModalStyle = computed(() => {
 // 2026-11-18 起统一走 utils/scrollLock（body 定住），原因见那个文件开头的说明：
 // 原来的做法是 #ifdef H5 关 body.overflow，App 端则指望遮罩的 touchmove 挡住 ——
 // 实测挡不住（弹窗/抽屉开着，手指在遮罩上划，底下页面照样滚）。
+// 抽屉展开期间：① 锁住底层滚动；② 关掉页面的下拉刷新。
+// 2026-11-19 加 ②：`pages.json` 里首页开着 enablePullDownRefresh，抽屉列表滚到顶部后
+// 继续往下拽，App 端原生下拉刷新会把这段手势吃掉（测试机直接出现刷新转圈）。
+// 之前在 innerMove 里只挡「到顶 + 向下」那一段，实机验证仍会漏 —— 下拉刷新是原生层
+// 行为，拿的是滚动容器冒泡上去的 touch，JS 里挡不干净。所以按使用方要求：
+// 抽屉开着就全局关掉下拉刷新，抽屉收起再恢复。
+function setPullDownRefresh(enable) {
+  try {
+    if (enable) uni.enablePullDownRefresh && uni.enablePullDownRefresh({ fail: () => {} })
+    else uni.disablePullDownRefresh && uni.disablePullDownRefresh({ fail: () => {} })
+  } catch (err) {
+    // H5 等端没有这两个 API，忽略即可（那边下拉刷新本来就不是原生行为）
+  }
+}
+
 watch(visible, (open) => {
-  if (open) lockPageScroll()
-  else unlockPageScroll()
+  if (open) {
+    lockPageScroll()
+    setPullDownRefresh(false)
+  } else {
+    unlockPageScroll()
+    setPullDownRefresh(true)
+  }
 })
 </script>
 
