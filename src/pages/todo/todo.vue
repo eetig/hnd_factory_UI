@@ -50,8 +50,12 @@
               <text v-if="item.note" class="td__note">{{ item.note }}</text>
 
               <view v-if="item.images && item.images.length" class="td__shots">
-                <image v-for="(src, index) in item.images.slice(0, 3)" :key="index" class="td__shot"
-                  :src="resolveAssetUrl(src)" mode="aspectFill" @click.stop="preview(item, index)" />
+                <!-- 序号就是数组顺序（选图的先后），缩略图上也标出来，免得「哪张是第一张」靠猜 -->
+                <view v-for="(src, index) in item.images.slice(0, 3)" :key="index" class="td__shot-wrap"
+                  @click.stop="preview(item, index)">
+                  <image class="td__shot" :src="resolveAssetUrl(src)" mode="aspectFill" />
+                  <text class="td__shot-no">{{ index + 1 }}</text>
+                </view>
                 <text v-if="item.images.length > 3" class="td__more">+{{ item.images.length - 3 }}</text>
               </view>
 
@@ -99,11 +103,13 @@
         </view>
 
         <view class="td-sheet__shots">
+          <!-- 序号 = 选中先后；删掉中间一张，后面的会自动往前补，跟提交顺序始终一致 -->
           <view v-for="(src, index) in form.images" :key="index" class="td-sheet__shot-wrap">
             <image class="td-sheet__shot" :src="resolveAssetUrl(src)" mode="aspectFill" @click="previewForm(index)" />
+            <text class="td-sheet__shot-no">{{ index + 1 }}</text>
             <text class="td-sheet__shot-del" @click.stop="removeShot(index)">×</text>
           </view>
-          <view v-if="form.images.length < 6" class="td-sheet__shot-add" @click="photoOpen = true">
+          <view v-if="form.images.length < MAX_SHOTS" class="td-sheet__shot-add" @click="photoOpen = true">
             <text class="td-sheet__shot-plus">＋</text>
             <text class="td-sheet__shot-label">附图</text>
           </view>
@@ -159,6 +165,9 @@ import { usePageFrame } from '../../composables/usePageFrame'
 import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 
 const { themeClass, themeVars } = useTheme()
+
+/** 一条待办最多几张附图。模板里选图按钮的显示条件、pick() 的可选张数都读这一个数 */
+const MAX_SHOTS = 6
 
 const tab = ref('open')
 const openItems = ref([])
@@ -332,13 +341,19 @@ function removeShot(index) {
 }
 
 function pick(source) {
+  // 一次能选几张 = 还差几张。以前写死 count: 1 且只取第 0 张，多选等于白选（2026-11-20 同事报的 bug）
+  const remain = MAX_SHOTS - form.value.images.length
+  if (remain <= 0) {
+    toast(`最多 ${MAX_SHOTS} 张`)
+    return
+  }
   const options = {
-    count: 1,
+    count: remain,
     sizeType: ['compressed'],
     sourceType: [source],
     success: (res) => {
-      const path = (res.tempFilePaths || [])[0]
-      if (path) uploadShot(path)
+      const paths = (res.tempFilePaths || []).filter(Boolean)
+      if (paths.length) uploadShots(paths)
     },
     fail: () => {},
   }
@@ -347,17 +362,33 @@ function pick(source) {
   else uni.chooseImage(options)
 }
 
-async function uploadShot(filePath) {
+/**
+ * 逐张上传，顺序 = 用户挑选的顺序。
+ *
+ * <p>为什么不并行：服务端给回的路径是按请求顺序 push 进 form.images 的，并行的话谁先回来谁在前，
+ * 提交与展示的顺序就跟挑图的顺序对不上了。串行慢一点，但序是确定的；图也不多（最多 6 张）。
+ * 中途失败就停：已经传上去的留着（用户能看见是第几张断的），没传的放弃，提示原因。
+ */
+async function uploadShots(paths) {
   photoOpen.value = false
-  uni.showLoading({ title: '上传中', mask: true })
+  const room = Math.max(0, MAX_SHOTS - form.value.images.length)
+  const list = paths.slice(0, room)
+  if (!list.length) return
+
+  let done = 0
+  uni.showLoading({ title: `上传中 1/${list.length}`, mask: true })
   try {
-    const res = await uploadFile({ url: '/api/todo/photo', filePath, name: 'file' })
-    const body = res?.data || {}
-    const path = body?.data?.path
-    if (body.code !== 200 || !path) throw new Error(body.msg || '上传失败')
-    form.value.images.push(path)
+    for (const filePath of list) {
+      done += 1
+      uni.showLoading({ title: `上传中 ${done}/${list.length}`, mask: true })
+      const res = await uploadFile({ url: '/api/todo/photo', filePath, name: 'file' })
+      const body = res?.data || {}
+      const path = body?.data?.path
+      if (body.code !== 200 || !path) throw new Error(body.msg || '上传失败')
+      form.value.images.push(path)
+    }
   } catch (error) {
-    toast(errorText(error, '图片没传上去'))
+    toast(errorText(error, `第 ${done} 张没传上去`))
   } finally {
     uni.hideLoading()
   }
@@ -618,11 +649,32 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   margin-top: 12rpx;
 }
 
+.td__shot-wrap {
+  position: relative;
+}
+
 .td__shot {
   width: 96rpx;
   height: 96rpx;
   border-radius: 12rpx;
   background: var(--ui-raise-2);
+}
+
+/* 第几张。压在左下角，不挡脸、也不和右上角的删除按钮打架 */
+.td__shot-no {
+  position: absolute;
+  left: 4rpx;
+  bottom: 4rpx;
+  min-width: 28rpx;
+  height: 28rpx;
+  padding: 0 6rpx;
+  border-radius: 999rpx;
+  background: rgba(16, 22, 32, 0.62);
+  color: #fff;
+  font-size: 20rpx;
+  line-height: 28rpx;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .td__more {
@@ -821,6 +873,23 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   font-size: 24rpx;
   line-height: 40rpx;
   text-align: center;
+}
+
+/* 第几张，跟列表里的小图同一套角标 */
+.td-sheet__shot-no {
+  position: absolute;
+  left: 8rpx;
+  bottom: 8rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: rgba(16, 22, 32, 0.62);
+  color: #fff;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .td-sheet__shot-add {
