@@ -5042,28 +5042,33 @@ onPullDownRefresh(async () => {
             </template>
           </view>
 
-          <!-- 巡检（2026-11-19）：车间与消防泵房的点检清单，手机照着逐项点 -->
-          <view v-if="loggedIn" class="drawer__todo" @click="openInspect">
-            <view class="drawer__todo-icon">
-              <wd-icon name="check-circle" size="18px" :color="FREQUENT_ACCENT" />
+          <!-- 固定栏（2026-11-20，使用方要求）：巡检 / 待办常驻抽屉可视区底部，
+               菜单列表从下面滚过去。粘性定位而不是真固定：滚到最底时它回到自然位置，
+               下面的外观 / 退出那块照常露出来，不需要给 .drawer 补 padding-bottom。 -->
+          <view v-if="loggedIn" class="drawer__pin">
+            <!-- 巡检（2026-11-19）：车间与消防泵房的点检清单，手机照着逐项点 -->
+            <view class="drawer__todo" @click="openInspect">
+              <view class="drawer__todo-icon">
+                <wd-icon name="check-circle" size="18px" :color="FREQUENT_ACCENT" />
+              </view>
+              <view class="drawer__todo-text">
+                <text class="drawer__todo-label">巡检</text>
+                <text class="drawer__todo-hint">车间 / 泵房点检 · 离线也能记</text>
+              </view>
+              <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
             </view>
-            <view class="drawer__todo-text">
-              <text class="drawer__todo-label">巡检</text>
-              <text class="drawer__todo-hint">车间 / 泵房点检 · 离线也能记</text>
-            </view>
-            <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
-          </view>
 
-          <!-- 待办（2026-11-16）：所有登录用户都能用 —— 自己记事情，与采购/工单无关 -->
-          <view v-if="loggedIn" class="drawer__todo" @click="openTodo">
-            <view class="drawer__todo-icon">
-              <wd-icon name="calendar" size="18px" :color="FREQUENT_ACCENT" />
+            <!-- 待办（2026-11-16）：所有登录用户都能用 —— 自己记事情，与采购/工单无关 -->
+            <view class="drawer__todo" @click="openTodo">
+              <view class="drawer__todo-icon">
+                <wd-icon name="calendar" size="18px" :color="FREQUENT_ACCENT" />
+              </view>
+              <view class="drawer__todo-text">
+                <text class="drawer__todo-label">待办</text>
+                <text class="drawer__todo-hint">记事情 · 定截止 · 可带照片</text>
+              </view>
+              <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
             </view>
-            <view class="drawer__todo-text">
-              <text class="drawer__todo-label">待办</text>
-              <text class="drawer__todo-hint">记事情 · 定截止 · 可带照片</text>
-            </view>
-            <wd-icon name="arrow-right" size="14px" color="#9AA3B2" />
           </view>
 
           <view class="drawer__foot">
@@ -5593,6 +5598,33 @@ onPullDownRefresh(async () => {
   height: 84rpx;
   align-items: center;
   justify-content: center;
+}
+
+/* 固定栏（2026-11-20）：巡检 + 待办常驻抽屉可视区底部。
+   ⚠️ 用粘性定位，不是绝对定位：
+   - `.nav-drawer` 是唯一滚动容器（NavDrawer.vue），这里只让这栏贴住它的可视底边；
+   - 滚到最底下时它会回到自然位置，外观 / 管理员 / 退出那块照常露出来，
+     所以不用给 `.drawer` 补 padding-bottom 这种容易算错的对称空间；
+   - 不改滚动模型 → 1.0.20 / 1.0.22 修过的手势与下拉刷新不会被牵连。
+   负 margin 抵掉 `.drawer` 左右各 28rpx 的内边距，让底色铺满抽屉宽度；
+   底色必须不透明，否则菜单文字会从这条栏下面透上来。 */
+.drawer__pin {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 8rpx -28rpx 0;
+  padding: 12rpx 28rpx 16rpx;
+  background-color: var(--ui-surface);
+  border-top: 1px solid var(--ui-hairline);
+  box-shadow: 0 -12rpx 24rpx -20rpx rgba(16, 22, 32, 0.28);
+
+  .drawer__todo {
+    margin-bottom: 12rpx;
+  }
+
+  .drawer__todo:last-child {
+    margin-bottom: 0;
+  }
 }
 
 /* 待办入口（2026-11-16）：卡片行而不是小字 —— 这是每天要用的东西，
