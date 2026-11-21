@@ -232,10 +232,13 @@ onBackPress(() => handleGlobalBack() !== 'root')
   color: var(--ui-text-3);
 }
 
+/* 原生 input 必须给死高度：只写 padding 的话 App 端行高算不出来，
+   文字会被裁成一条（清单名称看不见就是这么来的） */
 .tpl__input {
   width: 100%;
+  height: 92rpx;
   margin-top: 14rpx;
-  padding: 18rpx;
+  padding: 0 22rpx;
   border-radius: 14rpx;
   background: var(--ui-raise-2);
   font-size: 28rpx;
