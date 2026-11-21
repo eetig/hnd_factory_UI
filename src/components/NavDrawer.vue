@@ -381,6 +381,8 @@ const popupModalStyle = computed(() => {
 // 之前在 innerMove 里只挡「到顶 + 向下」那一段，实机验证仍会漏 —— 下拉刷新是原生层
 // 行为，拿的是滚动容器冒泡上去的 touch，JS 里挡不干净。所以按使用方要求：
 // 抽屉开着就全局关掉下拉刷新，抽屉收起再恢复。
+// 收起时记下被关掉的是哪一页，恢复时还回那一页（见下面 page 的取法）。
+let pullRefreshPage = null
 function setPullDownRefresh(enable) {
   // App 端（含 App-Plus / 自定义基座）：下拉刷新是 webview 的原生能力，
   // 由 pages.json 的 enablePullDownRefresh 初始化成 pullToRefresh 样式。
@@ -389,7 +391,15 @@ function setPullDownRefresh(enable) {
   // #ifdef APP-PLUS
   try {
     const stack = getCurrentPages()
-    const page = stack && stack.length ? stack[stack.length - 1] : null
+    const current = stack && stack.length ? stack[stack.length - 1] : null
+    /*
+     * 恢复时不能用「当前页」：从抽屉里点进别的页面，跳转发生在收起动画之前，
+     * 等这里执行时当前页已经换成了目标页 —— 于是那个本来没开下拉刷新的页面
+     * 被硬开了一个，拽一下就一直转圈（待办页 15:34 那张截图）。
+     * 所以关的时候记下页面，开的时候只还给它。
+     */
+    if (!enable) pullRefreshPage = current
+    const page = (enable && pullRefreshPage) || current
     const webview = page && typeof page.$getAppWebview === 'function' ? page.$getAppWebview() : null
     if (webview && typeof webview.setStyle === 'function') {
       webview.setStyle({
