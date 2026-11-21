@@ -85,6 +85,18 @@
       "style": {
         "navigationBarTitleText": "巡检清单"
       }
+    },
+    {
+      "path": "pages/vault/vault",
+      "style": {
+        "navigationBarTitleText": "密码箱"
+      }
+    },
+    {
+      "path": "pages/vault/edit",
+      "style": {
+        "navigationBarTitleText": "密码"
+      }
     }
   ],
   "globalStyle": {
