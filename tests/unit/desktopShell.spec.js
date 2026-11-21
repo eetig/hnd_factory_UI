@@ -211,7 +211,8 @@ describe('关闭按钮默认直接收起，偏好可改', () => {
   it('closeBehavior 先看偏好，只有 ask 才弹窗', () => {
     const source = read('src/desktop/closeBehavior.js')
     expect(source).toContain("from './closePreference'")
-    expect(source).toContain("if (action === 'minimize') return hideToTray()")
+    expect(source).toContain("if (action === 'minimize') {")
+    expect(source).toContain('return hideToTray()')
     expect(source).toContain("if (action === 'quit') return quitApp()")
     // 弹窗只出现在 ask 分支之后（先认 minimize / quit，剩下的才问）
     const askCall = 'const choice = await askChoice()'
@@ -295,12 +296,15 @@ describe('原生窗口材质与自绘标题栏', () => {
     expect(source).toContain('maximized ? \'向下还原\' : \'最大化\'')
     expect(source).toContain('aria-label="关闭"')
     // 关闭必须走 win.close()：Rust 侧的 CloseRequested 才会拦下并交给"最小化到托盘 / 退出"
-    expect(source).toContain('win.value?.close()')
+    expect(source).toContain('win.value.close()')
+    // 失败必须喊出来：1.0.43 这里是个空 catch，allow-close 缺失时整个按钮哑掉
+    expect(source).toContain('ElMessage.error(`关不掉窗口')
   })
 
   it('窗口操作权限已放行（不放行会点了没反应）', () => {
     const caps = JSON.parse(read('src-tauri/capabilities/default.json'))
     for (const perm of [
+      'core:window:allow-close',
       'core:window:allow-minimize',
       'core:window:allow-toggle-maximize',
       'core:window:allow-is-maximized',

@@ -8,8 +8,14 @@
  *
  * 关闭仍然走 `win.close()`：Rust 侧 on_window_event 会拦下 CloseRequested
  * 并发 `app://close-requested`，所以「最小化到托盘 / 退出」的用户设置在桌面版里照旧生效。
+ *
+ * ⚠️ 2026-11-21：`close()` 需要 capabilities 里的 `core:window:allow-close`
+ * （capabilities/default.json）。1.0.43 及以前漏了这条，IPC 被 ACL 拒，
+ * 又被下面的空 catch 吞掉 —— 表现就是"点 ✕ 完全没反应"，一按就是十天。
+ * 所以这里执行失败必须喊出来，不许再静默。
  */
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 
 const win = ref(null)
 const maximized = ref(false)
@@ -50,10 +56,16 @@ async function toggleMaximize() {
 }
 
 async function close() {
+  if (!win.value) {
+    // 没拿到窗口句柄（初始化失败 / 跑在网页版里）也要说话，不能装作点了
+    ElMessage.error('当前环境没有窗口控制权限，关不掉')
+    return
+  }
   try {
-    await win.value?.close()
-  } catch {
-    /* 同上 */
+    await win.value.close()
+  } catch (e) {
+    // 1.0.44 之前这里是空 catch：权限缺失 → IPC 被拒 → 界面毫无反应
+    ElMessage.error(`关不掉窗口：${e?.message || e}`)
   }
 }
 </script>
