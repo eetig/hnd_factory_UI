@@ -28,8 +28,8 @@
       <view v-else-if="!rows.length" class="insp__empty">
         <text class="insp__empty-title">{{ tab === 'template' ? '还没有巡检清单' : '还没有巡检记录' }}</text>
         <text class="insp__empty-sub">{{ tab === 'template'
-          ? '先把要检查的项目写进清单，之后每次照着点就行'
-          : '做完一次巡检，记录会收在这里' }}</text>
+          ? '把要照着看的检查内容写成一篇，之后每次对着看就行'
+          : '照着清单查完一次，记录会收在这里' }}</text>
       </view>
 
       <template v-else>
@@ -37,7 +37,7 @@
           <view class="insp__item-main">
             <view class="insp__item-top">
               <text class="insp__item-title">{{ row.title }}</text>
-              <text v-if="row.badge" class="insp__badge" :class="row.badgeClass">{{ row.badge }}</text>
+              <text v-if="row.badge" class="insp__badge">{{ row.badge }}</text>
             </view>
             <text class="insp__item-sub">{{ row.sub }}</text>
           </view>
@@ -48,7 +48,7 @@
       <view class="insp__bottom-space"></view>
     </scroll-view>
 
-    <!-- 记录详情 -->
+    <!-- 记录详情：只回答「谁、什么时候、照着哪篇、留了什么」 -->
     <AppPopup v-model="detailOpen" position="bottom" round safe-area-inset-bottom
       custom-style="background-color: var(--ui-surface);">
       <view class="detail">
@@ -61,24 +61,23 @@
         </view>
 
         <scroll-view class="detail__body" :scroll-y="true">
-          <view v-for="(it, index) in detail.items" :key="index" class="detail__item"
-            :class="{ 'detail__item--ng': it.result === 'ng' }">
-            <view class="detail__item-top">
-              <text class="detail__item-title">{{ it.title }}</text>
-              <text class="detail__mark" :class="it.result === 'ng' ? 'detail__mark--ng' : 'detail__mark--ok'">
-                {{ it.result === 'ng' ? '异常' : '正常' }}
-              </text>
-            </view>
-            <text v-if="it.note" class="detail__note">{{ it.note }}</text>
-            <view v-if="it.images && it.images.length" class="detail__shots">
-              <image v-for="(src, i) in it.images" :key="i" class="detail__shot" :src="resolveAssetUrl(src)"
-                mode="aspectFill" @click="preview(it.images, i)" />
+          <view v-if="detail.note" class="detail__block">
+            <text class="detail__label">备注</text>
+            <text class="detail__note">{{ detail.note }}</text>
+          </view>
+
+          <view v-if="detail.images.length" class="detail__block">
+            <text class="detail__label">照片 {{ detail.images.length }} 张</text>
+            <view class="detail__shots">
+              <image v-for="(src, index) in detail.images" :key="index" class="detail__shot"
+                :src="resolveAssetUrl(src)" mode="aspectFill" @click="preview(detail.images, index)" />
             </view>
           </view>
-          <view v-if="detail.note" class="detail__remark">
-            <text class="detail__remark-label">备注</text>
-            <text class="detail__remark-text">{{ detail.note }}</text>
+
+          <view v-if="!detail.note && !detail.images.length" class="detail__quiet">
+            <text class="detail__quiet-text">这次没写备注，也没拍照</text>
           </view>
+
           <view class="insp__bottom-space"></view>
         </scroll-view>
       </view>
@@ -115,7 +114,7 @@ const pending = ref(0)
 const uploading = ref(false)
 
 const detailOpen = ref(false)
-const detail = ref({ title: '', sub: '', items: [], note: '' })
+const detail = ref({ title: '', sub: '', note: '', images: [] })
 
 const rows = computed(() => {
   if (tab.value === 'template') {
@@ -123,18 +122,16 @@ const rows = computed(() => {
       key: 't' + one.id,
       raw: one,
       title: one.name,
-      sub: kindText(one.kind) + ' · ' + (one.itemCount || countItems(one)) + ' 项',
-      badge: one.kind ? kindShort(one.kind) : '',
-      badgeClass: 'insp__badge--kind',
+      sub: kindText(one.kind) + ' · 共 ' + (one.charCount || countChars(one.body)) + ' 字',
+      badge: kindShort(one.kind),
     }))
   }
   return records.value.map((one) => ({
     key: 'r' + (one.id || one.clientUuid),
     raw: one,
     title: one.templateName,
-    sub: timeText(one.finishedAt) + ' · ' + (one.operatorName || '') + ' · ' + (one.totalCount || 0) + ' 项',
-    badge: one.abnormalCount ? '异常 ' + one.abnormalCount : '全部正常',
-    badgeClass: one.abnormalCount ? 'insp__badge--ng' : 'insp__badge--ok',
+    sub: timeText(one.finishedAt) + ' · ' + (one.operatorName || ''),
+    badge: one.photoCount ? one.photoCount + ' 张' : '',
   }))
 })
 
@@ -150,8 +147,8 @@ function kindShort(kind) {
   return ''
 }
 
-function countItems(template) {
-  return Array.isArray(template.items) ? template.items.length : 0
+function countChars(body) {
+  return String(body || '').replace(/\s/g, '').length
 }
 
 function timeText(text) {
@@ -229,12 +226,13 @@ function open(row) {
     return
   }
   const one = row.raw
+  const photos = Array.isArray(one.images) ? one.images : []
   detail.value = {
-    title: one.templateName,
-    sub: timeText(one.finishedAt) + ' · ' + (one.operatorName || '') + ' · 共 ' + (one.totalCount || 0) + ' 项'
-      + (one.abnormalCount ? '，异常 ' + one.abnormalCount + ' 项' : ''),
-    items: Array.isArray(one.items) ? one.items.map((it) => ({ ...it, images: it.images || [] })) : [],
+    title: one.templateName || '巡检记录',
+    sub: timeText(one.finishedAt) + ' · ' + (one.operatorName || '')
+      + (photos.length ? ' · ' + photos.length + ' 张照片' : ''),
     note: one.note || '',
+    images: photos,
   }
   detailOpen.value = true
 }
@@ -373,7 +371,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   align-items: center;
   gap: 16rpx;
   margin-top: 14rpx;
-  padding: 22rpx 22rpx;
+  padding: 22rpx;
   border-radius: 18rpx;
   background: var(--ui-surface);
 }
@@ -409,21 +407,8 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   padding: 4rpx 14rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
-}
-
-.insp__badge--kind {
   color: var(--ui-text-2);
   background: var(--ui-raise-2);
-}
-
-.insp__badge--ok {
-  color: var(--ui-accent);
-  background: var(--ui-accent-soft, var(--ui-raise-2));
-}
-
-.insp__badge--ng {
-  color: var(--ui-amber-800);
-  background: var(--ui-amber-50);
 }
 
 .insp__bottom-space {
@@ -433,7 +418,7 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
 .detail {
   display: flex;
   flex-direction: column;
-  height: 76vh;
+  height: 72vh;
   padding: 0 24rpx;
   background: var(--ui-surface);
 }
@@ -475,59 +460,32 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   min-height: 0;
 }
 
-.detail__item {
+.detail__block {
   padding: 20rpx 22rpx;
   margin-bottom: 14rpx;
   border-radius: 16rpx;
   background: var(--ui-raise-2);
 }
 
-.detail__item--ng {
-  background: var(--ui-amber-50);
-}
-
-.detail__item-top {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.detail__item-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 27rpx;
-  color: var(--ui-text);
-}
-
-.detail__mark {
+.detail__label {
+  display: block;
   font-size: 22rpx;
-  padding: 3rpx 12rpx;
-  border-radius: 999rpx;
-}
-
-.detail__mark--ok {
-  color: var(--ui-accent);
-  background: var(--ui-accent-soft, var(--ui-surface));
-}
-
-.detail__mark--ng {
-  color: var(--ui-amber-800);
-  background: var(--ui-surface);
+  color: var(--ui-text-3);
 }
 
 .detail__note {
   display: block;
   margin-top: 10rpx;
-  font-size: 24rpx;
-  color: var(--ui-text-2);
-  line-height: 1.6;
+  font-size: 26rpx;
+  color: var(--ui-text);
+  line-height: 1.7;
 }
 
 .detail__shots {
   display: flex;
   flex-wrap: wrap;
   gap: 12rpx;
-  margin-top: 12rpx;
+  margin-top: 14rpx;
 }
 
 .detail__shot {
@@ -537,21 +495,13 @@ const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => 
   background: var(--ui-surface);
 }
 
-.detail__remark {
-  padding: 8rpx 4rpx 24rpx;
+.detail__quiet {
+  padding: 40rpx 0;
+  text-align: center;
 }
 
-.detail__remark-label {
-  display: block;
-  font-size: 23rpx;
+.detail__quiet-text {
+  font-size: 24rpx;
   color: var(--ui-text-3);
-}
-
-.detail__remark-text {
-  display: block;
-  margin-top: 8rpx;
-  font-size: 25rpx;
-  color: var(--ui-text-2);
-  line-height: 1.6;
 }
 </style>

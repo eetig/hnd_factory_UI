@@ -1,4 +1,4 @@
-// 巡检离线队列（2026-11-19）
+// 巡检离线队列（2026-11-19 建立，2026-11-21 变更-255 改成「整篇正文」模型）
 //
 // 使用方原话：「消防泵房经常没信号，得能先记下来，出来了再传上去」。
 // 于是提交分两条路：
@@ -6,8 +6,8 @@
 //   没网 → 整条记录（照片还是手机本地路径）压进本地队列，页面立刻给"已暂存"。
 //
 // 两个容易踩的坑，这里都处理了：
-//   1. uni.chooseImage 给的是**临时路径**，系统随时可能清理 —— 入队前先用
-//      uni.saveFile 拷进应用沙箱（App 端才有，H5 端临时 blob 只能尽量保）。
+//   1. 选图给的是**临时路径**，系统随时可能清理 —— 入队前先用 uni.saveFile
+//      拷进应用沙箱（App 端才有，H5 端临时 blob 只能尽量保）。
 //   2. 补传时照片要逐张换成服务端的 /files/xxx，否则记录里存的是手机路径，
 //      换台手机就看不到了。
 import { submitRecord, uploadRecordPhoto } from '../api/inspect'
@@ -69,8 +69,8 @@ export function persistPhoto(path) {
 /**
  * 入队一条巡检记录。
  *
- * @param {object} record { clientUuid, templateId, startedAt, finishedAt, note, items }
- *        items[].images 允许混着本地路径与 /files/ 路径，补传时会自动区分。
+ * @param {object} record { clientUuid, templateId, startedAt, finishedAt, note, images }
+ *        images 允许混着本地路径与 /files/ 路径，补传时会自动区分。
  * @returns {Promise<number>} 入队后的队列长度
  */
 export async function enqueue(record) {
@@ -80,22 +80,12 @@ export async function enqueue(record) {
     startedAt: record.startedAt,
     finishedAt: record.finishedAt,
     note: record.note || '',
-    items: (record.items || []).map((it) => ({
-      group: it.group || '',
-      title: it.title || '',
-      hint: it.hint || '',
-      result: it.result || 'ok',
-      note: it.note || '',
-      images: (it.images || []).slice(),
-    })),
+    images: [],
     queuedAt: Date.now(),
   }
 
-  for (const it of item.items) {
-    if (!it.images.length) continue
-    const saved = []
-    for (const src of it.images) saved.push(isRemote(src) ? src : await persistPhoto(src))
-    it.images = saved
+  for (const src of record.images || []) {
+    item.images.push(isRemote(src) ? src : await persistPhoto(src))
   }
 
   const queue = readQueue()
@@ -134,21 +124,17 @@ export async function flushQueue() {
       }
 
       try {
-        const items = []
-        for (const it of item.items) {
-          const images = []
-          for (const src of it.images || []) {
-            if (isRemote(src)) {
-              images.push(src)
-              continue
-            }
-            const res = await uploadRecordPhoto(src)
-            const body = (res && res.data) || {}
-            const remote = body && body.data ? body.data.path : ''
-            if (body.code !== 200 || !remote) throw new Error(body.msg || '照片没传上去')
-            images.push(remote)
+        const images = []
+        for (const src of item.images || []) {
+          if (isRemote(src)) {
+            images.push(src)
+            continue
           }
-          items.push({ ...it, images })
+          const res = await uploadRecordPhoto(src)
+          const body = (res && res.data) || {}
+          const remote = body && body.data ? body.data.path : ''
+          if (body.code !== 200 || !remote) throw new Error(body.msg || '照片没传上去')
+          images.push(remote)
         }
 
         const res = await submitRecord({
@@ -157,7 +143,7 @@ export async function flushQueue() {
           startedAt: item.startedAt,
           finishedAt: item.finishedAt,
           note: item.note,
-          items,
+          images,
         })
         const body = (res && res.data) || {}
         if (body.code !== 200) throw new Error(body.msg || '记录没传上去')
