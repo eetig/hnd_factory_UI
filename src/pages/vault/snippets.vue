@@ -26,51 +26,89 @@
         <text v-if="keyword" class="sn__search-clear" @click="keyword = ''">✕</text>
       </view>
 
-      <view class="sn__kinds">
-        <text
-          v-for="item in KINDS"
-          :key="item.key"
-          class="sn__kind"
-          :class="{ 'is-on': kind === item.key }"
-          @click="kind = item.key"
-        >{{ item.label }}</text>
-        <text v-if="filtering" class="sn__count">{{ rows.length }} / {{ all.length }}</text>
+      <!-- 分类胶囊：和密码页同一套果冻药丸，点一下切、左右划也能切 -->
+      <view class="sn__chips-wrap">
+        <view
+          class="sn__pill"
+          :class="{ 'is-ready': pillReady, 'is-flow': pillFlowing }"
+          :style="pillStyle"
+        />
+        <scroll-view
+          class="sn__chips"
+          scroll-x
+          scroll-with-animation
+          :show-scrollbar="false"
+          :scroll-into-view="chipAnchor"
+          @scroll="onChipsScroll"
+        >
+          <view class="sn__chips-inner">
+            <view
+              v-for="(item, index) in KINDS"
+              :id="`sk-${index}`"
+              :key="item.key"
+              class="sn__kind"
+              :class="{ 'is-on': index === activeKind }"
+              @click="goKind(index)"
+            >
+              <text>{{ item.label }}</text>
+              <text v-if="countOf(item.key)" class="sn__kind-n">{{ countOf(item.key) }}</text>
+            </view>
+          </view>
+        </scroll-view>
       </view>
     </view>
 
-    <scroll-view class="sn__scroll" scroll-y :show-scrollbar="false">
-      <view v-if="!all.length" class="sn__empty">
-        <text class="sn__empty-title">还没记过</text>
-        <text class="sn__empty-text">
-          以后我看到好用的，你让我记一下，我读完就写在这儿。你自己刷到了也可以点下面加。
-        </text>
-      </view>
-
-      <view v-else-if="!rows.length" class="sn__empty">
-        <text class="sn__empty-title">没搜到「{{ keyword || kindLabel }}」</text>
-        <text class="sn__empty-text">换个词试试，或者把标签点回「全部」。</text>
-        <view class="sn__empty-btn" @click="resetFilter">看全部 {{ all.length }} 条</view>
-      </view>
-
-      <view
-        v-for="row in rows"
-        :key="row.id"
-        class="sn__card"
-        @click="useItem(row)"
-        @longpress="openSheet(row)"
+    <view class="sn__pager">
+      <!-- 一类一屏，左右滑换类；屏内上下滑是自己的事，不挡手势 -->
+      <GesturePager
+        v-if="pagerH"
+        ref="pagerRef"
+        v-model="pageIndex"
+        :items="pages"
+        item-key="key"
+        :height="pagerH"
+        :peek-scale="0"
+        :peek-fade="0"
+        :peek-inset="0"
+        :window-radius="1"
+        @update:progress="onProgress"
       >
-        <view class="sn__card-head">
-          <text class="sn__name">{{ row.name }}</text>
-          <text class="sn__copy">复制</text>
-        </view>
-        <text v-if="row.desc" class="sn__desc">{{ row.desc }}</text>
-        <text class="sn__snippet">{{ brief(row.text) }}</text>
-      </view>
+        <template #default="{ item }">
+          <view class="sn__page">
+            <scroll-view class="sn__page-scroll" scroll-y :show-scrollbar="false">
+              <view
+                v-for="row in item.rows"
+                :key="row.id"
+                class="sn__card"
+                @click="useItem(row)"
+                @longpress="openSheet(row)"
+              >
+                <view class="sn__card-head">
+                  <text class="sn__name">{{ row.name }}</text>
+                  <text class="sn__copy">复制</text>
+                </view>
+                <text v-if="row.desc" class="sn__desc">{{ row.desc }}</text>
+                <text class="sn__snippet">{{ brief(row.text) }}</text>
+              </view>
 
-      <view class="sn__sync">
-        <text class="sn__sync-text">{{ syncText }}</text>
-      </view>
-    </scroll-view>
+              <view v-if="!item.rows.length" class="sn__empty">
+                <text class="sn__empty-title">{{ emptyTitle(item) }}</text>
+                <text class="sn__empty-text">{{ emptyText(item) }}</text>
+                <view
+                  v-if="all.length && keyword.trim() && item.key !== 'all'"
+                  class="sn__empty-btn"
+                  @click="goKind(0)"
+                >看全部 {{ all.length }} 条</view>
+              </view>
+
+              <view class="sn__sync">
+                <text class="sn__sync-text">{{ syncText }}</text>
+              </view>
+            </scroll-view>
+          </view>
+        </template>
+      </GesturePager>
+    </view>
 
     <view class="sn__bottom">
       <view class="sn__add" @click="goEdit()">＋ 记一条</view>
@@ -79,9 +117,10 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import PageTitle from '../../components/PageTitle.vue'
+import GesturePager from '../../components/GesturePager.vue'
 import { useTheme } from '../../composables/useTheme'
 import { usePageFrame } from '../../composables/usePageFrame'
 import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
@@ -115,26 +154,140 @@ function kindOf(row) {
 
 const all = ref([])
 const keyword = ref('')
-const kind = ref('all')
 
-const kindLabel = computed(() => (KINDS.find((item) => item.key === kind.value) || KINDS[0]).label)
-const filtering = computed(() => Boolean(keyword.value.trim()) || kind.value !== 'all')
-
-const rows = computed(() => {
+const matched = computed(() => {
   const q = keyword.value.trim().toLowerCase()
-  return all.value
-    .filter((row) => kind.value === 'all' || kindOf(row) === kind.value)
-    .filter((row) => {
-      if (!q) return true
-      return [row.name, row.desc, row.text].some((field) => String(field || '').toLowerCase().includes(q))
-    })
-    .sort((a, b) => (KIND_ORDER[kindOf(a)] ?? 9) - (KIND_ORDER[kindOf(b)] ?? 9))
+  const rows = all.value.filter((row) => {
+    if (!q) return true
+    return [row.name, row.desc, row.text].some((field) => String(field || '').toLowerCase().includes(q))
+  })
+  return rows.sort((a, b) => (KIND_ORDER[kindOf(a)] ?? 9) - (KIND_ORDER[kindOf(b)] ?? 9))
 })
 
-function resetFilter() {
-  keyword.value = ''
-  kind.value = 'all'
+/* 四类各占一屏，左右滑换类。搜索不清屏 —— 每屏各自过滤，
+ * 这样「别的类里有、这一类没有」一眼就看出来，不用退回去重搜。 */
+const pages = computed(() =>
+  KINDS.map((item) => ({
+    ...item,
+    rows: item.key === 'all' ? matched.value : matched.value.filter((row) => kindOf(row) === item.key),
+  })),
+)
+
+/* 跟随搜索：搜的时候数字是「命中几条」，不搜才是「一共几条」——
+ * 不然搜索时胶囊上还挂着 26，看的人会以为没过滤 */
+function countOf(key) {
+  if (key === 'all') return matched.value.length
+  return matched.value.filter((row) => kindOf(row) === key).length
 }
+
+function emptyTitle(item) {
+  if (!all.value.length) return '还没记过'
+  if (keyword.value.trim()) return item.key === 'all' ? `没搜到「${keyword.value.trim()}」` : '这一类里没搜到'
+  return `${item.label} 这格还空着`
+}
+
+function emptyText(item) {
+  if (!all.value.length) {
+    return '以后我看到好用的，你让我记一下，我读完就写在这儿。你自己刷到了也可以点下面加。'
+  }
+  if (keyword.value.trim()) return '换个词试试，或者左右滑到别的类看看。'
+  return '还没有归到这一类的。点下面「＋ 记一条」加一个，或者左右滑回「全部」。'
+}
+
+const inst = getCurrentInstance()
+const pagerRef = ref(null)
+const pagerH = ref(0)
+const pageIndex = ref(0)
+const floatIndex = ref(0)
+/* 药丸和当前屏都跟这个走：滑动过程中是小数，取整才知道「现在是第几类」 */
+const activeKind = computed(() => {
+  const max = KINDS.length - 1
+  return Math.min(max, Math.max(0, Math.round(floatIndex.value)))
+})
+const chipAnchor = computed(() => `sk-${activeKind.value}`)
+
+function onProgress(value) {
+  floatIndex.value = Number(value) || 0
+}
+
+function goKind(index) {
+  pageIndex.value = Math.max(0, Math.min(KINDS.length - 1, index))
+}
+
+/* 轨道是绝对定位的，高度必须由外面量出来给它，否则整块塌成 0 */
+function measurePager() {
+  if (!inst || !inst.proxy) return
+  uni
+    .createSelectorQuery()
+    .in(inst.proxy)
+    .select('.sn__pager')
+    .boundingClientRect((rect) => {
+      if (rect && rect.height) pagerH.value = Math.round(rect.height)
+    })
+    .exec()
+}
+
+/* 果冻药丸：和密码页同一套做法，量真实胶囊矩形，滚动时重新对账 */
+const pillReady = ref(false)
+const pillFlowing = ref(false)
+const pillStyle = ref({ left: '0px', width: '0px' })
+const chipsScrollLeft = ref(0)
+let chipRects = []
+let flowTimer = 0
+
+function syncPill() {
+  const rect = chipRects[activeKind.value]
+  if (!rect) return
+  pillStyle.value = {
+    left: `${Math.round(rect.left - chipsScrollLeft.value)}px`,
+    width: `${Math.round(rect.width)}px`,
+  }
+  pillReady.value = true
+}
+
+function measureChips() {
+  if (!inst || !inst.proxy) return
+  const query = uni.createSelectorQuery().in(inst.proxy)
+  query.select('.sn__chips').boundingClientRect()
+  query.selectAll('.sn__kind').boundingClientRect()
+  query.exec((res) => {
+    const box = res && res[0]
+    const list = (res && res[1]) || []
+    if (!box || !list.length) return
+    chipRects = list.map((rect) => ({
+      left: rect.left - box.left + chipsScrollLeft.value,
+      width: rect.width,
+    }))
+    syncPill()
+  })
+}
+
+function onChipsScroll(event) {
+  chipsScrollLeft.value = (event && event.detail && event.detail.scrollLeft) || 0
+  syncPill()
+}
+
+watch(activeKind, () => {
+  syncPill()
+  pillFlowing.value = false
+  if (flowTimer) clearTimeout(flowTimer)
+  flowTimer = setTimeout(() => {
+    pillFlowing.value = true
+  }, 16)
+  setTimeout(() => {
+    pillFlowing.value = false
+  }, 520)
+})
+
+watch(pageIndex, (value) => {
+  if (Math.abs(value - floatIndex.value) > 0.01) floatIndex.value = value
+})
+
+/* 搜完/同步完条数变了，药丸宽度跟着变 */
+watch(
+  () => pages.value.map((page) => page.rows.length).join('|'),
+  () => nextTick(measureChips),
+)
 
 const syncedAt = ref('')
 const syncing = ref(false)
@@ -180,7 +333,18 @@ onShow(() => {
     return
   }
   refresh()
+  nextTick(() => {
+    measurePager()
+    measureChips()
+  })
   sync()
+})
+
+onMounted(() => {
+  nextTick(() => {
+    measurePager()
+    measureChips()
+  })
 })
 
 /** 切回「密码」页签：redirect 换页，返回键回首页，不来回弹 */
@@ -317,30 +481,107 @@ function goEdit(id) {
   padding: 8rpx;
 }
 
-.sn__kinds {
-  display: flex;
+.sn__chips-wrap {
+  position: relative;
+  flex: none;
+  padding-top: 14rpx;
+}
+
+/* 果冻药丸：和密码页同一套，切换先滑过去再压扁回弹 */
+.sn__pill {
+  position: absolute;
+  top: 14rpx;
+  left: 0;
+  height: 58rpx;
+  border-radius: 999rpx;
+  background: var(--ui-text);
+  opacity: 0;
+  transition: left 380ms cubic-bezier(0.22, 1.2, 0.36, 1),
+    width 380ms cubic-bezier(0.22, 1.2, 0.36, 1);
+
+  &.is-ready {
+    opacity: 1;
+  }
+
+  &.is-flow {
+    animation: sn-pill-flow 460ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  }
+}
+
+@keyframes sn-pill-flow {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  28% {
+    transform: scaleX(1.14) scaleY(0.78);
+  }
+  52% {
+    transform: scaleX(0.94) scaleY(1.08);
+  }
+  76% {
+    transform: scaleX(1.04) scaleY(0.97);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
+.sn__chips {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+.sn__chips-inner {
+  display: inline-flex;
   align-items: center;
   gap: 12rpx;
-  padding: 16rpx 0 2rpx;
+  padding: 0 2rpx;
 }
 
 .sn__kind {
-  padding: 8rpx 22rpx;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6rpx;
+  height: 58rpx;
+  line-height: 58rpx;
+  padding: 0 22rpx;
   border-radius: 999rpx;
-  font-size: 24rpx;
+  font-size: 25rpx;
   color: var(--ui-text-2);
   background: var(--ui-surface);
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .sn__kind.is-on {
-  color: var(--ui-on-accent);
-  background: var(--ui-accent);
+  color: var(--ui-bg);
+  /* 底色交给药丸层，胶囊自己透明，滑动时底色才连续 */
+  background: transparent;
+  font-weight: 600;
 }
 
-.sn__count {
-  margin-left: auto;
-  font-size: 22rpx;
-  color: var(--ui-text-3);
+.sn__kind-n {
+  font-size: 20rpx;
+  opacity: 0.55;
+}
+
+.sn__pager {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  margin-top: 8rpx;
+}
+
+.sn__page {
+  height: 100%;
+  padding: 8rpx 28rpx 0;
+  box-sizing: border-box;
+}
+
+.sn__page-scroll {
+  height: 100%;
 }
 
 .sn__empty-btn {
@@ -352,13 +593,6 @@ function goEdit(id) {
   font-size: 26rpx;
   color: var(--ui-on-accent);
   background: var(--ui-accent);
-}
-
-.sn__scroll {
-  flex: 1;
-  height: 0;
-  padding: 16rpx 28rpx 0;
-  box-sizing: border-box;
 }
 
 .sn__card {

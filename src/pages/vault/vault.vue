@@ -30,28 +30,36 @@
       </view>
 
       <!-- 组胶囊：手指滑到哪组，它就跟着亮；点一下也能直接跳过去 -->
-      <scroll-view
-        v-if="items.length && groups.length"
-        class="vt__chips"
-        scroll-x
-        scroll-with-animation
-        :show-scrollbar="false"
-        :scroll-into-view="chipAnchor"
-      >
-        <view class="vt__chips-inner">
-          <view
-            v-for="(group, index) in groups"
-            :id="`vc-${index}`"
-            :key="group.name"
-            class="vt__chip-tab"
-            :class="{ 'is-on': index === activeChip }"
-            @click="goGroup(index)"
-          >
-            <text>{{ group.name }}</text>
-            <text v-if="group.items.length" class="vt__chip-num">{{ group.items.length }}</text>
+      <view v-if="items.length && groups.length" class="vt__chips-wrap">
+        <!-- 果冻药丸：垫在文字下面，换组时横撑竖压地流过去（照「采购需求」那页） -->
+        <view
+          class="vt__pill"
+          :class="{ 'is-ready': pillReady, 'is-flow': pillFlowing }"
+          :style="pillStyle"
+        />
+        <scroll-view
+          class="vt__chips"
+          scroll-x
+          scroll-with-animation
+          :show-scrollbar="false"
+          :scroll-into-view="chipAnchor"
+          @scroll="onChipsScroll"
+        >
+          <view class="vt__chips-inner">
+            <view
+              v-for="(group, index) in groups"
+              :id="`vc-${index}`"
+              :key="group.name"
+              class="vt__chip-tab"
+              :class="{ 'is-on': index === activeChip }"
+              @click="goGroup(index)"
+            >
+              <text>{{ group.name }}</text>
+              <text v-if="group.items.length" class="vt__chip-num">{{ group.items.length }}</text>
+            </view>
           </view>
-        </view>
-      </scroll-view>
+        </scroll-view>
+      </view>
 
       <view class="vt__meta">
         <text class="vt__meta-strong">{{ searching ? `搜到 ${hitCount} 条` : `${items.length} 条` }}</text>
@@ -267,6 +275,69 @@ const activeChip = computed(() => {
 
 const chipAnchor = computed(() => (groups.value.length ? `vc-${activeChip.value}` : ''))
 
+/* 果冻药丸（2026-11-23，用户：「动画效果需要完善，参考着页面的」）
+ * 照 采购需求 那页的做法：一个和胶囊同高同圆角的色块垫在文字下面，
+ * 换组时先滑过去（left/width 过渡），再用 scaleX 撑开、scaleY 压扁回弹 —— 像一坨液体被挤着流过去。
+ * 位置和宽度必须量真实胶囊矩形（名字长短不一，猜不得）；胶囊条自己还能横滚，所以滚动时重新对一次账。 */
+const pillReady = ref(false)
+const pillFlowing = ref(false)
+const pillStyle = ref({ left: '0px', width: '0px' })
+const chipsScrollLeft = ref(0)
+let chipRects = []
+let flowTimer = 0
+
+function syncPill() {
+  const rect = chipRects[activeChip.value]
+  if (!rect) return
+  pillStyle.value = {
+    left: `${Math.round(rect.left - chipsScrollLeft.value)}px`,
+    width: `${Math.round(rect.width)}px`,
+  }
+  pillReady.value = true
+}
+
+function measureChips() {
+  if (!inst || !inst.proxy) return
+  const query = uni.createSelectorQuery().in(inst.proxy)
+  query.select('.vt__chips').boundingClientRect()
+  query.selectAll('.vt__chip-tab').boundingClientRect()
+  query.exec((res) => {
+    const box = res && res[0]
+    const list = (res && res[1]) || []
+    if (!box || !list.length) return
+    // 记「内容坐标」：加上当前滚动量，之后滚到哪都能换算回视口坐标
+    chipRects = list.map((rect) => ({
+      left: rect.left - box.left + chipsScrollLeft.value,
+      width: rect.width,
+    }))
+    syncPill()
+  })
+}
+
+function onChipsScroll(event) {
+  chipsScrollLeft.value = (event && event.detail && event.detail.scrollLeft) || 0
+  syncPill()
+}
+
+watch(activeChip, () => {
+  syncPill()
+  pillFlowing.value = false
+  if (flowTimer) clearTimeout(flowTimer)
+  // 下一帧再加 is-flow，否则同一个类连加两次不重启动画
+  flowTimer = setTimeout(() => {
+    pillFlowing.value = true
+  }, 16)
+  setTimeout(() => {
+    pillFlowing.value = false
+  }, 520)
+})
+
+// 组变了（搜索过滤 / 同步回来）要重新量，否则药丸还停在老位置
+watch(
+  () => groups.value.map((group) => group.name).join('|'),
+  () => nextTick(measureChips),
+)
+
 function onProgress(value) {
   floatIndex.value = Number.isFinite(value) ? value : 0
 }
@@ -320,12 +391,18 @@ async function sync() {
 
 onShow(() => {
   refresh()
-  nextTick(measurePager)
+  nextTick(() => {
+    measurePager()
+    measureChips()
+  })
   if (allowed.value) sync()
 })
 
 onMounted(() => {
-  nextTick(measurePager)
+  nextTick(() => {
+    measurePager()
+    measureChips()
+  })
 })
 
 /** 点一下整张卡 = 复制密码（最常用的动作，不让人找按钮） */
@@ -561,11 +638,56 @@ function doImport() {
 }
 
 /* 组胶囊：横滑时跟着亮 */
+.vt__chips-wrap {
+  position: relative;
+  flex: none;
+  padding-top: 14rpx;
+}
+
+/* 果冻药丸：和胶囊同高同圆角，垫在文字下面；切换时先滑再回弹 */
+.vt__pill {
+  position: absolute;
+  top: 14rpx;
+  left: 0;
+  height: 58rpx;
+  border-radius: 999rpx;
+  background: var(--ui-text);
+  opacity: 0;
+  transition: left 380ms cubic-bezier(0.22, 1.2, 0.36, 1),
+    width 380ms cubic-bezier(0.22, 1.2, 0.36, 1);
+
+  &.is-ready {
+    opacity: 1;
+  }
+
+  &.is-flow {
+    animation: vt-pill-flow 460ms cubic-bezier(0.34, 1.2, 0.64, 1);
+  }
+}
+
+@keyframes vt-pill-flow {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  28% {
+    transform: scaleX(1.14) scaleY(0.78);
+  }
+  52% {
+    transform: scaleX(0.94) scaleY(1.08);
+  }
+  76% {
+    transform: scaleX(1.04) scaleY(0.97);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
 .vt__chips {
   flex: none;
   width: 100%;
-  padding-top: 14rpx;
-  box-sizing: border-box;
+  position: relative;
+  z-index: 1;
 }
 
 .vt__chips-inner {
@@ -586,12 +708,13 @@ function doImport() {
   font-size: 26rpx;
   color: var(--ui-text-2);
   background: var(--ui-surface);
-  transition: background 0.16s ease, color 0.16s ease;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .vt__chip-tab.is-on {
   color: var(--ui-bg);
-  background: var(--ui-text);
+  /* 底色交给药丸层画，胶囊自己透明 —— 滑动时底色才是连续的一整块 */
+  background: transparent;
   font-weight: 600;
 }
 
