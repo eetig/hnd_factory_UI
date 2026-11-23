@@ -46,6 +46,8 @@ const props = defineProps({
   itemKey: { type: String, default: 'id' },
   /** 轨道高度（px）。不传就由 CSS 决定 —— 但页是绝对定位，通常必须给 */
   height: { type: Number, default: 0 },
+  /** 一页宽（px）。外面量准了传进来最稳，不传就自己量、再退到屏宽 */
+  pageWidth: { type: Number, default: 0 },
   /** 只渲染当前页前后各几张（省 DOM） */
   windowRadius: { type: Number, default: 2 },
   /** 离中心一整页时缩到 1 - peekScale */
@@ -380,21 +382,29 @@ function goTo(i) {
 function measure() {
   const el = inst?.proxy?.$el
   const rect = el?.getBoundingClientRect?.()
-  if (!rect || !rect.width) return
-  let w = rect.width
-  /* 这个组件在「一屏一栏」的轨道里，一栏刚好等于一屏宽。
-   * 真机上挂载那一刻父级 flex 还没算完，量到过偏窄的宽度（卡片右边留出白边），
-   * 所以量到的比屏宽还窄就直接按屏宽纠正。 */
-  try {
-    const info = uni.getSystemInfoSync()
-    const win = info && info.windowWidth
-    if (win && w < win - 8) w = win
-  } catch (err) {
-    /* 取不到系统信息就用量到的值 */
+  /* 一页宽优先用外面量好传进来的：宿主是 200% 宽的轨道，两栏各 50%，
+   * 真机挂载那一刻父级 flex 还没算完，自己量会量到偏窄（卡片右边留白边）；
+   * 而屏幕宽也不一定等于一栏宽（有的机型窗口有内缩），所以让 pane 量自己的根节点传进来。 */
+  let w = props.pageWidth > 0 ? props.pageWidth : rect?.width || 0
+  if (!(w > 0)) return
+  if (!(props.pageWidth > 0)) {
+    try {
+      const info = uni.getSystemInfoSync()
+      const win = info && info.windowWidth
+      if (win && w < win - 8) w = win
+    } catch (err) {
+      /* 取不到系统信息就用量到的值 */
+    }
   }
   if (Math.abs(w - stageW.value) > 0.5) stageW.value = w
   scrollX.value = activeIndex.value * Math.max(1, stageW.value)
 }
+
+/* 外面量准了宽就立刻重排，不用等下一次触摸 */
+watch(
+  () => props.pageWidth,
+  () => measure(),
+)
 
 onMounted(() => {
   nextTick(() => {

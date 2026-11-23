@@ -60,6 +60,7 @@
         :items="pages"
         item-key="key"
         :height="pagerH"
+        :page-width="pagerW"
         :peek-scale="0"
         :peek-fade="0"
         :peek-inset="0"
@@ -185,6 +186,7 @@ const emit = defineEmits(['edge-drag', 'edge-release'])
 const inst = getCurrentInstance()
 const pagerRef = ref(null)
 const pagerH = ref(0)
+const pagerW = ref(0)
 const pageIndex = ref(0)
 const floatIndex = ref(0)
 /* 药丸和当前屏都跟这个走：滑动过程中是小数，取整才知道「现在是第几类」 */
@@ -202,7 +204,8 @@ function goKind(index) {
   pageIndex.value = Math.max(0, Math.min(KINDS.length - 1, index))
 }
 
-/* 轨道是绝对定位的，高度必须由外面量出来给它，否则整块塌成 0 */
+/* 轨道是绝对定位的，高度必须由外面量出来给它，否则整块塌成 0；
+ * 宽度也一起量给分页组件 —— 真机上它自己量会偏窄，卡片右边就留白条 */
 function measurePager() {
   if (!inst || !inst.proxy) return
   uni
@@ -211,6 +214,7 @@ function measurePager() {
     .select('.sn__pager')
     .boundingClientRect((rect) => {
       if (rect && rect.height) pagerH.value = Math.round(rect.height)
+      if (rect && rect.width) pagerW.value = Math.round(rect.width)
       if (pagerRef.value) pagerRef.value.measure()
     })
     .exec()

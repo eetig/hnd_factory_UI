@@ -61,6 +61,7 @@
           :items="groups"
           item-key="name"
           :height="pagerH"
+          :page-width="pagerW"
           :peek-scale="0"
           :peek-fade="0"
           :peek-inset="0"
@@ -230,6 +231,7 @@ const emit = defineEmits(['edge-drag', 'edge-release'])
 const inst = getCurrentInstance()
 const pagerRef = ref(null)
 const pagerH = ref(0)
+const pagerW = ref(0)
 const pageIndex = ref(0)
 const floatIndex = ref(0)
 
@@ -327,7 +329,7 @@ function goGroup(index) {
   if (pagerRef.value) pagerRef.value.goTo(index)
 }
 
-/** 轨道是绝对定位的，必须显式给高度 —— 量一次外层容器 */
+/** 轨道是绝对定位的，必须显式给高度 —— 量一次外层容器；宽度也顺手量给分页组件（真机自己量会偏窄） */
 function measurePager() {
   if (!inst || !inst.proxy) return
   uni
@@ -336,6 +338,7 @@ function measurePager() {
     .select('.vt__pager')
     .boundingClientRect((rect) => {
       if (rect && rect.height > 0) pagerH.value = Math.round(rect.height)
+      if (rect && rect.width > 0) pagerW.value = Math.round(rect.width)
       // 顺手让里面那条轨道重新量一次宽度（栏宽可能刚刚才定下来）
       if (pagerRef.value) pagerRef.value.measure()
     })
