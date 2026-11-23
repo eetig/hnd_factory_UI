@@ -1,7 +1,7 @@
 <template>
   <view
     class="sn"
-    :class="[themeClass, shiftClass]"
+    :class="themeClass"
     :style="[themeVars, frameStyle]"
     @touchstart="onEdgeStart"
     @touchend="onEdgeEnd"
@@ -134,16 +134,10 @@ import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 import { isAdmin } from '../../api/auth'
 import { copyToClipboard } from '../../utils/clipboard'
 import { lastSyncedAt, pullAndMerge, readSnippets, removeSnippet } from '../../utils/vault'
-import { markSwitch, takeSwitch } from '../../utils/vaultNav'
 
 const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
 const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
-
-/* 两格切换：换页没动画，出门滑走 + 进门滑入接成一段（方向在首帧之前就要定好） */
-const enterDir = takeSwitch()
-const shiftClass = ref(enterDir === 'left' ? 'is-enter-right' : enterDir === 'right' ? 'is-enter-left' : '')
-const leaving = ref(false)
 
 const KINDS = [
   { key: 'all', label: '全部' },
@@ -340,7 +334,6 @@ async function sync() {
 }
 
 onShow(() => {
-  leaving.value = false
   if (!isAdmin()) {
     uni.showToast({ title: '只有管理员能看', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 600)
@@ -355,39 +348,25 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // 首帧之后放开位移，从侧面滑回正位。
-  // 这里**不能用 requestAnimationFrame**：H5 有 window 所以能跑，真机上这段代码跑在
-  // app-service（逻辑层）里，没有 rAF —— 一调就抛错，后面的清理全被跳过，页面就永久停在
-  // 「偏出去 + 半透明」那一帧（2026-11-23 真机截图复现过）。用定时器等价于下一帧。
-  if (shiftClass.value) {
-    setTimeout(() => {
-      shiftClass.value = ''
-    }, 16)
-    // 兜底：切后台时定时器也可能被推迟，别让页面卡在偏移状态
-    setTimeout(() => {
-      shiftClass.value = ''
-    }, 400)
-  }
   nextTick(() => {
     measurePager()
     measureChips()
   })
 })
 
-/** 切回「密码」页签：整页先往右滑走，再 redirect，新页从左边跟进 */
+/** 切回「密码」页签：往回退一层，用系统自带的出栈滑出动画（跟点返回是同一种）。
+ *  万一是从别处直接进的这一页（页面栈里没有上一层），就换成 replace，别把 App 退掉。 */
 function goVault() {
-  if (leaving.value) return
-  leaving.value = true
-  markSwitch('right')
-  shiftClass.value = 'is-leave-right'
-  setTimeout(() => {
-    uni.redirectTo({ url: '/pages/vault/vault' })
-  }, 150)
-  // 万一换页没成，别让这页一直停在滑出去的样子
-  setTimeout(() => {
-    leaving.value = false
-    shiftClass.value = ''
-  }, 900)
+  const stack = typeof getCurrentPages === 'function' ? getCurrentPages() : []
+  if (stack.length > 1) {
+    uni.navigateBack({
+      delta: 1,
+      animationType: 'slide-out-right',
+      animationDuration: 200,
+    })
+    return
+  }
+  uni.redirectTo({ url: '/pages/vault/vault' })
 }
 
 /** 卡片上只放前三行，剩下的留白，反正点一下就是复制整段 */
@@ -447,45 +426,6 @@ function goEdit(id) {
   height: 100vh;
   background: var(--ui-bg);
   overflow: hidden;
-  /* 「密码 / 配方」是一对页面，换页瞬间没动画，用这一进一出接起来 */
-  transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
-}
-
-/* 出发：往右滑走（用 transition，页马上卸载，卡住也无所谓） */
-.sn.is-leave-right {
-  transform: translateX(28%);
-  opacity: 0.2;
-}
-
-/* 到达：keyframes + both —— 动画自己停在终点，清理没跑到也不会永久卡在偏移帧 */
-.sn.is-enter-right {
-  animation: sn-enter-right 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
-}
-
-.sn.is-enter-left {
-  animation: sn-enter-left 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
-}
-
-@keyframes sn-enter-right {
-  from {
-    transform: translateX(28%);
-    opacity: 0.2;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes sn-enter-left {
-  from {
-    transform: translateX(-28%);
-    opacity: 0.2;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
 }
 
 .sn__intro {

@@ -1,7 +1,7 @@
 <template>
   <view
     class="vt"
-    :class="[themeClass, shiftClass]"
+    :class="themeClass"
     :style="[themeVars, frameStyle]"
     @touchstart="onEdgeStart"
     @touchend="onEdgeEnd"
@@ -205,7 +205,6 @@ import {
   touchItem,
   typeLabel,
 } from '../../utils/vault'
-import { markSwitch, takeSwitch } from '../../utils/vaultNav'
 
 const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
@@ -219,12 +218,6 @@ const importText = ref('')
 const syncedAt = ref('')
 const syncing = ref(false)
 const syncError = ref('')
-
-/* 两格切换的滑入滑出：换页本身没动画，靠「出门滑走 + 进门滑入」接起来。
- * 进场方向必须在首帧之前就定好（放在 setup 里读），否则会先画在正位再弹出去。 */
-const enterDir = takeSwitch()
-const shiftClass = ref(enterDir === 'left' ? 'is-enter-right' : enterDir === 'right' ? 'is-enter-left' : '')
-const leaving = ref(false)
 
 const grouped = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -404,7 +397,6 @@ async function sync() {
 }
 
 onShow(() => {
-  leaving.value = false
   refresh()
   nextTick(() => {
     measurePager()
@@ -414,18 +406,6 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // 首帧之后放开位移，页面就从侧面滑回正位。
-  // 不用 requestAnimationFrame：真机上这段跑在 app-service（逻辑层）里，没有 rAF，
-  // 一调就抛错，清理全部被跳过，页面会永久停在偏出去 + 半透明的状态。
-  if (shiftClass.value) {
-    setTimeout(() => {
-      shiftClass.value = ''
-    }, 16)
-    // 兜底：别让页面卡在偏移位置
-    setTimeout(() => {
-      shiftClass.value = ''
-    }, 400)
-  }
   nextTick(() => {
     measurePager()
     measureChips()
@@ -497,21 +477,14 @@ function addHere() {
   goEdit('', here ? here.name : '')
 }
 
-/** 切到「配方」页签：先让整页往左滑出去，再 redirect 换页，新页从右边跟进
- *  （换页本身没有动画，靠这一进一出接起来，看着才像同一块屏在滑动） */
+/** 切到「配方」页签：交给系统自带的页面滑入动画（跟从抽屉点进来的那一下是同一种），
+ *  不再由我用 CSS 拼一进一出 —— 自定义那套在真机上会卡，系统动画是原生合成的，稳。 */
 function goSnippets() {
-  if (leaving.value) return
-  leaving.value = true
-  markSwitch('left')
-  shiftClass.value = 'is-leave-left'
-  setTimeout(() => {
-    uni.redirectTo({ url: '/pages/vault/snippets' })
-  }, 150)
-  // 万一换页没成（路由被拦、页面栈异常），别让这页一直停在滑出去的样子
-  setTimeout(() => {
-    leaving.value = false
-    shiftClass.value = ''
-  }, 900)
+  uni.navigateTo({
+    url: '/pages/vault/snippets',
+    animationType: 'slide-in-right',
+    animationDuration: 200,
+  })
 }
 
 function doSeed() {
@@ -573,47 +546,6 @@ function doImport() {
   height: 100vh;
   background: var(--ui-bg);
   overflow: hidden;
-  /* 「密码 / 配方」是一对页面，换页瞬间没动画，用这一进一出接起来 */
-  transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
-}
-
-/* 出发：整页往左滑走（用 transition，页面马上就会卸载，卡住也无所谓） */
-.vt.is-leave-left {
-  transform: translateX(-28%);
-  opacity: 0.2;
-}
-
-/* 到达：用 keyframes 从侧面滑回正位。
- * 关键是 `both` —— 动画自己会停在终点，就算 JS 的清理没跑到，页面也只是「滑进来停住」，
- * 不会永久停在偏移 + 半透明那一帧（2026-11-23 真机上就是这样卡死的）。 */
-.vt.is-enter-right {
-  animation: vt-enter-right 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
-}
-
-.vt.is-enter-left {
-  animation: vt-enter-left 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
-}
-
-@keyframes vt-enter-right {
-  from {
-    transform: translateX(28%);
-    opacity: 0.2;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes vt-enter-left {
-  from {
-    transform: translateX(-28%);
-    opacity: 0.2;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
 }
 
 .vt__deny {
