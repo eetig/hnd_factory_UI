@@ -1494,6 +1494,11 @@ describe.skip('面走 token + 发丝线：卡片是 bg-raised + border-line，�
      * x-minimalist 的配方 = `rounded-card border border-line bg-raised shadow-card`
      * （圆角 8px / 1px 发丝线 / 纯白面 / α=0.04 的近零阴影）。实算的分层账在
      * 下面两条：卡与它所在的面**同色**（1.000），分层全部由 `border-line` 承担。
+     *
+     * 2026-11-23（变更-264）：抄表页的「改历史读数」弹层**没有**进这条配方 ——
+     * 它走 `ds-sheet-surface`（实心纸 + 浮层落影）。卡片那档 --ds-card 是
+     * α=0.32 的半透明白，压在遮罩上，背后那张表的读数会像重影一样透上来
+     * （2026-11-18 变更-233 已经踩过一次）。所以这里仍是 35，弹层不计入。
      */
     const offenders = []
     let count = 0

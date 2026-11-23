@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElDatePicker, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
+import { ElDatePicker, ElInput, ElMessage, ElMessageBox, ElOption, ElSelect } from 'element-plus'
 import request from '../../api/request'
 import { isAdmin } from '../../api/auth'
+import { assetUrl } from '../../api/base'
 
 /*
  * 电费抄表（2026-11-02，第一阶段：只记录）。
@@ -717,6 +718,165 @@ async function loadHistory() {
     ElMessage.error(e?.response?.data?.msg || e?.message || '加载失败')
   } finally {
     historyLoading.value = false
+  }
+}
+
+/* ===== 改历史读数（2026-11-23）=====
+ * 使用方原话：「要不做一个功能吧，能够编辑历史抄表数据。不然下次抄错了，又不知道怎么改了。」
+ * 起因是他把 334.7 抄成 3347（小数点看漏），而读数一入库就会被算进电量和预提。
+ *
+ * 先追问过、定下来的边界：
+ *   1. 只有 admin 能改，抄表员也不行 —— 前端藏按钮 + 后端 PUT 已收紧成只认 admin；
+ *   2. 只放开「读数」一个字段，日期 / 归属 / 照片要改得走别的路（那是删了重录的事）；
+ *   3. 保存前二次确认，并把「会连带改下一期」写进确认文案；
+ *   4. 新读数 ≤ 0 直接拦住（后端 ElectricityService.updateReading 也拒）；
+ *   5. 新读数比下一期还大时只警告不拦 —— 换表、表翻零都会出现「本期 > 下期」。
+ *
+ * 为什么非要先查「下一条」：改一行会同时改两期的用量（本期用上一条算、下一期用这一行算）。
+ * 弹层里得先把下一期摆在眼前，否则人只会核对自己动的那一格。
+ */
+const editingRow = ref(null)
+const editValue = ref('')
+const editNext = ref(null) // 同表下一条（按日期），没有则 null
+const editNextBusy = ref(false)
+const savingReading = ref(false)
+const photoZoom = ref('') // 放大的抄表照片地址（空 = 不显示）
+
+const editNumber = computed(() => {
+  const raw = String(editValue.value ?? '').trim()
+  if (!raw) return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+})
+
+/** 新读数必须 > 0，与后端第一道校验一致 */
+const editValid = computed(() => editNumber.value !== null && editNumber.value > 0)
+
+/** 本期用量预览：口径同服务端 usageOf =（本次 − 上次）× 倍率 */
+const editUsage = computed(() =>
+  usagePreview(editNumber.value, editingRow.value?.prevReading, editingRow.value?.multiplier),
+)
+
+/** 下一期用量预览：改完之后它会变成（下期读数 − 新读数）× 倍率 */
+const nextUsage = computed(() =>
+  usagePreview(
+    editNext.value?.reading,
+    editNumber.value,
+    editNext.value?.multiplier ?? editingRow.value?.multiplier,
+  ),
+)
+
+/** 本期用量相对原来的变化，用来在弹层里说清「这一改动了多少」 */
+const editUsageDelta = computed(() => {
+  if (editUsage.value === null) return null
+  return round2(editUsage.value - Number(editingRow.value?.usageQty ?? 0))
+})
+
+function round2(value) {
+  return Math.round(value * 100) / 100
+}
+
+/** 前端即时预览，(本次 − 上次) × 倍率；任一端缺失就给 null（显示 —） */
+function usagePreview(reading, prev, multiplier) {
+  const a = toNum(reading)
+  const b = toNum(prev)
+  if (a === null || b === null) return null
+  const mult = toNum(multiplier)
+  return round2((a - b) * (mult === null ? 1 : mult))
+}
+
+function toNum(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 下一天。只用日期串 + UTC 运算，避免本地时区把 11-20 算成 11-19 */
+function nextDayOf(dateStr) {
+  const d = new Date(`${String(dateStr).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(d.getTime())) return String(dateStr)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+async function openReadingEdit(row) {
+  editingRow.value = row
+  editValue.value = row.reading === null || row.reading === undefined ? '' : String(row.reading)
+  editNext.value = null
+  if (!row.meterId || !row.readDate) return
+  editNextBusy.value = true
+  try {
+    const res = await request.get('/api/electricity/readings', {
+      params: { meterId: row.meterId, from: nextDayOf(row.readDate) },
+    })
+    const list = res.data?.data || []
+    // 这个接口是按日期**倒序**给的，所以区间里最后一条才是紧挨着的那一期
+    editNext.value = list.length ? list[list.length - 1] : null
+  } catch {
+    // 取不到就不提示连带影响；保存时服务端照样会重算下一条
+    editNext.value = null
+  } finally {
+    editNextBusy.value = false
+  }
+}
+
+function closeReadingEdit() {
+  editingRow.value = null
+  editNext.value = null
+  editValue.value = ''
+}
+
+function fmtSigned(value) {
+  const n = toNum(value)
+  if (n === null) return '—'
+  return `${n > 0 ? '+' : ''}${fmtNum(n)}`
+}
+
+async function saveReadingEdit() {
+  const row = editingRow.value
+  if (!row || !editValid.value || savingReading.value) return
+
+  const before = fmtNum(row.reading)
+  const after = fmtNum(editNumber.value)
+  const facts = [`本期用量 ${fmtNum(row.usageQty)} → ${fmtNum(editUsage.value)}`]
+  if (editNext.value) {
+    facts.push(
+      `${editNext.value.readDate} 那期的上次读数会变成 ${after}，用量变成 ${fmtNum(nextUsage.value)}`,
+    )
+  }
+  if (toNum(nextUsage.value) !== null && nextUsage.value < 0) {
+    facts.push('注意：下一期会算出负用量，因为新读数比下一期还大')
+  }
+  try {
+    await ElMessageBox.confirm(
+      `${row.meterName || '这块表'} ${row.readDate} 的读数：${before} → ${after}。${facts.join('；')}。改完不能撤销。`,
+      '改历史读数',
+      { confirmButtonText: '确认修改', cancelButtonText: '再想想', type: 'warning' },
+    )
+  } catch {
+    return // 用户点了「再想想」
+  }
+
+  savingReading.value = true
+  try {
+    const res = await request.put(`/api/electricity/readings/${row.id}`, {
+      reading: editNumber.value,
+    })
+    const body = res.data || {}
+    if (body.success === false) throw new Error(body.msg || '保存失败')
+    const saved = body.data || {}
+    const parts = [
+      `已改：${fmtNum(saved.before)} → ${fmtNum(saved.reading)}，本期用量 ${fmtNum(saved.usageQty)}`,
+    ]
+    if (saved.next) parts.push(`${saved.next.readDate} 那期用量 ${fmtNum(saved.next.usageQty)}`)
+    ElMessage.success(parts.join('；'))
+    closeReadingEdit()
+    await loadHistory()
+    await loadSheet()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.msg || e?.message || '保存失败')
+  } finally {
+    savingReading.value = false
   }
 }
 
@@ -1864,7 +2024,11 @@ onMounted(async () => {
         </div>
 
         <div class="min-h-0 flex-1 overflow-auto">
-          <table class="ledger-table w-full min-w-[900px] table-fixed text-sm">
+          <!-- 管理员多一列「改」（76px），所以最小宽度跟着加，不加会把这列挤成两行 -->
+          <table
+            class="ledger-table w-full table-fixed text-sm"
+            :class="isAdminUser ? 'min-w-[980px]' : 'min-w-[900px]'"
+          >
             <colgroup>
               <col class="w-[120px]" />
               <col class="w-[220px]" />
@@ -1872,6 +2036,7 @@ onMounted(async () => {
               <col class="w-[130px]" />
               <col class="w-[130px]" />
               <col class="w-[130px]" />
+              <col v-if="isAdminUser" class="w-[76px]" />
             </colgroup>
             <thead class="sticky top-0 z-10 bg-region text-xs text-slate-500 shadow-[0_1px_0_0_var(--color-line)]">
               <tr>
@@ -1881,6 +2046,7 @@ onMounted(async () => {
                 <th class="px-3 py-2.5 text-right font-medium">读数</th>
                 <th class="px-3 py-2.5 text-right font-medium">上次读数</th>
                 <th class="px-3 py-2.5 text-right font-medium">用量</th>
+                <th v-if="isAdminUser" class="w-[76px] px-3 py-2.5 text-right font-medium">改</th>
               </tr>
             </thead>
             <tbody>
@@ -1893,9 +2059,19 @@ onMounted(async () => {
                 <td class="num px-3 py-2 text-right text-slate-700">{{ fmtNum(row.reading) }}</td>
                 <td class="num px-3 py-2 text-right text-slate-500">{{ fmtNum(row.prevReading) }}</td>
                 <td class="num px-3 py-2 text-right font-medium text-slate-900">{{ fmtNum(row.usageQty) }}</td>
+                <td v-if="isAdminUser" class="px-3 py-2 text-right">
+                  <button
+                    type="button"
+                    class="rounded-md border border-line px-2.5 py-1 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+                    :aria-label="`改 ${row.meterName || '这块表'} ${row.readDate} 的读数`"
+                    @click="openReadingEdit(row)"
+                  >
+                    改
+                  </button>
+                </td>
               </tr>
               <tr v-if="!historyLoading && !historyRows.length">
-                <td colspan="6" class="px-4 py-10 text-center text-sm text-slate-500">
+                <td :colspan="isAdminUser ? 7 : 6" class="px-4 py-10 text-center text-sm text-slate-500">
                   {{ historyLoading ? '正在加载…' : '选好日期区间再点查询' }}
                 </td>
               </tr>
@@ -1953,6 +2129,155 @@ onMounted(async () => {
           </button>
         </div>
       </div>
+    </div>
+
+    <!--
+      改历史读数（2026-11-23，变更-264）。
+
+      壳照搬上面的「粘贴导入」，**只有一处不同**：这张卡用 `ds-sheet-surface`
+      而不是卡片配方（bg-raised + shadow-card）。
+
+      为什么：DSH 那一层把 `.rounded-card.bg-raised` 统一改成了
+      `background-color: var(--ds-card)`，而 --ds-card 是 α=0.32 的半透明白
+      （src/styles/dsh.css:28）。铺在白纸上看着是「更轻的卡」，可一旦压在
+      bg-black/15 的遮罩上，背后那张表的单号、读数会像重影一样浮在弹层里
+      —— 正是 2026-11-18 变更-233 记下的问题（使用方原话「弹窗和背后页面糊在一起」）。
+      这个弹层是拿来改真实生产数据的，字必须干净，所以走项目里「浮面」那一档：
+      实心暖纸 #fdfcfa + 更重的落影（dsh.css:186 的 .ds-sheet-surface）。
+    -->
+    <div
+      v-if="editingRow"
+      class="fixed inset-0 z-30 flex items-center justify-center bg-black/15 p-6"
+      @click.self="closeReadingEdit"
+    >
+      <div class="flex max-h-[86vh] w-[560px] flex-col rounded-card border border-line ds-sheet-surface">
+        <div class="flex items-start justify-between border-b border-line px-5 py-3">
+          <div>
+            <p class="text-sm font-semibold text-slate-900">改历史读数</p>
+            <p class="mt-0.5 text-[11px] text-slate-500">
+              {{ editingRow.meterName }}<template v-if="editingRow.section"> · {{ editingRow.section }}</template>
+              · {{ editingRow.readDate }}
+              <template v-if="editingRow.multiplier && editingRow.multiplier !== 1">
+                · 倍率 {{ editingRow.multiplier }}
+              </template>
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1 text-xs text-slate-500 transition hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+            @click="closeReadingEdit"
+          >
+            关闭
+          </button>
+        </div>
+
+        <div class="min-h-0 flex-1 space-y-4 overflow-auto px-5 py-4">
+          <!-- 三个数摆一排：改的时候眼睛只要在这三个之间来回，不用扫全表 -->
+          <div class="grid grid-cols-3 gap-3">
+            <div class="rounded-md border border-line bg-desk px-3 py-2">
+              <p class="text-[11px] text-slate-500">上次读数</p>
+              <p class="num mt-1 text-sm text-slate-600">{{ fmtNum(editingRow.prevReading) }}</p>
+            </div>
+            <div class="rounded-md border border-line bg-desk px-3 py-2">
+              <p class="text-[11px] text-slate-500">原读数</p>
+              <p class="num mt-1 text-sm text-slate-500 line-through">{{ fmtNum(editingRow.reading) }}</p>
+            </div>
+            <div class="rounded-md border border-line bg-desk px-3 py-2">
+              <p class="text-[11px] text-slate-500">本期用量</p>
+              <p class="num mt-1 text-sm">
+                <span class="text-slate-500 line-through">{{ fmtNum(editingRow.usageQty) }}</span>
+                <span class="ml-1 font-medium text-slate-900">{{ fmtNum(editUsage) }}</span>
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label for="reading-edit-input" class="text-xs text-slate-700">新读数</label>
+            <input
+              id="reading-edit-input"
+              v-model="editValue"
+              type="number"
+              inputmode="decimal"
+              step="any"
+              min="0"
+              autocomplete="off"
+              class="num mt-1 w-full rounded-md border border-line bg-desk px-3 py-2 text-right font-mono text-lg text-slate-900 outline-none focus:border-brand focus:ring-2 focus:ring-brand-100"
+              @keyup.enter="saveReadingEdit"
+            />
+            <p v-if="!editValid" class="mt-1 text-[11px] text-amber-700">
+              读数要填大于 0 的数字（原表读数照抄，别带小数点后的位）
+            </p>
+            <p v-else-if="editUsageDelta !== null" class="mt-1 text-[11px] text-slate-500">
+              本期用量比原来 {{ fmtSigned(editUsageDelta) }}
+            </p>
+          </div>
+
+          <!-- 连带影响。这条最容易漏：改本期，下一期的「上次读数」也跟着动 -->
+          <div v-if="editNext" class="rounded-md border border-line bg-desk px-3 py-2.5">
+            <p class="text-[11px] text-slate-500">下一期会跟着改</p>
+            <p class="mt-1 text-xs text-slate-700">
+              {{ editNext.readDate }} 那期：上次读数 {{ fmtNum(editNext.prevReading) }} →
+              {{ fmtNum(editNumber) }}，用量 {{ fmtNum(editNext.usageQty) }} → {{ fmtNum(nextUsage) }}
+            </p>
+          </div>
+          <p v-else-if="!editNextBusy" class="text-[11px] text-slate-500">
+            这是这块表最后一次抄表，改它不会连带影响别的期。
+          </p>
+
+          <p
+            v-if="toNum(nextUsage) !== null && nextUsage < 0"
+            class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+          >
+            新读数比 {{ editNext?.readDate }} 那期还大，下一期会算出负用量。确认这块表是换过表或翻过零再存。
+          </p>
+
+          <!-- 照片：抄错的时候照片是最硬的证据，所以能看就看 -->
+          <div v-if="editingRow.imagePath">
+            <p class="text-[11px] text-slate-500">抄表照片</p>
+            <button
+              type="button"
+              class="mt-1 rounded-md border border-line transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              @click="photoZoom = assetUrl(editingRow.imagePath)"
+            >
+              <img
+                :src="assetUrl(editingRow.imagePath)"
+                alt="抄表照片"
+                class="h-20 w-20 rounded-md object-cover"
+              />
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-line px-5 py-2.5">
+          <p class="text-[11px] text-slate-500">只改读数，日期与归属不动</p>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="rounded-md border border-line px-3 py-1.5 text-xs text-slate-700 transition hover:bg-region focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink"
+              @click="closeReadingEdit"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="rounded-md bg-brand px-3.5 py-1.5 text-xs font-medium text-on-brand transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-ink disabled:opacity-50"
+              :disabled="!editValid || savingReading"
+              @click="saveReadingEdit"
+            >
+              {{ savingReading ? '保存中…' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 照片放大（点缩略图才出现）。不引图库组件：这里只需要「再大一点能看清数字」 -->
+    <div
+      v-if="photoZoom"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-8"
+      @click="photoZoom = ''"
+    >
+      <img :src="photoZoom" alt="抄表照片" class="max-h-[86vh] max-w-full rounded-card" />
     </div>
   </div>
 </template>
