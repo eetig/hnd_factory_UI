@@ -148,7 +148,11 @@ onMounted(() => {
 function goTab(index) {
   if (index === tabIndex.value) return
   tabIndex.value = index
-  reloadPane(index)
+  /* 刷新推到滑动结束之后：两栏内容本来就都在，先让轨道顺顺地滑过去，
+   * 再读存储/发同步请求，别让渲染卡在动画中间（这就是「看着卡卡的」的来源之一）。 */
+  setTimeout(() => {
+    reloadPane(index)
+  }, 240)
 }
 </script>
 
@@ -246,7 +250,7 @@ function goTab(index) {
   border-radius: 18rpx;
   background: var(--ui-surface);
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
-  transition: transform 260ms cubic-bezier(0.22, 0.68, 0.16, 1);
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1);
 
   &.is-right {
     transform: translateX(calc(100% + 10rpx));
@@ -280,7 +284,8 @@ function goTab(index) {
   display: flex;
   width: 200%;
   height: 100%;
-  transition: transform 300ms cubic-bezier(0.22, 0.68, 0.16, 1);
+  /* 220ms 就够看清「滑过去了」，再长就显拖沓；曲线前段起得快、中段线性、收尾稳 */
+  transition: transform 220ms cubic-bezier(0.4, 0.66, 0.24, 1);
   will-change: transform;
 
   /* 手指按着的时候不能有过渡，否则轨道会「跟不上」，手感就变重了 */
@@ -292,5 +297,9 @@ function goTab(index) {
 .vd__pane {
   width: 50%;
   height: 100%;
+  /* 两栏各自独立合成，滑的时候只搬这两层，不重排里面的卡片 */
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout paint;
 }
 </style>
