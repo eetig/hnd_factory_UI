@@ -264,7 +264,10 @@ function onTouchMove(e) {
   // 这样「最后一组再往左滑」跟「组内正常滑」是同一种手感，不用更用力。
   const want = startScroll - dx
   scrollX.value = Math.max(0, Math.min(maxScroll.value, want))
-  edgeOffset = want < 0 ? want : want > maxScroll.value ? want - maxScroll.value : 0
+  /* 滑到头多出来的位移，方向要跟手指一致：往左滑（want 超出末尾）记负值，
+   * 往右滑（want 小于 0）记正值 —— 外面那层轨道就按这个值同向平移，
+   * 否则手指往左、画面往右，看着非常别扭。 */
+  edgeOffset = want < 0 ? -want : want > maxScroll.value ? maxScroll.value - want : 0
   if (edgeOffset !== lastEdgeOffset) {
     lastEdgeOffset = edgeOffset
     emit('edge-drag', edgeOffset)

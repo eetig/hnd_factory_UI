@@ -50,7 +50,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import PageTitle from '../../components/PageTitle.vue'
 import VaultPane from '../../components/vault/VaultPane.vue'
@@ -81,14 +81,21 @@ const trackStyle = computed(() => ({
 
 const panes = () => [vaultPane.value, snippetsPane.value]
 
+/* 换栏时把「多滑出来的位移」清零，否则万一某次手指抬起的事件没接住，
+ * 轨道会停在两栏中间（画面上就是内容被裁掉一半） */
+watch(tabIndex, () => {
+  edgeOffset.value = 0
+  dragging.value = false
+})
+
 function onEdgeDrag(offset) {
   if (!offset) {
     dragging.value = false
     edgeOffset.value = 0
     return
   }
-  // 第一栏往左多滑 = 去第二栏；第二栏往右多滑 = 回第一栏；反方向就顶住
-  const blocked = (tabIndex.value === 0 && offset < 0) || (tabIndex.value === 1 && offset > 0)
+  // 往左多滑（负）= 去第二栏；往右多滑（正）= 回第一栏；反方向就顶住
+  const blocked = (tabIndex.value === 0 && offset > 0) || (tabIndex.value === 1 && offset < 0)
   dragging.value = true
   /* 顶住时不是同心缩水（那太软），而是越推越沉：起手还能动，后半段几乎推不动 */
   edgeOffset.value = blocked ? Math.sign(offset) * ((Math.abs(offset) * 0.34) / (1 + Math.abs(offset) / 150)) : offset
@@ -99,8 +106,8 @@ function onEdgeRelease(payload) {
   dragging.value = false
   // 换栏要「确实拉出去一大截」才认，避免轻轻一拂就跳栏
   const threshold = 96
-  const toRecipe = tabIndex.value === 0 && offset > threshold
-  const toPassword = tabIndex.value === 1 && offset < -threshold
+  const toRecipe = tabIndex.value === 0 && offset < -threshold
+  const toPassword = tabIndex.value === 1 && offset > threshold
   if (toRecipe) {
     tabIndex.value = 1
     snippetsPane.value?.focusFirst()
