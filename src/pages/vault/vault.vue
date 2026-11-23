@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="vt" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
     <PageTitle title="密码箱" />
 
@@ -29,14 +29,95 @@
         </view>
       </view>
 
+      <!-- 组胶囊：手指滑到哪组，它就跟着亮；点一下也能直接跳过去 -->
+      <scroll-view
+        v-if="items.length && groups.length"
+        class="vt__chips"
+        scroll-x
+        scroll-with-animation
+        :show-scrollbar="false"
+        :scroll-into-view="chipAnchor"
+      >
+        <view class="vt__chips-inner">
+          <view
+            v-for="(group, index) in groups"
+            :id="`vc-${index}`"
+            :key="group.name"
+            class="vt__chip-tab"
+            :class="{ 'is-on': index === activeChip }"
+            @click="goGroup(index)"
+          >
+            <text>{{ group.name }}</text>
+            <text v-if="group.items.length" class="vt__chip-num">{{ group.items.length }}</text>
+          </view>
+        </view>
+      </scroll-view>
+
       <view class="vt__meta">
-        <text class="vt__meta-strong">{{ items.length }} 条</text>
+        <text class="vt__meta-strong">{{ searching ? `搜到 ${hitCount} 条` : `${items.length} 条` }}</text>
         <text class="vt__meta-rest">{{ syncText }}</text>
       </view>
 
-      <scroll-view class="vt__scroll" scroll-y :show-scrollbar="false">
+      <view class="vt__pager">
+        <!-- 一组一屏，左右滑换组；每屏里上下滑是自己的事，不挡手势 -->
+        <GesturePager
+          v-if="items.length && groups.length && pagerH"
+          ref="pagerRef"
+          v-model="pageIndex"
+          :items="groups"
+          item-key="name"
+          :height="pagerH"
+          :peek-scale="0"
+          :peek-fade="0"
+          :peek-inset="0"
+          :window-radius="1"
+          @update:progress="onProgress"
+        >
+          <template #default="{ item }">
+            <view class="vt__page">
+              <scroll-view class="vt__page-scroll" scroll-y :show-scrollbar="false">
+                <view
+                  v-for="row in item.items"
+                  :key="row.id"
+                  class="vt__card"
+                  @click="useItem(row)"
+                  @longpress="openSheet(row)"
+                >
+                  <view class="vt__card-top">
+                    <text class="vt__card-name">{{ row.name }}</text>
+                    <text class="vt__chip">{{ typeLabel(row.type) }}</text>
+                  </view>
+                  <view class="vt__line">
+                    <text class="vt__line-key">地址</text>
+                    <text class="vt__line-val">{{ addressOf(row) || '没填' }}</text>
+                  </view>
+                  <view v-if="row.username" class="vt__line">
+                    <text class="vt__line-key">用户</text>
+                    <text class="vt__line-val">{{ row.username }}</text>
+                  </view>
+                  <view class="vt__line">
+                    <text class="vt__line-key">密码</text>
+                    <text class="vt__line-pass">{{ row.password || '（空）' }}</text>
+                  </view>
+                  <text v-if="row.note" class="vt__note">{{ row.note }}</text>
+                </view>
+
+                <view v-if="!item.items.length" class="vt__page-empty">
+                  <text class="vt__page-empty-title">{{ item.name }} 这组还空着</text>
+                  <text class="vt__page-empty-text">点下面「＋ 记一条」，会直接记到这一组。</text>
+                </view>
+
+                <!-- 备份藏在最底下：平时用不到，换手机才用 -->
+                <view v-if="item.items.length" class="vt__foot">
+                  <text class="vt__foot-link" @click="openBackup">换手机时用（备份 / 导入）</text>
+                </view>
+              </scroll-view>
+            </view>
+          </template>
+        </GesturePager>
+
         <!-- 空：两种情况，话不一样 -->
-        <view v-if="!items.length" class="vt__empty">
+        <view v-else-if="!items.length" class="vt__empty">
           <text class="vt__empty-title">还没拉下来</text>
           <text class="vt__empty-text">
             电脑上的密码会自动同步过来。要是网不好，先点下面这个按钮，把内置的几条装上顶一下。
@@ -45,49 +126,14 @@
           <text class="vt__empty-tip">以后在电脑上跟 DSH 说「帮我记一下 XX」，这里就有了。</text>
         </view>
 
-        <view v-else-if="!grouped.length" class="vt__empty">
+        <view v-else-if="!groups.length" class="vt__empty">
           <text class="vt__empty-title">没搜到「{{ keyword }}」</text>
-          <text class="vt__empty-text">换个词试试，或者点右上角叉清掉关键词。</text>
+          <text class="vt__empty-text">换个词试试，或者点搜索框右边的叉清掉关键词。</text>
         </view>
-
-        <!-- 分组平铺 -->
-        <view v-for="group in grouped" :key="group.name" class="vt__group">
-          <text class="vt__group-name">{{ group.name }}</text>
-          <view
-            v-for="item in group.items"
-            :key="item.id"
-            class="vt__card"
-            @click="useItem(item)"
-            @longpress="openSheet(item)"
-          >
-            <view class="vt__card-top">
-              <text class="vt__card-name">{{ item.name }}</text>
-              <text class="vt__chip">{{ typeLabel(item.type) }}</text>
-            </view>
-            <view class="vt__line">
-              <text class="vt__line-key">地址</text>
-              <text class="vt__line-val">{{ addressOf(item) || '没填' }}</text>
-            </view>
-            <view v-if="item.username" class="vt__line">
-              <text class="vt__line-key">用户</text>
-              <text class="vt__line-val">{{ item.username }}</text>
-            </view>
-            <view class="vt__line">
-              <text class="vt__line-key">密码</text>
-              <text class="vt__line-pass">{{ item.password || '（空）' }}</text>
-            </view>
-            <text v-if="item.note" class="vt__note">{{ item.note }}</text>
-          </view>
-        </view>
-
-        <!-- 备份藏在最底下：平时用不到，换手机才用 -->
-        <view class="vt__foot">
-          <text class="vt__foot-link" @click="openBackup">换手机时用（备份 / 导入）</text>
-        </view>
-      </scroll-view>
+      </view>
 
       <view class="vt__bottom">
-        <view class="vt__add" @click="goEdit()">＋ 记一条</view>
+        <view class="vt__add" @click="addHere">＋ 记一条</view>
       </view>
     </template>
 
@@ -118,16 +164,18 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, nextTick, onMounted, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import PageTitle from '../../components/PageTitle.vue'
 import AppPopup from '../../components/AppPopup.vue'
+import GesturePager from '../../components/GesturePager.vue'
 import { useTheme } from '../../composables/useTheme'
 import { usePageFrame } from '../../composables/usePageFrame'
 import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 import { isAdmin } from '../../api/auth'
 import { copyToClipboard } from '../../utils/clipboard'
 import {
+  HOME_GROUPS,
   addressOf,
   buildBackupText,
   groupItems,
@@ -183,6 +231,65 @@ const syncText = computed(() => {
   return `刚同步 · ${at.slice(11, 16)}`
 })
 
+/* ===== 一组一屏的横滑 ===== */
+
+const inst = getCurrentInstance()
+const pagerRef = ref(null)
+const pagerH = ref(0)
+const pageIndex = ref(0)
+const floatIndex = ref(0)
+
+const groups = computed(() => {
+  const list = grouped.value
+  // 搜索时只看命中的组，别让五张空页在那儿翻
+  if (searching.value) return list
+  if (!items.value.length) return []
+  const byName = new Map(list.map((group) => [group.name, group]))
+  // 五个归属组常驻：滑到「家里」就是空的，但记号时能直接记进去
+  const homes = HOME_GROUPS.map((name) => byName.get(name) || { name, items: [] })
+  const rest = list.filter((group) => !HOME_GROUPS.includes(group.name))
+  return [...homes, ...rest]
+})
+const searching = computed(() => !!keyword.value.trim())
+const hitCount = computed(() => groups.value.reduce((sum, group) => sum + group.items.length, 0))
+
+/** 拖到一半时页号是小数，胶囊四舍五入亮最近的那组 */
+const activeChip = computed(() => {
+  const max = Math.max(0, groups.value.length - 1)
+  return Math.min(max, Math.max(0, Math.round(floatIndex.value)))
+})
+
+const chipAnchor = computed(() => (groups.value.length ? `vc-${activeChip.value}` : ''))
+
+function onProgress(value) {
+  floatIndex.value = Number.isFinite(value) ? value : 0
+}
+
+function goGroup(index) {
+  floatIndex.value = index
+  if (pagerRef.value) pagerRef.value.goTo(index)
+}
+
+/** 轨道是绝对定位的，必须显式给高度 —— 量一次外层容器 */
+function measurePager() {
+  if (!inst || !inst.proxy) return
+  uni
+    .createSelectorQuery()
+    .in(inst.proxy)
+    .select('.vt__pager')
+    .boundingClientRect((rect) => {
+      if (rect && rect.height > 0) pagerH.value = Math.round(rect.height)
+    })
+    .exec()
+}
+
+watch(
+  () => groups.value.length,
+  (len) => {
+    if (len && pageIndex.value > len - 1) pageIndex.value = len - 1
+  }
+)
+
 function refresh() {
   migrateGrouping()
   items.value = readItems()
@@ -196,6 +303,7 @@ async function sync() {
   syncError.value = ''
   try {
     await pullAndMerge()
+    migrateGrouping()
     refresh()
   } catch (err) {
     syncError.value = (err && err.message) || '网络不通'
@@ -206,7 +314,12 @@ async function sync() {
 
 onShow(() => {
   refresh()
+  nextTick(measurePager)
   if (allowed.value) sync()
+})
+
+onMounted(() => {
+  nextTick(measurePager)
 })
 
 /** 点一下整张卡 = 复制密码（最常用的动作，不让人找按钮） */
@@ -260,9 +373,18 @@ function confirmRemove(item) {
   })
 }
 
-function goEdit(id) {
-  const query = id ? `?id=${encodeURIComponent(id)}` : ''
+function goEdit(id, group) {
+  const params = []
+  if (id) params.push(`id=${encodeURIComponent(id)}`)
+  else if (group) params.push(`group=${encodeURIComponent(group)}`)
+  const query = params.length ? `?${params.join('&')}` : ''
   uni.navigateTo({ url: `/pages/vault/edit${query}` })
+}
+
+/** 「＋ 记一条」默认落到当前这一组，省一次挑选 */
+function addHere() {
+  const here = groups.value[activeChip.value]
+  goEdit('', here ? here.name : '')
 }
 
 /** 切到「配方」页签：用 redirect 换页，返回键直接回首页，不在两页之间来回弹 */
@@ -429,6 +551,84 @@ function doImport() {
 
 .vt__meta-rest {
   font-size: 24rpx;
+  color: var(--ui-text-3);
+}
+
+/* 组胶囊：横滑时跟着亮 */
+.vt__chips {
+  flex: none;
+  width: 100%;
+  padding-top: 14rpx;
+  box-sizing: border-box;
+}
+
+.vt__chips-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 0 28rpx;
+}
+
+.vt__chip-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6rpx;
+  height: 58rpx;
+  line-height: 58rpx;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: var(--ui-text-2);
+  background: var(--ui-surface);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.vt__chip-tab.is-on {
+  color: var(--ui-bg);
+  background: var(--ui-text);
+  font-weight: 600;
+}
+
+.vt__chip-num {
+  font-size: 20rpx;
+  opacity: 0.55;
+}
+
+/* 一组一屏的轨道 */
+.vt__pager {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.vt__page {
+  height: 100%;
+}
+
+.vt__page-scroll {
+  height: 100%;
+  padding: 8rpx 28rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.vt__page-empty {
+  padding: 120rpx 32rpx;
+  text-align: center;
+}
+
+.vt__page-empty-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--ui-text-2);
+}
+
+.vt__page-empty-text {
+  display: block;
+  margin-top: 16rpx;
+  font-size: 25rpx;
+  line-height: 1.6;
   color: var(--ui-text-3);
 }
 

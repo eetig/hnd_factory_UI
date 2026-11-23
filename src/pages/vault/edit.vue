@@ -194,6 +194,12 @@ onLoad((options = {}) => {
   const id = options.id ? decodeURIComponent(options.id) : ''
   if (!id) {
     autoFocus.value = true
+    // 从哪一组点进来的，就默认记到那一组
+    const preset = options.group ? decodeURIComponent(options.group) : ''
+    if (preset) {
+      form.value.group = preset
+      typedGroup.value = true
+    }
     return
   }
 

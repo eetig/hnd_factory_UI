@@ -42,7 +42,6 @@ export const HOME_GROUPS = ['公司', '项目部', '家里', '个人', '云']
 
 /** 老数据搬家：v1 的组名映射到「归属」口径，只跑一次 */
 const GROUP_ALIAS = { 公司本地PC: '公司', 本机: '公司', 部署服务器: '云', 服务器: '云' }
-const MIGRATED_KEY = 'vaultGroupV2'
 
 /**
  * 类型与默认端口。
@@ -232,11 +231,10 @@ export function inferGroup(name = '', address = '') {
 
 /**
  * 老数据搬家（幂等）：把 v1 的「公司本地PC / 部署服务器」换成「公司 / 云」。
- * 只在升级后的第一次进入时跑一遍，之后有标记直接跳过。
+ * 每次进页面都扫一遍 —— 服务器上可能还留着老组名，同步下来会被带回来，
+ * 一次性标记会让这些条目一直挂在老组里。改名本身是幂等的，扫一遍很便宜。
  */
 export function migrateGrouping() {
-  if (getItem(MIGRATED_KEY)) return 0
-
   const items = readItems()
   let changed = 0
   const next = items.map((item) => {
@@ -247,7 +245,6 @@ export function migrateGrouping() {
   })
 
   if (changed) writeItems(next)
-  setItem(MIGRATED_KEY, '1')
   return changed
 }
 
