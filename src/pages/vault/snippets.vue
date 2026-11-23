@@ -355,12 +355,15 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // 首帧之后放开位移，从侧面滑回正位
+  // 首帧之后放开位移，从侧面滑回正位。
+  // 这里**不能用 requestAnimationFrame**：H5 有 window 所以能跑，真机上这段代码跑在
+  // app-service（逻辑层）里，没有 rAF —— 一调就抛错，后面的清理全被跳过，页面就永久停在
+  // 「偏出去 + 半透明」那一帧（2026-11-23 真机截图复现过）。用定时器等价于下一帧。
   if (shiftClass.value) {
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       shiftClass.value = ''
-    })
-    // 兜底：切到后台时 rAF 可能不跑，别让页面卡在偏出去的位置
+    }, 16)
+    // 兜底：切后台时定时器也可能被推迟，别让页面卡在偏移状态
     setTimeout(() => {
       shiftClass.value = ''
     }, 400)
@@ -380,6 +383,11 @@ function goVault() {
   setTimeout(() => {
     uni.redirectTo({ url: '/pages/vault/vault' })
   }, 150)
+  // 万一换页没成，别让这页一直停在滑出去的样子
+  setTimeout(() => {
+    leaving.value = false
+    shiftClass.value = ''
+  }, 900)
 }
 
 /** 卡片上只放前三行，剩下的留白，反正点一下就是复制整段 */
@@ -443,19 +451,41 @@ function goEdit(id) {
   transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
 }
 
+/* 出发：往右滑走（用 transition，页马上卸载，卡住也无所谓） */
 .sn.is-leave-right {
   transform: translateX(28%);
   opacity: 0.2;
 }
 
+/* 到达：keyframes + both —— 动画自己停在终点，清理没跑到也不会永久卡在偏移帧 */
 .sn.is-enter-right {
-  transform: translateX(28%);
-  opacity: 0.2;
+  animation: sn-enter-right 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
 }
 
 .sn.is-enter-left {
-  transform: translateX(-28%);
-  opacity: 0.2;
+  animation: sn-enter-left 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
+}
+
+@keyframes sn-enter-right {
+  from {
+    transform: translateX(28%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sn-enter-left {
+  from {
+    transform: translateX(-28%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .sn__intro {

@@ -414,12 +414,14 @@ onShow(() => {
 })
 
 onMounted(() => {
-  // 首帧之后放开位移，页面就从侧面滑回正位；没有标记的话这一帧什么也不做
+  // 首帧之后放开位移，页面就从侧面滑回正位。
+  // 不用 requestAnimationFrame：真机上这段跑在 app-service（逻辑层）里，没有 rAF，
+  // 一调就抛错，清理全部被跳过，页面会永久停在偏出去 + 半透明的状态。
   if (shiftClass.value) {
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       shiftClass.value = ''
-    })
-    // 兜底：切到后台时 rAF 可能不跑，别让页面卡在偏出去的位置
+    }, 16)
+    // 兜底：别让页面卡在偏移位置
     setTimeout(() => {
       shiftClass.value = ''
     }, 400)
@@ -505,6 +507,11 @@ function goSnippets() {
   setTimeout(() => {
     uni.redirectTo({ url: '/pages/vault/snippets' })
   }, 150)
+  // 万一换页没成（路由被拦、页面栈异常），别让这页一直停在滑出去的样子
+  setTimeout(() => {
+    leaving.value = false
+    shiftClass.value = ''
+  }, 900)
 }
 
 function doSeed() {
@@ -570,20 +577,43 @@ function doImport() {
   transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
 }
 
-/* 出发：整页往左滑走；到达：从右边滑回来（由 setup 里的 shiftClass 决定初值） */
+/* 出发：整页往左滑走（用 transition，页面马上就会卸载，卡住也无所谓） */
 .vt.is-leave-left {
   transform: translateX(-28%);
   opacity: 0.2;
 }
 
+/* 到达：用 keyframes 从侧面滑回正位。
+ * 关键是 `both` —— 动画自己会停在终点，就算 JS 的清理没跑到，页面也只是「滑进来停住」，
+ * 不会永久停在偏移 + 半透明那一帧（2026-11-23 真机上就是这样卡死的）。 */
 .vt.is-enter-right {
-  transform: translateX(28%);
-  opacity: 0.2;
+  animation: vt-enter-right 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
 }
 
 .vt.is-enter-left {
-  transform: translateX(-28%);
-  opacity: 0.2;
+  animation: vt-enter-left 190ms cubic-bezier(0.22, 0.68, 0.16, 1) both;
+}
+
+@keyframes vt-enter-right {
+  from {
+    transform: translateX(28%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes vt-enter-left {
+  from {
+    transform: translateX(-28%);
+    opacity: 0.2;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .vt__deny {
