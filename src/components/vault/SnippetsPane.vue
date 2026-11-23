@@ -1,19 +1,5 @@
 <template>
-  <view
-    class="sn"
-    :class="themeClass"
-    :style="[themeVars, frameStyle]"
-    @touchstart="onEdgeStart"
-    @touchend="onEdgeEnd"
-  >
-    <PageTitle title="MCP & Skills" />
-
-    <view class="sn__tabs">
-      <view class="sn__seg-pill is-right" />
-      <view class="sn__tab" @click="goVault">密码</view>
-      <view class="sn__tab is-on">配方</view>
-    </view>
-
+  <view class="sn vt--pane">
     <view class="sn__intro">
       <text class="sn__intro-text">
         点一下就是复制，粘给新电脑的 DSH，它自己就装好了。
@@ -125,19 +111,9 @@
 
 <script setup>
 import { computed, getCurrentInstance, nextTick, onMounted, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
-import PageTitle from '../../components/PageTitle.vue'
-import GesturePager from '../../components/GesturePager.vue'
-import { useTheme } from '../../composables/useTheme'
-import { usePageFrame } from '../../composables/usePageFrame'
-import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
-import { isAdmin } from '../../api/auth'
+import GesturePager from '../GesturePager.vue'
 import { copyToClipboard } from '../../utils/clipboard'
 import { lastSyncedAt, pullAndMerge, readSnippets, removeSnippet } from '../../utils/vault'
-
-const { themeClass, themeVars } = useTheme()
-const { frameStyle } = usePageFrame()
-const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
 
 const KINDS = [
   { key: 'all', label: '全部' },
@@ -301,7 +277,6 @@ const syncing = ref(false)
 const syncError = ref('')
 
 const syncText = computed(() => {
-  if (!isAdmin()) return ''
   if (syncing.value) return '正在同步…'
   if (syncError.value) return `同步失败：${syncError.value}`
   const at = syncedAt.value
@@ -333,19 +308,17 @@ async function sync() {
   }
 }
 
-onShow(() => {
-  if (!isAdmin()) {
-    uni.showToast({ title: '只有管理员能看', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
-    return
-  }
+/* 常驻在宿主轨道里：页面 onShow 不触发，宿主每次回到本页时调 reload() */
+async function reload() {
   refresh()
   nextTick(() => {
     measurePager()
     measureChips()
   })
-  sync()
-})
+  await sync()
+}
+
+defineExpose({ reload })
 
 onMounted(() => {
   nextTick(() => {
@@ -353,21 +326,6 @@ onMounted(() => {
     measureChips()
   })
 })
-
-/** 切回「密码」页签：往回退一层，用系统自带的出栈滑出动画（跟点返回是同一种）。
- *  万一是从别处直接进的这一页（页面栈里没有上一层），就换成 replace，别把 App 退掉。 */
-function goVault() {
-  const stack = typeof getCurrentPages === 'function' ? getCurrentPages() : []
-  if (stack.length > 1) {
-    uni.navigateBack({
-      delta: 1,
-      animationType: 'slide-out-right',
-      animationDuration: 200,
-    })
-    return
-  }
-  uni.redirectTo({ url: '/pages/vault/vault' })
-}
 
 /** 卡片上只放前三行，剩下的留白，反正点一下就是复制整段 */
 function brief(text) {
@@ -423,7 +381,8 @@ function goEdit(id) {
 .sn {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* 常驻在宿主双栏轨道里，高度由栏位给 */
+  height: 100%;
   background: var(--ui-bg);
   overflow: hidden;
 }
