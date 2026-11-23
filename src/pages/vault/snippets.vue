@@ -145,7 +145,13 @@ const syncText = computed(() => {
   if (syncing.value) return '正在同步…'
   if (syncError.value) return `同步失败：${syncError.value}`
   const at = syncedAt.value
-  return at ? `刚同步 · ${at.slice(11, 16)}` : '还没同步过'
+  if (!at) return '还没同步过'
+  // 服务器的时间串是 UTC，slice 出来会小 8 小时，换成手机本地时分
+  const d = new Date(at)
+  if (Number.isNaN(d.getTime())) return '刚同步'
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `刚同步 · ${hh}:${mm}`
 })
 
 function refresh() {

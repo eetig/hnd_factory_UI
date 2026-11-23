@@ -1,9 +1,9 @@
-{
+﻿{
     "name" : "HND生产助手",
     "appid" : "__UNI__BE0BD40",
     "description" : "工厂工单/领料/入库汇总、导入与图片识别辅助录入",
-    "versionName" : "1.0.32",
-    "versionCode" : "132",
+    "versionName" : "1.0.33",
+    "versionCode" : "133",
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,

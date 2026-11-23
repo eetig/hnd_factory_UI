@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view class="vt" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
     <PageTitle title="密码箱" />
 
@@ -228,7 +228,13 @@ const syncText = computed(() => {
   if (syncError.value) return `同步失败：${syncError.value}`
   const at = syncedAt.value
   if (!at) return '还没同步过'
-  return `刚同步 · ${at.slice(11, 16)}`
+  // 服务器返回的是 UTC 时间串，直接 slice 出来会比手机时间少 8 小时，
+  // 看着像「刚同步 · 07:29」而手机上是 15:29 —— 换成当地时分
+  const d = new Date(at)
+  if (Number.isNaN(d.getTime())) return '刚同步'
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `刚同步 · ${hh}:${mm}`
 })
 
 /* ===== 一组一屏的横滑 ===== */
