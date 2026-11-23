@@ -445,16 +445,6 @@ function openVault() {
   closeMenu()
   uni.navigateTo({ url: '/pages/vault/vault' })
 }
-/**
- * MCP & Skills（2026-11-23）：装技能 / 接服务的"配方库"。
- *
- * 跟密码箱共用同一本服务器总账（snippets 段），但它是另一页：
- * 一个记密码，一个记怎么装东西，混在一起找起来更慢。同样只给管理员。
- */
-function openSnippets() {
-  closeMenu()
-  uni.navigateTo({ url: '/pages/vault/snippets' })
-}
 /** 车间 / 泵房巡检（2026-11-19）：清单在 App 里自己维护，异常项要写说明并拍照 */
 function openInspect() {
   closeMenu()
@@ -5139,10 +5129,9 @@ onPullDownRefresh(async () => {
               <view class="drawer__link" @click="openElectricity">电费</view>
               <!-- 手机抄表：只有管理员用（使用方：「只有我抄表」） -->
               <view v-if="canReadMeter" class="drawer__link" @click="openMeterRead">电费抄表</view>
-              <!-- 密码箱：只有管理员，存的是他自己服务器/数据库的账号 -->
+              <!-- 密码箱：只有管理员，存的是他自己服务器/数据库的账号。
+                   「配方」（MCP & Skills）已经并进这一页的第二个页签，不再单开入口 -->
               <view v-if="isAdminUser" class="drawer__link" @click="openVault">密码箱</view>
-              <!-- MCP & Skills：装工具用的配方，换电脑时复制一段粘给 DSH -->
-              <view v-if="isAdminUser" class="drawer__link" @click="openSnippets">MCP &amp; Skills</view>
               <!-- 管控日志：只给管理员，不显眼、只主动点 -->
               <view v-if="isAdminUser" class="drawer__link" @click="openAuditLog">管控日志</view>
               <view v-if="isAdminUser" class="drawer__link" @click="openUserAdmin">用户名单</view>

@@ -34,6 +34,17 @@ const GROUPS_KEY = 'vaultGroups'
 export const UNGROUPED = '未分组'
 
 /**
+ * 预设的几个「归属」。这几个组永远排在最前面，顺序固定 ——
+ * 人找东西是「我在公司 → 要连 MySQL」，先按地点分，再按服务分。
+ * 用户自己起的新组名照样能用，排在预设组后面。
+ */
+export const HOME_GROUPS = ['公司', '项目部', '家里', '个人', '云']
+
+/** 老数据搬家：v1 的组名映射到「归属」口径，只跑一次 */
+const GROUP_ALIAS = { 公司本地PC: '公司', 本机: '公司', 部署服务器: '云', 服务器: '云' }
+const MIGRATED_KEY = 'vaultGroupV2'
+
+/**
  * 类型与默认端口。
  *
  * 端口只是「选中类型时帮你填一下」，随时能改、能清空 ——
@@ -145,8 +156,13 @@ export function listGroups(items = readItems()) {
     out.push(item.group)
   })
 
-  if (items.some((item) => item.group === UNGROUPED)) out.push(UNGROUPED)
-  return out
+  // 预设归属提到最前面，顺序写死，别让它们跟着录入先后乱飘
+  const head = HOME_GROUPS.filter((name) => out.includes(name))
+  const rest = out.filter((name) => !HOME_GROUPS.includes(name))
+  const ordered = [...head, ...rest]
+
+  if (items.some((item) => item.group === UNGROUPED)) ordered.push(UNGROUPED)
+  return ordered
 }
 
 /** 组里出现了新名字就记进顺序表，删条目不删组（组还可以再用） */
@@ -160,6 +176,79 @@ function rememberGroup(name) {
 
 export function findItem(id) {
   return readItems().find((row) => row.id === id) || null
+}
+
+/* ===== 自动猜：类型 / 归属 ===== */
+
+const PORT_TYPE = {
+  3306: 'mysql',
+  6379: 'redis',
+  1433: 'sqlserver',
+  22: 'ssh',
+  3389: 'rdp',
+  80: 'web',
+  443: 'web',
+  8080: 'web',
+  9000: 'oss',
+  9005: 'oss',
+  9025: 'oss',
+}
+
+/**
+ * 按地址里的端口猜类型，端口没线索再看名字里的关键词。
+ *
+ * 只在新条目、且用户没选过类型时才用；猜错了改一下就行，
+ * 所以这里宁可给一个「差不多」的答案，也不要留空让人自己点。
+ */
+export function inferType(address = '', name = '') {
+  const addr = String(address || '')
+  const port = (addr.match(/:(\d{2,5})\s*$/) || [])[1]
+  if (port && PORT_TYPE[Number(port)]) return PORT_TYPE[Number(port)]
+
+  const s = `${addr} ${name}`.toLowerCase()
+  if (s.includes('redis')) return 'redis'
+  if (s.includes('mysql') || s.includes('maria')) return 'mysql'
+  if (s.includes('sqlserver') || s.includes('mssql')) return 'sqlserver'
+  if (s.includes('minio') || s.includes('oss') || s.includes('存储')) return 'oss'
+  if (s.includes('nacos') || s.includes('后台') || s.includes('控制台') || s.includes('面板')) return 'web'
+  if (s.includes('ssh') || s.includes('终端')) return 'ssh'
+  if (s.includes('远程桌面') || s.includes('rdp')) return 'rdp'
+  return 'other'
+}
+
+/** 云上的机器认得出来就归「云」：IP / 域名 / 关键词都算线索 */
+const CLOUD_HINT = /(124\.220\.60\.154|hbhnd\.cloud|腾讯云|阿里云|华为云|云服务器|云主机)/i
+
+/** 猜这条属于哪个「归属」。猜不出返回空串，交给调用方兜底成未分组 */
+export function inferGroup(name = '', address = '') {
+  const s = `${name} ${address}`.toLowerCase()
+  if (CLOUD_HINT.test(s)) return '云'
+  if (/公司|办公室|工位|厂里|车间/.test(s)) return '公司'
+  if (/项目部|项目组|工地/.test(s)) return '项目部'
+  if (/家里|家中|自宅|客厅/.test(s)) return '家里'
+  if (/个人|自己|自用|私人/.test(s)) return '个人'
+  return ''
+}
+
+/**
+ * 老数据搬家（幂等）：把 v1 的「公司本地PC / 部署服务器」换成「公司 / 云」。
+ * 只在升级后的第一次进入时跑一遍，之后有标记直接跳过。
+ */
+export function migrateGrouping() {
+  if (getItem(MIGRATED_KEY)) return 0
+
+  const items = readItems()
+  let changed = 0
+  const next = items.map((item) => {
+    const alias = GROUP_ALIAS[item.group]
+    if (!alias) return item
+    changed += 1
+    return { ...item, group: alias }
+  })
+
+  if (changed) writeItems(next)
+  setItem(MIGRATED_KEY, '1')
+  return changed
 }
 
 /**

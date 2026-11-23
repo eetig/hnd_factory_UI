@@ -2,18 +2,54 @@
   <view class="sn" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
     <PageTitle title="MCP & Skills" />
 
+    <view class="sn__tabs">
+      <view class="sn__tab" @click="goVault">密码</view>
+      <view class="sn__tab is-on">配方</view>
+    </view>
+
     <view class="sn__intro">
       <text class="sn__intro-text">
-        刷到好用的工具就记这儿。换电脑时点一下复制，粘给那边的 DSH，它自己就装好了。
+        点一下就是复制，粘给新电脑的 DSH，它自己就装好了。
       </text>
     </view>
 
+    <view class="sn__bar">
+      <view class="sn__search">
+        <text class="sn__search-icon">🔍</text>
+        <input
+          v-model="keyword"
+          class="sn__search-input"
+          placeholder="搜名字或说明，比如 rea、部署、cad"
+          placeholder-class="sn__search-ph"
+          confirm-type="search"
+        />
+        <text v-if="keyword" class="sn__search-clear" @click="keyword = ''">✕</text>
+      </view>
+
+      <view class="sn__kinds">
+        <text
+          v-for="item in KINDS"
+          :key="item.key"
+          class="sn__kind"
+          :class="{ 'is-on': kind === item.key }"
+          @click="kind = item.key"
+        >{{ item.label }}</text>
+        <text v-if="filtering" class="sn__count">{{ rows.length }} / {{ all.length }}</text>
+      </view>
+    </view>
+
     <scroll-view class="sn__scroll" scroll-y :show-scrollbar="false">
-      <view v-if="!rows.length" class="sn__empty">
+      <view v-if="!all.length" class="sn__empty">
         <text class="sn__empty-title">还没记过</text>
         <text class="sn__empty-text">
           以后我看到好用的，你让我记一下，我读完就写在这儿。你自己刷到了也可以点下面加。
         </text>
+      </view>
+
+      <view v-else-if="!rows.length" class="sn__empty">
+        <text class="sn__empty-title">没搜到「{{ keyword || kindLabel }}」</text>
+        <text class="sn__empty-text">换个词试试，或者把标签点回「全部」。</text>
+        <view class="sn__empty-btn" @click="resetFilter">看全部 {{ all.length }} 条</view>
       </view>
 
       <view
@@ -57,7 +93,49 @@ const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
 const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
 
-const rows = ref([])
+const KINDS = [
+  { key: 'all', label: '全部' },
+  { key: 'pkg', label: '安装包' },
+  { key: 'mcp', label: 'MCP' },
+  { key: 'skill', label: 'Skill' },
+]
+
+/* 条目一多就翻不动了（25 条时使用方原话：「想找个 skill 得翻好久」）。
+ * 分类不额外存字段，直接看名字前缀 —— 条目本来就按 `包 · ` / `mcp · ` / `skill · ` 命名，
+ * 以后新增照这个前缀起名，分类自动对上，不用维护第二份数据。 */
+const KIND_ORDER = { pkg: 0, mcp: 1, skill: 2 }
+
+function kindOf(row) {
+  const name = String(row.name || '')
+  if (name.startsWith('包')) return 'pkg'
+  if (name.startsWith('skill')) return 'skill'
+  // 「密码箱」这种老条目本身就是装 MCP 的，归到 mcp
+  return 'mcp'
+}
+
+const all = ref([])
+const keyword = ref('')
+const kind = ref('all')
+
+const kindLabel = computed(() => (KINDS.find((item) => item.key === kind.value) || KINDS[0]).label)
+const filtering = computed(() => Boolean(keyword.value.trim()) || kind.value !== 'all')
+
+const rows = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  return all.value
+    .filter((row) => kind.value === 'all' || kindOf(row) === kind.value)
+    .filter((row) => {
+      if (!q) return true
+      return [row.name, row.desc, row.text].some((field) => String(field || '').toLowerCase().includes(q))
+    })
+    .sort((a, b) => (KIND_ORDER[kindOf(a)] ?? 9) - (KIND_ORDER[kindOf(b)] ?? 9))
+})
+
+function resetFilter() {
+  keyword.value = ''
+  kind.value = 'all'
+}
+
 const syncedAt = ref('')
 const syncing = ref(false)
 const syncError = ref('')
@@ -71,7 +149,7 @@ const syncText = computed(() => {
 })
 
 function refresh() {
-  rows.value = readSnippets()
+  all.value = readSnippets()
   syncedAt.value = lastSyncedAt()
 }
 
@@ -98,6 +176,11 @@ onShow(() => {
   refresh()
   sync()
 })
+
+/** 切回「密码」页签：redirect 换页，返回键回首页，不来回弹 */
+function goVault() {
+  uni.redirectTo({ url: '/pages/vault/vault' })
+}
 
 /** 卡片上只放前三行，剩下的留白，反正点一下就是复制整段 */
 function brief(text) {
@@ -166,6 +249,103 @@ function goEdit(id) {
   font-size: 24rpx;
   line-height: 1.7;
   color: var(--ui-text-2);
+}
+
+.sn__tabs {
+  display: flex;
+  gap: 10rpx;
+  margin: 0 28rpx;
+  padding: 6rpx;
+  border-radius: 22rpx;
+  background: var(--ui-raise, var(--ui-surface));
+}
+
+.sn__tab {
+  flex: 1;
+  height: 64rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--ui-text-2);
+  border-radius: 18rpx;
+}
+
+.sn__tab.is-on {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-surface);
+}
+
+.sn__bar {
+  padding: 8rpx 28rpx 0;
+}
+
+.sn__search {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  height: 80rpx;
+  padding: 0 24rpx;
+  border-radius: 20rpx;
+  background: var(--ui-surface);
+}
+
+.sn__search-icon {
+  font-size: 26rpx;
+  opacity: 0.5;
+}
+
+.sn__search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--ui-text);
+}
+
+.sn__search-ph {
+  color: var(--ui-text-3);
+}
+
+.sn__search-clear {
+  font-size: 26rpx;
+  color: var(--ui-text-3);
+  padding: 8rpx;
+}
+
+.sn__kinds {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx 0 2rpx;
+}
+
+.sn__kind {
+  padding: 8rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  color: var(--ui-text-2);
+  background: var(--ui-surface);
+}
+
+.sn__kind.is-on {
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
+}
+
+.sn__count {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.sn__empty-btn {
+  margin: 28rpx auto 0;
+  width: 400rpx;
+  height: 76rpx;
+  line-height: 76rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  color: var(--ui-on-accent);
+  background: var(--ui-accent);
 }
 
 .sn__scroll {

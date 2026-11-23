@@ -8,6 +8,12 @@
     </view>
 
     <template v-else>
+      <!-- 一级只有两格：拿它去「查密码」，还是去「抄配方」 -->
+      <view class="vt__tabs">
+        <view class="vt__tab is-on">密码</view>
+        <view class="vt__tab" @click="goSnippets">配方</view>
+      </view>
+
       <!-- 搜索 + 状态 -->
       <view class="vt__bar">
         <view class="vt__search">
@@ -127,6 +133,7 @@ import {
   groupItems,
   importBackup,
   lastSyncedAt,
+  migrateGrouping,
   pullAndMerge,
   readItems,
   removeItem,
@@ -177,6 +184,7 @@ const syncText = computed(() => {
 })
 
 function refresh() {
+  migrateGrouping()
   items.value = readItems()
   syncedAt.value = lastSyncedAt()
 }
@@ -255,6 +263,11 @@ function confirmRemove(item) {
 function goEdit(id) {
   const query = id ? `?id=${encodeURIComponent(id)}` : ''
   uni.navigateTo({ url: `/pages/vault/edit${query}` })
+}
+
+/** 切到「配方」页签：用 redirect 换页，返回键直接回首页，不在两页之间来回弹 */
+function goSnippets() {
+  uni.redirectTo({ url: '/pages/vault/snippets' })
 }
 
 function doSeed() {
@@ -339,6 +352,31 @@ function doImport() {
   font-size: 26rpx;
   line-height: 1.6;
   color: var(--ui-text-2);
+}
+
+.vt__tabs {
+  display: flex;
+  gap: 10rpx;
+  margin: 0 28rpx;
+  padding: 6rpx;
+  border-radius: 22rpx;
+  background: var(--ui-raise, var(--ui-surface));
+}
+
+.vt__tab {
+  flex: 1;
+  height: 64rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--ui-text-2);
+  border-radius: 18rpx;
+}
+
+.vt__tab.is-on {
+  color: var(--ui-text);
+  font-weight: 600;
+  background: var(--ui-surface);
 }
 
 .vt__bar {

@@ -12,6 +12,7 @@
           placeholder="本地 MySQL"
           placeholder-class="ve__ph"
           :focus="autoFocus"
+          @blur="autoFill"
         />
       </view>
 
@@ -22,8 +23,9 @@
           class="ve__input"
           placeholder="127.0.0.1:3306"
           placeholder-class="ve__ph"
+          @blur="autoFill"
         />
-        <text class="ve__hint">主机和端口写一起，只写主机也行。</text>
+        <text class="ve__hint">主机和端口写一起，只写主机也行。类型和归属我按它猜好了。</text>
       </view>
 
       <view class="ve__field">
@@ -52,12 +54,13 @@
         </view>
 
         <view class="ve__field">
-          <text class="ve__label">分组（哪台机器）</text>
+          <text class="ve__label">归属（哪台机器）</text>
           <input
             v-model="form.group"
             class="ve__input"
-            placeholder="公司本地PC"
+            placeholder="公司 / 家里 / 云"
             placeholder-class="ve__ph"
+            @input="typedGroup = true"
           />
           <view v-if="groupOptions.length" class="ve__chips">
             <text
@@ -65,7 +68,7 @@
               :key="name"
               class="ve__chip"
               :class="{ 'is-on': form.group === name }"
-              @click="form.group = name"
+              @click="pickGroup(name)"
             >
               {{ name }}
             </text>
@@ -117,11 +120,14 @@ import { usePageFrame } from '../../composables/usePageFrame'
 import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 import { isAdmin } from '../../api/auth'
 import {
+  HOME_GROUPS,
   UNGROUPED,
   VAULT_TYPES,
   addressOf,
   defaultPortOf,
   findItem,
+  inferGroup,
+  inferType,
   listGroups,
   parseAddress,
   removeItem,
@@ -149,7 +155,34 @@ const more = ref(false)
 const autoFocus = ref(false)
 
 const editing = computed(() => !!editId.value)
-const groupOptions = computed(() => listGroups().filter((name) => name !== UNGROUPED))
+
+/** 五个预设归属永远露在 chips 里：空库里也能一点就选中 */
+const groupOptions = computed(() => {
+  const mine = listGroups().filter((name) => name !== UNGROUPED)
+  const extra = mine.filter((name) => !HOME_GROUPS.includes(name))
+  return [...HOME_GROUPS, ...extra]
+})
+
+/** 用户自己动过类型/归属就不再自动猜，免得跟他抢方向盘 */
+const typedType = ref(false)
+const typedGroup = ref(false)
+
+function pickGroup(name) {
+  form.value.group = name
+  typedGroup.value = true
+}
+
+/**
+ * 名字或地址填完时自动补类型和归属。
+ * 只补「还没填过」的，编辑已有条目不动它。
+ */
+function autoFill() {
+  if (editing.value) return
+  if (!typedType.value) form.value.type = inferType(addressRaw.value, form.value.name)
+  if (!typedGroup.value && !form.value.group.trim()) {
+    form.value.group = inferGroup(form.value.name, addressRaw.value)
+  }
+}
 
 onLoad((options = {}) => {
   if (!isAdmin()) {
@@ -188,9 +221,11 @@ function pickType(type) {
     addressRaw.value = `${current.host || form.value.host}:${defaultPortOf(type)}`
   }
   form.value.type = type.key
+  typedType.value = true
 }
 
 function submit() {
+  if (!editing.value) autoFill()
   const name = form.value.name.trim()
   if (!name) {
     uni.showToast({ title: '先给它起个名', icon: 'none' })
