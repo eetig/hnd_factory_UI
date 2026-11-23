@@ -225,6 +225,8 @@ function onTouchStart(e) {
   }
   const wasAnimating = animating.value
   if (wasAnimating) brake()
+  /* 手指一按就校正一次宽度：万一挂载时量窄了，第一次滑也能自己纠正过来 */
+  measure()
   touchBraked = wasAnimating
   cancelTick()
   dragging = true
@@ -375,7 +377,19 @@ function goTo(i) {
 function measure() {
   const el = inst?.proxy?.$el
   const rect = el?.getBoundingClientRect?.()
-  if (rect && rect.width) stageW.value = rect.width
+  if (!rect || !rect.width) return
+  let w = rect.width
+  /* 这个组件在「一屏一栏」的轨道里，一栏刚好等于一屏宽。
+   * 真机上挂载那一刻父级 flex 还没算完，量到过偏窄的宽度（卡片右边留出白边），
+   * 所以量到的比屏宽还窄就直接按屏宽纠正。 */
+  try {
+    const info = uni.getSystemInfoSync()
+    const win = info && info.windowWidth
+    if (win && w < win - 8) w = win
+  } catch (err) {
+    /* 取不到系统信息就用量到的值 */
+  }
+  if (Math.abs(w - stageW.value) > 0.5) stageW.value = w
   scrollX.value = activeIndex.value * Math.max(1, stageW.value)
 }
 
@@ -384,6 +398,10 @@ onMounted(() => {
     measure()
     emit('update:modelValue', activeIndex.value)
   })
+  /* 栏宽不是一挂载就定下来的：宿主的 200% 轨道要等一次布局，
+   * 只量一次会量到偏窄的宽度（卡片右边留一条白边），所以补两次重测 */
+  setTimeout(measure, 120)
+  setTimeout(measure, 420)
 })
 
 onBeforeUnmount(() => {

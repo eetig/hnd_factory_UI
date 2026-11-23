@@ -336,6 +336,8 @@ function measurePager() {
     .select('.vt__pager')
     .boundingClientRect((rect) => {
       if (rect && rect.height > 0) pagerH.value = Math.round(rect.height)
+      // 顺手让里面那条轨道重新量一次宽度（栏宽可能刚刚才定下来）
+      if (pagerRef.value) pagerRef.value.measure()
     })
     .exec()
 }

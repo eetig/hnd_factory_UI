@@ -211,6 +211,7 @@ function measurePager() {
     .select('.sn__pager')
     .boundingClientRect((rect) => {
       if (rect && rect.height) pagerH.value = Math.round(rect.height)
+      if (pagerRef.value) pagerRef.value.measure()
     })
     .exec()
 }
