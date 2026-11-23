@@ -65,6 +65,8 @@
         :peek-inset="0"
         :window-radius="1"
         @update:progress="onProgress"
+        @edge-drag="$emit('edge-drag', $event)"
+        @edge-release="$emit('edge-release', $event)"
       >
         <template #default="{ item }">
           <view class="sn__page">
@@ -176,6 +178,9 @@ function emptyText(item) {
   if (keyword.value.trim()) return '换个词试试，或者左右滑到别的类看看。'
   return '还没有归到这一类的。点下面「＋ 记一条」加一个，或者左右滑回「全部」。'
 }
+
+/* 到头之后多出来的位移交给宿主，让它带着整条轨道跟手 */
+const emit = defineEmits(['edge-drag', 'edge-release'])
 
 const inst = getCurrentInstance()
 const pagerRef = ref(null)
@@ -318,7 +323,13 @@ async function reload() {
   await sync()
 }
 
-defineExpose({ reload })
+defineExpose({
+  reload,
+  /** 从「密码」那栏往左滑过来时，落在第一类（全部）上 */
+  focusFirst() {
+    if (pagerRef.value) pagerRef.value.goTo(0)
+  },
+})
 
 onMounted(() => {
   nextTick(() => {
@@ -401,7 +412,7 @@ function goEdit(id) {
   position: relative;
   display: flex;
   gap: 10rpx;
-  margin: 0 28rpx;
+  margin: 0 16rpx;
   padding: 6rpx;
   border-radius: 22rpx;
   background: var(--ui-raise, var(--ui-surface));
@@ -443,7 +454,7 @@ function goEdit(id) {
 }
 
 .sn__bar {
-  padding: 8rpx 28rpx 0;
+  padding: 8rpx 16rpx 0;
 }
 
 .sn__search {
@@ -572,7 +583,7 @@ function goEdit(id) {
 
 .sn__page {
   height: 100%;
-  padding: 8rpx 28rpx 0;
+  padding: 8rpx 16rpx 0;
   box-sizing: border-box;
 }
 
@@ -673,7 +684,7 @@ function goEdit(id) {
 }
 
 .sn__bottom {
-  padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom));
+  padding: 12rpx 16rpx calc(12rpx + env(safe-area-inset-bottom));
 }
 
 .sn__add {

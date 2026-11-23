@@ -24,12 +24,20 @@
       <!-- 两栏并排常驻，点胶囊就是把这整条轨道左右平移 —— 同一块屏里滑，
            不是换页面，所以没有「重建 → 空一帧」的空档，也不会像抽屉那样从边上弹出来。 -->
       <view class="vd__viewport">
-        <view class="vd__track" :style="trackStyle">
+        <view class="vd__track" :class="{ 'is-dragging': dragging }" :style="trackStyle">
           <view class="vd__pane">
-            <VaultPane ref="vaultPane" />
+            <VaultPane
+              ref="vaultPane"
+              @edge-drag="onEdgeDrag"
+              @edge-release="onEdgeRelease"
+            />
           </view>
           <view class="vd__pane">
-            <SnippetsPane ref="snippetsPane" />
+            <SnippetsPane
+              ref="snippetsPane"
+              @edge-drag="onEdgeDrag"
+              @edge-release="onEdgeRelease"
+            />
           </view>
         </view>
       </view>
@@ -38,7 +46,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import PageTitle from '../../components/PageTitle.vue'
 import VaultPane from '../../components/vault/VaultPane.vue'
@@ -58,12 +66,46 @@ const tabIndex = ref(0)
 const vaultPane = ref(null)
 const snippetsPane = ref(null)
 
+/* 栏内滑到头之后，多出来的位移记在这儿，整条轨道跟着手指走（1:1，不另设阻尼） */
+const edgeOffset = ref(0)
+const dragging = ref(false)
+
 /* 轨道宽 200%，每挪一格就是 50% —— 用百分比，屏宽变了也不用重新量 */
 const trackStyle = computed(() => ({
-  transform: `translate3d(${-tabIndex.value * 50}%, 0, 0)`,
+  transform: `translate3d(calc(${-tabIndex.value * 50}% + ${edgeOffset.value}px), 0, 0)`,
 }))
 
 const panes = () => [vaultPane.value, snippetsPane.value]
+
+function onEdgeDrag(offset) {
+  if (!offset) {
+    dragging.value = false
+    edgeOffset.value = 0
+    return
+  }
+  // 第一栏往左多滑 = 去第二栏；第二栏往右多滑 = 回第一栏；反方向就顶住
+  const blocked = (tabIndex.value === 0 && offset < 0) || (tabIndex.value === 1 && offset > 0)
+  dragging.value = true
+  edgeOffset.value = blocked ? offset * 0.28 : offset
+}
+
+function onEdgeRelease(payload) {
+  const offset = payload && typeof payload.offset === 'number' ? payload.offset : 0
+  dragging.value = false
+  const threshold = 56
+  const toRecipe = tabIndex.value === 0 && offset > threshold
+  const toPassword = tabIndex.value === 1 && offset < -threshold
+  if (toRecipe) {
+    tabIndex.value = 1
+    snippetsPane.value?.focusFirst()
+    reloadPane(1)
+  } else if (toPassword) {
+    tabIndex.value = 0
+    vaultPane.value?.focusLast()
+    reloadPane(0)
+  }
+  edgeOffset.value = 0
+}
 
 /** 组件里没有页面 onShow，回本页/切页签时由宿主挨个叫醒需要刷新的那一栏 */
 async function reloadPane(index) {
@@ -78,6 +120,16 @@ onLoad((query) => {
 
 onShow(() => {
   reloadPane(tabIndex.value)
+})
+
+/* 冷启动时页面 onShow 可能早于两栏挂载完成（此时 ref 还是 null，onShow 那次就没刷到），
+ * 所以挂载完再补一次；reload 里带了「已经在同步就跳过」，不会重复发请求。 */
+onMounted(() => {
+  nextTick(() => {
+    reloadPane(tabIndex.value)
+    // 另一栏不常用的那次也顺手拉一遍，切过去时不会先看到空列表
+    reloadPane(tabIndex.value === 0 ? 1 : 0)
+  })
 })
 
 function goTab(index) {
@@ -123,7 +175,7 @@ function goTab(index) {
   position: relative;
   display: flex;
   gap: 10rpx;
-  margin: 0 28rpx;
+  margin: 0 16rpx;
   padding: 6rpx;
   border-radius: 22rpx;
   background: var(--ui-raise, var(--ui-surface));
@@ -175,6 +227,11 @@ function goTab(index) {
   height: 100%;
   transition: transform 300ms cubic-bezier(0.22, 0.68, 0.16, 1);
   will-change: transform;
+
+  /* 手指按着的时候不能有过渡，否则轨道会「跟不上」，手感就变重了 */
+  &.is-dragging {
+    transition: none;
+  }
 }
 
 .vd__pane {

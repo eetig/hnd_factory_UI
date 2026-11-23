@@ -59,7 +59,15 @@ const props = defineProps({
   enabled: { type: Boolean, default: true },
 })
 
-const emit = defineEmits(['update:modelValue', 'update:progress', 'page-change', 'drag-start', 'drag-end'])
+const emit = defineEmits([
+  'update:modelValue',
+  'update:progress',
+  'page-change',
+  'drag-start',
+  'drag-end',
+  'edge-drag',
+  'edge-release',
+])
 
 const VELOCITY_WINDOW = 60 // 只取松手前 60ms：窗口越长，抬手前那点减速越会被平均进去
 const GLIDE_TAU = 760 // 时间常数（ms）：越大滑得越远，时长也跟着变长
@@ -85,6 +93,9 @@ let lastClientX = 0
 let dragging = false
 let samples = []
 let rafId = 0
+/* 滑到头之后多出来的位移（px）：负=在第一页还往右拉，正=在最后一页还往左拉 */
+let edgeOffset = 0
+let lastEdgeOffset = 0
 
 const n = computed(() => props.items.length)
 const maxScroll = computed(() => Math.max(0, (n.value - 1) * stageW.value))
@@ -223,6 +234,7 @@ function onTouchStart(e) {
   lastClientX = t.clientX
   startScroll = scrollX.value
   samples = []
+  lastEdgeOffset = 0
   pushSample(t.clientX)
   emit('drag-start')
 }
@@ -246,7 +258,15 @@ function onTouchMove(e) {
   if (e.preventDefault) e.preventDefault()
   lastClientX = t.clientX
   pushSample(t.clientX)
-  scrollX.value = clampScroll(startScroll - dx)
+  // 到头了别再自带橡皮筋：多出来的位移原样吐给外层（相邻那栏），
+  // 这样「最后一组再往左滑」跟「组内正常滑」是同一种手感，不用更用力。
+  const want = startScroll - dx
+  scrollX.value = Math.max(0, Math.min(maxScroll.value, want))
+  edgeOffset = want < 0 ? want : want > maxScroll.value ? want - maxScroll.value : 0
+  if (edgeOffset !== lastEdgeOffset) {
+    lastEdgeOffset = edgeOffset
+    emit('edge-drag', edgeOffset)
+  }
   emitProgress()
   syncPage()
 }
@@ -256,6 +276,10 @@ function onTouchEnd() {
   dragging = false
   const v = releaseVelocity()
   emit('drag-end')
+  if (lastEdgeOffset) {
+    emit('edge-release', { offset: lastEdgeOffset, velocity: v })
+    lastEdgeOffset = 0
+  }
   if (touchBraked) touchBraked = false
   startGlide(-v)
 }

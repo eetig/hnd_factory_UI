@@ -66,6 +66,8 @@
           :peek-inset="0"
           :window-radius="1"
           @update:progress="onProgress"
+          @edge-drag="$emit('edge-drag', $event)"
+          @edge-release="$emit('edge-release', $event)"
         >
           <template #default="{ item }">
             <view class="vt__page">
@@ -221,6 +223,10 @@ const syncText = computed(() => {
 
 /* ===== 一组一屏的横滑 ===== */
 
+/* 滑到头之后的手感要跟组内一样，所以把「多出来的位移」转给宿主，
+ * 由宿主把整条轨道跟着手指挪（见 pages/vault/vault.vue 的 onEdgeDrag） */
+const emit = defineEmits(['edge-drag', 'edge-release'])
+
 const inst = getCurrentInstance()
 const pagerRef = ref(null)
 const pagerH = ref(0)
@@ -374,7 +380,14 @@ async function reload() {
   await sync()
 }
 
-defineExpose({ reload })
+defineExpose({
+  reload,
+  /** 从「配方」那栏往右滑回来时，落在最后一组（云）上，接得上手指 */
+  focusLast() {
+    const last = Math.max(0, groups.value.length - 1)
+    if (pagerRef.value) pagerRef.value.goTo(last)
+  },
+})
 
 onMounted(() => {
   nextTick(() => {
@@ -537,7 +550,7 @@ function doImport() {
   position: relative;
   display: flex;
   gap: 10rpx;
-  margin: 0 28rpx;
+  margin: 0 16rpx;
   padding: 6rpx;
   border-radius: 22rpx;
   background: var(--ui-raise, var(--ui-surface));
@@ -575,7 +588,7 @@ function doImport() {
 }
 
 .vt__bar {
-  padding: 8rpx 28rpx 0;
+  padding: 8rpx 16rpx 0;
 }
 
 .vt__search {
@@ -684,7 +697,7 @@ function doImport() {
   display: inline-flex;
   align-items: center;
   gap: 12rpx;
-  padding: 0 28rpx;
+  padding: 0 16rpx;
 }
 
 .vt__chip-tab {
@@ -727,7 +740,7 @@ function doImport() {
 
 .vt__page-scroll {
   height: 100%;
-  padding: 8rpx 28rpx 24rpx;
+  padding: 8rpx 16rpx 24rpx;
   box-sizing: border-box;
 }
 
@@ -754,7 +767,7 @@ function doImport() {
 .vt__scroll {
   flex: 1;
   height: 0;
-  padding: 0 28rpx;
+  padding: 0 16rpx;
   box-sizing: border-box;
 }
 
@@ -889,7 +902,7 @@ function doImport() {
 }
 
 .vt__bottom {
-  padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom));
+  padding: 12rpx 16rpx calc(12rpx + env(safe-area-inset-bottom));
 }
 
 .vt__add {
