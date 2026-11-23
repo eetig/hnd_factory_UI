@@ -1,8 +1,15 @@
 <template>
-  <view class="sn" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+  <view
+    class="sn"
+    :class="[themeClass, shiftClass]"
+    :style="[themeVars, frameStyle]"
+    @touchstart="onEdgeStart"
+    @touchend="onEdgeEnd"
+  >
     <PageTitle title="MCP & Skills" />
 
     <view class="sn__tabs">
+      <view class="sn__seg-pill is-right" />
       <view class="sn__tab" @click="goVault">密码</view>
       <view class="sn__tab is-on">配方</view>
     </view>
@@ -127,10 +134,16 @@ import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
 import { isAdmin } from '../../api/auth'
 import { copyToClipboard } from '../../utils/clipboard'
 import { lastSyncedAt, pullAndMerge, readSnippets, removeSnippet } from '../../utils/vault'
+import { markSwitch, takeSwitch } from '../../utils/vaultNav'
 
 const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
 const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
+
+/* 两格切换：换页没动画，出门滑走 + 进门滑入接成一段（方向在首帧之前就要定好） */
+const enterDir = takeSwitch()
+const shiftClass = ref(enterDir === 'left' ? 'is-enter-right' : enterDir === 'right' ? 'is-enter-left' : '')
+const leaving = ref(false)
 
 const KINDS = [
   { key: 'all', label: '全部' },
@@ -327,6 +340,7 @@ async function sync() {
 }
 
 onShow(() => {
+  leaving.value = false
   if (!isAdmin()) {
     uni.showToast({ title: '只有管理员能看', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 600)
@@ -341,15 +355,31 @@ onShow(() => {
 })
 
 onMounted(() => {
+  // 首帧之后放开位移，从侧面滑回正位
+  if (shiftClass.value) {
+    requestAnimationFrame(() => {
+      shiftClass.value = ''
+    })
+    // 兜底：切到后台时 rAF 可能不跑，别让页面卡在偏出去的位置
+    setTimeout(() => {
+      shiftClass.value = ''
+    }, 400)
+  }
   nextTick(() => {
     measurePager()
     measureChips()
   })
 })
 
-/** 切回「密码」页签：redirect 换页，返回键回首页，不来回弹 */
+/** 切回「密码」页签：整页先往右滑走，再 redirect，新页从左边跟进 */
 function goVault() {
-  uni.redirectTo({ url: '/pages/vault/vault' })
+  if (leaving.value) return
+  leaving.value = true
+  markSwitch('right')
+  shiftClass.value = 'is-leave-right'
+  setTimeout(() => {
+    uni.redirectTo({ url: '/pages/vault/vault' })
+  }, 150)
 }
 
 /** 卡片上只放前三行，剩下的留白，反正点一下就是复制整段 */
@@ -409,6 +439,23 @@ function goEdit(id) {
   height: 100vh;
   background: var(--ui-bg);
   overflow: hidden;
+  /* 「密码 / 配方」是一对页面，换页瞬间没动画，用这一进一出接起来 */
+  transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
+}
+
+.sn.is-leave-right {
+  transform: translateX(28%);
+  opacity: 0.2;
+}
+
+.sn.is-enter-right {
+  transform: translateX(28%);
+  opacity: 0.2;
+}
+
+.sn.is-enter-left {
+  transform: translateX(-28%);
+  opacity: 0.2;
 }
 
 .sn__intro {
@@ -422,6 +469,7 @@ function goEdit(id) {
 }
 
 .sn__tabs {
+  position: relative;
   display: flex;
   gap: 10rpx;
   margin: 0 28rpx;
@@ -430,7 +478,26 @@ function goEdit(id) {
   background: var(--ui-raise, var(--ui-surface));
 }
 
+/* 白底块跟着哪一格走到哪，文字只换颜色 */
+.sn__seg-pill {
+  position: absolute;
+  left: 6rpx;
+  top: 6rpx;
+  bottom: 6rpx;
+  width: calc(50% - 11rpx);
+  border-radius: 18rpx;
+  background: var(--ui-surface);
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+  transition: transform 260ms cubic-bezier(0.22, 0.68, 0.16, 1);
+}
+
+.sn__seg-pill.is-right {
+  transform: translateX(calc(100% + 10rpx));
+}
+
 .sn__tab {
+  position: relative;
+  z-index: 1;
   flex: 1;
   height: 64rpx;
   line-height: 64rpx;
@@ -438,12 +505,12 @@ function goEdit(id) {
   font-size: 28rpx;
   color: var(--ui-text-2);
   border-radius: 18rpx;
+  transition: color 180ms ease;
 }
 
 .sn__tab.is-on {
   color: var(--ui-text);
   font-weight: 600;
-  background: var(--ui-surface);
 }
 
 .sn__bar {

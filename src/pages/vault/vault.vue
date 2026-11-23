@@ -1,5 +1,11 @@
 <template>
-  <view class="vt" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+  <view
+    class="vt"
+    :class="[themeClass, shiftClass]"
+    :style="[themeVars, frameStyle]"
+    @touchstart="onEdgeStart"
+    @touchend="onEdgeEnd"
+  >
     <PageTitle title="密码箱" />
 
     <view v-if="!allowed" class="vt__deny">
@@ -10,6 +16,7 @@
     <template v-else>
       <!-- 一级只有两格：拿它去「查密码」，还是去「抄配方」 -->
       <view class="vt__tabs">
+        <view class="vt__seg-pill" />
         <view class="vt__tab is-on">密码</view>
         <view class="vt__tab" @click="goSnippets">配方</view>
       </view>
@@ -198,6 +205,7 @@ import {
   touchItem,
   typeLabel,
 } from '../../utils/vault'
+import { markSwitch, takeSwitch } from '../../utils/vaultNav'
 
 const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
@@ -211,6 +219,12 @@ const importText = ref('')
 const syncedAt = ref('')
 const syncing = ref(false)
 const syncError = ref('')
+
+/* 两格切换的滑入滑出：换页本身没动画，靠「出门滑走 + 进门滑入」接起来。
+ * 进场方向必须在首帧之前就定好（放在 setup 里读），否则会先画在正位再弹出去。 */
+const enterDir = takeSwitch()
+const shiftClass = ref(enterDir === 'left' ? 'is-enter-right' : enterDir === 'right' ? 'is-enter-left' : '')
+const leaving = ref(false)
 
 const grouped = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -390,6 +404,7 @@ async function sync() {
 }
 
 onShow(() => {
+  leaving.value = false
   refresh()
   nextTick(() => {
     measurePager()
@@ -399,6 +414,16 @@ onShow(() => {
 })
 
 onMounted(() => {
+  // 首帧之后放开位移，页面就从侧面滑回正位；没有标记的话这一帧什么也不做
+  if (shiftClass.value) {
+    requestAnimationFrame(() => {
+      shiftClass.value = ''
+    })
+    // 兜底：切到后台时 rAF 可能不跑，别让页面卡在偏出去的位置
+    setTimeout(() => {
+      shiftClass.value = ''
+    }, 400)
+  }
   nextTick(() => {
     measurePager()
     measureChips()
@@ -470,9 +495,16 @@ function addHere() {
   goEdit('', here ? here.name : '')
 }
 
-/** 切到「配方」页签：用 redirect 换页，返回键直接回首页，不在两页之间来回弹 */
+/** 切到「配方」页签：先让整页往左滑出去，再 redirect 换页，新页从右边跟进
+ *  （换页本身没有动画，靠这一进一出接起来，看着才像同一块屏在滑动） */
 function goSnippets() {
-  uni.redirectTo({ url: '/pages/vault/snippets' })
+  if (leaving.value) return
+  leaving.value = true
+  markSwitch('left')
+  shiftClass.value = 'is-leave-left'
+  setTimeout(() => {
+    uni.redirectTo({ url: '/pages/vault/snippets' })
+  }, 150)
 }
 
 function doSeed() {
@@ -534,6 +566,24 @@ function doImport() {
   height: 100vh;
   background: var(--ui-bg);
   overflow: hidden;
+  /* 「密码 / 配方」是一对页面，换页瞬间没动画，用这一进一出接起来 */
+  transition: transform 170ms cubic-bezier(0.22, 0.68, 0.16, 1), opacity 170ms linear;
+}
+
+/* 出发：整页往左滑走；到达：从右边滑回来（由 setup 里的 shiftClass 决定初值） */
+.vt.is-leave-left {
+  transform: translateX(-28%);
+  opacity: 0.2;
+}
+
+.vt.is-enter-right {
+  transform: translateX(28%);
+  opacity: 0.2;
+}
+
+.vt.is-enter-left {
+  transform: translateX(-28%);
+  opacity: 0.2;
 }
 
 .vt__deny {
@@ -560,6 +610,7 @@ function doImport() {
 }
 
 .vt__tabs {
+  position: relative;
   display: flex;
   gap: 10rpx;
   margin: 0 28rpx;
@@ -568,7 +619,22 @@ function doImport() {
   background: var(--ui-raise, var(--ui-surface));
 }
 
+/* 白色底块自己滑过去，文字只换颜色 —— 切换时底色是连续的一整块，不像两块画上去的 */
+.vt__seg-pill {
+  position: absolute;
+  left: 6rpx;
+  top: 6rpx;
+  bottom: 6rpx;
+  width: calc(50% - 11rpx);
+  border-radius: 18rpx;
+  background: var(--ui-surface);
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+  transition: transform 260ms cubic-bezier(0.22, 0.68, 0.16, 1);
+}
+
 .vt__tab {
+  position: relative;
+  z-index: 1;
   flex: 1;
   height: 64rpx;
   line-height: 64rpx;
@@ -576,12 +642,12 @@ function doImport() {
   font-size: 28rpx;
   color: var(--ui-text-2);
   border-radius: 18rpx;
+  transition: color 180ms ease;
 }
 
 .vt__tab.is-on {
   color: var(--ui-text);
   font-weight: 600;
-  background: var(--ui-surface);
 }
 
 .vt__bar {
