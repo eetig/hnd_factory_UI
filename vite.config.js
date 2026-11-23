@@ -105,6 +105,16 @@ function buildProxy() {
 }
 
 export default defineConfig({
+  /*
+   * 静态资源前缀。默认 '/'（H5 部署在站点根、APK/小程序都不看这个值）。
+   *
+   * 为什么留这个开关：手机端想「不装 APK 也能先用」时，可以把同一份构建
+   * 挂到 https://hbhnd.cloud/pwd/ 这种子路径下（站点根是 PC 后台，不能占）。
+   * 那种情况下不设它，index.html 会去 /assets/* 找文件，直接和 PC 后台的
+   * /assets/* 撞车 —— 页面白屏，且看起来像"新页面坏了"而不是路径配错。
+   *   PowerShell: $env:H5_BASE='/pwd/'; npm run build:h5
+   */
+  base: process.env.H5_BASE || '/',
   // buildGuard 放最后：它的 closeBundle 要在所有产物写盘之后才跑（不然可能剔了个空）
   plugins: [uni(), ...(isMiniProgram ? [uvtw()] : []), buildGuard()],
 
