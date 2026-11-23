@@ -4,10 +4,16 @@
  * 使用方原话：「记 MySQL、Redis、U 盘、服务器、云服务器的账号密码，按 PC 分类，
  * 本地开发要用，能查方便就行；泄露无所谓」。
  *
- * ## 为什么不走接口
- * 这些是他自己账号的密码，走后端等于把它们搬到服务器上，多一处可能泄露的地方，
- * 而且工地网络查密码还得等接口。所以整包只存在这台手机里（uni.setStorage），
- * 换手机/重装前用「备份」导出一次。代价说清楚了：缓存清掉就没了。
+ * ## 2026-11-23 改版：总账搬到服务器
+ * 原方案只存本机，用户反馈「电脑上加了密码手机看不到，还得手动导入」。
+ * 现在服务器上有一本 vault.json（见 vault-server.mjs），任何一台电脑上的 DSH
+ * 说一句就能写进去；手机进页面静默拉取一份副本用于查看。
+ *
+ * 合并口径：服务器优先（同 分组+名称 以服务器为准），但手机上自己记的、
+ * 服务器上没有的条目保留 —— 代价是这些条目只在这台手机，不会上云，已当面说清。
+ *
+ * ## 本机仍然存一份（uni.setStorage）
+ * 车上看、工地看都不用等网络；拉取失败时列表照旧能翻。
  *
  * ## 两级结构
  *   分组（公司电脑 / 腾讯云 / 家里服务器 / U 盘）→ 条目（类型只是条目的一个标签）
@@ -341,4 +347,276 @@ export function importBackup(textValue) {
   }
 
   return { added, skipped, error: '' }
+}
+
+/* ===== 服务器总账：拉取与合并 ===== */
+
+/** 总账地址。路径里的随机串是唯一的"门牌"，token 是钥匙，两个都对才拿得到 */
+export const VAULT_BASE = 'https://hbhnd.cloud/k7f2q9'
+export const VAULT_TOKEN = '95fefd933d868d949dfcb56b0312c8bd'
+
+const SYNC_KEY = 'vaultSyncedAt'
+const SEEDED_KEY = 'vaultSeeded'
+const SNIPPETS_KEY = 'vaultSnippets'
+
+export function lastSyncedAt() {
+  return text(getItem(SYNC_KEY))
+}
+
+function markSynced(at) {
+  try {
+    setItem(SYNC_KEY, at)
+  } catch (e) {
+    // 记不上时间只影响那行小字，不影响数据
+  }
+}
+
+function httpGet(path) {
+  return new Promise((resolve, reject) => {
+    uni.request({
+      url: `${VAULT_BASE}${path}`,
+      method: 'GET',
+      timeout: 8000,
+      header: { Authorization: `Bearer ${VAULT_TOKEN}` },
+      success: (res) => {
+        if (res.statusCode === 200 && res.data && typeof res.data === 'object') {
+          resolve(res.data)
+          return
+        }
+        reject(new Error(`HTTP ${res.statusCode}`))
+      },
+      fail: (err) => reject(new Error((err && err.errMsg) || '网络不通')),
+    })
+  })
+}
+
+function keyOf(row) {
+  return `${row.group}|${row.name}`
+}
+
+function normalizeSnippet(input = {}) {
+  return {
+    id: text(input.id) || newId(),
+    name: text(input.name),
+    desc: text(input.desc),
+    text: String(input.text == null ? '' : input.text).trim(),
+    createdAt: text(input.createdAt),
+    updatedAt: text(input.updatedAt),
+  }
+}
+
+/**
+ * 拉一次总账并合并进本机。
+ *
+ * 合并规则：服务器有、本机也有 → 用服务器的字段，但保留本机的 id 和 lastUsedAt
+ * （不然每次同步，用户刚点过的那条就被顶下去）；本机独有的 → 留着不上云。
+ */
+export async function pullAndMerge() {
+  const payload = await httpGet('/vault.json')
+  const serverItems = (Array.isArray(payload.items) ? payload.items : []).map((row) => normalize(row)).filter((row) => row.name)
+  const serverSnippets = (Array.isArray(payload.snippets) ? payload.snippets : [])
+    .map((row) => normalizeSnippet(row))
+    .filter((row) => row.name)
+
+  const local = readItems()
+  const localByKey = new Map(local.map((row) => [keyOf(row), row]))
+  const merged = serverItems.map((row) => {
+    const mine = localByKey.get(keyOf(row))
+    return {
+      ...row,
+      id: (mine && mine.id) || row.id || newId(),
+      lastUsedAt: (mine && mine.lastUsedAt) || row.lastUsedAt || '',
+    }
+  })
+  const serverKeys = new Set(serverItems.map((row) => keyOf(row)))
+  local.forEach((row) => {
+    if (!serverKeys.has(keyOf(row))) merged.push(row)
+  })
+
+  writeItems(merged)
+  merged.forEach((row) => rememberGroup(row.group))
+
+  const localSnippets = readSnippets()
+  const localSnipByName = new Map(localSnippets.map((row) => [row.name, row]))
+  const nextSnippets = serverSnippets.map((row) => ({
+    ...row,
+    id: (localSnipByName.get(row.name) || {}).id || row.id,
+  }))
+  const serverNames = new Set(serverSnippets.map((row) => row.name))
+  localSnippets.forEach((row) => {
+    if (!serverNames.has(row.name)) nextSnippets.push(row)
+  })
+  writeSnippets(nextSnippets)
+
+  const at = new Date().toISOString()
+  markSynced(at)
+  return { items: merged, snippets: nextSnippets, at }
+}
+
+/* ===== 安装配方（MCP & Skills） ===== */
+
+export function readSnippets() {
+  const rows = readJson(SNIPPETS_KEY, [])
+  if (!Array.isArray(rows)) return []
+  return rows.map((row) => normalizeSnippet(row)).filter((row) => row.name)
+}
+
+function writeSnippets(rows) {
+  writeJson(SNIPPETS_KEY, rows)
+}
+
+export function findSnippet(id) {
+  return readSnippets().find((row) => row.id === id) || null
+}
+
+/** 手动加一条（手机上加的只在这台手机，下次同步不会覆盖服务器上的同名条目） */
+export function saveSnippet(input = {}) {
+  const payload = normalizeSnippet(input)
+  if (!payload.name) throw new Error('名称不能为空')
+  if (!payload.text) throw new Error('要复制的那段话不能为空')
+
+  const rows = readSnippets()
+  const now = new Date().toISOString()
+  const index = payload.id ? rows.findIndex((row) => row.id === payload.id) : -1
+  if (index >= 0) {
+    rows[index] = { ...rows[index], ...payload, updatedAt: now }
+  } else {
+    rows.push({ ...payload, createdAt: now, updatedAt: now })
+  }
+  writeSnippets(rows)
+  return payload.id
+}
+
+export function removeSnippet(id) {
+  writeSnippets(readSnippets().filter((row) => row.id !== id))
+}
+
+/* ===== 地址解析 ===== */
+
+/** 「127.0.0.1:3306」→ { host, port }；只填主机也行 */
+export function parseAddress(value) {
+  const raw = text(value)
+  if (!raw) return { host: '', port: '' }
+  const hit = raw.match(/^(.*?):(\d{1,5})$/)
+  if (hit) return { host: text(hit[1]), port: hit[2] }
+  return { host: raw, port: '' }
+}
+
+export function addressInput(item) {
+  return addressOf(item)
+}
+
+/* ===== 内置的那几条（服务器拉不到时也能看） ===== */
+
+/**
+ * 这些是第一次改版时从本机文件里查证出来的，打包进 APK 当兜底。
+ * 服务器上有同一份，所以正常情况用不到它 —— 断网 + 重装才会显形。
+ */
+export const BUILTIN_ITEMS = [
+  {
+    name: '本地 MySQL',
+    group: '公司本地PC',
+    type: 'mysql',
+    host: '127.0.0.1',
+    port: '3306',
+    username: 'root',
+    password: '123eetig',
+    note: '取自 config/application.yml，未实测',
+  },
+  {
+    name: '本地 Redis',
+    group: '公司本地PC',
+    type: 'redis',
+    host: '127.0.0.1',
+    port: '6379',
+    username: '',
+    password: '',
+    note: '无密码',
+  },
+  {
+    name: '本地 Nacos',
+    group: '公司本地PC',
+    type: 'web',
+    host: '127.0.0.1',
+    port: '8848',
+    username: '',
+    password: '',
+    note: '控制台免登录，2.5.4',
+  },
+  {
+    name: '本地 MinIO',
+    group: '公司本地PC',
+    type: 'oss',
+    host: '127.0.0.1',
+    port: '9005',
+    username: 'minioadmin',
+    password: 'minioadmin',
+    note: '桶 hndfactory',
+  },
+  {
+    name: '部署 SSH',
+    group: '部署服务器',
+    type: 'ssh',
+    host: '124.220.60.154',
+    port: '9002',
+    username: 'eetig',
+    password: '',
+    note: '密钥免密登录',
+  },
+  {
+    name: 'MinIO 备份端（PC2）',
+    group: '部署服务器',
+    type: 'oss',
+    host: '124.220.60.154',
+    port: '9025',
+    username: 'eetig',
+    password: '123eetig',
+    note: '走 FRP 到 PC2 的 9000',
+  },
+]
+
+export const BUILTIN_SNIPPETS = [
+  {
+    name: '密码箱',
+    desc: '任何一台电脑装完，都能让 DSH 存/查账号密码；手机里能看',
+    text: `帮我装「密码箱」：读 ${VAULT_BASE}/install.md 并照它做。装完调用 vault_list，确认能列出我密码箱里的条目。以后我说「帮我记一下 XX」，走 vault skill。`,
+  },
+]
+
+export function seededAlready() {
+  return text(getItem(SEEDED_KEY)) === '1'
+}
+
+/** 空列表时点「载入我电脑上的这几条」：只补内置的，不动已有的 */
+export function seedBuiltin() {
+  const items = readItems()
+  const keys = new Set(items.map((row) => keyOf(row)))
+  const now = new Date().toISOString()
+  let added = 0
+
+  BUILTIN_ITEMS.forEach((row) => {
+    const payload = normalize(row)
+    if (keys.has(keyOf(payload))) return
+    keys.add(keyOf(payload))
+    items.push({ ...payload, id: newId(), createdAt: now, updatedAt: now, lastUsedAt: '' })
+    rememberGroup(payload.group)
+    added += 1
+  })
+
+  writeItems(items)
+
+  const snippets = readSnippets()
+  const names = new Set(snippets.map((row) => row.name))
+  BUILTIN_SNIPPETS.forEach((row) => {
+    if (names.has(row.name)) return
+    snippets.push({ ...normalizeSnippet(row), createdAt: now, updatedAt: now })
+  })
+  writeSnippets(snippets)
+
+  try {
+    setItem(SEEDED_KEY, '1')
+  } catch (e) {
+    // 无所谓：下次再点一次也是幂等的
+  }
+  return added
 }

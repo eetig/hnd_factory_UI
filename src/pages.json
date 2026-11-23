@@ -97,6 +97,18 @@
       "style": {
         "navigationBarTitleText": "密码"
       }
+    },
+    {
+      "path": "pages/vault/snippets",
+      "style": {
+        "navigationBarTitleText": "MCP & Skills"
+      }
+    },
+    {
+      "path": "pages/vault/snippet",
+      "style": {
+        "navigationBarTitleText": "MCP & Skills"
+      }
     }
   ],
   "globalStyle": {

@@ -1,147 +1,232 @@
+<template>
+  <view class="ve" :class="themeClass" :style="[themeVars, frameStyle]" @touchstart="onEdgeStart" @touchend="onEdgeEnd">
+    <PageTitle :title="editing ? '改这条' : '记一条'" />
+
+    <view class="ve__body">
+      <!-- 三个常用的，放最上面 -->
+      <view class="ve__field">
+        <text class="ve__label">叫什么</text>
+        <input
+          v-model="form.name"
+          class="ve__input ve__input--big"
+          placeholder="本地 MySQL"
+          placeholder-class="ve__ph"
+          :focus="autoFocus"
+        />
+      </view>
+
+      <view class="ve__field">
+        <text class="ve__label">地址</text>
+        <input
+          v-model="addressRaw"
+          class="ve__input"
+          placeholder="127.0.0.1:3306"
+          placeholder-class="ve__ph"
+        />
+        <text class="ve__hint">主机和端口写一起，只写主机也行。</text>
+      </view>
+
+      <view class="ve__field">
+        <text class="ve__label">密码</text>
+        <view class="ve__row">
+          <input
+            v-model="form.password"
+            class="ve__input ve__input--mono"
+            placeholder="直接写明文，不用藏着"
+            placeholder-class="ve__ph"
+          />
+        </view>
+        <text v-if="!form.password" class="ve__hint">没密码就空着，比如本机 Redis。</text>
+      </view>
+
+      <!-- 其余折起来，别一屏塞八个框 -->
+      <view class="ve__more-toggle" @click="more = !more">
+        <text class="ve__more-text">{{ more ? '收起' : '还有：用户名、分组、类型、备注' }}</text>
+        <text class="ve__more-arrow" :class="{ 'is-open': more }">⌄</text>
+      </view>
+
+      <view v-if="more" class="ve__more">
+        <view class="ve__field">
+          <text class="ve__label">用户名</text>
+          <input v-model="form.username" class="ve__input" placeholder="root" placeholder-class="ve__ph" />
+        </view>
+
+        <view class="ve__field">
+          <text class="ve__label">分组（哪台机器）</text>
+          <input
+            v-model="form.group"
+            class="ve__input"
+            placeholder="公司本地PC"
+            placeholder-class="ve__ph"
+          />
+          <view v-if="groupOptions.length" class="ve__chips">
+            <text
+              v-for="name in groupOptions"
+              :key="name"
+              class="ve__chip"
+              :class="{ 'is-on': form.group === name }"
+              @click="form.group = name"
+            >
+              {{ name }}
+            </text>
+          </view>
+        </view>
+
+        <view class="ve__field">
+          <text class="ve__label">类型</text>
+          <view class="ve__chips">
+            <text
+              v-for="type in VAULT_TYPES"
+              :key="type.key"
+              class="ve__chip"
+              :class="{ 'is-on': form.type === type.key }"
+              @click="pickType(type)"
+            >
+              {{ type.label }}
+            </text>
+          </view>
+        </view>
+
+        <view class="ve__field">
+          <text class="ve__label">备注</text>
+          <textarea
+            v-model="form.note"
+            class="ve__area"
+            placeholder="先记着：取自哪个文件、有没有实测过"
+            placeholder-class="ve__ph"
+            :maxlength="-1"
+          />
+        </view>
+      </view>
+
+      <view v-if="editing" class="ve__danger" @click="confirmDelete">删除这条</view>
+    </view>
+
+    <view class="ve__bottom">
+      <view class="ve__save" @click="submit">存起来</view>
+    </view>
+  </view>
+</template>
+
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import { isAdmin } from '../../api/auth'
+import PageTitle from '../../components/PageTitle.vue'
 import { useTheme } from '../../composables/useTheme'
 import { usePageFrame } from '../../composables/usePageFrame'
 import { useEdgeSwipe } from '../../composables/useEdgeSwipe'
-import PageTitle from '../../components/PageTitle.vue'
+import { isAdmin } from '../../api/auth'
 import {
   UNGROUPED,
   VAULT_TYPES,
+  addressOf,
   defaultPortOf,
   findItem,
   listGroups,
+  parseAddress,
   removeItem,
   saveItem,
 } from '../../utils/vault'
 
-/*
- * 密码箱 · 新增 / 编辑（2026-11-21）
- *
- * ## 为什么是独立整页，不做弹层
- * 七个字段里有一个多行备注，安卓键盘一弹，弹层要同时处理抬升、内滚、按钮被顶走三件事，
- * 本仓已经在别的功能上踩过这个坑。整页表单交给系统滚动，键盘和保存条各管各的。
- *
- * ## 为什么保存条压在底部、键盘弹出时会被盖住
- * 输入框有 `adjust-position`（默认开），键盘弹出时页面会上滚把输入框顶到键盘之上；
- * 底部这条 fixed 的保存条则被键盘完全盖住。看起来"少了个按钮"，但这是可预期的：
- * 正在打字时不该误触保存，收起键盘就能点。强行用键盘高度去抬它，会和系统滚动叠成两层位移，
- * 光标和按钮一起跳，比盖住难用。
- *
- * ## 分组是自由输入 + 点现成的
- * 输入框直接打新名字就是建组（存的时候 rememberGroup 会记住顺序），
- * 下面把已有的组列成一排：老用户改一条时不用回忆上次怎么写的。
- */
 const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
 const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
 
-const editingId = ref('')
-const showPassword = ref(false)
-/** 上一次选中的类型，用来判断端口是不是"系统帮填的"，是就跟着换 */
-const lastType = ref('mysql')
-
-const form = reactive({
+const form = ref({
+  id: '',
   name: '',
   type: 'mysql',
   host: '',
-  port: defaultPortOf('mysql'),
+  port: '',
   username: '',
   password: '',
   group: '',
   note: '',
 })
+const addressRaw = ref('')
+const editId = ref('')
+const more = ref(false)
+const autoFocus = ref(false)
 
-const isEdit = computed(() => !!editingId.value)
+const editing = computed(() => !!editId.value)
 const groupOptions = computed(() => listGroups().filter((name) => name !== UNGROUPED))
 
-onLoad((options) => {
+onLoad((options = {}) => {
   if (!isAdmin()) {
     uni.showToast({ title: '只有管理员能改', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 600)
     return
   }
 
-  const id = options?.id
-  if (!id) return
+  const id = options.id ? decodeURIComponent(options.id) : ''
+  if (!id) {
+    autoFocus.value = true
+    return
+  }
 
-  const found = findItem(id)
-  if (!found) {
-    // 备份恢复时被合并掉了、或另一处已经删了：不能停在一张空表单上假装在改
+  const hit = findItem(id)
+  if (!hit) {
     uni.showToast({ title: '这条已经不在了', icon: 'none' })
     setTimeout(() => uni.navigateBack(), 600)
     return
   }
 
-  editingId.value = found.id
-  lastType.value = found.type
-  form.name = found.name
-  form.type = found.type
-  form.host = found.host
-  form.port = found.port
-  form.username = found.username
-  form.password = found.password
-  // 「未分组」不写进输入框，留空才是"没选组"
-  form.group = found.group === UNGROUPED ? '' : found.group
-  form.note = found.note
+  editId.value = id
+  form.value = { ...hit }
+  addressRaw.value = addressOf(hit)
+  // 有备注或用户名，说明用户把这页当"完整表单"用过，进来就把更多展开
+  more.value = !!(hit.username || hit.note)
 })
 
-/**
- * 换类型时顺手把端口改成这种服务的默认端口。
- *
- * 只在「端口还是空的」或「端口仍是上一个类型的默认值」时覆盖 —— 用户手填的 3307、
- * 或者干脆清空不要端口，都不该被他随手点了一下类型就冲掉。
- */
+/** 换类型时补端口：只在地址没写端口、或端口正好是上一个类型的默认值时才动 */
 function pickType(type) {
-  const prevDefault = defaultPortOf(lastType.value)
-  const nextDefault = defaultPortOf(type.key)
-  const untouched = !form.port || form.port === prevDefault
-  form.type = type.key
-  lastType.value = type.key
-  if (untouched) form.port = nextDefault
+  const previous = form.value.type
+  const current = parseAddress(addressRaw.value)
+  const shouldFill =
+    !current.port || (previous !== type && current.port === defaultPortOf(previous) && !!defaultPortOf(type))
+  if (shouldFill && defaultPortOf(type)) {
+    addressRaw.value = `${current.host || form.value.host}:${defaultPortOf(type)}`
+  }
+  form.value.type = type.key
 }
 
 function submit() {
-  if (!form.name.trim()) {
-    uni.showToast({ title: '先给它起个名字', icon: 'none' })
+  const name = form.value.name.trim()
+  if (!name) {
+    uni.showToast({ title: '先给它起个名', icon: 'none' })
     return
+  }
+
+  const { host, port } = parseAddress(addressRaw.value)
+  const payload = {
+    ...form.value,
+    id: editId.value || '',
+    name,
+    host: host || form.value.host,
+    port: port || (addressRaw.value.includes(':') ? '' : form.value.port),
+    group: form.value.group.trim(),
   }
 
   try {
-    saveItem({
-      id: editingId.value,
-      name: form.name,
-      type: form.type,
-      host: form.host,
-      port: form.port,
-      username: form.username,
-      password: form.password,
-      group: form.group,
-      note: form.note,
-    })
-  } catch (e) {
-    uni.showToast({ title: e?.message || '保存失败', icon: 'none' })
+    saveItem(payload)
+  } catch (err) {
+    uni.showToast({ title: (err && err.message) || '存不进去', icon: 'none' })
     return
   }
 
-  uni.showToast({ title: isEdit.value ? '改好了' : '记下了', icon: 'none' })
+  uni.showToast({ title: editing.value ? '改好了' : '记下了', icon: 'none' })
   setTimeout(() => uni.navigateBack(), 300)
-}
-
-function goBack() {
-  uni.navigateBack()
 }
 
 function confirmDelete() {
   uni.showModal({
-    title: '删除这条？',
-    content: '删掉之后就只剩备份里那一份了，这里恢复不回来。',
-    confirmText: '删除',
+    title: '删掉这条？',
+    content: '删了就没了，电脑那边同步下来也会跟着没。',
+    confirmText: '删',
     confirmColor: '#D14343',
-    success: (res) => {
-      if (!res.confirm) return
-      removeItem(editingId.value)
+    success: ({ confirm }) => {
+      if (!confirm) return
+      removeItem(editId.value)
       uni.showToast({ title: '删了', icon: 'none' })
       setTimeout(() => uni.navigateBack(), 300)
     },
@@ -149,333 +234,152 @@ function confirmDelete() {
 }
 </script>
 
-<template>
-  <view
-    class="ed"
-    :class="themeClass"
-    :style="[themeVars, frameStyle]"
-    @touchstart="onEdgeStart"
-    @touchend="onEdgeEnd"
-  >
-    <PageTitle :title="isEdit ? '改一条' : '记一条'" />
-
-    <view class="ed__body">
-      <view class="ed__card">
-        <view class="ed__row">
-          <text class="ed__label">名称</text>
-          <input
-            v-model="form.name"
-            class="ed__input"
-            type="text"
-            maxlength="40"
-            placeholder="公司 MySQL 主库"
-            placeholder-class="ed__ph"
-          />
-        </view>
-
-        <view class="ed__row ed__row--block">
-          <text class="ed__label">类型</text>
-          <view class="ed__chips">
-            <view
-              v-for="type in VAULT_TYPES"
-              :key="type.key"
-              class="ed__chip"
-              :class="{ 'is-on': form.type === type.key }"
-              @click="pickType(type)"
-            >
-              {{ type.label }}
-            </view>
-          </view>
-        </view>
-
-        <view class="ed__row">
-          <text class="ed__label">地址</text>
-          <view class="ed__pair">
-            <input
-              v-model="form.host"
-              class="ed__input ed__input--grow"
-              type="text"
-              placeholder="IP 或域名，可留空"
-              placeholder-class="ed__ph"
-            />
-            <input
-              v-model="form.port"
-              class="ed__input ed__input--port"
-              type="number"
-              maxlength="5"
-              placeholder="端口"
-              placeholder-class="ed__ph"
-            />
-          </view>
-        </view>
-
-        <view class="ed__row">
-          <text class="ed__label">用户名</text>
-          <input
-            v-model="form.username"
-            class="ed__input"
-            type="text"
-            placeholder="root"
-            placeholder-class="ed__ph"
-          />
-        </view>
-
-        <view class="ed__row">
-          <text class="ed__label">密码</text>
-          <view class="ed__pair">
-            <input
-              v-model="form.password"
-              class="ed__input ed__input--grow"
-              :password="!showPassword"
-              type="text"
-              placeholder="可以留空，比如免密登录"
-              placeholder-class="ed__ph"
-            />
-            <text class="ed__eye" @click="showPassword = !showPassword">
-              {{ showPassword ? '隐藏' : '显示' }}
-            </text>
-          </view>
-        </view>
-      </view>
-
-      <view class="ed__card">
-        <view class="ed__row">
-          <text class="ed__label">分组</text>
-          <input
-            v-model="form.group"
-            class="ed__input"
-            type="text"
-            maxlength="20"
-            placeholder="公司电脑 / 腾讯云 / 家里服务器"
-            placeholder-class="ed__ph"
-          />
-        </view>
-
-        <view v-if="groupOptions.length" class="ed__row ed__row--sub">
-          <view class="ed__chips">
-            <view
-              v-for="name in groupOptions"
-              :key="name"
-              class="ed__chip ed__chip--sm"
-              :class="{ 'is-on': form.group.trim() === name }"
-              @click="form.group = name"
-            >
-              {{ name }}
-            </view>
-          </view>
-        </view>
-
-        <view class="ed__row ed__row--block">
-          <text class="ed__label">备注</text>
-          <textarea
-            v-model="form.note"
-            class="ed__area"
-            auto-height
-            :maxlength="-1"
-            placeholder="私钥、跳板机、注意事项都写这儿"
-            placeholder-class="ed__ph"
-          />
-        </view>
-      </view>
-
-      <view v-if="isEdit" class="ed__danger" @click="confirmDelete">删除这条</view>
-
-      <text class="ed__hint">
-        只存在这台手机里，不上传服务器。换手机或重装前，回列表页点右上「备份」导出一份。
-      </text>
-    </view>
-
-    <view class="ed__foot">
-      <view class="ed__cancel" @click="goBack">取消</view>
-      <view class="ed__save" @click="submit">保存</view>
-    </view>
-  </view>
-</template>
-
 <style lang="scss" scoped>
-.ed {
+.ve {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  box-sizing: border-box;
-  background-color: var(--ui-bg);
+  background: var(--ui-bg);
 }
 
-/* 底部保存条是 fixed 的，内容区得给它让出位置，否则最后一行永远压在按钮下面 */
-.ed__body {
+/* 用页面自身的滚动：安卓键盘 adjust-position 才对得上，底部条 fixed 不跟着抬 */
+.ve__body {
   flex: 1;
-  padding: 0 20rpx calc(180rpx + env(safe-area-inset-bottom));
+  padding: 8rpx 28rpx 220rpx;
 }
 
-.ed__card {
-  margin-bottom: 20rpx;
-  padding: 4rpx 24rpx;
-  border-radius: 22rpx;
-  background-color: var(--ui-surface);
+.ve__field {
+  margin-top: 24rpx;
 }
 
-.ed__row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  min-height: 96rpx;
-  border-bottom: 2rpx solid var(--ui-border);
-}
-
-.ed__card .ed__row:last-child {
-  border-bottom: none;
-}
-
-/* 类型和备注要占满整行：标签在上，控件在下 */
-.ed__row--block {
+.ve__label {
   display: block;
-  padding: 22rpx 0;
-}
-
-.ed__row--block .ed__label {
-  display: block;
-  margin-bottom: 14rpx;
-}
-
-/* 已有分组那一行：没有标签，只借右边距对齐上面的输入框 */
-.ed__row--sub {
-  display: block;
-  padding: 18rpx 0;
-}
-
-.ed__label {
-  flex-shrink: 0;
-  width: 96rpx;
-  font-size: 26rpx;
-  color: var(--ui-text-3);
-}
-
-.ed__input {
-  flex: 1;
-  height: 92rpx;
-  font-size: 28rpx;
-  color: var(--ui-text);
-}
-
-.ed__input--grow {
-  flex: 1;
-  min-width: 0;
-}
-
-.ed__input--port {
-  flex: none;
-  width: 130rpx;
-  text-align: right;
-}
-
-.ed__pair {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 16rpx;
-  min-width: 0;
-}
-
-.ed__ph {
-  font-size: 26rpx;
-  color: var(--ui-text-3);
-}
-
-.ed__eye {
-  flex-shrink: 0;
-  padding: 10rpx 16rpx;
-  border-radius: 12rpx;
+  padding: 0 6rpx 10rpx;
   font-size: 24rpx;
-  color: var(--ui-accent-text);
-  background-color: var(--ui-accent-soft);
+  color: var(--ui-text-3);
 }
 
-.ed__area {
-  width: 100%;
-  min-height: 150rpx;
-  font-size: 28rpx;
-  line-height: 1.6;
+.ve__input {
+  height: 92rpx;
+  padding: 0 24rpx;
+  border-radius: 20rpx;
+  font-size: 30rpx;
   color: var(--ui-text);
+  background: var(--ui-surface);
+  box-sizing: border-box;
 }
 
-/* ---------- 类型 / 分组 chip ---------- */
-.ed__chips {
+.ve__input--big {
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.ve__input--mono {
+  letter-spacing: 0.02em;
+}
+
+.ve__ph {
+  color: var(--ui-text-3);
+  font-weight: 400;
+}
+
+.ve__row {
+  display: flex;
+  gap: 16rpx;
+}
+
+.ve__row .ve__input {
+  flex: 1;
+}
+
+.ve__hint {
+  display: block;
+  padding: 10rpx 6rpx 0;
+  font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+.ve__more-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  margin-top: 40rpx;
+  padding: 20rpx;
+}
+
+.ve__more-text {
+  font-size: 25rpx;
+  color: var(--ui-text-2);
+}
+
+.ve__more-arrow {
+  font-size: 26rpx;
+  color: var(--ui-text-3);
+  transition: transform 0.16s ease;
+}
+
+.ve__more-arrow.is-open {
+  transform: rotate(180deg);
+}
+
+.ve__chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 12rpx;
+  gap: 14rpx;
+  margin-top: 16rpx;
 }
 
-.ed__chip {
+.ve__chip {
   padding: 12rpx 24rpx;
-  border-radius: 14rpx;
-  font-size: 24rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
   color: var(--ui-text-2);
-  background-color: var(--ui-raise);
+  background: var(--ui-surface);
 }
 
-.ed__chip.is-on {
-  color: var(--ui-on-accent);
-  background-color: var(--ui-accent);
+.ve__chip.is-on {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
 }
 
-.ed__chip--sm {
-  padding: 10rpx 20rpx;
-  font-size: 23rpx;
+.ve__area {
+  width: 100%;
+  height: 180rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--ui-text);
+  background: var(--ui-surface);
+  box-sizing: border-box;
 }
 
-/* ---------- 删除 ---------- */
-.ed__danger {
-  margin-bottom: 20rpx;
-  padding: 26rpx;
-  border-radius: 22rpx;
-  font-size: 27rpx;
+.ve__danger {
+  margin-top: 56rpx;
   text-align: center;
+  font-size: 26rpx;
   color: var(--ui-danger);
-  background-color: var(--ui-surface);
 }
 
-.ed__hint {
-  display: block;
-  padding: 4rpx 8rpx 0;
-  font-size: 23rpx;
-  line-height: 1.7;
-  color: var(--ui-text-3);
-}
-
-/* ---------- 底部保存条 ---------- */
-.ed__foot {
+.ve__bottom {
   position: fixed;
+  left: 0;
   right: 0;
   bottom: 0;
-  left: 0;
-  display: flex;
-  gap: 16rpx;
-  padding: 16rpx 20rpx calc(16rpx + env(safe-area-inset-bottom));
-  border-top: 2rpx solid var(--ui-border);
-  background-color: var(--ui-surface);
+  padding: 16rpx 28rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: var(--ui-surface);
+  box-shadow: 0 -6rpx 24rpx rgba(0, 0, 0, 0.06);
 }
 
-.ed__cancel {
-  flex: none;
-  width: 180rpx;
-  height: 92rpx;
-  border-radius: 18rpx;
-  font-size: 28rpx;
-  line-height: 92rpx;
+.ve__save {
+  height: 96rpx;
+  line-height: 96rpx;
   text-align: center;
-  color: var(--ui-text-2);
-  background-color: var(--ui-raise);
-}
-
-.ed__save {
-  flex: 1;
-  height: 92rpx;
-  border-radius: 18rpx;
+  border-radius: 24rpx;
   font-size: 30rpx;
   font-weight: 600;
-  line-height: 92rpx;
-  text-align: center;
   color: var(--ui-on-accent);
-  background-color: var(--ui-accent);
+  background: var(--ui-accent);
 }
 </style>
