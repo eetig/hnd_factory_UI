@@ -281,6 +281,8 @@ export const routes = [
     path: '/intro',
     name: 'Intro',
     component: () => import('../views/Intro.vue'),
+    // 壳外页面：窗口钮由这一页自己的 sticky 顶栏摆（见 layouts/WindowFrame.vue）
+    meta: { windowChrome: 'inline' },
   },
   {
     /*
@@ -293,7 +295,7 @@ export const routes = [
     path: '/download',
     name: 'Download',
     component: () => import('../views/Download.vue'),
-    meta: { title: '下载客户端' },
+    meta: { title: '下载客户端', windowChrome: 'inline' },
   },
   {
     /*
@@ -305,6 +307,12 @@ export const routes = [
      */
     path: '/',
     component: AppShell,
+    /*
+     * `shell: true`（2026-11-23）：这一支**自带顶栏**，窗口的拖动与三颗按钮
+     * 都在 AppShell 里；壳外的整页由 layouts/WindowFrame.vue 补。两处各认一遍
+     * 这个标记，谁也不去接管对方的窗口。
+     */
+    meta: { shell: true },
     /*
      * 首页 = **第一个可见页**，不是固定的 /orders。
      *

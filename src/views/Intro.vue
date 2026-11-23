@@ -46,6 +46,8 @@
  *    这条 037 就立的规矩，在删除之后反而更完整了。
  */
 import { RouterLink } from 'vue-router'
+import WindowControls from '../components/shell/WindowControls.vue'
+import { IS_TAURI } from '../api/base'
 import workbenchShot from '../assets/landing/workbench.webp'
 import vesselCanvas from '../assets/landing/vessel-canvas.webp'
 import vesselCalcShot from '../assets/landing/vessel-calc.webp'
@@ -170,6 +172,12 @@ const STATS_DETAIL = [
           >
             进入工作台
           </RouterLink>
+          <!--
+            窗口钮（2026-11-23）：这一页在壳外，没有 AppShell 顶栏 —— 不补这一组，
+            窗口既拖不动也关不掉。放进这条 sticky 头的最右端，不浮在窗口角上：
+            那个角本来就压着上面那颗「进入工作台」。只在桌面壳里出现。
+          -->
+          <WindowControls v-if="IS_TAURI" />
         </div>
       </header>
 

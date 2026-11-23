@@ -23,6 +23,13 @@
         <span class="lp__mark" aria-hidden="true">H</span>
         <span class="lp__brand-text">HND 生产助手</span>
       </div>
+
+      <!--
+        窗口钮（2026-11-23）：这一页在壳外，没有 AppShell 顶栏 —— 不补这一组，
+        拖不动也关不掉。栏的右侧本来就空着，钉在栏尾比浮在窗口角上稳：
+        这一页很长，固定的钮滚起来会一直压着正文。
+      -->
+      <WindowControls v-if="IS_TAURI" class="lp__wc" />
     </header>
 
     <main class="lp__main">
@@ -160,6 +167,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import shot from '../assets/landing/purchase-board.webp'
+import WindowControls from '../components/shell/WindowControls.vue'
+import { IS_TAURI } from '../api/base'
 
 /*
  * 兜底地址用「最新版」这个稳定别名（2026-11-13，变更-210）。
@@ -351,6 +360,16 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 16px clamp(16px, 4vw, 40px);
+}
+
+/*
+ * 窗口钮靠到栏的最右（2026-11-23）。用 margin-left: auto 而不是给 .lp__bar 加
+ * justify-content: space-between —— 栏里只有左边的汉堡 + 品牌，右侧的留白是
+ * 这一页的呼吸，space-between 会把「汉堡组」和「钮组」拉成两端对顶。
+ * 不在这里改色：钮自带 slate-700，与栏里的墨色（--lp-ink）同一档观感。
+ */
+.lp__wc {
+  margin-left: auto;
 }
 
 .lp__burger {

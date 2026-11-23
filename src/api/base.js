@@ -12,6 +12,18 @@ const DESKTOP_ORIGIN = 'https://hbhnd.cloud'
 
 export const IS_DESKTOP = import.meta.env.MODE === 'desktop'
 
+/**
+ * 真的跑在 Tauri 壳里吗（2026-11-23）。
+ *
+ * `IS_DESKTOP` 只认 `--mode desktop` 那份构建；但桌面构建漏跑到、或把网页包塞进
+ * Tauri 里时，注入的 `__TAURI_INTERNALS__` 仍然在。窗口钮 / 拖动这类**只在有壳时
+ * 才有意义**的东西按这个判据显隐 —— 网页版里它们既不该出现，也不该报错。
+ * （router/index.js 的 `isDesktopRuntime()` 是同一判据，那边还带着路由守卫的语境，
+ *  这里给界面层用，别在组件里各抄一份。）
+ */
+export const IS_TAURI =
+  IS_DESKTOP || (typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__))
+
 export const API_BASE =
   import.meta.env.VITE_API_BASE || (IS_DESKTOP ? DESKTOP_ORIGIN : '')
 
