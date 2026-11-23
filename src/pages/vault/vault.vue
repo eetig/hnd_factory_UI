@@ -6,6 +6,10 @@
     @touchstart="onEdgeStart"
     @touchend="onEdgeEnd"
   >
+    <!-- 彩色弥散底：四团很淡的光从四角渗进来，卡片做成半透，光就透在缝里。
+         不用模糊滤镜（安卓机上一糊就掉帧），靠 radial-gradient 自己做柔边。 -->
+    <view class="vd__aurora" />
+
     <PageTitle title="密码箱" />
 
     <view v-if="!allowed" class="vd__deny">
@@ -143,11 +147,53 @@ function goTab(index) {
 
 <style lang="scss" scoped>
 .vd {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100vh;
   background: var(--ui-bg);
   overflow: hidden;
+
+  /* 卡片与胶囊半透：底下的光透上来一点点，页面才不是「白纸贴色块」 */
+  --ui-surface: rgba(255, 255, 255, 0.62);
+  --ui-raise: rgba(255, 255, 255, 0.4);
+
+  /* 内容压在光层上面 */
+  > *:not(.vd__aurora) {
+    position: relative;
+    z-index: 1;
+  }
+
+  &.theme-dark {
+    --ui-surface: rgba(28, 30, 37, 0.76);
+    --ui-raise: rgba(36, 38, 46, 0.56);
+  }
+}
+
+/* 五团彩色弥散光：左上湖蓝、右上蜜桃、中右薄荷、左下暖沙、右下藕紫。
+   低饱和、大半径，是「窗外的光」而不是霓虹灯；柔边全靠 gradient 自己画，
+   不用 filter: blur（安卓机上一糊就掉帧）。 */
+.vd__aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    /* 四个大色域互相咬合，铺满整屏 —— 小圆点只在边角亮，中间还是白的 */
+      radial-gradient(120% 78% at -10% -14%, rgba(86, 146, 255, 0.62) 0%, rgba(86, 146, 255, 0) 62%),
+    radial-gradient(118% 74% at 110% -8%, rgba(255, 122, 180, 0.5) 0%, rgba(255, 122, 180, 0) 60%),
+    radial-gradient(130% 84% at 116% 62%, rgba(48, 206, 184, 0.44) 0%, rgba(48, 206, 184, 0) 64%),
+    radial-gradient(128% 82% at -16% 92%, rgba(255, 176, 92, 0.46) 0%, rgba(255, 176, 92, 0) 66%),
+    linear-gradient(165deg, #e9f0ff 0%, #f4f1ff 42%, #fff4ec 100%);
+}
+
+.theme-dark .vd__aurora {
+  background:
+    radial-gradient(120% 78% at -10% -14%, rgba(52, 96, 214, 0.62) 0%, rgba(52, 96, 214, 0) 62%),
+    radial-gradient(118% 74% at 110% -8%, rgba(190, 70, 130, 0.46) 0%, rgba(190, 70, 130, 0) 60%),
+    radial-gradient(130% 84% at 116% 62%, rgba(24, 140, 128, 0.42) 0%, rgba(24, 140, 128, 0) 64%),
+    radial-gradient(128% 82% at -16% 92%, rgba(170, 106, 40, 0.4) 0%, rgba(170, 106, 40, 0) 66%),
+    linear-gradient(165deg, #12151d 0%, #14131c 45%, #191418 100%);
 }
 
 .vd__deny {

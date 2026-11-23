@@ -521,7 +521,8 @@ function doImport() {
   flex-direction: column;
   /* 常驻在宿主的双栏轨道里：高度由栏位给，不能再占 100vh（否则两栏叠在一起算高度） */
   height: 100%;
-  background: var(--ui-bg);
+  /* 底色交给宿主那层彩色弥散，这里不能自己刷一层白，否则光全被盖掉 */
+  background: transparent;
   overflow: hidden;
 }
 

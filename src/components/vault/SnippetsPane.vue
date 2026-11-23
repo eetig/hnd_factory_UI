@@ -395,7 +395,8 @@ function goEdit(id) {
   flex-direction: column;
   /* 常驻在宿主双栏轨道里，高度由栏位给 */
   height: 100%;
-  background: var(--ui-bg);
+  /* 底色交给宿主的彩色弥散层，这里不许刷白 */
+  background: transparent;
   overflow: hidden;
 }
 
