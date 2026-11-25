@@ -99,6 +99,19 @@ function newId() {
   return `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 }
 
+/** 记事习惯：时间 / 人物 / 地点 / 事件。
+ *  时间可以手填（「这条密码是什么时候拿到的」跟「什么时候记进来」不是一回事），
+ *  所以单独存 `at`，留空时才退回 createdAt；人物是「谁记的、谁在用」，
+ *  可以是一个人，也可以是某台电脑上的 DSH（比如「小D@公司电脑」）。 */
+function noteFields(input = {}) {
+  return {
+    at: text(input.at),
+    actor: text(input.actor),
+    place: text(input.place),
+    event: text(input.event),
+  }
+}
+
 /** 把外部传进来的字段洗一遍：全是字符串，类型落回 other，分组落回「未分组」 */
 function normalize(input = {}) {
   const type = VAULT_TYPES.some((row) => row.key === input.type) ? input.type : 'other'
@@ -112,6 +125,7 @@ function normalize(input = {}) {
     password: String(input.password == null ? '' : input.password).trim(),
     group: text(input.group) || UNGROUPED,
     note: String(input.note == null ? '' : input.note).trim(),
+    ...noteFields(input),
     createdAt: text(input.createdAt),
     updatedAt: text(input.updatedAt),
     lastUsedAt: text(input.lastUsedAt),
@@ -486,6 +500,7 @@ function normalizeSnippet(input = {}) {
     name: text(input.name),
     desc: text(input.desc),
     text: String(input.text == null ? '' : input.text).trim(),
+    ...noteFields(input),
     createdAt: text(input.createdAt),
     updatedAt: text(input.updatedAt),
   }

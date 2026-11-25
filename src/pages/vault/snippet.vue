@@ -36,6 +36,56 @@
         <text class="se__hint">换电脑时点一下这条就复制这段，粘给那边的 DSH 就行。</text>
       </view>
 
+      <!-- 和密码那边同一套记事习惯：什么时候、谁、在哪、干嘛用 -->
+      <view class="se__quad">
+        <view class="se__field">
+          <text class="se__label">时间</text>
+          <picker mode="date" :value="form.at || todayText" @change="onAtChange">
+            <view class="se__input se__picker">
+              <text :class="form.at ? 'se__picker-val' : 'se__ph-text'">{{ form.at || todayText }}</text>
+              <text class="se__picker-arrow">⌄</text>
+            </view>
+          </picker>
+        </view>
+
+        <view class="se__field">
+          <text class="se__label">人物</text>
+          <input v-model="form.actor" class="se__input" placeholder="谁记的 / 谁在用" placeholder-class="se__ph" />
+          <view class="se__chips">
+            <text
+              v-for="name in ACTOR_HINTS"
+              :key="name"
+              class="se__chip"
+              :class="{ 'is-on': form.actor === name }"
+              @click="form.actor = name"
+            >
+              {{ name }}
+            </text>
+          </view>
+        </view>
+
+        <view class="se__field">
+          <text class="se__label">地点（哪台机器）</text>
+          <input v-model="form.place" class="se__input" placeholder="公司 / 家里 / 云" placeholder-class="se__ph" />
+        </view>
+
+        <view class="se__field">
+          <text class="se__label">事件（干嘛用）</text>
+          <input v-model="form.event" class="se__input" placeholder="装工具 / 换电脑 / 演示" placeholder-class="se__ph" />
+          <view class="se__chips">
+            <text
+              v-for="name in EVENT_HINTS"
+              :key="name"
+              class="se__chip"
+              :class="{ 'is-on': form.event === name }"
+              @click="form.event = name"
+            >
+              {{ name }}
+            </text>
+          </view>
+        </view>
+      </view>
+
       <view v-if="editing" class="se__danger" @click="confirmDelete">删掉这条</view>
     </view>
 
@@ -59,10 +109,18 @@ const { themeClass, themeVars } = useTheme()
 const { frameStyle } = usePageFrame()
 const { onTouchStart: onEdgeStart, onTouchEnd: onEdgeEnd } = useEdgeSwipe(() => uni.navigateBack())
 
-const form = ref({ id: '', name: '', desc: '', text: '' })
+const form = ref({ id: '', name: '', desc: '', text: '', at: '', actor: '', place: '', event: '' })
 const editId = ref('')
 const autoFocus = ref(false)
 const editing = computed(() => !!editId.value)
+
+const ACTOR_HINTS = ['我', '小D@公司电脑']
+const EVENT_HINTS = ['装工具', '换电脑', '生产运维', '演示']
+const todayText = new Date().toISOString().slice(0, 10)
+
+function onAtChange(event) {
+  form.value.at = String((event && event.detail && event.detail.value) || '')
+}
 
 onLoad((options = {}) => {
   if (!isAdmin()) {
@@ -85,12 +143,25 @@ onLoad((options = {}) => {
   }
 
   editId.value = id
-  form.value = { id: hit.id, name: hit.name, desc: hit.desc, text: hit.text }
+  form.value = {
+    id: hit.id,
+    name: hit.name,
+    desc: hit.desc,
+    text: hit.text,
+    at: hit.at || '',
+    actor: hit.actor || '',
+    place: hit.place || '',
+    event: hit.event || '',
+  }
 })
 
 function submit() {
   try {
-    saveSnippet({ ...form.value, id: editId.value || '' })
+    saveSnippet({
+      ...form.value,
+      id: editId.value || '',
+      at: form.value.at || todayText,
+    })
   } catch (err) {
     uni.showToast({ title: (err && err.message) || '存不进去', icon: 'none' })
     return
@@ -177,6 +248,60 @@ function confirmDelete() {
   font-size: 22rpx;
   line-height: 1.6;
   color: var(--ui-text-3);
+}
+
+/* 记事四样：跟密码那张表单一模一样的位置和厚度 */
+.se__quad {
+  margin-top: 32rpx;
+  padding: 4rpx 20rpx 20rpx;
+  border-radius: 24rpx;
+  background: var(--ui-raise);
+}
+
+.se__quad .se__field {
+  margin-top: 20rpx;
+}
+
+.se__picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.se__picker-val {
+  font-size: 30rpx;
+  color: var(--ui-text);
+}
+
+.se__ph-text {
+  font-size: 30rpx;
+  color: var(--ui-text-3);
+  font-weight: 400;
+}
+
+.se__picker-arrow {
+  font-size: 26rpx;
+  color: var(--ui-text-3);
+}
+
+.se__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.se__chip {
+  padding: 12rpx 24rpx;
+  border-radius: 999rpx;
+  font-size: 25rpx;
+  color: var(--ui-text-2);
+  background: var(--ui-surface);
+}
+
+.se__chip.is-on {
+  color: var(--ui-accent);
+  background: var(--ui-accent-soft);
 }
 
 .se__danger {

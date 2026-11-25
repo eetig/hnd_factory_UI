@@ -97,6 +97,8 @@
                     <text class="vt__line-pass">{{ row.password || '（空）' }}</text>
                   </view>
                   <text v-if="row.note" class="vt__note">{{ row.note }}</text>
+                  <!-- 记事习惯：记于 11-25 · 谁 · 在哪 · 干嘛用。空的不占位 -->
+                  <text v-if="metaOf(row)" class="vt__meta-line">{{ metaOf(row) }}</text>
                 </view>
 
                 <view v-if="!item.items.length" class="vt__page-empty">
@@ -401,9 +403,22 @@ onMounted(() => {
   })
 })
 
+/** 卡底那行小字：记于 MM-DD · 谁 · 在哪 · 干嘛用，只显示填过的 */
+function metaOf(item) {
+  const at = String(item.at || item.createdAt || '').slice(0, 10)
+  const parts = []
+  if (at) {
+    const [year, month, day] = at.split('-')
+    parts.push(`记于 ${year && year.length === 4 ? `${month}-${day}` : at}`)
+  }
+  if (item.actor) parts.push(item.actor)
+  if (item.place && item.place !== item.group) parts.push(item.place)
+  if (item.event) parts.push(item.event)
+  return parts.join(' · ')
+}
+
 /** 点一下整张卡 = 复制密码（最常用的动作，不让人找按钮） */
-async function useItem(item) {
-  if (!item.password) {
+async function useItem(item) {  if (!item.password) {
     uni.showToast({ title: '这条没有密码，长按选别的', icon: 'none' })
     return
   }
@@ -855,6 +870,18 @@ function doImport() {
   font-size: 23rpx;
   line-height: 1.5;
   color: var(--ui-text-3);
+}
+
+/* 记于 11-25 · 小D@公司电脑 · 本地开发调试 */
+.vt__meta-line {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 21rpx;
+  line-height: 1.4;
+  color: var(--ui-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .vt__empty {

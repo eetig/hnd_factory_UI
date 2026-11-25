@@ -41,20 +41,43 @@
         <text v-if="!form.password" class="ve__hint">没密码就空着，比如本机 Redis。</text>
       </view>
 
-      <!-- 其余折起来，别一屏塞八个框 -->
-      <view class="ve__more-toggle" @click="more = !more">
-        <text class="ve__more-text">{{ more ? '收起' : '还有：用户名、分组、类型、备注' }}</text>
-        <text class="ve__more-arrow" :class="{ 'is-open': more }">⌄</text>
-      </view>
-
-      <view v-if="more" class="ve__more">
+      <!-- 记事习惯那四样：什么时候、谁、在哪、干嘛用。
+           时间手填（这条是什么时候拿到的，跟什么时候记进来不是一回事），
+           地点沿用「归属」那套组名，不再多一个字段。 -->
+      <view class="ve__quad">
         <view class="ve__field">
-          <text class="ve__label">用户名</text>
-          <input v-model="form.username" class="ve__input" placeholder="root" placeholder-class="ve__ph" />
+          <text class="ve__label">时间</text>
+          <picker mode="date" :value="form.at || todayText" @change="onAtChange">
+            <view class="ve__input ve__picker">
+              <text :class="form.at ? 've__picker-val' : 've__ph-text'">{{ form.at || todayText }}</text>
+              <text class="ve__picker-arrow">⌄</text>
+            </view>
+          </picker>
         </view>
 
         <view class="ve__field">
-          <text class="ve__label">归属（哪台机器）</text>
+          <text class="ve__label">人物</text>
+          <input
+            v-model="form.actor"
+            class="ve__input"
+            placeholder="谁记的 / 谁在用"
+            placeholder-class="ve__ph"
+          />
+          <view class="ve__chips">
+            <text
+              v-for="name in ACTOR_HINTS"
+              :key="name"
+              class="ve__chip"
+              :class="{ 'is-on': form.actor === name }"
+              @click="form.actor = name"
+            >
+              {{ name }}
+            </text>
+          </view>
+        </view>
+
+        <view class="ve__field">
+          <text class="ve__label">地点（哪台机器）</text>
           <input
             v-model="form.group"
             class="ve__input"
@@ -73,6 +96,40 @@
               {{ name }}
             </text>
           </view>
+        </view>
+
+        <view class="ve__field">
+          <text class="ve__label">事件（干嘛用）</text>
+          <input
+            v-model="form.event"
+            class="ve__input"
+            placeholder="本地开发调试 / 生产运维 / 备份"
+            placeholder-class="ve__ph"
+          />
+          <view class="ve__chips">
+            <text
+              v-for="name in EVENT_HINTS"
+              :key="name"
+              class="ve__chip"
+              :class="{ 'is-on': form.event === name }"
+              @click="form.event = name"
+            >
+              {{ name }}
+            </text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 其余折起来，别一屏塞八个框 -->
+      <view class="ve__more-toggle" @click="more = !more">
+        <text class="ve__more-text">{{ more ? '收起' : '还有：用户名、类型、备注' }}</text>
+        <text class="ve__more-arrow" :class="{ 'is-open': more }">⌄</text>
+      </view>
+
+      <view v-if="more" class="ve__more">
+        <view class="ve__field">
+          <text class="ve__label">用户名</text>
+          <input v-model="form.username" class="ve__input" placeholder="root" placeholder-class="ve__ph" />
         </view>
 
         <view class="ve__field">
@@ -148,7 +205,20 @@ const form = ref({
   password: '',
   group: '',
   note: '',
+  at: '',
+  actor: '',
+  place: '',
+  event: '',
 })
+
+/* 记事的四样：时间能手填、人物和事件给几个常用词一点就选，地点就是上面的「归属」 */
+const ACTOR_HINTS = ['我', '小D@公司电脑']
+const EVENT_HINTS = ['本地开发调试', '生产运维', '备份', '演示']
+const todayText = new Date().toISOString().slice(0, 10)
+
+function onAtChange(event) {
+  form.value.at = String((event && event.detail && event.detail.value) || '')
+}
 const addressRaw = ref('')
 const editId = ref('')
 const more = ref(false)
@@ -239,13 +309,19 @@ function submit() {
   }
 
   const { host, port } = parseAddress(addressRaw.value)
+  const group = form.value.group.trim()
   const payload = {
     ...form.value,
     id: editId.value || '',
     name,
     host: host || form.value.host,
     port: port || (addressRaw.value.includes(':') ? '' : form.value.port),
-    group: form.value.group.trim(),
+    group,
+    // 地点就是上面那个「归属」：界面只有一个输入，落盘时两处都写，
+    // 这样服务端按 place 过滤、手机端按 group 分组，口径一致
+    place: group,
+    // 时间手填；没填就按今天
+    at: form.value.at || todayText,
   }
 
   try {
@@ -337,6 +413,40 @@ function confirmDelete() {
   display: block;
   padding: 10rpx 6rpx 0;
   font-size: 22rpx;
+  color: var(--ui-text-3);
+}
+
+/* 记事四样：时间 / 人物 / 地点 / 事件，一块浅底把它们团在一起 */
+.ve__quad {
+  margin-top: 32rpx;
+  padding: 4rpx 20rpx 20rpx;
+  border-radius: 24rpx;
+  background: var(--ui-raise);
+}
+
+.ve__quad .ve__field {
+  margin-top: 20rpx;
+}
+
+.ve__picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ve__picker-val {
+  font-size: 30rpx;
+  color: var(--ui-text);
+}
+
+.ve__ph-text {
+  font-size: 30rpx;
+  color: var(--ui-text-3);
+  font-weight: 400;
+}
+
+.ve__picker-arrow {
+  font-size: 26rpx;
   color: var(--ui-text-3);
 }
 

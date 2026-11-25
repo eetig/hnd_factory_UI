@@ -85,6 +85,8 @@
                 </view>
                 <text v-if="row.desc" class="sn__desc">{{ row.desc }}</text>
                 <text class="sn__snippet">{{ brief(row.text) }}</text>
+                <!-- 和密码那边同一行小字：记于 11-25 · 谁 · 在哪 · 干嘛用 -->
+                <text v-if="metaOf(row)" class="sn__meta">{{ metaOf(row) }}</text>
               </view>
 
               <view v-if="!item.rows.length" class="sn__empty">
@@ -302,6 +304,20 @@ const syncText = computed(() => {
 function refresh() {
   all.value = readSnippets()
   syncedAt.value = lastSyncedAt()
+}
+
+/** 卡底那行小字：记于 MM-DD · 谁 · 在哪 · 干嘛用，空的不显示 */
+function metaOf(row) {
+  const at = String(row.at || row.createdAt || '').slice(0, 10)
+  const parts = []
+  if (at) {
+    const [year, month, day] = at.split('-')
+    parts.push(`记于 ${year && year.length === 4 ? `${month}-${day}` : at}`)
+  }
+  if (row.actor) parts.push(row.actor)
+  if (row.place) parts.push(row.place)
+  if (row.event) parts.push(row.event)
+  return parts.join(' · ')
 }
 
 async function sync() {
@@ -656,6 +672,17 @@ function goEdit(id) {
   color: var(--ui-text-3);
   background: var(--ui-raise);
   word-break: break-all;
+}
+
+.sn__meta {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 21rpx;
+  line-height: 1.4;
+  color: var(--ui-text-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sn__empty {
